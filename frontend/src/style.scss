@@ -1,0 +1,15 @@
+@use '@carbon/styles/scss/components/ui-shell';
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  background: #f4f4f4;
+}
+
+#app {
+  min-height: 100vh;
+}

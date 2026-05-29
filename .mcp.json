@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "cdp-bridge": {
+      "command": "uvx",
+      "args": ["cdp-bridge@latest"]
+    }
+  }
+}

@@ -1,0 +1,52 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-config
+  namespace: paap-system
+data:
+  POSTGRES_DB: paap
+  POSTGRES_USER: paap
+  POSTGRES_PASSWORD: paap
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: paap-postgres
+  namespace: paap-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: paap-postgres
+  template:
+    metadata:
+      labels:
+        app: paap-postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:15-alpine
+          ports:
+            - containerPort: 5432
+          envFrom:
+            - configMapRef:
+                name: postgres-config
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+      volumes:
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: paap-postgres
+  namespace: paap-system
+spec:
+  selector:
+    app: paap-postgres
+  ports:
+    - port: 5432
+      targetPort: 5432
+  type: ClusterIP
