@@ -1,0 +1,15 @@
+apiVersion: v2
+name: custom-prometheus
+description: A custom Prometheus monitoring service for PAAP platform
+type: application
+version: 1.0.0
+appVersion: "2.45.0"
+
+keywords:
+  - prometheus
+  - monitoring
+  - metrics
+
+maintainers:
+  - name: PAAP Team
+    email: paap@example.com

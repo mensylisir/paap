@@ -39,6 +39,18 @@
 └─────────────────────────────────────────────────┘
 ```
 
+## 部署架构
+
+**重要规范：所有 PAAP 平台组件统一部署在 `paap-system` namespace**
+
+| 组件 | Namespace | 说明 |
+|-----|-----------|------|
+| PAAP Server | `paap-system` | API 服务器 |
+| PAAP Operator | `paap-system` | CRD 控制器 |
+| PostgreSQL | `paap-system` | 元数据存储 |
+| MinIO | `paap-system` | Chart 模板存储 |
+| CRD 实例 | `paap-system` / `paap-app-{id}` | Application 在 paap-system，其他在应用 namespace |
+
 ## CRD 定义
 
 | CRD | 存放位置 | 职责 |
@@ -158,10 +170,25 @@ paap/
 
 ## 设计文档
 
+### 核心文档（推荐阅读）
+
 - [产品设计](docs/design/product-design.md)
 - [技术选型](docs/design/tech-stack.md)
 - [Operator 设计](docs/design/operator-design.md)
-- [服务模板规范](docs/design/service-template-spec.md)
+- [模板系统总览](docs/design/template-system-overview.md) - **了解平台模板架构和当前状态**
+- [自定义模板开发指南](docs/design/custom-template-guide.md) - **BYO (Bring Your Own) 模板开发完整指南**
+- [自定义 vs 第三方 Chart](docs/design/custom-vs-third-party.md) - **如何选择自定义 Chart 还是转换第三方 Chart**
+- [快速参考卡片](docs/QUICK-REFERENCE.md) - **一页纸快速参考**
+
+### 其他设计文档
+
 - [权限隔离设计](docs/design/service-isolation-design.md)
 - [环境交互设计](docs/design/environment-interaction-design.md)
+- [服务模板规范](docs/design/service-template-spec.md) - ⚠️ 早期设计方案（未实现）
+- [内置模板迁移路线图](docs/design/migration-roadmap.md) - ⚠️ 内置模板迁移计划
 - [任务清单](docs/tasks.md)
+
+## 示例模板
+
+- [自定义 Prometheus 模板](docs/examples/custom-prometheus-template/) - 从零编写的完整示例
+- [Bitnami Redis 模板](docs/examples/bitnami-redis-template/) - 零改动转换第三方 Chart 示例

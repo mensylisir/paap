@@ -1,0 +1,127 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: init-templates-script
+  namespace: paap-system
+data:
+  init.sh: |
+    #!/bin/bash
+    set -e
+
+    echo "=== PAAP Template Initialization ==="
+    echo "Waiting for MinIO to be ready..."
+
+    # 等待 MinIO 就绪
+    until curl -sf http://minio.paap-system.svc.cluster.local:9000/minio/health/live; do
+      echo "MinIO not ready, waiting..."
+      sleep 5
+    done
+    echo "✓ MinIO is ready!"
+
+    # 配置 mc (MinIO Client)
+    echo "Configuring MinIO client..."
+    mc alias set paap-minio http://minio.paap-system.svc.cluster.local:9000 minioadmin minioadmin123
+
+    # 创建 bucket
+    echo "Creating bucket 'paap-charts'..."
+    mc mb paap-minio/paap-charts --ignore-existing
+    echo "✓ Bucket created"
+
+    # 上传所有模板
+    echo ""
+    echo "Uploading templates to MinIO..."
+    echo "================================"
+
+    template_count=0
+    for template in /templates/*.tar.gz; do
+      if [ ! -f "$template" ]; then
+        echo "No templates found in /templates/"
+        exit 1
+      fi
+
+      template_name=$(basename "$template")
+      echo "Uploading $template_name..."
+
+      mc cp "$template" "paap-minio/paap-charts/templates/$template_name"
+
+      if [ $? -eq 0 ]; then
+        echo "✓ Uploaded $template_name"
+        template_count=$((template_count + 1))
+      else
+        echo "✗ Failed to upload $template_name"
+      fi
+    done
+
+    echo ""
+    echo "================================"
+    echo "Uploaded $template_count templates"
+    echo ""
+
+    # 列出所有模板
+    echo "Templates in MinIO:"
+    mc ls paap-minio/paap-charts/templates/
+
+    echo ""
+    echo "✓ Template initialization complete!"
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: init-templates
+  namespace: paap-system
+  labels:
+    app: paap-init
+    component: template-loader
+spec:
+  ttlSecondsAfterFinished: 300
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app: paap-init
+        component: template-loader
+    spec:
+      restartPolicy: OnFailure
+      initContainers:
+      # 等待 MinIO 就绪
+      - name: wait-for-minio
+        image: busybox:1.36
+        command:
+          - sh
+          - -c
+          - |
+            echo "Waiting for MinIO service..."
+            until nc -z minio.paap-system.svc.cluster.local 9000; do
+              echo "MinIO not available, waiting..."
+              sleep 5
+            done
+            echo "MinIO service is up!"
+      containers:
+      - name: upload-templates
+        image: minio/mc:RELEASE.2024-05-09T17-04-24Z
+        command: ["/bin/bash", "/scripts/init.sh"]
+        volumeMounts:
+        - name: script
+          mountPath: /scripts
+        - name: templates
+          mountPath: /templates
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+      volumes:
+      - name: script
+        configMap:
+          name: init-templates-script
+          defaultMode: 0755
+      - name: templates
+        hostPath:
+          # 这个路径需要在部署脚本中动态设置
+          # 或者使用 ConfigMap/PVC 挂载模板文件
+          path: /tmp/paap-charts
+          type: Directory

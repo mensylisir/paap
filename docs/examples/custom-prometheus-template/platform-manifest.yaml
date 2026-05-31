@@ -1,0 +1,56 @@
+# PAAP 平台元数据声明文件
+# 这个文件告诉平台：这个工具需要什么权限、如何监控、需要哪些平台变量
+
+name: "CustomPrometheus"
+version: "v2.45.0"
+description: "自定义 Prometheus 监控服务，支持环境级动态权限同步，自动抓取所有 namespace 的指标"
+
+# 1. 权限申请声明
+permissions:
+  # scope 决定权限范围：
+  #   - tool-only: 工具只需要访问自己所在的 namespace（如数据库、缓存）
+  #   - environment-wide: 工具需要访问该环境下所有 namespace（如监控、CI/CD）
+  scope: "environment-wide"
+
+  # rules 定义具体的 RBAC 权限（仅当 scope=environment-wide 时需要）
+  # 平台会在环境的每个 namespace 中创建 Role + RoleBinding
+  rules:
+    # 监控 Pod 和 Service
+    - apiGroups: [""]
+      resources: ["pods", "services", "endpoints", "nodes"]
+      verbs: ["get", "list", "watch"]
+
+    # 监控 Deployment 和 StatefulSet
+    - apiGroups: ["apps"]
+      resources: ["deployments", "statefulsets", "daemonsets", "replicasets"]
+      verbs: ["get", "list", "watch"]
+
+    # 监控 Job 和 CronJob
+    - apiGroups: ["batch"]
+      resources: ["jobs", "cronjobs"]
+      verbs: ["get", "list", "watch"]
+
+# 2. 可观测性声明（可选）
+observability:
+  # Grafana 面板路径（相对于压缩包根目录）
+  # 平台会在安装时自动调用 Grafana API 导入这个面板
+  dashboard_path: "./dashboards/prometheus-overview.json"
+
+  # Prometheus 指标配置
+  # 平台会自动配置 ServiceMonitor 来抓取这个工具的指标
+  metrics:
+    port: 9090
+    path: "/metrics"
+
+# 3. 变量映射（可选）
+# 将平台上下文变量映射到 Helm values
+# 这样你的 Chart 就能感知到平台的环境信息
+variable_mapping:
+  # 把环境的所有 namespace 列表传给 Helm 的 prometheus.scrapeNamespaces
+  # 平台会自动将 "ns1,ns2,ns3" 这样的字符串注入
+  - platform_var: "env_namespaces"
+    helm_var: "prometheus.scrapeNamespaces"
+
+  # 把环境标识（如 dev/staging/prod）传给 Helm
+  - platform_var: "current_env_identifier"
+    helm_var: "global.env"

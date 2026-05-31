@@ -174,6 +174,37 @@ func (r *ServiceInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		})
 	}
 
+	// Step 5.1: 清理已移除 namespace 中的残留 RBAC
+	currentNSSet := make(map[string]bool)
+	currentNSSet[toolNS] = true
+	for _, ns := range workloadNSList {
+		currentNSSet[ns] = true
+	}
+	roleName := fmt.Sprintf("%s-%s-%s-workload-manager", appIdentifier, envIdentifier, toolType)
+	for _, prev := range svc.Status.RBACNamespaces {
+		if currentNSSet[prev.Namespace] {
+			continue // namespace 仍在环境中，跳过
+		}
+		// namespace 已从环境中移除，清理残留 RBAC
+		role := &rbacv1.Role{}
+		if err := r.Get(ctx, types.NamespacedName{Name: roleName, Namespace: prev.Namespace}, role); err == nil {
+			r.Delete(ctx, role)
+		}
+		rb := &rbacv1.RoleBinding{}
+		if err := r.Get(ctx, types.NamespacedName{Name: roleName, Namespace: prev.Namespace}, rb); err == nil {
+			r.Delete(ctx, rb)
+		}
+	}
+
+	// Step 5.5: 同步 Prometheus 采集配置（如果新增/删除了 namespace）
+	if svc.Spec.Type == "monitor" {
+		allNS := []string{toolNS}
+		allNS = append(allNS, workloadNSList...)
+		if err := r.ensurePrometheusConfigSynced(ctx, svc, allNS); err != nil {
+			logger.Error(err, "failed to sync prometheus config")
+		}
+	}
+
 	// Step 6: 部署工具组件（从 ConfigMap 读取渲染后的 manifests）
 	if err := r.ensureToolComponents(ctx, svc); err != nil {
 		logger.Error(err, "failed to ensure tool components")
@@ -315,12 +346,6 @@ func (r *ServiceInstanceReconciler) ensureRole(ctx context.Context, svc *paapv1.
 	roleName := fmt.Sprintf("%s-%s-%s-%s-manager", appIdentifier, envIdentifier, toolType, roleType)
 	role := &rbacv1.Role{}
 	roleKey := types.NamespacedName{Name: roleName, Namespace: nsName}
-	if err := r.Get(ctx, roleKey, role); err == nil {
-		return nil // 已存在
-	}
-
-	logger := log.FromContext(ctx)
-	logger.Info("creating Role", "name", roleName, "namespace", nsName, "type", roleType)
 
 	rules := make([]rbacv1.PolicyRule, 0, len(roleSpec.Rules))
 	for _, rule := range roleSpec.Rules {
@@ -330,6 +355,19 @@ func (r *ServiceInstanceReconciler) ensureRole(ctx context.Context, svc *paapv1.
 			Verbs:     rule.Verbs,
 		})
 	}
+
+	if err := r.Get(ctx, roleKey, role); err == nil {
+		// Role 已存在，检查规则是否需要更新
+		if rulesEqual(role.Rules, rules) {
+			return nil // 规则一致，无需更新
+		}
+		// 规则变更，更新 Role
+		role.Rules = rules
+		return r.Update(ctx, role)
+	}
+
+	logger := log.FromContext(ctx)
+	logger.Info("creating Role", "name", roleName, "namespace", nsName, "type", roleType)
 
 	labels := paapLabels(appIdentifier, envIdentifier, toolType)
 	annotations := paapAnnotations(svc.Spec.ToolNamespace, appIdentifier, envIdentifier, toolType)
@@ -344,6 +382,33 @@ func (r *ServiceInstanceReconciler) ensureRole(ctx context.Context, svc *paapv1.
 		Rules: rules,
 	}
 	return r.Create(ctx, role)
+}
+
+// rulesEqual compares two slices of PolicyRule for equality.
+func rulesEqual(a, b []rbacv1.PolicyRule) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if !stringSliceEqual(a[i].APIGroups, b[i].APIGroups) ||
+			!stringSliceEqual(a[i].Resources, b[i].Resources) ||
+			!stringSliceEqual(a[i].Verbs, b[i].Verbs) {
+			return false
+		}
+	}
+	return true
+}
+
+func stringSliceEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func (r *ServiceInstanceReconciler) ensureRoleBinding(ctx context.Context, svc *paapv1.ServiceInstance, nsName, roleType, saNamespace, appIdentifier, envIdentifier, toolType string) error {
@@ -501,6 +566,68 @@ func splitYAML(yamlStr string) []string {
 		}
 	}
 	return result
+}
+
+// ensurePrometheusConfigSynced updates the prometheus-config ConfigMap when the
+// environment's namespace list changes (new namespace added or removed).
+func (r *ServiceInstanceReconciler) ensurePrometheusConfigSynced(ctx context.Context, svc *paapv1.ServiceInstance, allNamespaces []string) error {
+	logger := log.FromContext(ctx)
+	toolNS := svc.Spec.ToolNamespace
+
+	cm := &corev1.ConfigMap{}
+	cmKey := types.NamespacedName{Name: "prometheus-config", Namespace: toolNS}
+	if err := r.Get(ctx, cmKey, cm); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil // ConfigMap not created yet (first install), skip
+		}
+		return err
+	}
+
+	existingYaml, ok := cm.Data["prometheus.yml"]
+	if !ok {
+		return nil
+	}
+
+	// Build the expected namespace list block
+	var nsLines strings.Builder
+	for _, ns := range allNamespaces {
+		nsLines.WriteString(fmt.Sprintf("\n                - %s", ns))
+	}
+
+	// Check if the current config already contains all expected namespaces
+	changed := false
+	for _, ns := range allNamespaces {
+		if !strings.Contains(existingYaml, ns) {
+			changed = true
+			break
+		}
+	}
+
+	if !changed {
+		return nil // config is up to date
+	}
+
+	// Re-render the prometheus config with updated namespace list
+	newConfig := fmt.Sprintf(`global:
+      scrape_interval: 30s
+    scrape_configs:
+      - job_name: 'pods'
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names:%s
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+            action: keep
+            regex: true`, nsLines.String())
+
+	cm.Data["prometheus.yml"] = newConfig
+	if err := r.Update(ctx, cm); err != nil {
+		return err
+	}
+
+	logger.Info("updated prometheus config with new namespace list", "namespaces", allNamespaces)
+	return nil
 }
 
 func (r *ServiceInstanceReconciler) SetupWithManager(mgr ctrl.Manager) error {

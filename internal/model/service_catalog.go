@@ -37,6 +37,37 @@ type ServiceTemplate struct {
 	// Raw YAML template for kubectl apply mode
 	RawYamlTemplate string `gorm:"type:text" json:"rawYamlTemplate"`
 
+	// Per-tool RBAC whitelists (JSON array of PolicyRule)
+	// Defines the MAXIMUM permissions this tool is allowed in workload namespaces.
+	// Example: [{"apiGroups":[""],"resources":["pods","services"],"verbs":["get","list","watch"]}]
+	WorkloadRolePolicy string `gorm:"type:text" json:"workloadRolePolicy"`
+
+	// Defines the MAXIMUM permissions this tool is allowed in its own namespace.
+	SelfRolePolicy string `gorm:"type:text" json:"selfRolePolicy"`
+
+	// Custom template (BYO) fields
+	// IsCustom indicates this is a user-uploaded template (not a built-in one).
+	IsCustom bool `gorm:"default:false" json:"isCustom"`
+
+	// PlatformManifestJSON stores the parsed platform-manifest.yaml as JSON.
+	// For custom templates, this declares permissions and observability requirements.
+	// Example: {"name":"custom-monitor","permissions":{"scope":"environment-wide","rules":[...]}}
+	PlatformManifestJSON string `gorm:"type:text" json:"platformManifestJSON"`
+
+	// ChartArchivePath is the filesystem path to the uploaded chart archive (tar.gz).
+	// Only set for custom templates. The chart is stored under data/charts/{template_type}/
+	ChartArchivePath string `gorm:"size:500" json:"chartArchivePath,omitempty"`
+
+	// S3 object key for the chart archive
+	// If set, the chart is stored in S3 and will be downloaded at install time
+	S3Bucket string `gorm:"size:100" json:"s3Bucket,omitempty"`
+	S3Key    string `gorm:"size:500" json:"s3Key,omitempty"`
+
+	// PresetValues stores the content of preset-values.yaml from the template archive.
+	// These are applied BEFORE platform context variables and user parameters.
+	// Typically used to disable built-in RBAC: rbac.create=false, serviceAccount.create=false
+	PresetValues string `gorm:"type:text" json:"presetValues,omitempty"`
+
 	// Installation order hint (lower = earlier)
 	InstallOrder int `gorm:"default:0" json:"installOrder"`
 

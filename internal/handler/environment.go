@@ -1,12 +1,19 @@
 package handler
 
 import (
+	"archive/tar"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -39,6 +46,256 @@ type CreateComponentRequest struct {
 
 type InstallServiceRequest struct {
 	ServiceType string `json:"serviceType" binding:"required"`
+}
+
+// getWorkloadRole returns the RBAC whitelist for a given service type,
+// read from the ServiceTemplate's WorkloadRolePolicy field.
+// Falls back to a safe minimal read-only role if the template is not found or has no policy.
+func getWorkloadRole(svcType string) paapv1.RoleSpec {
+	var tmpl model.ServiceTemplate
+	if err := database.DB.Where("type = ?", svcType).First(&tmpl).Error; err != nil {
+		return defaultSafeRole()
+	}
+	if tmpl.WorkloadRolePolicy == "" {
+		return defaultSafeRole()
+	}
+	var rules []paapv1.PolicyRule
+	if err := json.Unmarshal([]byte(tmpl.WorkloadRolePolicy), &rules); err != nil {
+		return defaultSafeRole()
+	}
+	return paapv1.RoleSpec{Rules: rules}
+}
+
+// defaultSafeRole returns a minimal read-only role as a safe fallback.
+func defaultSafeRole() paapv1.RoleSpec {
+	return paapv1.RoleSpec{
+		Rules: []paapv1.PolicyRule{
+			{
+				APIGroups: []string{""},
+				Resources: []string{"pods", "services", "endpoints"},
+				Verbs:     []string{"get", "list", "watch"},
+			},
+		},
+	}
+}
+
+// mergeDefaultValues parses the template's DefaultValues JSON and merges with user overrides.
+func mergeDefaultValues(defaultsJSON string, overrides map[string]string) map[string]string {
+	result := make(map[string]string)
+	if defaultsJSON != "" {
+		json.Unmarshal([]byte(defaultsJSON), &result)
+	}
+	for k, v := range overrides {
+		result[k] = v
+	}
+	return result
+}
+
+// buildContextValues builds platform context variables that are injected into
+// every custom template's Helm values. Users can reference these in their charts
+// via {{ .Values.global.envNamespaces }} etc.
+func buildContextValues(envNS string, allNamespaces []string, envIdentifier string) map[string]string {
+	return map[string]string{
+		"global.platformManaged": "true",
+		"global.environmentId":   envIdentifier,
+		"global.envNamespaces":   strings.Join(allNamespaces, ","),
+		"global.primaryNamespace": envNS,
+	}
+}
+
+// installCustomChart extracts a custom template's chart archive and installs it via Helm.
+// Values merge order (later wins):
+//  1. preset-values.yaml (disable built-in RBAC, set SA name, etc.)
+//  2. platform context (global.envNamespaces, global.environmentId, etc.)
+//  3. variable_mapping from platform-manifest (custom mappings)
+//  4. user parameters (highest priority, not yet implemented)
+func installCustomChart(releaseName, toolNS, chartArchivePath, s3Bucket, s3Key, platformManifestJSON, presetValues string, envIdentifier, primaryNS string, allNamespaces []string, extraValues map[string]string) error {
+	tmpDir, err := os.MkdirTemp("", "paap-chart-*")
+	if err != nil {
+		return fmt.Errorf("failed to create temp dir: %w", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	var localChartPath string
+	if s3Bucket != "" && s3Key != "" {
+		// Download from S3
+		s3Client, err := getOrCreateS3Client()
+		if err != nil {
+			return fmt.Errorf("failed to create S3 client: %w", err)
+		}
+		localPath := filepath.Join(tmpDir, "chart.tar.gz")
+		if err := s3Client.DownloadFile(context.Background(), s3Key, localPath); err != nil {
+			return fmt.Errorf("failed to download chart from S3: %w", err)
+		}
+		localChartPath = localPath
+	} else {
+		// Use local file
+		localChartPath = chartArchivePath
+	}
+
+	if err := extractTarGz(localChartPath, tmpDir); err != nil {
+		return fmt.Errorf("failed to extract chart: %w", err)
+	}
+
+	chartPath := filepath.Join(tmpDir, "chart")
+
+	// Layer 1: Start with preset-values (e.g. rbac.create=false)
+	values := make(map[string]string)
+
+	// First try to read preset-values.yaml from the extracted chart
+	presetValuesPath := filepath.Join(tmpDir, "preset-values.yaml")
+	if presetValuesData, err := os.ReadFile(presetValuesPath); err == nil {
+		log.Printf("[installCustomChart] Read preset-values.yaml: %s", string(presetValuesData))
+		values = parseYAMLToMap(string(presetValuesData))
+		log.Printf("[installCustomChart] Parsed values: %+v", values)
+	} else {
+		log.Printf("[installCustomChart] preset-values.yaml not found: %v", err)
+		if presetValues != "" {
+			// Fallback to database field if file doesn't exist
+			values = parseYAMLToMap(presetValues)
+		}
+	}
+
+	// Layer 2: Add platform context
+	for k, v := range buildContextValues(primaryNS, allNamespaces, envIdentifier) {
+		values[k] = v
+	}
+
+	// Layer 3: Apply variable_mapping from platform-manifest
+	if platformManifestJSON != "" {
+		var manifest model.PlatformManifest
+		if err := json.Unmarshal([]byte(platformManifestJSON), &manifest); err == nil {
+			platformVars := map[string]string{
+				"current_env_name":  envIdentifier,
+				"primary_namespace": primaryNS,
+				"all_namespaces":    strings.Join(allNamespaces, ","),
+				"tool_namespace":    toolNS,
+			}
+			for k, v := range manifest.BuildHelmValues(platformVars) {
+				values[k] = v
+			}
+		}
+	}
+
+	// Layer 4: Apply extra values (e.g. skip CRDs for ArgoCD)
+	for k, v := range extraValues {
+		values[k] = v
+	}
+
+	if err := k8sClient.InstallHelmChart(releaseName, toolNS, chartPath, values); err != nil {
+		return err
+	}
+
+	// Provision Grafana dashboards asynchronously
+	dashboardsDir := filepath.Join(tmpDir, "dashboards")
+	go provisionDashboards(toolNS, dashboardsDir)
+
+	return nil
+}
+
+// parseYAMLToMap parses a simple flat YAML string into a map[string]string.
+// Only handles top-level key: value pairs (not nested structures).
+// Nested keys use dot notation: "rbac.create: false" → {"rbac.create": "false"}
+func parseYAMLToMap(yamlContent string) map[string]string {
+	result := make(map[string]string)
+	for _, line := range strings.Split(yamlContent, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		parts := strings.SplitN(line, ":", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		key := strings.TrimSpace(parts[0])
+		val := strings.TrimSpace(parts[1])
+		// Remove quotes
+		val = strings.Trim(val, `"'`)
+		if key != "" && val != "" {
+			result[key] = val
+		}
+	}
+	return result
+}
+
+// provisionDashboards waits for Grafana to be ready and imports all dashboard JSON files.
+// Runs as a goroutine with retry logic since Grafana may take time to start.
+func provisionDashboards(grafanaNS, dashboardsDir string) {
+	if _, err := os.Stat(dashboardsDir); os.IsNotExist(err) {
+		return // No dashboards directory
+	}
+
+	entries, err := os.ReadDir(dashboardsDir)
+	if err != nil || len(entries) == 0 {
+		return
+	}
+
+	grafana := k8s.NewGrafanaClient(grafanaNS)
+
+	// Wait up to 2 minutes for Grafana to be ready
+	for i := 0; i < 24; i++ {
+		if err := grafana.HealthCheck(); err == nil {
+			break
+		}
+		time.Sleep(5 * time.Second)
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+			continue
+		}
+		content, err := os.ReadFile(filepath.Join(dashboardsDir, entry.Name()))
+		if err != nil {
+			log.Printf("[provisionDashboards] failed to read %s: %v", entry.Name(), err)
+			continue
+		}
+		if err := grafana.ImportDashboard(string(content), entry.Name()); err != nil {
+			log.Printf("[provisionDashboards] failed to import dashboard %s: %v", entry.Name(), err)
+		} else {
+			log.Printf("[provisionDashboards] imported dashboard: %s", entry.Name())
+		}
+	}
+}
+
+// extractTarGz extracts a tar.gz archive to the target directory.
+func extractTarGz(archivePath, targetDir string) error {
+	f, err := os.Open(archivePath)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	gz, err := gzip.NewReader(f)
+	if err != nil {
+		return err
+	}
+	defer gz.Close()
+
+	tr := tar.NewReader(gz)
+	for {
+		header, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return err
+		}
+
+		target := filepath.Join(targetDir, header.Name)
+		switch header.Typeflag {
+		case tar.TypeDir:
+			os.MkdirAll(target, 0755)
+		case tar.TypeReg:
+			os.MkdirAll(filepath.Dir(target), 0755)
+			outFile, err := os.Create(target)
+			if err != nil {
+				return err
+			}
+			io.Copy(outFile, tr)
+			outFile.Close()
+		}
+	}
+	return nil
 }
 
 // ListApplicationEnvironments returns environments for an application
@@ -114,19 +371,24 @@ func CreateEnvironment(c *gin.Context) {
 
 // installTemplateServices creates ServiceInstance CRs for template services
 func installTemplateServices(env *model.Environment, app *model.Application, envIdentifier string, templateID uint) {
+	log.Printf("[installTemplateServices] Starting for env=%s templateID=%d", envIdentifier, templateID)
 	ctx := context.Background()
 
 	var tmpl model.EnvTemplate
 	if err := database.DB.First(&tmpl, templateID).Error; err != nil {
+		log.Printf("[installTemplateServices] Template %d not found: %v", templateID, err)
 		database.DB.Model(env).Update("status", "error").Update("error_message", "template not found")
 		return
 	}
+	log.Printf("[installTemplateServices] Found template: name=%s services=%s", tmpl.Name, tmpl.Services)
 
 	// Install tools (创建 ServiceInstance CR)
 	var services []string
 	if err := json.Unmarshal([]byte(tmpl.Services), &services); err != nil {
+		log.Printf("[installTemplateServices] Failed to unmarshal services: %v", err)
 		services = []string{}
 	}
+	log.Printf("[installTemplateServices] Will install %d services: %v", len(services), services)
 
 	crNS := fmt.Sprintf("paap-app-%s", app.Identifier)
 
@@ -140,18 +402,62 @@ func installTemplateServices(env *model.Environment, app *model.Application, env
 		}
 		database.DB.Create(&inst)
 
-		// 渲染模板并创建 ConfigMap
-		manifestsRef := renderAndStoreManifests(ctx, crNS, svc, app, env, envIdentifier, toolNS, nil)
-
-		workloadRole := paapv1.RoleSpec{
-			Rules: []paapv1.PolicyRule{
-				{
-					APIGroups: []string{"", "apps", "batch", "networking.k8s.io", "autoscaling"},
-					Resources: []string{"*"},
-					Verbs:     []string{"*"},
-				},
-			},
+		// ArgoCD 需要预装 CRD
+		if svc == "deploy" {
+			if err := k8sClient.EnsureArgoCDCRDs(); err != nil {
+				log.Printf("[installTemplateServices] warning: failed to ensure ArgoCD CRDs: %v", err)
+			}
 		}
+
+		// 查找模板获取安装方式
+		var svcTmpl model.ServiceTemplate
+		database.DB.Where("type = ?", svc).First(&svcTmpl)
+		log.Printf("[installTemplateServices] Service %s: installer=%s s3Bucket=%s s3Key=%s chartRepo=%s",
+			svc, svcTmpl.Installer, svcTmpl.S3Bucket, svcTmpl.S3Key, svcTmpl.ChartRepo)
+
+		var manifestsRef *paapv1.ConfigMapReference
+
+		if svcTmpl.Installer == "helm" {
+			releaseName := fmt.Sprintf("%s-%s-%s", app.Identifier, envIdentifier, svc)
+
+			if svcTmpl.S3Bucket != "" || svcTmpl.ChartArchivePath != "" {
+				// S3 或本地文件路径
+				primaryNS := app.Identifier + "-" + envIdentifier
+				allNS := []string{primaryNS, primaryNS + "-app"}
+				log.Printf("[installTemplateServices] Installing via S3: release=%s ns=%s s3Key=%s", releaseName, toolNS, svcTmpl.S3Key)
+				// ArgoCD 需要跳过 CRD 安装（CRDs 由 EnsureArgoCDCRDs 预装）
+				extraValues := map[string]string{}
+				if svc == "deploy" {
+					extraValues["crds.install"] = "false"
+				}
+				if err := installCustomChart(releaseName, toolNS, svcTmpl.ChartArchivePath, svcTmpl.S3Bucket, svcTmpl.S3Key, svcTmpl.PlatformManifestJSON, svcTmpl.PresetValues, envIdentifier, primaryNS, allNS, extraValues); err != nil {
+					log.Printf("[installTemplateServices] chart install FAILED for %s: %v", svc, err)
+					inst.Status = "failed"
+					inst.ErrorMessage = err.Error()
+					database.DB.Save(&inst)
+				} else {
+					log.Printf("[installTemplateServices] chart install SUCCEEDED for %s", svc)
+				}
+			} else {
+				// 远程 Helm ChartRepo
+				values := mergeDefaultValues(svcTmpl.DefaultValues, nil)
+				log.Printf("[installTemplateServices] Installing via Helm repo: release=%s chart=%s/%s:%s", releaseName, svcTmpl.ChartRepo, svcTmpl.ChartName, svcTmpl.ChartVersion)
+				if err := k8sClient.InstallToolViaHelm(releaseName, toolNS, svcTmpl.ChartRepo, svcTmpl.ChartName, svcTmpl.ChartVersion, values); err != nil {
+					log.Printf("[installTemplateServices] helm install FAILED for %s: %v", svc, err)
+					inst.Status = "failed"
+					inst.ErrorMessage = err.Error()
+					database.DB.Save(&inst)
+				} else {
+					log.Printf("[installTemplateServices] helm install SUCCEEDED for %s", svc)
+				}
+			}
+		} else {
+			// Raw YAML 安装路径
+			log.Printf("[installTemplateServices] Installing via raw YAML: %s", svc)
+			manifestsRef = renderAndStoreManifests(ctx, crNS, svc, app, env, envIdentifier, toolNS, nil)
+		}
+
+		workloadRole := getWorkloadRole(svc)
 
 		if err := k8s.CreateServiceInstanceCR(ctx, app.Identifier, envIdentifier, svc, workloadRole, manifestsRef); err != nil {
 			inst.Status = "failed"
@@ -189,9 +495,12 @@ func renderAndStoreManifests(ctx context.Context, crNS, svcType string, app *mod
 		defaultParams[k] = v
 	}
 
-	// 发现负载 namespace
+	// 构建 namespace 列表（主空间 + 附加空间）
 	primaryNS := app.Identifier + "-" + envIdentifier
 	namespaces := []string{primaryNS}
+	// 默认附加 namespace: {primaryNS}-app (工作负载空间)
+	additionalNS := primaryNS + "-app"
+	namespaces = append(namespaces, additionalNS)
 
 	// 渲染模板
 	renderer := service.NewTemplateRenderer()
@@ -445,20 +754,55 @@ func InstallService(c *gin.Context) {
 	}
 	database.DB.Create(&inst)
 
-	// 创建 ServiceInstance CR
-	ctx := context.Background()
-	crNS := fmt.Sprintf("paap-app-%s", app.Identifier)
-	manifestsRef := renderAndStoreManifests(ctx, crNS, req.ServiceType, &app, &env, env.Identifier, toolNS, nil)
-
-	workloadRole := paapv1.RoleSpec{
-		Rules: []paapv1.PolicyRule{
-			{
-				APIGroups: []string{"", "apps", "batch", "networking.k8s.io", "autoscaling"},
-				Resources: []string{"*"},
-				Verbs:     []string{"*"},
-			},
-		},
+	// ArgoCD 需要预装 CRD
+	if req.ServiceType == "deploy" {
+		if err := k8sClient.EnsureArgoCDCRDs(); err != nil {
+			log.Printf("[InstallService] warning: failed to ensure ArgoCD CRDs: %v", err)
+		}
 	}
+
+	// 查找模板获取安装方式
+	var svcTmpl model.ServiceTemplate
+	database.DB.Where("type = ?", req.ServiceType).First(&svcTmpl)
+
+	ctx := context.Background()
+	var manifestsRef *paapv1.ConfigMapReference
+
+	if svcTmpl.Installer == "helm" {
+		releaseName := fmt.Sprintf("%s-%s-%s", app.Identifier, env.Identifier, req.ServiceType)
+
+		if svcTmpl.S3Bucket != "" || svcTmpl.ChartArchivePath != "" {
+			// 自定义模板：从 S3 或本地 chart archive 安装
+			primaryNS := app.Identifier + "-" + env.Identifier
+			allNS := []string{primaryNS, primaryNS + "-app"}
+			extraValues := map[string]string{}
+			if req.ServiceType == "deploy" {
+				extraValues["crds.install"] = "false"
+			}
+			if err := installCustomChart(releaseName, toolNS, svcTmpl.ChartArchivePath, svcTmpl.S3Bucket, svcTmpl.S3Key, svcTmpl.PlatformManifestJSON, svcTmpl.PresetValues, env.Identifier, primaryNS, allNS, extraValues); err != nil {
+				log.Printf("[InstallService] custom chart install failed for %s: %v", req.ServiceType, err)
+				inst.Status = "failed"
+				inst.ErrorMessage = err.Error()
+				database.DB.Save(&inst)
+			}
+		} else {
+			// 内置 Helm 模板：从远程 repo 安装
+			values := mergeDefaultValues(svcTmpl.DefaultValues, nil)
+			if err := k8sClient.InstallToolViaHelm(releaseName, toolNS, svcTmpl.ChartRepo, svcTmpl.ChartName, svcTmpl.ChartVersion, values); err != nil {
+				log.Printf("[InstallService] helm install failed for %s: %v", req.ServiceType, err)
+				inst.Status = "failed"
+				inst.ErrorMessage = err.Error()
+				database.DB.Save(&inst)
+			}
+		}
+		// manifestsRef 留空，Operator 不会尝试 apply YAML
+	} else {
+		// Raw YAML 安装路径：渲染模板 → ConfigMap → Operator apply
+		crNS := fmt.Sprintf("paap-app-%s", app.Identifier)
+		manifestsRef = renderAndStoreManifests(ctx, crNS, req.ServiceType, &app, &env, env.Identifier, toolNS, nil)
+	}
+
+	workloadRole := getWorkloadRole(req.ServiceType)
 
 	if err := k8s.CreateServiceInstanceCR(ctx, app.Identifier, env.Identifier, req.ServiceType, workloadRole, manifestsRef); err != nil {
 		inst.Status = "failed"
@@ -525,4 +869,56 @@ func InstallInfra(c *gin.Context) {
 	}()
 
 	c.JSON(http.StatusCreated, gin.H{"data": inst})
+}
+
+// UninstallService removes a service installation from an environment
+func UninstallService(c *gin.Context) {
+	appID, _ := strconv.Atoi(c.Param("id"))
+	serviceID, _ := strconv.Atoi(c.Param("serviceId"))
+
+	var inst model.ServiceInstallation
+	if err := database.DB.First(&inst, serviceID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "service installation not found"})
+		return
+	}
+
+	var app model.Application
+	if err := database.DB.First(&app, appID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "application not found"})
+		return
+	}
+
+	var env model.Environment
+	if err := database.DB.Where("application_id = ? AND id = ?", appID, inst.EnvironmentID).First(&env).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "environment not found"})
+		return
+	}
+
+	var svcTmpl model.ServiceTemplate
+	database.DB.Where("type = ?", inst.ServiceType).First(&svcTmpl)
+
+	ctx := context.Background()
+
+	// Uninstall based on installer type
+	if svcTmpl.Installer == "helm" {
+		releaseName := fmt.Sprintf("%s-%s-%s", app.Identifier, env.Identifier, inst.ServiceType)
+		if err := k8sClient.DeleteHelmRelease(releaseName, inst.Namespace); err != nil {
+			log.Printf("[UninstallService] helm uninstall warning: %v", err)
+		}
+	} else {
+		// Raw YAML: delete ServiceInstance CR, Operator will clean up
+		if err := k8s.DeleteServiceInstanceCR(ctx, app.Identifier, env.Identifier, inst.ServiceType); err != nil {
+			log.Printf("[UninstallService] CR delete warning: %v", err)
+		}
+	}
+
+	// Delete the namespace
+	if err := k8sClient.DeleteNamespace(inst.Namespace); err != nil {
+		log.Printf("[UninstallService] namespace delete warning: %v", err)
+	}
+
+	// Delete from database
+	database.DB.Delete(&inst)
+
+	c.JSON(http.StatusOK, gin.H{"message": "service uninstalled successfully"})
 }

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 
+	paapv1 "paap/api/v1"
 	"paap/internal/database"
 	"paap/internal/model"
 )
@@ -30,7 +31,13 @@ func SeedServiceTemplates() {
 				{Key: "version", Label: "ArgoCD 版本", Type: "select", Options: []string{"v2.9", "v2.10", "v2.11"}, Default: "v2.10"},
 			}),
 			DefaultValues: toJSON(map[string]string{"version": "v2.10"}),
-			InstallOrder:  10,
+			WorkloadRolePolicy: toJSON([]paapv1.PolicyRule{
+				{APIGroups: []string{""}, Resources: []string{"services", "configmaps", "secrets", "persistentvolumeclaims"}, Verbs: []string{"*"}},
+				{APIGroups: []string{"apps"}, Resources: []string{"deployments", "statefulsets", "replicasets"}, Verbs: []string{"*"}},
+				{APIGroups: []string{"networking.k8s.io"}, Resources: []string{"ingresses"}, Verbs: []string{"*"}},
+				{APIGroups: []string{"autoscaling"}, Resources: []string{"horizontalpodautoscalers"}, Verbs: []string{"*"}},
+			}),
+			InstallOrder: 10,
 		},
 		{
 			Type:        "ci",
@@ -44,7 +51,12 @@ func SeedServiceTemplates() {
 				{Key: "version", Label: "Tekton 版本", Type: "select", Options: []string{"v0.53", "v0.54", "v0.55"}, Default: "v0.55"},
 			}),
 			DefaultValues: toJSON(map[string]string{"version": "v0.55"}),
-			InstallOrder:  20,
+			WorkloadRolePolicy: toJSON([]paapv1.PolicyRule{
+				{APIGroups: []string{""}, Resources: []string{"pods", "pods/log", "services", "configmaps", "secrets"}, Verbs: []string{"*"}},
+				{APIGroups: []string{"apps"}, Resources: []string{"deployments", "replicasets"}, Verbs: []string{"*"}},
+				{APIGroups: []string{"batch"}, Resources: []string{"jobs"}, Verbs: []string{"*"}},
+			}),
+			InstallOrder: 20,
 		},
 		{
 			Type:        "monitor",
@@ -58,7 +70,12 @@ func SeedServiceTemplates() {
 				{Key: "retention", Label: "数据保留时间", Type: "select", Options: []string{"7d", "15d", "30d"}, Default: "15d"},
 			}),
 			DefaultValues: toJSON(map[string]string{"retention": "15d"}),
-			InstallOrder:  30,
+			WorkloadRolePolicy: toJSON([]paapv1.PolicyRule{
+				{APIGroups: []string{""}, Resources: []string{"pods", "services", "endpoints", "configmaps"}, Verbs: []string{"get", "list", "watch"}},
+				{APIGroups: []string{"discovery.k8s.io"}, Resources: []string{"endpointslices"}, Verbs: []string{"get", "list", "watch"}},
+				{APIGroups: []string{"networking.k8s.io"}, Resources: []string{"ingresses"}, Verbs: []string{"get", "list", "watch"}},
+			}),
+			InstallOrder: 30,
 		},
 		{
 			Type:        "log",
@@ -72,7 +89,10 @@ func SeedServiceTemplates() {
 				{Key: "retention", Label: "日志保留时间", Type: "select", Options: []string{"7d", "14d", "30d"}, Default: "14d"},
 			}),
 			DefaultValues: toJSON(map[string]string{"retention": "14d"}),
-			InstallOrder:  40,
+			WorkloadRolePolicy: toJSON([]paapv1.PolicyRule{
+				{APIGroups: []string{""}, Resources: []string{"pods", "pods/log"}, Verbs: []string{"get", "list", "watch"}},
+			}),
+			InstallOrder: 40,
 		},
 		{
 			Type:        "registry",
@@ -85,8 +105,9 @@ func SeedServiceTemplates() {
 			ConfigurableParams: toJSON([]ParamDef{
 				{Key: "storage", Label: "存储大小", Type: "select", Options: []string{"5Gi", "10Gi", "20Gi"}, Default: "10Gi"},
 			}),
-			DefaultValues: toJSON(map[string]string{"storage": "10Gi"}),
-			InstallOrder: 50,
+			DefaultValues:      toJSON(map[string]string{"storage": "10Gi"}),
+			WorkloadRolePolicy: "[]", // 不需要访问业务 namespace
+			InstallOrder:       50,
 		},
 		{
 			Type:        "harbor",
@@ -108,7 +129,8 @@ func SeedServiceTemplates() {
 				{Key: "harborAdminPassword", Label: "管理员密码", Type: "password", Default: "Harbor12345", Required: true},
 				{Key: "persistence.enabled", Label: "启用持久存储", Type: "boolean", Default: "false"},
 			}),
-			InstallOrder: 51,
+			WorkloadRolePolicy: "[]", // 不需要访问业务 namespace
+			InstallOrder:       51,
 		},
 		{
 			Type:        "jenkins",
@@ -119,14 +141,20 @@ func SeedServiceTemplates() {
 			Installer:   "helm",
 			ChartRepo:   "https://charts.jenkins.io",
 			ChartName:   "jenkins/jenkins",
-			ChartVersion: "4.8.0",
+			ChartVersion: "4.8.1",
 			DefaultValues: toJSON(map[string]string{
+				"controller.image.tag":     "2.492.4-jdk17",
 				"controller.adminPassword":  "admin123",
 				"controller.serviceType":    "NodePort",
 				"persistence.enabled":       "false",
 			}),
 			ConfigurableParams: toJSON([]ParamDef{
 				{Key: "controller.adminPassword", Label: "管理员密码", Type: "password", Default: "admin123", Required: true},
+			}),
+			WorkloadRolePolicy: toJSON([]paapv1.PolicyRule{
+				{APIGroups: []string{""}, Resources: []string{"pods", "pods/log", "services", "configmaps", "secrets"}, Verbs: []string{"*"}},
+				{APIGroups: []string{"apps"}, Resources: []string{"deployments", "replicasets"}, Verbs: []string{"*"}},
+				{APIGroups: []string{"batch"}, Resources: []string{"jobs"}, Verbs: []string{"*"}},
 			}),
 			InstallOrder: 25,
 		},
@@ -141,12 +169,13 @@ func SeedServiceTemplates() {
 			Installer:   "helm",
 			ChartRepo:   "https://charts.bitnami.com/bitnami",
 			ChartName:   "bitnami/postgresql",
-			ChartVersion: "12.12.10",
+			ChartVersion: "15.5.0",
 			DefaultValues: toJSON(map[string]string{
 				"auth.username":           "appuser",
 				"auth.password":           "changeme123",
 				"auth.database":           "appdb",
 				"primary.persistence.size": "8Gi",
+				"global.defaultStorageClass": "standard",
 			}),
 			ConfigurableParams: toJSON([]ParamDef{
 				{Key: "auth.username", Label: "用户名", Type: "string", Default: "appuser", Required: true},

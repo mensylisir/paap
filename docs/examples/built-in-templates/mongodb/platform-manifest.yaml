@@ -1,0 +1,6 @@
+name: mongodb
+version: 14.0.0
+description: "MongoDB 文档型数据库"
+permissions:
+  scope: tool-only
+  rules: []

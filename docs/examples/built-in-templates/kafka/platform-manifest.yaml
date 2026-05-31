@@ -1,0 +1,6 @@
+name: kafka
+version: 26.0.0
+description: "Apache Kafka 流处理平台"
+permissions:
+  scope: tool-only
+  rules: []

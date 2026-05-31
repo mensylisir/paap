@@ -1,0 +1,131 @@
+# Prometheus + Grafana (kube-prometheus-stack) preset values
+# Disable ALL cluster-scoped resources - platform manages RBAC
+
+# Global RBAC - the master switch for ClusterRole creation
+global:
+  rbac:
+    create: false
+
+# Global settings
+fullnameOverride: ""
+nameOverride: ""
+
+# Kube State Metrics - disable cluster role
+kube-state-metrics:
+  rbac:
+    create: false
+    useClusterRole: false
+    extraRules: []
+
+# Node Exporter - disable cluster role
+prometheus-node-exporter:
+  rbac:
+    create: false
+    pspEnabled: false
+
+# Prometheus Operator - disable cluster role and admission webhooks
+prometheusOperator:
+  enabled: true
+  rbac:
+    create: false
+  admissionWebhooks:
+    enabled: false
+    patch:
+      enabled: false
+
+# Prometheus - disable cluster role
+prometheus:
+  enabled: true
+  serviceAccount:
+    create: false
+  rbac:
+    create: false
+  # Only monitor specific namespaces
+  prometheusSpec:
+    serviceMonitorNamespaceSelector:
+      matchLabels:
+        paap-managed: "true"
+    podMonitorNamespaceSelector:
+      matchLabels:
+        paap-managed: "true"
+    ruleNamespaceSelector:
+      matchLabels:
+        paap-managed: "true"
+    ruleSelectorNilUsesHelmValues: false
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+
+# Alertmanager - disable cluster role
+alertmanager:
+  enabled: true
+  serviceAccount:
+    create: false
+  rbac:
+    create: false
+
+# Grafana - disable cluster role
+grafana:
+  enabled: true
+  serviceAccount:
+    create: false
+  rbac:
+    create: false
+    pspEnabled: false
+  adminPassword: "admin123"
+
+# Disable all default ServiceMonitors and other cluster-scoped resources
+defaultRules:
+  create: false
+  rules:
+    alertmanager: false
+    etcd: false
+    configReloaders: false
+    general: false
+    k8s: false
+    kubeApiserver: false
+    kubeApiserverAvailability: false
+    kubeApiserverSlos: false
+    kubelet: false
+    kubeProxy: false
+    kubePrometheusGeneral: false
+    kubePrometheusNodeRecording: false
+    kubernetesApps: false
+    kubernetesResources: false
+    kubernetesStorage: false
+    kubernetesSystem: false
+    kubeScheduler: false
+    kubeStateMetrics: false
+    network: false
+    node: false
+    nodeExporterAlerting: false
+    nodeExporterRecording: false
+    prometheus: false
+    prometheusOperator: false
+
+# Disable etcd monitoring (cluster-scoped)
+kubeEtcd:
+  enabled: false
+
+# Disable kubelet monitoring (cluster-scoped)
+kubelet:
+  enabled: false
+
+# Disable kubeProxy monitoring (cluster-scoped)
+kubeProxy:
+  enabled: false
+
+# Disable kubeScheduler monitoring (cluster-scoped)
+kubeScheduler:
+  enabled: false
+
+# Disable kubeControllerManager monitoring (cluster-scoped)
+kubeControllerManager:
+  enabled: false
+
+# Disable kubeApiServer monitoring (cluster-scoped)
+kubeApiServer:
+  enabled: false
+
+# Disable coreDns monitoring (cluster-scoped)
+coreDns:
+  enabled: false

@@ -1,0 +1,45 @@
+# PAAP 平台元数据声明文件
+# 用于将 Bitnami Redis Chart 集成到 PAAP 平台
+
+name: "Redis"
+version: "7.2.4"
+description: "Bitnami Redis 缓存服务，高性能键值存储，支持主从复制"
+
+# 1. 权限申请声明
+permissions:
+  # Redis 是一个 tool-only 类型的服务
+  # 只需要在自己的 namespace 内运行，不需要跨 namespace 权限
+  scope: "tool-only"
+
+  # 因为 scope=tool-only，所以不需要 rules 字段
+  # 平台会自动在工具所在的 namespace 创建基本权限
+
+# 2. 可观测性声明
+observability:
+  # Grafana 面板路径
+  dashboard_path: "./dashboards/redis-overview.json"
+
+  # Prometheus 指标配置
+  # Redis Exporter 默认在 9121 端口暴露指标
+  metrics:
+    port: 9121
+    path: "/metrics"
+
+# 3. 变量映射
+# 将平台变量映射到 Helm values
+variable_mapping:
+  # 平台生成的随机密码传给 Redis
+  - platform_var: "generated_password"
+    helm_var: "auth.password"
+
+  # 平台分配的 ServiceAccount 传给 Redis master
+  - platform_var: "service_account_name"
+    helm_var: "master.serviceAccount.name"
+
+  # 平台分配的 ServiceAccount 传给 Redis replica
+  - platform_var: "service_account_name"
+    helm_var: "replica.serviceAccount.name"
+
+  # 环境标识传给 Redis 的 commonLabels
+  - platform_var: "current_env_identifier"
+    helm_var: "commonLabels.paap\\.io/environment"

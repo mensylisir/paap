@@ -1,0 +1,22 @@
+name: jenkins
+version: v2.440.3
+description: "Jenkins - 经典 CI/CD 服务器"
+permissions:
+  scope: environment-wide
+  rules:
+    - apiGroups: [""]
+      resources: ["pods", "pods/log", "services", "configmaps", "secrets", "serviceaccounts"]
+      verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+    - apiGroups: ["apps"]
+      resources: ["deployments", "replicasets"]
+      verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+    - apiGroups: ["batch"]
+      resources: ["jobs"]
+      verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+    - apiGroups: ["networking.k8s.io"]
+      resources: ["ingresses"]
+      verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+observability:
+  metrics:
+    port: 8080
+    path: /metrics

@@ -1,0 +1,6 @@
+name: minio
+version: 13.0.0
+description: "MinIO 对象存储"
+permissions:
+  scope: tool-only
+  rules: []

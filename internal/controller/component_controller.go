@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -200,6 +201,15 @@ func (r *ComponentReconciler) ensureDeployment(ctx context.Context, comp *paapv1
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{"app": comp.Spec.Identifier},
+					Annotations: map[string]string{
+						"prometheus.io/scrape": "true",
+						"prometheus.io/port": func() string {
+							if comp.Spec.Service != nil {
+								return fmt.Sprintf("%d", comp.Spec.Service.TargetPort)
+							}
+							return "8080"
+						}(),
+					},
 				},
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{

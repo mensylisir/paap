@@ -1,0 +1,129 @@
+# 预设值文件
+# 用于禁用 Bitnami Redis Chart 内置的 RBAC 创建
+# 这个文件会在平台安装时自动合并到 Chart 的 values.yaml
+
+# ============================================
+# 禁用内置 RBAC（由平台统一管理）
+# ============================================
+rbac:
+  create: false
+
+serviceAccount:
+  create: false
+  name: ""  # 留空，平台会自动注入
+
+# ============================================
+# 禁用内置 NetworkPolicy（由平台统一管理）
+# ============================================
+networkPolicy:
+  enabled: false
+
+# ============================================
+# Redis 认证配置
+# ============================================
+auth:
+  enabled: true
+  # 密码由平台通过 variable_mapping 注入
+  password: ""
+  # 禁用 sentinel 密码（简化部署）
+  sentinel: false
+
+# ============================================
+# Master 配置
+# ============================================
+master:
+  # 资源配置
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+  # 持久化配置
+  persistence:
+    enabled: true
+    size: 8Gi
+    # 使用集群默认 StorageClass
+    storageClass: ""
+
+  # ServiceAccount（由平台管理）
+  serviceAccount:
+    create: false
+    name: ""  # 平台会注入
+
+# ============================================
+# Replica 配置
+# ============================================
+replica:
+  # 副本数量（默认 2 个副本）
+  replicaCount: 2
+
+  # 资源配置
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+  # 持久化配置
+  persistence:
+    enabled: true
+    size: 8Gi
+    storageClass: ""
+
+  # ServiceAccount（由平台管理）
+  serviceAccount:
+    create: false
+    name: ""  # 平台会注入
+
+# ============================================
+# Sentinel 配置（禁用，简化部署）
+# ============================================
+sentinel:
+  enabled: false
+
+# ============================================
+# Metrics Exporter 配置
+# ============================================
+metrics:
+  enabled: true
+
+  # Exporter 资源配置
+  resources:
+    limits:
+      cpu: 100m
+      memory: 128Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
+
+  # ServiceMonitor（由平台自动创建）
+  serviceMonitor:
+    enabled: false
+
+# ============================================
+# 通用标签（平台会注入环境标识）
+# ============================================
+commonLabels:
+  paap.io/managed-by: "paap-platform"
+  # paap.io/environment 由平台通过 variable_mapping 注入
+
+# ============================================
+# 安全配置
+# ============================================
+# 禁用 Redis 的危险命令
+master:
+  disableCommands:
+    - FLUSHDB
+    - FLUSHALL
+    - CONFIG
+
+replica:
+  disableCommands:
+    - FLUSHDB
+    - FLUSHALL
+    - CONFIG

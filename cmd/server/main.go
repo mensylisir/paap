@@ -23,6 +23,7 @@ func main() {
 	defer database.Close()
 	handler.SeedDemoUser()
 	handler.SeedServiceCatalog()
+	handler.SeedBuiltinChartsToS3()
 	service.SeedServiceTemplates()
 	service.SeedEnvTemplates()
 

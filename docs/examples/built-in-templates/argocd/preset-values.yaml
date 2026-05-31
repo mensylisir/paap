@@ -1,0 +1,65 @@
+# ArgoCD preset values - disable ALL cluster-scoped resources
+# Platform manages RBAC externally via platform-manifest.yaml
+
+# Disable cluster-level roles at the top level
+createClusterRoles: false
+createAggregateRoles: false
+
+# Controller (application controller)
+controller:
+  rbac:
+    create: false
+  serviceAccount:
+    create: false
+
+# Server
+server:
+  rbac:
+    create: false
+  serviceAccount:
+    create: false
+  # Disable cluster-scoped resources
+  clusterAdminAccess:
+    enabled: false
+
+# Repo Server
+repoServer:
+  rbac:
+    create: false
+  serviceAccount:
+    create: false
+
+# Dex (SSO)
+dex:
+  enabled: false
+  rbac:
+    create: false
+  serviceAccount:
+    create: false
+
+# Redis
+redis:
+  rbac:
+    create: false
+  serviceAccount:
+    create: false
+
+# HA components
+redis-ha:
+  enabled: false
+
+# ApplicationSet
+applicationSet:
+  enabled: false
+  rbac:
+    create: false
+  serviceAccount:
+    create: false
+
+# Notifications
+notifications:
+  enabled: false
+  rbac:
+    create: false
+  serviceAccount:
+    create: false

@@ -1,0 +1,17 @@
+# 禁用内置 RBAC，由平台统一管理
+loki:
+  serviceAccount:
+    create: false
+  rbac:
+    create: false
+  persistence:
+    enabled: false
+
+promtail:
+  serviceAccount:
+    create: false
+  rbac:
+    create: false
+  config:
+    clients:
+      - url: http://loki:3100/loki/api/v1/push

@@ -1,0 +1,13 @@
+name: loki
+version: v2.9.4
+description: "Loki + Promtail - 日志收集与查询"
+permissions:
+  scope: environment-wide
+  rules:
+    - apiGroups: [""]
+      resources: ["pods", "pods/log"]
+      verbs: ["get", "list", "watch"]
+observability:
+  metrics:
+    port: 3100
+    path: /metrics

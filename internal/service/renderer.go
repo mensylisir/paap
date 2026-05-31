@@ -32,6 +32,11 @@ func NewTemplateRenderer() *TemplateRenderer {
 		}
 		return val
 	}
+	// raw outputs its argument verbatim, useful for embedding literal {{ }} in templates
+	// (e.g. Grafana/Prometheus template variables inside a Go template string)
+	funcMap["raw"] = func(s string) string {
+		return s
+	}
 	return &TemplateRenderer{funcMap: funcMap}
 }
 

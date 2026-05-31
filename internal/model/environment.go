@@ -16,8 +16,9 @@ type Environment struct {
 	Name          string         `gorm:"size:50;not null" json:"name"`
 	Identifier    string         `gorm:"size:50;not null" json:"identifier"`
 	TemplateID    uint           `gorm:"default:0" json:"templateId"`
-	Status        string         `gorm:"size:20;default:empty" json:"status"` // empty, running, stopped, creating
+	Status        string         `gorm:"size:20;default:empty" json:"status"` // empty, running, stopped, creating, error
 	Namespace     string         `gorm:"size:100" json:"namespace"`
+	ErrorMessage  string         `gorm:"type:text" json:"errorMessage,omitempty"` // 环境创建/运行过程中的错误信息
 }
 
 type EnvironmentTemplate struct {

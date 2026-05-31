@@ -1,0 +1,25 @@
+name: kube-prometheus-stack
+version: v0.78.2
+description: "Prometheus + Grafana + Alertmanager 全栈监控"
+permissions:
+  scope: environment-wide
+  rules:
+    - apiGroups: [""]
+      resources: ["pods", "services", "endpoints", "nodes", "namespaces", "configmaps", "secrets"]
+      verbs: ["get", "list", "watch"]
+    - apiGroups: [""]
+      resources: ["nodes/metrics", "nodes/proxy"]
+      verbs: ["get", "list", "watch"]
+    - apiGroups: ["apps"]
+      resources: ["deployments", "daemonsets", "statefulsets", "replicasets"]
+      verbs: ["get", "list", "watch"]
+    - apiGroups: ["networking.k8s.io"]
+      resources: ["ingresses"]
+      verbs: ["get", "list", "watch"]
+    - apiGroups: ["autoscaling"]
+      resources: ["horizontalpodautoscalers"]
+      verbs: ["get", "list", "watch"]
+observability:
+  metrics:
+    port: 9090
+    path: /metrics

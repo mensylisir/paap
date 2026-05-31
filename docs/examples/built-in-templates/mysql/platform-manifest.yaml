@@ -1,0 +1,6 @@
+name: mysql
+version: 9.12.0
+description: "MySQL 关系型数据库"
+permissions:
+  scope: tool-only
+  rules: []

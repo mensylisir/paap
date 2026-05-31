@@ -1,0 +1,19 @@
+# 禁用内置 RBAC，由平台统一管理
+controller:
+  rbac:
+    create: false
+  serviceAccount:
+    create: false
+  adminPassword: "admin123"
+  serviceType: NodePort
+  metrics:
+    enabled: true
+
+serviceAccount:
+  create: false
+
+rbac:
+  create: false
+
+persistence:
+  enabled: false

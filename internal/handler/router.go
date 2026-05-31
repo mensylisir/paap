@@ -40,6 +40,7 @@ func SetupRouter(r *gin.Engine) {
 		api.POST("/service-templates", CreateServiceTemplate)
 		api.PUT("/service-templates/:id", UpdateServiceTemplate)
 		api.DELETE("/service-templates/:id", DeleteServiceTemplate)
+		api.POST("/service-templates/upload", UploadTemplate) // BYO custom template upload
 
 		// Applications
 		api.GET("/applications", ListApplications)
@@ -55,6 +56,7 @@ func SetupRouter(r *gin.Engine) {
 		// Application Services
 		api.GET("/applications/:id/services", ListServiceInstances)
 		api.POST("/applications/:id/services", InstallService)
+		api.DELETE("/applications/:id/services/:serviceId", UninstallService)
 
 		// Environment (standalone routes)
 		api.GET("/environments/:id", GetEnvironment)

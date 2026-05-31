@@ -1,0 +1,6 @@
+name: postgresql
+version: 12.12.10
+description: "PostgreSQL 关系型数据库"
+permissions:
+  scope: tool-only
+  rules: []

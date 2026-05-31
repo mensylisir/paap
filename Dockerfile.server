@@ -19,6 +19,13 @@ FROM alpine:3.22
 WORKDIR /
 COPY --from=builder /workspace/paap-server /paap-server
 COPY --from=frontend-builder /workspace/frontend/dist /frontend/dist
-RUN apk add --no-cache ca-certificates libc6-compat
+RUN apk add --no-cache ca-certificates libc6-compat curl bash && \
+    curl -fsSL https://get.helm.sh/helm-v3.16.4-linux-amd64.tar.gz -o /tmp/helm.tar.gz && \
+    tar xzf /tmp/helm.tar.gz -C /tmp && \
+    mv /tmp/linux-amd64/helm /usr/local/bin/helm && \
+    rm -rf /tmp/helm.tar.gz /tmp/linux-amd64 && \
+    chmod +x /usr/local/bin/helm
+# Copy built-in chart packages
+COPY data/charts /charts
 USER 65532:65532
 ENTRYPOINT ["/paap-server"]

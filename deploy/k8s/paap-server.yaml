@@ -20,6 +20,57 @@ rules:
   - apiGroups: [""]
     resources: ["namespaces"]
     verbs: ["get", "list", "watch", "create", "delete"]
+  # Helm 安装需要的核心资源权限
+  - apiGroups: [""]
+    resources: ["pods", "services", "configmaps", "secrets", "serviceaccounts", "persistentvolumeclaims", "endpoints", "events"]
+    verbs: ["*"]
+  # Apps 资源（deployments, statefulsets 等）
+  - apiGroups: ["apps"]
+    resources: ["deployments", "statefulsets", "daemonsets", "replicasets"]
+    verbs: ["*"]
+  # Batch 资源（jobs, cronjobs）
+  - apiGroups: ["batch"]
+    resources: ["jobs", "cronjobs"]
+    verbs: ["*"]
+  # Networking 资源
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses", "networkpolicies"]
+    verbs: ["*"]
+  # RBAC（为工具创建 service accounts）
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["roles", "rolebindings", "clusterroles", "clusterrolebindings"]
+    verbs: ["*"]
+  # Policy
+  - apiGroups: ["policy"]
+    resources: ["poddisruptionbudgets", "podsecuritypolicies"]
+    verbs: ["*"]
+  # Storage
+  - apiGroups: ["storage.k8s.io"]
+    resources: ["storageclasses"]
+    verbs: ["get", "list", "watch"]
+  # Autoscaling
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers"]
+    verbs: ["*"]
+  # API extensions（ArgoCD CRDs 等）
+  - apiGroups: ["apiextensions.k8s.io"]
+    resources: ["customresourcedefinitions"]
+    verbs: ["*"]
+  # Admission webhook（Prometheus 等工具需要）
+  - apiGroups: ["admissionregistration.k8s.io"]
+    resources: ["mutatingwebhookconfigurations", "validatingwebhookconfigurations"]
+    verbs: ["*"]
+  # ArgoCD CRDs
+  - apiGroups: ["argoproj.io"]
+    resources: ["applications", "appprojects", "applicationsets"]
+    verbs: ["*"]
+  # Monitoring CRDs（Prometheus, Grafana）
+  - apiGroups: ["monitoring.coreos.com"]
+    resources: ["prometheuses", "prometheusrules", "servicemonitors", "podmonitors", "alertmanagers"]
+    verbs: ["*"]
+  - apiGroups: ["grafana.integreatly.org"]
+    resources: ["grafanas", "grafanadashboards", "grafanadatasources"]
+    verbs: ["*"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -41,7 +92,7 @@ metadata:
   namespace: paap-system
 data:
   PORT: "9090"
-  DATABASE_URL: "postgres://paap:paap@paap-postgres:5432/paap?sslmode=disable"
+  DATABASE_URL: "/data/paap.db"
 ---
 apiVersion: v1
 kind: Secret

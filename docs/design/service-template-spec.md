@@ -1,8 +1,36 @@
 # PAAP 服务模板规范（ServiceTemplate Spec）
 
+> **⚠️ 重要说明：** 本文档描述的是早期设计方案，其中的 `lifecycle` 钩子系统**尚未实现**。
+> 
+> **当前实际实现：** 平台使用基于 Helm Chart 的模板系统，配合 `platform-manifest.yaml` 元数据文件。
+> 
+> **如果你要开发模板，请参考：**
+> - [自定义模板开发指南](custom-template-guide.md) - **推荐阅读**，描述实际实现的模板系统
+> - [模板系统总览](template-system-overview.md) - 了解平台模板架构
+
+---
+
 > **存储机制：** ServiceTemplate 和 EnvTemplate **不是 CRD**，存储在 PostgreSQL 数据库中。
 > PAAP Server 负责模板的 CRUD 和渲染，渲染结果写入 CR（Environment/ServiceInstance/Component），
 > Operator 负责管理 CR 对应的 K8s 资源。详见 [技术选型](tech-stack.md)。
+
+> **自定义模板开发：** 如果你想上传自己的 Helm Chart 作为服务模板（BYO - Bring Your Own），
+> 请参考 [自定义模板开发指南](custom-template-guide.md)，了解如何打包 Helm Chart + platform-manifest.yaml。
+
+---
+
+## 📌 本文档状态
+
+本文档保留作为**设计参考**，描述了一种基于生命周期钩子的模板系统设计思路。
+
+**实际实现采用了更简洁的方案：**
+- 使用标准 Helm Chart 管理资源
+- 使用 `platform-manifest.yaml` 声明权限和元数据
+- 由 Operator 自动处理权限同步，无需手动编写钩子
+
+**如果你对设计演进感兴趣，可以继续阅读本文档。如果你要开发模板，请直接阅读 [自定义模板开发指南](custom-template-guide.md)。**
+
+---
 
 ## 1. 术语定义
 

@@ -117,6 +117,9 @@ spec:
     metadata:
       labels:
         app: argocd-server
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8083"
     spec:
       serviceAccountName: {{ .serviceAccountName }}
       containers:
@@ -188,6 +191,9 @@ spec:
     metadata:
       labels:
         app: argocd-application-controller
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8082"
     spec:
       serviceAccountName: {{ .serviceAccountName }}
       containers:
@@ -199,6 +205,9 @@ spec:
             - argocd-redis:6379
             - --repo-server
             - argocd-repo-server:8081
+          env:
+            - name: ARGOCD_CONTROLLER_NAMESPACES
+              value: "{{ join "," .namespaces }}"
           ports:
             - containerPort: 8082
           resources:
@@ -295,6 +304,9 @@ spec:
     metadata:
       labels:
         app: tekton-pipelines-controller
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
     spec:
       serviceAccountName: {{ .serviceAccountName }}
       containers:
@@ -482,10 +494,29 @@ spec:
           env:
             - name: GF_SECURITY_ADMIN_PASSWORD
               value: "admin"
+            - name: GF_PATHS_PROVISIONING
+              value: /etc/grafana/provisioning
           resources:
             requests:
               cpu: 100m
               memory: 128Mi
+          volumeMounts:
+            - name: datasource-config
+              mountPath: /etc/grafana/provisioning/datasources
+            - name: dashboard-provider
+              mountPath: /etc/grafana/provisioning/dashboards
+            - name: dashboard-volume
+              mountPath: /var/lib/grafana/dashboards
+      volumes:
+        - name: datasource-config
+          configMap:
+            name: grafana-datasources
+        - name: dashboard-provider
+          configMap:
+            name: grafana-dashboards-provider
+        - name: dashboard-volume
+          configMap:
+            name: grafana-dashboards-k8s
 ---
 apiVersion: v1
 kind: Service
@@ -510,6 +541,132 @@ spec:
   ports:
     - port: 3000
       targetPort: 3000
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-datasources
+  namespace: {{ .toolNamespace }}
+data:
+  datasources.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        type: prometheus
+        url: http://prometheus:9090
+        access: proxy
+        isDefault: true
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboards-provider
+  namespace: {{ .toolNamespace }}
+data:
+  dashboards.yaml: |
+    apiVersion: 1
+    providers:
+      - name: default
+        orgId: 1
+        type: file
+        disableDeletion: false
+        updateIntervalSeconds: 30
+        options:
+          path: /var/lib/grafana/dashboards
+          foldersFromFilesStructure: true
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboards-k8s
+  namespace: {{ .toolNamespace }}
+  labels:
+    grafana_dashboard: "1"
+data:
+  k8s-overview.json: |
+    {
+      "annotations": { "list": [] },
+      "editable": true,
+      "fiscalYearStartMonth": 0,
+      "graphTooltip": 0,
+      "id": null,
+      "links": [],
+      "panels": [
+        {
+          "title": "CPU Usage by Namespace",
+          "type": "timeseries",
+          "datasource": { "type": "prometheus", "uid": "" },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+          "targets": [
+            {
+              "expr": "sum(rate(container_cpu_usage_seconds_total{namespace=~\"$namespace\",container!=\"\"}[5m])) by (namespace)",
+              "legendFormat": "{{ raw "{{namespace}}" }}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": { "unit": "percentunit" }
+          }
+        },
+        {
+          "title": "Memory Usage by Namespace",
+          "type": "timeseries",
+          "datasource": { "type": "prometheus", "uid": "" },
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+          "targets": [
+            {
+              "expr": "sum(container_memory_working_set_bytes{namespace=~\"$namespace\",container!=\"\"}) by (namespace)",
+              "legendFormat": "{{ raw "{{namespace}}" }}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": { "unit": "bytes" }
+          }
+        },
+        {
+          "title": "Pod Count by Namespace",
+          "type": "stat",
+          "datasource": { "type": "prometheus", "uid": "" },
+          "gridPos": { "h": 4, "w": 6, "x": 0, "y": 8 },
+          "targets": [
+            {
+              "expr": "count(kube_pod_info{namespace=~\"$namespace\"}) by (namespace)",
+              "legendFormat": "{{ raw "{{namespace}}" }}"
+            }
+          ]
+        },
+        {
+          "title": "Restart Count (Top 10)",
+          "type": "table",
+          "datasource": { "type": "prometheus", "uid": "" },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+          "targets": [
+            {
+              "expr": "topk(10, sum(increase(kube_pod_container_status_restarts_total{namespace=~\"$namespace\"}[1h])) by (namespace, pod))",
+              "legendFormat": "{{ raw "{{namespace}}" }}/{{ raw "{{pod}}" }}",
+              "instant": true
+            }
+          ]
+        }
+      ],
+      "templating": {
+        "list": [
+          {
+            "name": "namespace",
+            "type": "query",
+            "datasource": { "type": "prometheus", "uid": "" },
+            "query": "label_values(kube_pod_info, namespace)",
+            "refresh": 2,
+            "multi": true,
+            "includeAll": true,
+            "current": { "text": "All", "value": "$__all" }
+          }
+        ]
+      },
+      "time": { "from": "now-1h", "to": "now" },
+      "title": "K8s Overview",
+      "uid": "k8s-overview",
+      "version": 1
+    }
 `
 
 // Loki deployment template

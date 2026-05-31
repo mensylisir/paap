@@ -1,0 +1,25 @@
+name: argocd
+version: v2.13.3
+description: "ArgoCD - GitOps 持续部署工具"
+permissions:
+  scope: environment-wide
+  rules:
+    - apiGroups: [""]
+      resources: ["pods", "services", "configmaps", "secrets", "persistentvolumeclaims", "serviceaccounts"]
+      verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+    - apiGroups: ["apps"]
+      resources: ["deployments", "statefulsets", "replicasets"]
+      verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+    - apiGroups: ["networking.k8s.io"]
+      resources: ["ingresses"]
+      verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+    - apiGroups: ["autoscaling"]
+      resources: ["horizontalpodautoscalers"]
+      verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+observability:
+  metrics:
+    port: 8083
+    path: /metrics
+variable_mapping:
+  - platform_var: "primary_namespace"
+    helm_var: "global.envNamespace"
