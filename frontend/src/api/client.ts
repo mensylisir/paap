@@ -85,6 +85,10 @@ export const api = {
   getServiceWorkspace: (envId: number, serviceId: number) => request(`/environments/${envId}/services/${serviceId}/workspace`),
   runServiceWorkspaceAction: (envId: number, serviceId: number, action: string, target?: string, params?: Record<string, string>) =>
     request(`/environments/${envId}/services/${serviceId}/workspace/actions`, { method: 'POST', body: JSON.stringify({ action, target, params }) }),
+  createServiceDraft: (envId: number, data: any) => request(`/environments/${envId}/services/drafts`, { method: 'POST', body: JSON.stringify(data) }),
   installService: (envId: number, data: any) => request(`/environments/${envId}/services`, { method: 'POST', body: JSON.stringify(data) }),
+  updateService: (envId: number, serviceId: number, data: any) => request(`/environments/${envId}/services/${serviceId}`, { method: 'PUT', body: JSON.stringify(data) }),
+  setServiceExternalAccess: (envId: number, serviceId: number, enabled: boolean) =>
+    request(`/environments/${envId}/services/${serviceId}/external-access`, { method: 'PUT', body: JSON.stringify({ enabled }) }),
   uninstallService: (envId: number, serviceId: number) => request(`/environments/${envId}/services/${serviceId}`, { method: 'DELETE' }),
 }

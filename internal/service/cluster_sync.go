@@ -150,7 +150,7 @@ func syncServiceInstances(ctx context.Context, db *gorm.DB, k8sClient client.Cli
 			return nil, err
 		}
 
-		values, err := json.Marshal(svcCR.Spec.Parameters)
+		values, err := json.Marshal(serviceInstanceStoredValues(svcCR))
 		if err != nil {
 			return nil, fmt.Errorf("marshal service parameters %s/%s: %w", svcCR.Namespace, svcCR.Name, err)
 		}
@@ -179,6 +179,13 @@ func syncServiceInstances(ctx context.Context, db *gorm.DB, k8sClient client.Cli
 	}
 
 	return serviceKeys, nil
+}
+
+func serviceInstanceStoredValues(svcCR paapv1.ServiceInstance) map[string]string {
+	if svcCR.Spec.Helm != nil && len(svcCR.Spec.Helm.Values) > 0 {
+		return svcCR.Spec.Helm.Values
+	}
+	return svcCR.Spec.Parameters
 }
 
 func syncComponents(ctx context.Context, db *gorm.DB, k8sClient client.Client, appsByIdentifier map[string]model.Application, envsByKey map[string]model.Environment) (map[string]struct{}, error) {
@@ -440,6 +447,9 @@ func pruneMissingClusterState(db *gorm.DB, appsByIdentifier map[string]model.App
 		return fmt.Errorf("list service installations for prune: %w", err)
 	}
 	for _, install := range installs {
+		if serviceInstallationCanExistWithoutCR(install.Status) {
+			continue
+		}
 		if _, ok := serviceKeys[serviceKey(install.EnvironmentID, install.ServiceType)]; ok {
 			continue
 		}
@@ -521,6 +531,15 @@ func pruneMissingClusterState(db *gorm.DB, appsByIdentifier map[string]model.App
 	}
 
 	return nil
+}
+
+func serviceInstallationCanExistWithoutCR(status string) bool {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "draft", "pending", "failed", "error":
+		return true
+	default:
+		return false
+	}
 }
 
 func normalizePhase(phase, fallback string) string {

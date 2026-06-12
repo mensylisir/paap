@@ -263,17 +263,12 @@ func jsonNumber(n int) string {
 	return string(b)
 }
 
-// BuildHelmValues merges platform context variables with user-defined variable_mapping.
-// platformVars contains the platform's built-in context (e.g. global.envNamespaces).
+// BuildHelmValues resolves the manifest's explicit variable_mapping entries.
+// platformVars contains the platform's built-in context (e.g. env_namespaces).
 // The manifest's variable_mapping entries are resolved by looking up platformVars[PlatformVar]
 // and setting the result at the HelmVar key.
 func (m *PlatformManifest) BuildHelmValues(platformVars map[string]string) map[string]string {
 	result := make(map[string]string)
-	// Start with platform context
-	for k, v := range platformVars {
-		result[k] = v
-	}
-	// Apply user-defined variable mappings
 	for _, vm := range m.VariableMapping {
 		if val, ok := platformVars[vm.PlatformVar]; ok {
 			result[vm.HelmVar] = val

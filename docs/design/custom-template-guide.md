@@ -258,6 +258,48 @@ resources:
 3. **平台注入的上下文变量**（如 ServiceAccount 名称、namespace 列表）
 4. **用户在 UI 填写的参数**
 
+因此 `preset-values.yaml` 适合表达平台默认值，用户在右侧栏显式修改后可以覆盖同一个 Helm key。不要在 preset 中写一个 chart 不识别的“通用 key”来表达默认值。例如不同 chart 的持久化开关不一样：
+
+```yaml
+# Redis chart
+master:
+  persistence:
+    enabled: false
+replica:
+  persistence:
+    enabled: false
+
+# MySQL chart
+primary:
+  persistence:
+    enabled: false
+secondary:
+  persistence:
+    enabled: false
+
+# Kafka chart
+controller:
+  persistence:
+    enabled: false
+broker:
+  persistence:
+    enabled: false
+```
+
+如果 chart 实际使用的是 `primary.persistence.enabled`，只写顶层 `persistence.enabled` 不会生效。升级第三方 chart 时，必须重新检查 `chart/values.yaml` 和 `values.schema.json`，确认 preset 里的 key 仍然存在且语义没有变化。
+
+### 4.4 右侧栏配置项来源
+
+环境画布右侧栏的可编辑项必须从模板里的 Helm 配置抽取，来源只允许是：
+
+- `chart/values.schema.json` 中标记可配置或有枚举/类型约束的字段
+- `chart/values.yaml` 中有明确注释、默认值和 chart 模板引用的字段
+- `preset-values.yaml` 中作为平台默认值的字段，但该字段必须同时被 chart 支持
+
+不要为了让数据库、缓存、消息队列看起来统一而创建一套虚拟字段。Redis 的 `sentinel.enabled` 只能出现在 Redis profile；Kafka 应使用 `controller.replicaCount`、`broker.replicaCount`；MinIO 应使用 `mode`、`statefulset.replicaCount`；RabbitMQ 应使用 `replicaCount`。如果某个 chart 没有支持“分片集群”或“哨兵模式”，UI 就不能显示这些选项。
+
+用户上传模板可以正常安装并应用 `preset-values.yaml`、`platform-manifest.yaml` 和 `variable_mapping`。如果要让自定义模板也出现专属右侧栏表单，需要在平台侧为该模板类型增加一个基于 chart values 的配置 profile；在没有 profile 前，平台只展示运行入口、工作台资源和运行详情，不会猜测部署参数。
+
 ---
 
 ## 5. Chart 开发规范

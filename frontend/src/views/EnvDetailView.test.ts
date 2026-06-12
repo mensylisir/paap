@@ -30,7 +30,43 @@ describe('EnvDetailView service picker', () => {
     expect(result[0].disabled).toBe(true)
     expect(result[0].statusText).toBe('已安装')
     expect(result[1].disabled).toBe(false)
-    expect(result[1].statusText).toBe('可安装')
+    expect(result[1].statusText).toBe('可添加')
+  })
+
+  it('keeps draft and failed canvas service cards from being added twice', () => {
+    const result = buildPickerTemplates(
+      [
+        { type: 'redis', category: 'infra', name: 'Redis' },
+        { type: 'rabbitmq', category: 'infra', name: 'RabbitMQ' },
+        { type: 'mysql', category: 'infra', name: 'MySQL' },
+      ],
+      [
+        { serviceType: 'redis', status: 'draft' },
+        { serviceType: 'rabbitmq', status: 'failed' },
+      ],
+      'infra',
+    )
+
+    expect(result.map((item) => `${item.type}:${item.disabled}:${item.statusText}`)).toEqual([
+      'redis:true:已添加',
+      'rabbitmq:true:安装失败',
+      'mysql:false:可添加',
+    ])
+  })
+
+  it('selects wording for adding services instead of installing them on the canvas', () => {
+    const result = createPickerSessionState(
+      [
+        { type: 'deploy', category: 'tool', name: 'ArgoCD' },
+        { type: 'ci', category: 'tool', name: 'Jenkins' },
+      ],
+      [{ serviceType: 'deploy', status: 'draft' }],
+      'tool',
+    )
+
+    expect(result.selectedType).toBe('ci')
+    expect(result.availableServices[0].statusText).toBe('已添加')
+    expect(result.availableServices[1].statusText).toBe('可添加')
   })
 
   it('allows installing mysql when postgresql is already installed', () => {
@@ -45,7 +81,7 @@ describe('EnvDetailView service picker', () => {
 
     expect(result.map((item) => `${item.type}:${item.statusText}`)).toEqual([
       'postgresql:已安装',
-      'mysql:可安装',
+      'mysql:可添加',
     ])
     expect(result.find((item) => item.type === 'mysql')?.disabled).toBe(false)
   })

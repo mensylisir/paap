@@ -338,6 +338,16 @@ func (r *ServiceInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		if err := r.ensureHelmRelease(ctx, svc); err != nil {
 			if isRecoverableHelmRaceError(err) {
 				logger.Info("helm release is being reconciled by another operation; using live component status", "error", err)
+			} else if isHelmImmutableStatefulSetError(err) {
+				components, ready, collectErr := r.collectToolComponentStatus(ctx, svc)
+				if collectErr == nil && ready && len(components) > 0 {
+					logger.Info("helm upgrade hit immutable StatefulSet fields but live workloads are ready; keeping live component status", "error", err)
+				} else {
+					_ = r.updateServiceInstanceStatus(ctx, svc, func(status *paapv1.ServiceInstanceStatus) {
+						status.Phase = "Error"
+					})
+					return ctrl.Result{RequeueAfter: 5 * time.Second}, err
+				}
 			} else {
 				_ = r.updateServiceInstanceStatus(ctx, svc, func(status *paapv1.ServiceInstanceStatus) {
 					status.Phase = "Error"
@@ -389,6 +399,16 @@ func serviceInstanceStatusRequeueAfter(toolReady bool) time.Duration {
 
 func isRecoverableHelmRaceError(err error) bool {
 	return paaphelm.IsReleaseAlreadyExists(err) || paaphelm.IsReleaseOperationInProgress(err)
+}
+
+func isHelmImmutableStatefulSetError(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "statefulset") &&
+		strings.Contains(message, "forbidden") &&
+		strings.Contains(message, "updates to statefulset spec")
 }
 
 func (r *ServiceInstanceReconciler) ensureHelmRelease(ctx context.Context, svc *paapv1.ServiceInstance) error {
@@ -535,13 +555,7 @@ func environmentNamespaceHelmValueKeys(helmSpec *paapv1.HelmInstallSpec) []strin
 func namespaceHelmValueTargets(helmSpec *paapv1.HelmInstallSpec, environmentNamespaces, workloadNamespaces []string) map[string]string {
 	envExpected := strings.Join(stableNamespaceList(environmentNamespaces), ",")
 	workloadExpected := strings.Join(stableNamespaceList(workloadNamespaces), ",")
-	targets := map[string]string{
-		"all_namespaces":            envExpected,
-		"env_namespaces":            envExpected,
-		"workload_namespaces":       workloadExpected,
-		"paap.envNamespaces":        envExpected,
-		"global.paap.envNamespaces": envExpected,
-	}
+	targets := map[string]string{}
 	if helmSpec == nil || helmSpec.PlatformManifest == "" {
 		return targets
 	}

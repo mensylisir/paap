@@ -43,7 +43,7 @@ master:
 
   # 持久化配置
   persistence:
-    enabled: true
+    enabled: false
     size: 8Gi
     # 使用集群默认 StorageClass
     storageClass: ""
@@ -71,7 +71,7 @@ replica:
 
   # 持久化配置
   persistence:
-    enabled: true
+    enabled: false
     size: 8Gi
     storageClass: ""
 

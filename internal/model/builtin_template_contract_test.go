@@ -247,6 +247,75 @@ func TestBuiltInToolPresetsExposeUserFacingServices(t *testing.T) {
 	}
 }
 
+func TestBuiltInMiddlewarePresetsDisableChartSpecificPersistenceByDefault(t *testing.T) {
+	checks := map[string][]string{
+		"../../docs/examples/built-in-templates/redis/preset-values.yaml": {
+			"master.persistence.enabled",
+			"replica.persistence.enabled",
+			"sentinel.persistence.enabled",
+		},
+		"../../docs/examples/built-in-templates/mysql/preset-values.yaml": {
+			"primary.persistence.enabled",
+			"secondary.persistence.enabled",
+		},
+		"../../docs/examples/built-in-templates/postgresql/preset-values.yaml": {
+			"primary.persistence.enabled",
+			"readReplicas.persistence.enabled",
+		},
+		"../../docs/examples/built-in-templates/kafka/preset-values.yaml": {
+			"controller.persistence.enabled",
+			"broker.persistence.enabled",
+			"zookeeper.persistence.enabled",
+		},
+	}
+
+	for path, keys := range checks {
+		t.Run(path, func(t *testing.T) {
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatalf("read preset values: %v", err)
+			}
+			var values map[string]interface{}
+			if err := yaml.Unmarshal(data, &values); err != nil {
+				t.Fatalf("unmarshal preset values: %v", err)
+			}
+			for _, key := range keys {
+				if got := nestedBool(values, key); got != false {
+					t.Fatalf("%s must default to false in %s, got %v", key, path, got)
+				}
+			}
+		})
+	}
+}
+
+func TestBuiltInMiddlewarePresetsUsePlatformServiceAccounts(t *testing.T) {
+	paths := []string{
+		"../../docs/examples/built-in-templates/redis/preset-values.yaml",
+		"../../docs/examples/built-in-templates/postgresql/preset-values.yaml",
+		"../../docs/examples/built-in-templates/mysql/preset-values.yaml",
+		"../../docs/examples/built-in-templates/rabbitmq/preset-values.yaml",
+		"../../docs/examples/built-in-templates/mongodb/preset-values.yaml",
+		"../../docs/examples/built-in-templates/kafka/preset-values.yaml",
+		"../../docs/examples/built-in-templates/minio/preset-values.yaml",
+	}
+
+	for _, path := range paths {
+		t.Run(path, func(t *testing.T) {
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatalf("read preset values: %v", err)
+			}
+			var values map[string]interface{}
+			if err := yaml.Unmarshal(data, &values); err != nil {
+				t.Fatalf("unmarshal preset values: %v", err)
+			}
+			if got := nestedBool(values, "serviceAccount.create"); got != false {
+				t.Fatalf("serviceAccount.create must be false in %s because PAAP creates the ServiceAccount and RBAC, got %v", path, got)
+			}
+		})
+	}
+}
+
 func TestBuiltInDatabaseTemplatesUseResolvableLegacyBitnamiImages(t *testing.T) {
 	checks := []struct {
 		name string
@@ -932,4 +1001,20 @@ func containsInterfaceString(values []interface{}, value string) bool {
 		}
 	}
 	return false
+}
+
+func nestedBool(values map[string]interface{}, key string) bool {
+	var current interface{} = values
+	for _, part := range strings.Split(key, ".") {
+		next, ok := current.(map[string]interface{})[part]
+		if !ok {
+			return true
+		}
+		current = next
+	}
+	result, ok := current.(bool)
+	if !ok {
+		return true
+	}
+	return result
 }

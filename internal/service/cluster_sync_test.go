@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	paapv1 "paap/api/v1"
@@ -634,6 +635,99 @@ func TestSyncClusterStatePreservesDraftComponentsMissingFromCluster(t *testing.T
 	}
 	if saved.Status != "draft" {
 		t.Fatalf("status = %q, want draft", saved.Status)
+	}
+}
+
+func TestSyncClusterStatePreservesServiceCardsMissingFromCluster(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := db.AutoMigrate(
+		&model.Application{},
+		&model.AppMember{},
+		&model.Environment{},
+		&model.ServiceInstallation{},
+		&model.Component{},
+	); err != nil {
+		t.Fatalf("migrate db: %v", err)
+	}
+
+	app := model.Application{Name: "测试服务", Identifier: "test", OwnerID: 1}
+	if err := db.Create(&app).Error; err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	env := model.Environment{
+		ApplicationID: app.ID,
+		Name:          "预发",
+		Identifier:    "staging",
+		Status:        "running",
+		Namespace:     "test-staging",
+	}
+	if err := db.Create(&env).Error; err != nil {
+		t.Fatalf("create env: %v", err)
+	}
+	for _, item := range []model.ServiceInstallation{
+		{EnvironmentID: env.ID, ServiceType: "rabbitmq", Status: "draft", Namespace: "test-staging-rabbitmq"},
+		{EnvironmentID: env.ID, ServiceType: "kafka", Status: "failed", Namespace: "test-staging-kafka", ErrorMessage: "image missing"},
+		{EnvironmentID: env.ID, ServiceType: "redis", Status: "running", Namespace: "test-staging-redis"},
+	} {
+		if err := db.Create(&item).Error; err != nil {
+			t.Fatalf("create service %s: %v", item.ServiceType, err)
+		}
+	}
+
+	scheme := runtime.NewScheme()
+	if err := clientgoscheme.AddToScheme(scheme); err != nil {
+		t.Fatalf("add client-go scheme: %v", err)
+	}
+	if err := paapv1.AddToScheme(scheme); err != nil {
+		t.Fatalf("add paap scheme: %v", err)
+	}
+	k8sClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(
+			&paapv1.Application{
+				ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "paap-system"},
+				Spec: paapv1.ApplicationSpec{
+					Name:       "测试服务",
+					Identifier: "test",
+				},
+			},
+			&paapv1.Environment{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "staging",
+					Namespace: "paap-app-test",
+					Labels: map[string]string{
+						"paap.io/app": "test",
+						"paap.io/env": "staging",
+					},
+				},
+				Spec: paapv1.EnvironmentSpec{
+					Name:             "预发",
+					Identifier:       "staging",
+					PrimaryNamespace: "test-staging",
+				},
+				Status: paapv1.EnvironmentStatus{Phase: "Running"},
+			},
+		).
+		Build()
+
+	if err := SyncClusterState(context.Background(), db, k8sClient); err != nil {
+		t.Fatalf("sync cluster state: %v", err)
+	}
+
+	var installs []model.ServiceInstallation
+	if err := db.Order("service_type").Find(&installs).Error; err != nil {
+		t.Fatalf("list services: %v", err)
+	}
+	got := make([]string, 0, len(installs))
+	for _, item := range installs {
+		got = append(got, item.ServiceType+":"+item.Status)
+	}
+	want := []string{"kafka:failed", "rabbitmq:draft"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("services after sync = %#v, want %#v", got, want)
 	}
 }
 

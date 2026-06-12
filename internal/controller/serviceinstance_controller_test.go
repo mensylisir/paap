@@ -31,6 +31,15 @@ func (f fakeHelmInstaller) UpgradeInstallWithMetadata(string, string, string, ma
 	return f.err
 }
 
+func mustManifestJSON(t *testing.T, manifest model.PlatformManifest) string {
+	t.Helper()
+	data, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatalf("marshal manifest: %v", err)
+	}
+	return string(data)
+}
+
 func TestEnsureToolNamespaceIsMarkedForEnvironmentMonitoring(t *testing.T) {
 	scheme := runtime.NewScheme()
 	if err := clientgoscheme.AddToScheme(scheme); err != nil {
@@ -489,6 +498,35 @@ func TestEnvironmentNamespaceHelmValueKeysUsesManifestVariableMapping(t *testing
 	if got["agent.serviceAccount.name"] {
 		t.Fatalf("tool_namespace mapping should not be updated as env namespace: %#v", keys)
 	}
+	for _, forbidden := range []string{"env_namespaces", "workload_namespaces", "paap.envNamespaces", "global.paap.envNamespaces"} {
+		if got[forbidden] {
+			t.Fatalf("generic namespace key %s must not be updated unless the template maps it explicitly: %#v", forbidden, keys)
+		}
+	}
+}
+
+func TestNamespaceHelmValueTargetsSkipsTemplatesWithoutNamespaceMappings(t *testing.T) {
+	manifest := model.PlatformManifest{
+		Name:    "redis",
+		Version: "v1",
+		VariableMapping: []model.VariableMappingEntry{
+			{PlatformVar: "tool_namespace", HelmVar: "fullnameOverride"},
+			{PlatformVar: "primary_namespace", HelmVar: "paap.primaryNamespace"},
+		},
+	}
+	data, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatalf("marshal manifest: %v", err)
+	}
+
+	targets := namespaceHelmValueTargets(
+		&paapv1.HelmInstallSpec{PlatformManifest: string(data)},
+		[]string{"test-staging-redis", "test-staging"},
+		[]string{"test-staging"},
+	)
+	if len(targets) != 0 {
+		t.Fatalf("middleware without env/workload namespace mapping must not get dynamic Helm namespace values, got %#v", targets)
+	}
 }
 
 func TestNamespaceHelmValueTargetsSeparatesEnvironmentAndWorkloadMappings(t *testing.T) {
@@ -535,6 +573,13 @@ func TestSyncEnvironmentNamespacesInHelmValuesWritesStableSortedList(t *testing.
 		},
 		Spec: paapv1.ServiceInstanceSpec{
 			Helm: &paapv1.HelmInstallSpec{
+				PlatformManifest: mustManifestJSON(t, model.PlatformManifest{
+					Name:    "custom-monitor",
+					Version: "v1",
+					VariableMapping: []model.VariableMappingEntry{
+						{PlatformVar: "env_namespaces", HelmVar: "env_namespaces"},
+					},
+				}),
 				Values: map[string]string{},
 			},
 		},
@@ -616,6 +661,13 @@ func TestReconcileUpdatesProjectedRBACWhenEnvironmentNamespacesChange(t *testing
 			Helm: &paapv1.HelmInstallSpec{
 				ReleaseName: "monitor",
 				Namespace:   "test-staging-monitor",
+				PlatformManifest: mustManifestJSON(t, model.PlatformManifest{
+					Name:    "monitor",
+					Version: "v1",
+					VariableMapping: []model.VariableMappingEntry{
+						{PlatformVar: "env_namespaces", HelmVar: "env_namespaces"},
+					},
+				}),
 				Values: map[string]string{
 					"env_namespaces": "test-staging,test-staging-monitor,test-staging-old",
 				},
@@ -754,6 +806,7 @@ func TestReconcileDeletesLegacyServiceTypeWorkloadRBACAfterToolRename(t *testing
 				Values:      map[string]string{},
 			},
 		},
+		Status: paapv1.ServiceInstanceStatus{ObservedGeneration: 2},
 	}
 	workloadNS := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{
 		Name: "test-staging",
@@ -858,6 +911,7 @@ func TestReconcileDoesNotProjectWriteWorkloadRBACIntoToolNamespaces(t *testing.T
 				Values:      map[string]string{},
 			},
 		},
+		Status: paapv1.ServiceInstanceStatus{ObservedGeneration: 1},
 	}
 	workloadNS := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{
 		Name:   "test-staging",
@@ -1180,6 +1234,7 @@ func TestReconcileDoesNotProjectWorkloadRBACForToolOnlyServices(t *testing.T) {
 				Values:      map[string]string{},
 			},
 		},
+		Status: paapv1.ServiceInstanceStatus{ObservedGeneration: 1},
 	}
 	workloadNS := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{
 		Name: "test-staging",
@@ -1281,6 +1336,78 @@ func TestReconcileKeepsRunningStatusWhenHelmOperationIsInProgressAndComponentsRe
 
 	if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: types.NamespacedName{Name: svc.Name, Namespace: svc.Namespace}}); err != nil {
 		t.Fatalf("reconcile returned recoverable Helm error: %v", err)
+	}
+
+	latest := &paapv1.ServiceInstance{}
+	if err := r.Get(context.Background(), types.NamespacedName{Name: svc.Name, Namespace: svc.Namespace}, latest); err != nil {
+		t.Fatalf("get latest service instance: %v", err)
+	}
+	if latest.Status.Phase != "Running" {
+		t.Fatalf("phase = %q, want Running", latest.Status.Phase)
+	}
+	if latest.Status.ObservedGeneration != svc.Generation {
+		t.Fatalf("observedGeneration = %d, want %d", latest.Status.ObservedGeneration, svc.Generation)
+	}
+}
+
+func TestReconcileKeepsReadyWorkloadsRunningWhenHelmUpgradeHitsImmutableStatefulSet(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := clientgoscheme.AddToScheme(scheme); err != nil {
+		t.Fatalf("add client-go scheme: %v", err)
+	}
+	if err := paapv1.AddToScheme(scheme); err != nil {
+		t.Fatalf("add paap scheme: %v", err)
+	}
+
+	replicas := int32(1)
+	env := &paapv1.Environment{
+		ObjectMeta: metav1.ObjectMeta{Name: "staging", Namespace: "paap-app-test"},
+		Status:     paapv1.EnvironmentStatus{Phase: "Running"},
+	}
+	svc := &paapv1.ServiceInstance{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:       "staging-redis",
+			Namespace:  "paap-app-test",
+			Generation: 5,
+			Labels: map[string]string{
+				"paap.io/app": "test",
+				"paap.io/env": "staging",
+			},
+		},
+		Spec: paapv1.ServiceInstanceSpec{
+			EnvironmentRef: paapv1.ObjectReference{Name: "staging"},
+			Type:           "redis",
+			ToolNamespace:  "test-staging-redis",
+			ServiceAccount: paapv1.ServiceAccountSpec{
+				Name:      "test-staging-redis",
+				Namespace: "test-staging-redis",
+			},
+			Helm: &paapv1.HelmInstallSpec{
+				ReleaseName: "test-staging-redis",
+				Namespace:   "test-staging-redis",
+				ChartName:   "/tmp/chart",
+				Values:      map[string]string{"fullnameOverride": "test-staging-redis"},
+			},
+		},
+		Status: paapv1.ServiceInstanceStatus{ObservedGeneration: 4},
+	}
+	sts := &appsv1.StatefulSet{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-staging-redis-master", Namespace: "test-staging-redis"},
+		Spec:       appsv1.StatefulSetSpec{Replicas: &replicas},
+		Status:     appsv1.StatefulSetStatus{Replicas: 1, ReadyReplicas: 1},
+	}
+	r := &ServiceInstanceReconciler{
+		Client: fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(env, svc, sts).
+			WithStatusSubresource(&paapv1.ServiceInstance{}, &appsv1.StatefulSet{}).
+			Build(),
+		Scheme:     scheme,
+		HelmClient: fakeHelmInstaller{err: errors.New("cannot patch \"test-staging-redis-master\" with kind StatefulSet: StatefulSet.apps \"test-staging-redis-master\" is invalid: spec: Forbidden: updates to statefulset spec for fields other than 'replicas' are forbidden")},
+	}
+
+	if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: types.NamespacedName{Name: svc.Name, Namespace: svc.Namespace}}); err != nil {
+		t.Fatalf("ready workloads should not leave service card in error for immutable StatefulSet upgrade drift: %v", err)
 	}
 
 	latest := &paapv1.ServiceInstance{}

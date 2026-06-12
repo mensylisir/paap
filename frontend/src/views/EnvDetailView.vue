@@ -630,9 +630,94 @@
             <section class="config-section">
               <div class="config-section-title">
                 <span>运行入口</span>
-                <a v-if="configDrawerExternalUrl" :href="configDrawerExternalUrl" target="_blank" rel="noreferrer">打开</a>
               </div>
-              <code class="config-code">{{ configDrawerExternalUrl || '暂无可访问地址' }}</code>
+              <div v-if="configDrawer.kind === 'service'" class="service-access-stack">
+                <div class="service-access-row">
+                  <span>环境内</span>
+                  <code>{{ serviceDrawerInternalEndpoint || '等待生成' }}</code>
+                </div>
+                <div class="service-access-row service-access-row--action">
+                  <span>外部访问</span>
+                  <code v-if="configDrawerExternalUrl">{{ configDrawerExternalUrl }}</code>
+                  <strong v-else>未开启</strong>
+                  <a v-if="configDrawerExternalUrl" :href="configDrawerExternalUrl" target="_blank" rel="noreferrer" class="text-btn">打开</a>
+                  <button
+                    v-if="serviceDrawerExternalAccessToggleVisible"
+                    type="button"
+                    class="bx--btn bx--btn--secondary bx--btn--sm"
+                    :disabled="serviceExternalAccessLoading"
+                    @click="toggleServiceExternalAccess"
+                  >
+                    {{ serviceDrawerExternalAccessLabel }}
+                  </button>
+                </div>
+              </div>
+              <div v-else class="service-access-row">
+                <span>外部入口</span>
+                <code v-if="configDrawerExternalUrl">{{ configDrawerExternalUrl }}</code>
+                <strong v-else>未暴露</strong>
+                <a v-if="configDrawerExternalUrl" :href="configDrawerExternalUrl" target="_blank" rel="noreferrer" class="text-btn">打开</a>
+              </div>
+            </section>
+
+            <section v-if="configDrawer.kind === 'service' && serviceDrawerProfile.showDeploymentConfig" class="config-section">
+              <div class="config-section-title"><span>部署配置</span></div>
+              <div v-if="serviceDrawerVisibleConfigFields.length" class="config-form-grid">
+                <label v-for="field in serviceDrawerVisibleConfigFields" :key="field.key" :class="{ 'config-form-wide': field.control === 'text' }">
+                  <span>{{ field.label }}</span>
+                  <select v-if="field.control === 'select'" v-model="serviceConfigForm[field.key]" class="bx--select-input">
+                    <option v-for="option in field.options || []" :key="String(option.value)" :value="option.value">{{ option.label }}</option>
+                  </select>
+                  <select v-else-if="field.control === 'switch'" v-model="serviceConfigForm[field.key]" class="bx--select-input">
+                    <option :value="false">关闭</option>
+                    <option :value="true">开启</option>
+                  </select>
+                  <input
+                    v-else-if="field.control === 'number'"
+                    v-model.number="serviceConfigForm[field.key]"
+                    type="number"
+                    :min="field.min"
+                    :max="field.max"
+                    class="bx--text-input"
+                    :placeholder="field.placeholder"
+                  />
+                  <input v-else v-model.trim="serviceConfigForm[field.key]" class="bx--text-input" :placeholder="field.placeholder" />
+                </label>
+              </div>
+              <div v-else class="config-empty">当前服务类型暂未开放可编辑部署参数。</div>
+              <div class="config-kv-grid service-summary-grid">
+                <div v-for="row in serviceDrawerPrimaryRows" :key="row.label">
+                  <span>{{ row.label }}</span>
+                  <strong>{{ row.value }}</strong>
+                </div>
+              </div>
+            </section>
+
+            <section v-if="configDrawer.kind === 'service' && serviceDrawerProfile.showConnectionBindings" class="config-section">
+              <div class="config-section-title"><span>连接参数</span></div>
+              <div class="config-readonly-list">
+                <div v-for="binding in serviceDrawerConnectionPreview.bindings" :key="binding.name" class="config-readonly-row">
+                  <strong>{{ binding.name }}</strong>
+                  <span>{{ binding.value }}</span>
+                </div>
+              </div>
+            </section>
+
+            <section v-if="configDrawer.kind === 'service' && serviceDrawerProfile.showTopology" class="config-section">
+              <div class="config-section-title"><span>实例拓扑</span></div>
+              <div v-if="serviceDrawerTopology.nodes.length" class="service-topology-list">
+                <div class="service-topology-summary">
+                  <span v-for="row in serviceDrawerTopology.summaryRows" :key="row.label">{{ row.label }} {{ row.value }}</span>
+                </div>
+                <div v-for="node in serviceDrawerTopology.nodes" :key="node.name" class="service-topology-node-row">
+                  <strong>{{ node.name }}</strong>
+                  <span>{{ node.role }}</span>
+                  <span>{{ node.status }}</span>
+                  <code>{{ node.address || '未采集地址' }}</code>
+                  <small v-if="node.detail">{{ node.detail }}</small>
+                </div>
+              </div>
+              <div v-else class="config-empty">{{ serviceDrawerWorkspaceLoading ? '拓扑采集中...' : '未采集到实例拓扑。' }}</div>
             </section>
 
             <section v-if="configDrawer.kind === 'component'" class="config-section">
@@ -677,16 +762,6 @@
               </div>
               <p class="cds-helper-text">左侧填写仓库名，右侧填写镜像 Tag；没有扫描到仓库时也可以直接填写仓库名和 Tag。</p>
               <p v-if="registryWorkspaceError" class="modal-error" role="alert">{{ registryWorkspaceError }}</p>
-            </section>
-
-            <section class="config-section">
-              <div class="config-section-title"><span>工作负载</span></div>
-              <div class="config-kv-grid">
-                <div><span>Namespace</span><strong>{{ drawerRuntime.namespace || '-' }}</strong></div>
-                <div><span>Kind</span><strong>{{ drawerRuntime.workloadKind || '-' }}</strong></div>
-                <div><span>Name</span><strong>{{ drawerRuntime.workloadName || '-' }}</strong></div>
-                <div><span>Container</span><strong>{{ drawerRuntime.container || '-' }}</strong></div>
-              </div>
             </section>
 
             <section v-if="configDrawer.kind === 'component'" class="config-section">
@@ -770,6 +845,18 @@
               </details>
             </section>
 
+            <section class="config-section">
+              <details>
+                <summary>运行详情</summary>
+                <div class="config-kv-grid">
+                  <div v-for="row in serviceDrawerRuntimeRows" :key="row.label">
+                    <span>{{ row.label }}</span>
+                    <strong>{{ row.value }}</strong>
+                  </div>
+                </div>
+              </details>
+            </section>
+
             <p v-if="configDrawer.error" class="modal-error" role="alert">{{ configDrawer.error }}</p>
           </div>
 
@@ -779,6 +866,12 @@
             <button type="button" class="bx--btn bx--btn--secondary" @click="closeConfigDrawer">取消</button>
             <button v-if="configDrawer.kind === 'component'" type="button" class="bx--btn bx--btn--primary" :disabled="configDrawer.saving" @click="() => saveConfigDrawer()">
               {{ configDrawer.saving ? '保存中...' : '保存配置' }}
+            </button>
+            <button v-if="configDrawer.kind === 'service' && serviceDrawerProfile.showDeploymentConfig" type="button" class="bx--btn bx--btn--secondary" :disabled="configDrawer.saving || !serviceDrawerConfigurable" @click="saveServiceConfigDrawer">
+              {{ configDrawer.saving ? '保存中...' : '保存配置' }}
+            </button>
+            <button v-if="configDrawer.kind === 'service'" type="button" class="bx--btn bx--btn--primary" :disabled="serviceDrawerDeployDisabled" @click="deployServiceFromDrawer">
+              {{ serviceDrawerDeployLabel }}
             </button>
           </footer>
         </aside>
@@ -799,7 +892,7 @@
           <svg class="submenu-arrow" width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M6 4l4 4-4 4V4z"/></svg>
         </button>
         <button v-if="componentContextMenu.kind === 'canvas'" type="button" @mouseenter="openToolSubmenu" @click="openToolSubmenu">
-          <span>安装工具</span>
+          <span>添加工具</span>
           <small>Git、CI/CD、监控、日志工具</small>
           <svg class="submenu-arrow" width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M6 4l4 4-4 4V4z"/></svg>
         </button>
@@ -820,6 +913,10 @@
         <button v-if="componentContextMenu.kind === 'component'" type="button" @click="deployContextComponent">
           <span>部署</span>
           <small>提交 GitOps 并同步</small>
+        </button>
+        <button v-if="componentContextMenu.kind === 'service'" type="button" @click="deployContextService">
+          <span>部署</span>
+          <small>部署或应用当前服务配置</small>
         </button>
         <button v-if="componentContextMenu.kind === 'component'" type="button" @click="deleteContextComponent">
           <span>删除</span>
@@ -850,7 +947,7 @@
       >
         <button v-for="tmpl in contextSubmenu.templates" :key="tmpl.type" type="button" :class="{ disabled: tmpl.disabled }" @click="selectSubmenuTemplate(tmpl)">
           <span>{{ tmpl.label }}</span>
-          <small>{{ tmpl.disabled ? '已安装' : (tmpl.description || tmpl.type) }}</small>
+          <small>{{ tmpl.disabled ? (tmpl.statusText || '已添加') : (tmpl.description || tmpl.type) }}</small>
         </button>
       </div>
     </Teleport>
@@ -947,7 +1044,7 @@
             <p v-else-if="serviceModalNotice" class="bx--type-body-short-01 no-data">{{ serviceModalNotice }}</p>
             <div v-else class="service-picker-summary">
               <span class="summary-pill">{{ serviceModalMode === 'infra' ? '中间件' : '工具' }}</span>
-              <span class="summary-text">可安装 {{ selectableServiceCount }} 个，已安装或正在安装的模板会显示为不可选状态。</span>
+              <span class="summary-text">可添加 {{ selectableServiceCount }} 个，已添加、已安装或正在安装的模板会显示为不可选状态。</span>
             </div>
             <div class="service-select-grid">
               <div v-for="svc in availableServices" :key="svc.type"
@@ -960,7 +1057,7 @@
                   <div class="service-name-row">
                     <h4 class="bx--type-productive-heading-02 service-name">{{ svc.name }}</h4>
                     <span class="bx--tag bx--tag--sm" :class="svc.disabled ? 'bx--tag--gray' : 'bx--tag--green'">
-                      {{ svc.disabled ? (svc.statusText || '已安装') : '可安装' }}
+                      {{ svc.disabled ? (svc.statusText || '已添加') : '可添加' }}
                     </span>
                   </div>
                   <p class="bx--type-body-short-01 service-desc">{{ svc.description || '无描述' }}</p>
@@ -1088,6 +1185,18 @@ import { useRoute, useRouter } from 'vue-router'
 const router = useRouter()
 import { api } from '../api/client'
 import { validateWorkspaceActionParams, type ServiceWorkspace, type WorkspaceAction, type WorkspaceResource } from './serviceWorkspace'
+import {
+  connectionBindingPreview,
+  serviceConfigFieldVisible,
+  serviceConfigFormFromInstallation,
+  serviceConfigProfile,
+  serviceConfigPrimaryRows,
+  serviceInternalEndpoint,
+  serviceTopologyFromWorkspace,
+  serviceConfigValuesFromForm,
+  serviceRuntimeDetailRows,
+  type ServiceConfigForm,
+} from './serviceAssetConfig'
 import { numericRouteParam, routeEnvironmentKey } from './envDetailRouteState'
 import { shouldPollTemplateInstallations, TEMPLATE_INSTALL_POLL_INTERVAL_MS, TEMPLATE_INSTALL_POLL_MAX_ATTEMPTS } from './envInstallPolling'
 import { buildPickerTemplates, createPickerSessionState, isServiceActive, pickerNotice } from './envDetailServicePicker'
@@ -1226,6 +1335,10 @@ const defaultConfigForm = () => ({
   argsText: '',
 })
 const configForm = ref(defaultConfigForm())
+const defaultServiceConfigForm = (): ServiceConfigForm => ({})
+const serviceConfigForm = ref<ServiceConfigForm>(defaultServiceConfigForm())
+const serviceDrawerWorkspaceLoading = ref(false)
+const serviceExternalAccessLoading = ref(false)
 const configDrawer = ref<{ visible: boolean; kind: 'component' | 'service'; component: any | null; service: any | null; saving: boolean; error: string }>({
   visible: false,
   kind: 'component',
@@ -1441,8 +1554,12 @@ const serviceIconPath = (type:string) => {
   }
   return p[type] || p.default
 }
-const serviceStatusText = (status?: string) => ({ running: '运行中', installing: '安装中', failed: '失败', deleting: '删除中', pending: '等待中', error: '异常' }[String(status || '').toLowerCase()] || '未知')
-const statusTagClass = (status?: string) => ({ running: 'bx--tag--green', installing: 'bx--tag--blue', failed: 'bx--tag--red', deleting: 'bx--tag--gray', pending: 'bx--tag--gray' }[status || ''] || 'bx--tag--gray')
+const serviceStatusText = (status?: string) => ({ running: '运行中', installing: '安装中', failed: '安装失败', deleting: '删除中', pending: '未部署', error: '安装失败', draft: '未部署' }[String(status || '').toLowerCase()] || '未知')
+const statusTagClass = (status?: string) => ({ running: 'bx--tag--green', installing: 'bx--tag--blue', failed: 'bx--tag--red', error: 'bx--tag--red', deleting: 'bx--tag--gray', pending: 'bx--tag--gray', draft: 'bx--tag--gray' }[String(status || '').toLowerCase()] || 'bx--tag--gray')
+const serviceStatusValue = (svc:any) => String(svc?.status || '').toLowerCase()
+const serviceStatusIsDraft = (svc:any) => ['draft', 'pending', ''].includes(serviceStatusValue(svc))
+const serviceStatusHasRuntime = (svc:any) => ['running', 'installing'].includes(serviceStatusValue(svc))
+const serviceStatusCanDeploy = (svc:any) => !['installing', 'deleting'].includes(serviceStatusValue(svc))
 const typeLabel = (type:string) => {
   const labels: Record<string,string> = { deploy:'部署与持续交付', monitor:'监控与可观测性', log:'日志服务', ci:'持续集成', git:'代码仓库', registry:'轻量镜像仓库', harbor:'企业镜像仓库', postgresql:'关系型数据库', mysql:'关系型数据库', mongodb:'文档数据库', redis:'缓存服务', rabbitmq:'消息队列', kafka:'消息队列', minio:'对象存储', infra:'中间件', tool:'平台工具', custom:'自定义工具' }
   return labels[type] || type
@@ -1846,7 +1963,7 @@ const selectSubmenuTemplate = async (tmpl: any) => {
     return
   }
   closeComponentContextMenu()
-  await installCanvasService(tmpl.type)
+  await createCanvasServiceDraft(tmpl.type)
 }
 const openTopologyContextMenu = (event: MouseEvent, node: any) => {
   if (node?.topologyKind === 'service') {
@@ -2294,6 +2411,10 @@ const selectCapabilityService = (svc:any) => {
 }
 const loadCapabilityWorkspace = async (svc = activeCapabilityService.value) => {
   if (!svc?.id) return
+  if (!serviceStatusHasRuntime(svc)) {
+    capabilityWorkspaceMessage.value = '服务尚未部署，部署后会显示运行工作台。'
+    return
+  }
   const seq = ++capabilityWorkspaceLoadSeq
   const targetEnvId = envId.value
   const targetServiceId = svc.id
@@ -2403,7 +2524,7 @@ const runningInfraCount = computed(() => installedInfra.value.filter((svc:any) =
 const runningComponentCount = computed(() => components.value.filter((comp:any) => ['running', 'deployed'].includes(String(comp.status || '').toLowerCase())).length)
 const unhealthyServices = computed(() => services.value.filter((svc:any) => {
   const status = String(svc.status || '').toLowerCase()
-  return Boolean(svc.errorMessage) || ['failed', 'error', 'installing', 'pending', 'deleting'].includes(status)
+  return Boolean(svc.errorMessage) || ['failed', 'error'].includes(status)
 }))
 const criticalTools = computed(() => {
   const priority = ['git', 'ci', 'registry', 'harbor', 'deploy', 'monitor', 'log']
@@ -2455,7 +2576,7 @@ const externalAccessSubtitle = (item:any) => {
   if (item.serviceType) parts.push(svcLabel(item.serviceType))
   return parts.filter(Boolean).join(' · ')
 }
-const hasServiceType = (types: string[]) => services.value.some((svc:any) => types.includes(svc.serviceType) && ['running', 'installing', 'pending'].includes(String(svc.status || '').toLowerCase()))
+const hasServiceType = (types: string[]) => services.value.some((svc:any) => types.includes(svc.serviceType) && ['running', 'installing'].includes(String(svc.status || '').toLowerCase()))
 const tabForServiceTypes = (types: string[]) => {
   const svc = services.value.find((item:any) => types.includes(item.serviceType))
   return svc ? serviceCapability(svc).key : 'components'
@@ -2586,12 +2707,44 @@ const deployComponent = async (comp:any) => {
   }
 }
 const drawerRuntime = computed(() => configDrawer.value.component?.runtimeConfig || configDrawer.value.service?.runtimeConfig || {})
+const drawerService = computed(() => configDrawer.value.kind === 'service' ? configDrawer.value.service : null)
+const serviceDrawerWorkspace = computed<ServiceWorkspace | null>(() => {
+  const svc = drawerService.value
+  if (!svc?.id) return null
+  return capabilityWorkspaceCache.value[svc.id] || null
+})
+const serviceDrawerProfile = computed(() => serviceConfigProfile(drawerService.value || {}))
+const serviceDrawerConfigFields = computed(() => serviceDrawerProfile.value.fields)
+const serviceDrawerVisibleConfigFields = computed(() => serviceDrawerConfigFields.value.filter((field) => serviceConfigFieldVisible(field, serviceConfigForm.value)))
+const serviceDrawerPrimaryRows = computed(() => drawerService.value ? serviceConfigPrimaryRows(drawerService.value, serviceConfigForm.value) : [])
+const serviceDrawerRuntimeRows = computed(() => drawerService.value || configDrawer.value.component
+  ? serviceRuntimeDetailRows(drawerService.value || configDrawer.value.component)
+  : [])
+const serviceDrawerConnectionPreview = computed(() => connectionBindingPreview({ env: [] }, drawerService.value || {}))
+const serviceDrawerTopology = computed(() => serviceTopologyFromWorkspace(drawerService.value || {}, serviceDrawerWorkspace.value?.resources || []))
+const serviceDrawerConfigurable = computed(() => serviceDrawerProfile.value.showDeploymentConfig && serviceDrawerConfigFields.value.length > 0)
+const serviceDrawerDeployDisabled = computed(() => configDrawer.value.saving || !serviceStatusCanDeploy(drawerService.value))
+const serviceDrawerDeployLabel = computed(() => {
+  if (configDrawer.value.saving) return '处理中...'
+  const status = serviceStatusValue(drawerService.value)
+  if (status === 'failed' || status === 'error') return '重新部署'
+  if (status === 'running') return '应用配置'
+  if (serviceStatusIsDraft(drawerService.value)) return '部署'
+  return '部署'
+})
 const configDrawerTitle = computed(() => configDrawer.value.component?.name || configDrawer.value.service?.serviceName || configDrawer.value.service?.name || configDrawer.value.service?.serviceType || '-')
 const configDrawerSubtitle = computed(() => {
-  if (configDrawer.value.kind === 'service') return `${typeLabel(configDrawer.value.service?.serviceType || configDrawer.value.service?.type || '')} · ${configDrawer.value.service?.namespace || drawerRuntime.value.namespace || '-'}`
+  if (configDrawer.value.kind === 'service') return `${typeLabel(configDrawer.value.service?.serviceType || configDrawer.value.service?.type || '')} · ${serviceStatusText(configDrawer.value.service?.status)}`
   return `${compTypeText(configDrawer.value.component?.type)} · ${componentDeliveryModeLabel(configDrawer.value.component)}`
 })
 const configDrawerExternalUrl = computed(() => configDrawer.value.component?.externalUrl || configDrawer.value.service?.externalUrl || '')
+const serviceDrawerInternalEndpoint = computed(() => drawerService.value && serviceStatusHasRuntime(drawerService.value) ? serviceInternalEndpoint(drawerService.value) : '')
+const serviceDrawerExternalAccessEnabled = computed(() => Boolean(configDrawer.value.kind === 'service' && configDrawerExternalUrl.value))
+const serviceDrawerExternalAccessToggleVisible = computed(() => configDrawer.value.kind === 'service' && serviceStatusHasRuntime(drawerService.value) && serviceDrawerProfile.value.showConnectionBindings)
+const serviceDrawerExternalAccessLabel = computed(() => {
+  if (serviceExternalAccessLoading.value) return serviceDrawerExternalAccessEnabled.value ? '关闭中...' : '开启中...'
+  return serviceDrawerExternalAccessEnabled.value ? '关闭外部访问' : '开启外部访问'
+})
 const openComponentConfigDrawer = (comp:any) => {
   const actual = components.value.find((item:any) => Number(item.id) === Number(comp?.id)) || comp
   if (!actual) return
@@ -2606,11 +2759,26 @@ const openServiceConfigDrawer = (svc:any) => {
   selectedTopologyKey.value = String(actual.topologyId || `service:${actual.id}`)
   configDrawer.value = { visible: true, kind: 'service', component: null, service: actual, saving: false, error: '' }
   configForm.value = defaultConfigForm()
+  serviceConfigForm.value = serviceConfigFormFromInstallation(actual)
+  void loadServiceDrawerWorkspace(actual)
 }
 const closeConfigDrawer = () => {
   if (configDrawer.value.saving) return
   configDrawer.value = { visible: false, kind: 'component', component: null, service: null, saving: false, error: '' }
   configForm.value = defaultConfigForm()
+  serviceConfigForm.value = defaultServiceConfigForm()
+}
+const loadServiceDrawerWorkspace = async (svc:any) => {
+  if (!svc?.id || serviceDrawerWorkspaceLoading.value || !serviceStatusHasRuntime(svc)) return
+  serviceDrawerWorkspaceLoading.value = true
+  try {
+    const res = await api.getServiceWorkspace(envId.value, Number(svc.id))
+    capabilityWorkspaceCache.value = { ...capabilityWorkspaceCache.value, [svc.id]: res.data }
+  } catch {
+    // The drawer remains usable for configuration even if live topology is not available yet.
+  } finally {
+    serviceDrawerWorkspaceLoading.value = false
+  }
 }
 const loadComponentConfigForm = (comp:any) => {
   const cfg = parseRuntimeConfig(comp?.config)
@@ -2703,6 +2871,84 @@ const saveConfigDrawerIfComponent = async (options: { refresh?: boolean } = {}) 
   if (configDrawer.value.kind !== 'component' || !configDrawer.value.component?.id) return true
   const saved = await saveConfigDrawer(options)
   return configDrawer.value.error ? false : (saved || true)
+}
+const saveServiceConfigDrawer = async () => {
+  const svc = configDrawer.value.service
+  if (!svc?.id || configDrawer.value.saving) return
+  configDrawer.value.saving = true
+  configDrawer.value.error = ''
+  try {
+    const values = serviceConfigValuesFromForm(svc.serviceType, serviceConfigForm.value)
+    const res = await api.updateService(envId.value, Number(svc.id), { values })
+    const updated = res.data
+    services.value = services.value.map((item:any) => Number(item.id) === Number(updated.id) ? { ...item, ...updated } : item)
+    await refreshServices()
+    const next = services.value.find((item:any) => Number(item.id) === Number(updated.id)) || updated
+    configDrawer.value.service = next
+    serviceConfigForm.value = serviceConfigFormFromInstallation(next)
+    await loadServiceDrawerWorkspace(next)
+  } catch (e:any) {
+    configDrawer.value.error = '保存服务配置失败：' + (e?.message || '未知错误')
+  } finally {
+    configDrawer.value.saving = false
+  }
+}
+const deployServiceFromDrawer = async () => {
+  const svc = configDrawer.value.service
+  if (!svc?.id || configDrawer.value.saving || !serviceStatusCanDeploy(svc)) return
+  configDrawer.value.saving = true
+  configDrawer.value.error = ''
+  try {
+    const values = serviceDrawerProfile.value.showDeploymentConfig
+      ? serviceConfigValuesFromForm(svc.serviceType, serviceConfigForm.value)
+      : {}
+    const res = await api.installService(envId.value, { serviceType: svc.serviceType, values })
+    const updated = res.data
+    if (updated?.id) {
+      services.value = services.value.map((item:any) => Number(item.id) === Number(updated.id) ? { ...item, ...updated } : item)
+    }
+    await refreshServices()
+    const next = services.value.find((item:any) => Number(item.id) === Number(updated?.id || svc.id))
+      || services.value.find((item:any) => item.serviceType === svc.serviceType)
+      || updated
+      || svc
+    configDrawer.value.service = next
+    serviceConfigForm.value = serviceConfigFormFromInstallation(next)
+    await loadServiceDrawerWorkspace(next)
+    notifyEnvUpdated()
+  } catch (e:any) {
+    configDrawer.value.error = '部署服务失败：' + (e?.message || '未知错误')
+  } finally {
+    configDrawer.value.saving = false
+  }
+}
+const toggleServiceExternalAccess = async () => {
+  const svc = drawerService.value
+  if (!svc?.id || serviceExternalAccessLoading.value) return
+  serviceExternalAccessLoading.value = true
+  configDrawer.value.error = ''
+  try {
+    const nextEnabled = !serviceDrawerExternalAccessEnabled.value
+    const res = await api.setServiceExternalAccess(envId.value, Number(svc.id), nextEnabled)
+    if (Array.isArray(res.externalAccess)) {
+      externalAccess.value = res.externalAccess
+    }
+    const updated = res.data
+    if (updated?.id) {
+      services.value = services.value.map((item:any) => Number(item.id) === Number(updated.id) ? { ...item, ...updated } : item)
+    } else {
+      await refreshServices()
+    }
+    const next = services.value.find((item:any) => Number(item.id) === Number(svc.id)) || updated || svc
+    configDrawer.value.service = next
+    serviceConfigForm.value = serviceConfigFormFromInstallation(next)
+    await loadServiceDrawerWorkspace(next)
+    notifyEnvUpdated()
+  } catch (e:any) {
+    configDrawer.value.error = '外部访问切换失败：' + (e?.message || '未知错误')
+  } finally {
+    serviceExternalAccessLoading.value = false
+  }
 }
 const deployDrawerComponent = async () => {
   const comp = configDrawer.value.component
@@ -2819,6 +3065,13 @@ const configureContextNode = () => {
 const deployContextComponent = () => {
   const comp = componentContextMenu.value.component
   if (comp) void deployComponent(comp)
+}
+const deployContextService = () => {
+  const svc = componentContextMenu.value.service
+  closeComponentContextMenu()
+  if (!svc) return
+  openServiceConfigDrawer(svc)
+  void deployServiceFromDrawer()
 }
 const deleteContextComponent = () => {
   const comp = componentContextMenu.value.component
@@ -2939,13 +3192,13 @@ const createCanvasComponentDraft = async (type: string) => {
     pageError.value = '创建组件草稿失败：' + (e?.message || '未知错误')
   }
 }
-const installCanvasService = async (serviceType: string) => {
+const createCanvasServiceDraft = async (serviceType: string) => {
   const createPoint = canvasCreatePoint.value
   closeComponentContextMenu()
   pageError.value = ''
   try {
     const beforeIds = new Set(services.value.map((item:any) => Number(item.id)))
-    await api.installService(envId.value, { serviceType })
+    await api.createServiceDraft(envId.value, { serviceType })
     await refreshServices()
     const installed = services.value.find((item:any) => !beforeIds.has(Number(item.id)) && item.serviceType === serviceType)
       || services.value.find((item:any) => item.serviceType === serviceType)
@@ -2965,7 +3218,7 @@ const installCanvasService = async (serviceType: string) => {
       openServiceConfigDrawer(installed)
     }
   } catch (e:any) {
-    pageError.value = '安装服务失败：' + (e?.message || '未知错误')
+    pageError.value = '添加服务草稿失败：' + (e?.message || '未知错误')
   }
 }
 const adoptCanvasResource = async () => {
@@ -3029,7 +3282,7 @@ const envStatusText = (status: string | undefined) => {
 }
 const selectServiceTemplate = (svc:any) => {
   if (svc.disabled) {
-    serviceModalError.value = `${svc.name} 已安装或正在安装。`
+    serviceModalError.value = `${svc.name} 已添加、已安装或正在安装。`
     return
   }
   serviceModalError.value = ''
@@ -3066,7 +3319,7 @@ const submitService = async () => {
   if (!serviceForm.value.serviceType) return
   const selectedType = serviceForm.value.serviceType
   if (isActiveServiceInstalled(selectedType)) {
-    serviceModalError.value = `${svcLabel(selectedType)} 已安装或正在安装。`
+    serviceModalError.value = `${svcLabel(selectedType)} 已添加、已安装或正在安装。`
     availableServices.value = filterTemplates(serviceModalMode.value)
     serviceForm.value.serviceType = availableServices.value.find((svc:any) => !svc.disabled)?.type || ''
     return
@@ -3075,12 +3328,19 @@ const submitService = async () => {
   serviceModalError.value = ''
   serviceModalNotice.value = ''
   try {
+    const beforeIds = new Set(services.value.map((item:any) => Number(item.id)))
     await api.installService(envId.value, { serviceType: selectedType })
     await refreshServices()
+    const installed = services.value.find((item:any) => !beforeIds.has(Number(item.id)) && item.serviceType === selectedType)
+      || services.value.find((item:any) => item.serviceType === selectedType)
     availableServices.value = filterTemplates(serviceModalMode.value)
     serviceForm.value.serviceType = availableServices.value.find((svc:any) => !svc.disabled)?.type || ''
     serviceModalNotice.value = pickerNotice(serviceModalMode.value, availableServices.value.length, serviceForm.value.serviceType)
     showServiceModal.value = false
+    if (installed) {
+      setActiveTab('components')
+      openServiceConfigDrawer(installed)
+    }
   }
   catch(e:any) { serviceModalError.value = '安装失败：' + (e?.message || '未知错误') }
   finally { serviceSubmitting.value = false }
@@ -3957,8 +4217,8 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 .node-status { width: 7px; height: 7px; border-radius: 50%; background: var(--paap-border-strong); }
 .node-status.running { background: var(--paap-success); }
 .node-status.error, .node-status.failed { background: var(--paap-danger); }
-.node-status.creating, .node-status.deploying, .node-status.building { background: var(--paap-accent); }
-.node-status.draft { background: var(--paap-border-strong); }
+.node-status.creating, .node-status.deploying, .node-status.building, .node-status.installing { background: var(--paap-accent); }
+.node-status.draft, .node-status.pending { background: var(--paap-border-strong); }
 .component-edge-list {
   display: flex;
   flex-wrap: wrap;
@@ -4190,6 +4450,47 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   font-size: 12px;
   overflow-wrap: anywhere;
 }
+.service-access-stack {
+  display: grid;
+  gap: var(--paap-space-2);
+  min-width: 0;
+}
+.service-access-row {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: var(--paap-space-2);
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid var(--paap-border);
+  background: var(--paap-panel-subtle);
+}
+.service-access-row > span {
+  color: var(--paap-muted);
+  font-size: 12px;
+  font-weight: 650;
+}
+.service-access-row code,
+.service-access-row strong {
+  min-width: 0;
+  color: var(--paap-text);
+  font-family: var(--paap-mono);
+  font-size: 12px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.service-access-row strong {
+  color: var(--paap-muted);
+  font-family: inherit;
+}
+.service-access-row .text-btn {
+  white-space: nowrap;
+}
+.service-access-row--action .bx--btn {
+  min-height: 32px;
+  padding: 0 12px;
+  white-space: nowrap;
+}
 .cds-image-fields {
   display: grid;
   grid-template-columns: 1fr 120px;
@@ -4272,6 +4573,57 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   font-size: 12px;
   font-weight: 550;
   overflow-wrap: anywhere;
+}
+.service-summary-grid {
+  margin-top: var(--paap-space-3);
+  padding-top: var(--paap-space-3);
+  border-top: 1px solid var(--paap-border);
+}
+.service-topology-list {
+  display: grid;
+  gap: var(--paap-space-2);
+}
+.service-topology-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--paap-space-2);
+}
+.service-topology-summary span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--paap-border);
+  border-radius: var(--paap-radius-full);
+  background: var(--paap-panel-subtle);
+  color: var(--paap-muted);
+  font-size: 11px;
+  font-weight: 650;
+}
+.service-topology-node-row {
+  display: grid;
+  grid-template-columns: minmax(90px, 1fr) 70px 70px minmax(0, 1.2fr);
+  gap: var(--paap-space-2);
+  align-items: center;
+  min-height: 38px;
+  padding: 8px 10px;
+  border: 1px solid var(--paap-border);
+  border-radius: var(--paap-radius-sm);
+  background: var(--paap-panel-subtle);
+}
+.service-topology-node-row strong,
+.service-topology-node-row span,
+.service-topology-node-row code,
+.service-topology-node-row small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+.service-topology-node-row small {
+  grid-column: 1 / -1;
+  color: var(--paap-muted-2);
 }
 .config-form-grid label,
 .config-stack-field {
@@ -4684,9 +5036,11 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 .tag-dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; margin-right: 5px; vertical-align: middle; margin-top: -1px; background: var(--paap-border-strong); }
 .tag-dot.running   { background: #059669; }
 .tag-dot.installing{ background: var(--paap-accent); }
+.tag-dot.error     { background: var(--paap-danger); }
 .tag-dot.failed    { background: var(--paap-danger); }
 .tag-dot.deleting  { background: var(--paap-muted-2); }
-.tag-dot.pending   { background: #d97706; }
+.tag-dot.pending,
+.tag-dot.draft     { background: var(--paap-border-strong); }
 
 /* Tags */
 .bx--tag { font-size: 11px; padding: 2px 8px; border-radius: var(--paap-radius-full); font-weight: 500; }

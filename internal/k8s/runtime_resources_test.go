@@ -10,6 +10,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
@@ -184,6 +185,90 @@ func TestListNamespaceExternalEndpointsFindsNodePortAndIngress(t *testing.T) {
 		if !got[want] {
 			t.Fatalf("missing endpoint %s, got %#v", want, endpoints)
 		}
+	}
+}
+
+func TestSetNamespaceServiceExternalAccessPatchesRedisMasterServiceOnly(t *testing.T) {
+	previous := GetClient()
+	t.Cleanup(func() { SetClient(previous) })
+
+	SetClient(fake.NewClientBuilder().WithObjects(
+		&corev1.Service{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "billing-dev-redis-headless",
+				Namespace: "billing-dev-redis",
+				Labels: map[string]string{
+					"app.kubernetes.io/instance": "billing-dev-redis",
+					"app.kubernetes.io/name":     "redis",
+				},
+			},
+			Spec: corev1.ServiceSpec{
+				Type:      corev1.ServiceTypeClusterIP,
+				ClusterIP: corev1.ClusterIPNone,
+				Ports:     []corev1.ServicePort{{Name: "redis", Port: 6379}},
+			},
+		},
+		&corev1.Service{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "billing-dev-redis-master",
+				Namespace: "billing-dev-redis",
+				Labels: map[string]string{
+					"app.kubernetes.io/component": "master",
+					"app.kubernetes.io/instance":  "billing-dev-redis",
+					"app.kubernetes.io/name":      "redis",
+				},
+			},
+			Spec: corev1.ServiceSpec{
+				Type:      corev1.ServiceTypeClusterIP,
+				ClusterIP: "10.96.0.10",
+				Ports:     []corev1.ServicePort{{Name: "redis", Port: 6379}},
+			},
+		},
+		&corev1.Service{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "billing-dev-redis-replicas",
+				Namespace: "billing-dev-redis",
+				Labels: map[string]string{
+					"app.kubernetes.io/component": "replica",
+					"app.kubernetes.io/instance":  "billing-dev-redis",
+					"app.kubernetes.io/name":      "redis",
+				},
+			},
+			Spec: corev1.ServiceSpec{
+				Type:      corev1.ServiceTypeClusterIP,
+				ClusterIP: "10.96.0.11",
+				Ports:     []corev1.ServicePort{{Name: "redis", Port: 6379}},
+			},
+		},
+	).Build())
+
+	updated, err := SetNamespaceServiceExternalAccess(t.Context(), "billing-dev-redis", "redis", true)
+	if err != nil {
+		t.Fatalf("enable external access: %v", err)
+	}
+	if updated.Name != "billing-dev-redis-master" || updated.Spec.Type != corev1.ServiceTypeNodePort {
+		t.Fatalf("expected redis master NodePort, got %s/%s", updated.Name, updated.Spec.Type)
+	}
+
+	cl := GetClient()
+	replica := &corev1.Service{}
+	if err := cl.Get(t.Context(), types.NamespacedName{Namespace: "billing-dev-redis", Name: "billing-dev-redis-replicas"}, replica); err != nil {
+		t.Fatalf("get replica service: %v", err)
+	}
+	if replica.Spec.Type != corev1.ServiceTypeClusterIP {
+		t.Fatalf("replica service must stay internal, got %s", replica.Spec.Type)
+	}
+
+	updated.Spec.Ports[0].NodePort = 30379
+	if err := cl.Update(t.Context(), updated); err != nil {
+		t.Fatalf("seed nodeport: %v", err)
+	}
+	disabled, err := SetNamespaceServiceExternalAccess(t.Context(), "billing-dev-redis", "redis", false)
+	if err != nil {
+		t.Fatalf("disable external access: %v", err)
+	}
+	if disabled.Spec.Type != corev1.ServiceTypeClusterIP || disabled.Spec.Ports[0].NodePort != 0 {
+		t.Fatalf("expected ClusterIP with cleared nodePort, got type=%s nodePort=%d", disabled.Spec.Type, disabled.Spec.Ports[0].NodePort)
 	}
 }
 

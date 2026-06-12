@@ -49,6 +49,17 @@ serviceAccount:
   name: ""  # 平台会注入
 ```
 
+`preset-values.yaml` 还会使用 Redis chart 实际支持的 key 设置平台默认值。例如默认关闭 Master/Replica 持久化，不能只写顶层 `persistence.enabled`：
+
+```yaml
+master:
+  persistence:
+    enabled: false
+replica:
+  persistence:
+    enabled: false
+```
+
 ### 2. 权限声明
 
 Redis 只需要在自己的 namespace 内运行，不声明跨 namespace 权限。
@@ -134,6 +145,7 @@ helm template my-redis ./chart/redis \
 - [x] **未修改** `chart/` 目录下的任何文件
 - [x] `preset-values.yaml` 禁用了 `rbac.create`
 - [x] `preset-values.yaml` 禁用了 `serviceAccount.create`
+- [x] `preset-values.yaml` 使用 Redis chart 支持的持久化 key
 - [x] `platform-manifest.yaml` 只声明了 `toolNamespace` 权限
 - [x] 使用 `variable_mapping` 传递密码
 - [x] 本地测试通过，无集群级资源

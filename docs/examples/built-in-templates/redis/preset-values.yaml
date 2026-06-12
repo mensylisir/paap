@@ -1,3 +1,14 @@
 # 基础设施只在自己 namespace 内运行，不需要跨 ns 权限
+serviceAccount:
+  create: false
 persistence:
   enabled: false
+master:
+  persistence:
+    enabled: false
+replica:
+  persistence:
+    enabled: false
+sentinel:
+  persistence:
+    enabled: false

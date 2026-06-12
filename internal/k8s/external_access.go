@@ -57,6 +57,35 @@ func ListNamespaceExternalEndpoints(ctx context.Context, namespace string) ([]Ex
 	return endpoints, nil
 }
 
+func SetNamespaceServiceExternalAccess(ctx context.Context, namespace, serviceType string, enabled bool) (*corev1.Service, error) {
+	cl, err := requireClient()
+	if err != nil {
+		return nil, err
+	}
+	services := &corev1.ServiceList{}
+	if err := cl.List(ctx, services, client.InNamespace(namespace)); err != nil {
+		return nil, fmt.Errorf("list services: %w", err)
+	}
+	target := externalAccessTargetService(services.Items, serviceType)
+	if target == nil {
+		return nil, fmt.Errorf("no service in namespace %s can be exposed", namespace)
+	}
+
+	next := target.DeepCopy()
+	if enabled {
+		next.Spec.Type = corev1.ServiceTypeNodePort
+	} else {
+		next.Spec.Type = corev1.ServiceTypeClusterIP
+		for i := range next.Spec.Ports {
+			next.Spec.Ports[i].NodePort = 0
+		}
+	}
+	if err := cl.Update(ctx, next); err != nil {
+		return nil, fmt.Errorf("update service %s/%s: %w", next.Namespace, next.Name, err)
+	}
+	return next, nil
+}
+
 func endpointPriority(kind string) int {
 	switch kind {
 	case "Gateway":
@@ -70,6 +99,73 @@ func endpointPriority(kind string) int {
 	default:
 		return 9
 	}
+}
+
+func externalAccessTargetService(services []corev1.Service, serviceType string) *corev1.Service {
+	bestScore := -1
+	var best *corev1.Service
+	for i := range services {
+		score := externalAccessServiceScore(services[i], serviceType)
+		if score < 0 {
+			continue
+		}
+		if score > bestScore || (score == bestScore && best != nil && services[i].Name < best.Name) {
+			bestScore = score
+			best = &services[i]
+		}
+	}
+	return best
+}
+
+func externalAccessServiceScore(svc corev1.Service, serviceType string) int {
+	name := strings.ToLower(svc.Name)
+	normalizedType := strings.ToLower(strings.TrimSpace(serviceType))
+	component := strings.ToLower(strings.TrimSpace(svc.Labels["app.kubernetes.io/component"]))
+	if svc.Spec.Type == corev1.ServiceTypeExternalName || svc.Spec.ClusterIP == corev1.ClusterIPNone {
+		return -1
+	}
+	if strings.Contains(name, "headless") || strings.HasSuffix(name, "-hl") || strings.Contains(name, "metrics") || strings.Contains(name, "exporter") {
+		return -1
+	}
+	if len(svc.Spec.Ports) == 0 {
+		return -1
+	}
+	hasExposablePort := false
+	for _, port := range svc.Spec.Ports {
+		if !skipExternalServicePort(port) {
+			hasExposablePort = true
+			break
+		}
+	}
+	if !hasExposablePort {
+		return -1
+	}
+
+	score := 10
+	if normalizedType != "" && (strings.Contains(name, normalizedType) || strings.EqualFold(svc.Labels["app.kubernetes.io/name"], normalizedType)) {
+		score += 20
+	}
+	switch normalizedType {
+	case "redis":
+		if component == "master" || strings.Contains(name, "master") {
+			score += 80
+		}
+		if component == "replica" || strings.Contains(name, "replica") {
+			score -= 30
+		}
+	case "mysql", "postgresql":
+		if component == "primary" || strings.Contains(name, "primary") {
+			score += 80
+		}
+		if component == "secondary" || component == "read" || strings.Contains(name, "secondary") || strings.Contains(name, "read") {
+			score -= 30
+		}
+	default:
+		if component != "" {
+			score += 5
+		}
+	}
+	return score
 }
 
 func nodeAccessHosts(ctx context.Context, cl client.Client) []string {

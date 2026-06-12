@@ -80,7 +80,10 @@ func SetupRouter(r *gin.Engine) {
 		api.Any("/environments/:id/services/:serviceId/proxy/*path", ProxyServiceInstance)
 		api.GET("/environments/:id/services/:serviceId/registry-ca.crt", DownloadRegistryCACertificate)
 		api.POST("/environments/:id/services/:serviceId/workspace/actions", RunServiceWorkspaceAction)
+		api.POST("/environments/:id/services/drafts", CreateServiceDraft)
 		api.POST("/environments/:id/services", InstallService)
+		api.PUT("/environments/:id/services/:serviceId", UpdateService)
+		api.PUT("/environments/:id/services/:serviceId/external-access", SetServiceExternalAccess)
 		api.DELETE("/environments/:id/services/:serviceId", UninstallService)
 
 		// Environment Components

@@ -25,6 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -239,6 +240,49 @@ func TestBuildHelmInstallSpecMapsMonitorNamespacesToPlatformValues(t *testing.T)
 	}
 }
 
+func TestBuildHelmInstallSpecAppliesUserValuesAfterTemplateAndPlatformValues(t *testing.T) {
+	manifest := model.PlatformManifest{
+		Name:    "redis",
+		Version: "v1",
+		VariableMapping: []model.VariableMappingEntry{
+			{PlatformVar: "tool_namespace", HelmVar: "fullnameOverride"},
+		},
+	}
+	manifestJSON, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatalf("marshal manifest: %v", err)
+	}
+	app := model.Application{Identifier: "billing"}
+	env := model.Environment{Identifier: "dev"}
+	tmpl := model.ServiceTemplate{
+		Type:                 "redis",
+		Category:             "infra",
+		ChartArchivePath:     "/charts/redis.tar.gz",
+		DefaultValues:        `{"architecture":"standalone","service.type":"ClusterIP","master.persistence.size":"8Gi"}`,
+		PlatformManifestJSON: string(manifestJSON),
+	}
+
+	spec := buildHelmInstallSpec(&app, &env, &tmpl, "redis", map[string]string{
+		"architecture":                   "replication",
+		"master.persistence.size":        "20Gi",
+		"service.type":                   "NodePort",
+		"master.service.nodePorts.redis": "30379",
+	})
+
+	if got := spec.Values["fullnameOverride"]; got != "billing-dev-redis" {
+		t.Fatalf("platform value fullnameOverride = %#v, want billing-dev-redis", got)
+	}
+	if got := spec.Values["architecture"]; got != "replication" {
+		t.Fatalf("user architecture override = %#v, want replication", got)
+	}
+	if got := spec.Values["master.persistence.size"]; got != "20Gi" {
+		t.Fatalf("user storage override = %#v, want 20Gi", got)
+	}
+	if got := spec.Values["service.type"]; got != "NodePort" {
+		t.Fatalf("user network override = %#v, want NodePort", got)
+	}
+}
+
 func TestBuildHelmInstallSpecKeepsTemplatePlatformManifest(t *testing.T) {
 	manifest := model.PlatformManifest{
 		Name:    "loki",
@@ -434,6 +478,250 @@ func TestInstallTemplateServicesInstallsServicesAndInfra(t *testing.T) {
 		if svc.Labels["paap.io/service-type"] != serviceType {
 			t.Fatalf("service instance %s labels = %#v", serviceType, svc.Labels)
 		}
+	}
+}
+
+func TestCreateServiceDraftDoesNotCreateServiceInstanceCR(t *testing.T) {
+	previousDB := database.DB
+	previousClient := k8s.GetClient()
+	t.Cleanup(func() {
+		database.DB = previousDB
+		k8s.SetClient(previousClient)
+	})
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("sqlite db handle: %v", err)
+	}
+	sqlDB.SetMaxOpenConns(1)
+	if err := db.AutoMigrate(&model.Application{}, &model.Environment{}, &model.ServiceTemplate{}, &model.ServiceInstallation{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	database.DB = db
+
+	app := model.Application{Name: "Billing", Identifier: "billing", OwnerID: 1}
+	if err := db.Create(&app).Error; err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	env := model.Environment{ApplicationID: app.ID, Name: "Dev", Identifier: "dev", Namespace: "billing-dev", Status: "running"}
+	if err := db.Create(&env).Error; err != nil {
+		t.Fatalf("create env: %v", err)
+	}
+	tmpl := model.ServiceTemplate{Type: "rabbitmq", Name: "RabbitMQ", Installer: "helm", Category: "infra", PlatformManifestJSON: `{"name":"rabbitmq","version":"v1"}`}
+	if err := db.Create(&tmpl).Error; err != nil {
+		t.Fatalf("create template: %v", err)
+	}
+
+	testScheme := runtime.NewScheme()
+	if err := clientgoscheme.AddToScheme(testScheme); err != nil {
+		t.Fatalf("add core scheme: %v", err)
+	}
+	if err := paapv1.AddToScheme(testScheme); err != nil {
+		t.Fatalf("add paap scheme: %v", err)
+	}
+	k8s.SetClient(fake.NewClientBuilder().WithScheme(testScheme).Build())
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.POST("/api/v1/environments/:id/services/drafts", CreateServiceDraft)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/environments/1/services/drafts", strings.NewReader(`{"serviceType":"rabbitmq"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+
+	var inst model.ServiceInstallation
+	if err := db.Where("environment_id = ? AND service_type = ?", env.ID, "rabbitmq").First(&inst).Error; err != nil {
+		t.Fatalf("service draft not saved: %v", err)
+	}
+	if inst.Status != "draft" {
+		t.Fatalf("service status = %q, want draft", inst.Status)
+	}
+	if inst.Namespace != "billing-dev-rabbitmq" || inst.ReleaseName != "billing-dev-rabbitmq" {
+		t.Fatalf("unexpected draft namespace/release: %#v", inst)
+	}
+
+	var svc paapv1.ServiceInstance
+	err = k8s.GetClient().Get(t.Context(), ctrlclient.ObjectKey{Name: "dev-rabbitmq", Namespace: "paap-app-billing"}, &svc)
+	if !apierrors.IsNotFound(err) {
+		t.Fatalf("draft creation must not create ServiceInstance CR, got err=%v svc=%#v", err, svc)
+	}
+}
+
+func TestInstallServiceDeploysExistingDraft(t *testing.T) {
+	previousDB := database.DB
+	previousClient := k8s.GetClient()
+	t.Cleanup(func() {
+		database.DB = previousDB
+		k8s.SetClient(previousClient)
+	})
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("sqlite db handle: %v", err)
+	}
+	sqlDB.SetMaxOpenConns(1)
+	if err := db.AutoMigrate(&model.Application{}, &model.Environment{}, &model.ServiceTemplate{}, &model.ServiceInstallation{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	database.DB = db
+
+	app := model.Application{Name: "Billing", Identifier: "billing", OwnerID: 1}
+	if err := db.Create(&app).Error; err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	env := model.Environment{ApplicationID: app.ID, Name: "Dev", Identifier: "dev", Namespace: "billing-dev", Status: "running"}
+	if err := db.Create(&env).Error; err != nil {
+		t.Fatalf("create env: %v", err)
+	}
+	tmpl := model.ServiceTemplate{Type: "redis", Name: "Redis", Installer: "helm", Category: "infra", PlatformManifestJSON: `{"name":"redis","version":"v1"}`}
+	if err := db.Create(&tmpl).Error; err != nil {
+		t.Fatalf("create template: %v", err)
+	}
+	if err := db.Create(&model.ServiceInstallation{
+		EnvironmentID: env.ID,
+		ServiceType:   "redis",
+		ServiceName:   "redis",
+		Status:        "draft",
+		Namespace:     "billing-dev-redis",
+		ReleaseName:   "billing-dev-redis",
+		Values:        `{"architecture":"standalone"}`,
+	}).Error; err != nil {
+		t.Fatalf("create draft: %v", err)
+	}
+
+	testScheme := runtime.NewScheme()
+	if err := clientgoscheme.AddToScheme(testScheme); err != nil {
+		t.Fatalf("add core scheme: %v", err)
+	}
+	if err := paapv1.AddToScheme(testScheme); err != nil {
+		t.Fatalf("add paap scheme: %v", err)
+	}
+	k8s.SetClient(fake.NewClientBuilder().WithScheme(testScheme).Build())
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.POST("/api/v1/environments/:id/services", InstallService)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/environments/1/services", strings.NewReader(`{"serviceType":"redis","values":{"architecture":"standalone"}}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+
+	var inst model.ServiceInstallation
+	if err := db.Where("environment_id = ? AND service_type = ?", env.ID, "redis").First(&inst).Error; err != nil {
+		t.Fatalf("service installation not saved: %v", err)
+	}
+	if inst.Status != "installing" {
+		t.Fatalf("service status = %q, want installing", inst.Status)
+	}
+
+	var svc paapv1.ServiceInstance
+	if err := k8s.GetClient().Get(t.Context(), ctrlclient.ObjectKey{Name: "dev-redis", Namespace: "paap-app-billing"}, &svc); err != nil {
+		t.Fatalf("deploying a draft should create ServiceInstance CR: %v", err)
+	}
+	if svc.Spec.Type != "redis" {
+		t.Fatalf("service instance type = %q, want redis", svc.Spec.Type)
+	}
+}
+
+func TestUpdateServiceDraftSavesValuesWithoutCreatingCR(t *testing.T) {
+	previousDB := database.DB
+	previousClient := k8s.GetClient()
+	t.Cleanup(func() {
+		database.DB = previousDB
+		k8s.SetClient(previousClient)
+	})
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("sqlite db handle: %v", err)
+	}
+	sqlDB.SetMaxOpenConns(1)
+	if err := db.AutoMigrate(&model.Application{}, &model.Environment{}, &model.ServiceTemplate{}, &model.ServiceInstallation{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	database.DB = db
+
+	app := model.Application{Name: "Billing", Identifier: "billing", OwnerID: 1}
+	if err := db.Create(&app).Error; err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	env := model.Environment{ApplicationID: app.ID, Name: "Dev", Identifier: "dev", Namespace: "billing-dev", Status: "running"}
+	if err := db.Create(&env).Error; err != nil {
+		t.Fatalf("create env: %v", err)
+	}
+	tmpl := model.ServiceTemplate{Type: "redis", Name: "Redis", Installer: "helm", Category: "infra", PlatformManifestJSON: `{"name":"redis","version":"v1"}`}
+	if err := db.Create(&tmpl).Error; err != nil {
+		t.Fatalf("create template: %v", err)
+	}
+	inst := model.ServiceInstallation{
+		EnvironmentID: env.ID,
+		ServiceType:   "redis",
+		ServiceName:   "redis",
+		Status:        "draft",
+		Namespace:     "billing-dev-redis",
+		ReleaseName:   "billing-dev-redis",
+		Values:        `{"architecture":"standalone"}`,
+	}
+	if err := db.Create(&inst).Error; err != nil {
+		t.Fatalf("create draft: %v", err)
+	}
+
+	testScheme := runtime.NewScheme()
+	if err := clientgoscheme.AddToScheme(testScheme); err != nil {
+		t.Fatalf("add core scheme: %v", err)
+	}
+	if err := paapv1.AddToScheme(testScheme); err != nil {
+		t.Fatalf("add paap scheme: %v", err)
+	}
+	k8s.SetClient(fake.NewClientBuilder().WithScheme(testScheme).Build())
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.PUT("/api/v1/environments/:id/services/:serviceId", UpdateService)
+
+	req := httptest.NewRequest(http.MethodPut, fmt.Sprintf("/api/v1/environments/1/services/%d", inst.ID), strings.NewReader(`{"values":{"architecture":"replication","replica.replicaCount":"2"}}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var saved model.ServiceInstallation
+	if err := db.First(&saved, inst.ID).Error; err != nil {
+		t.Fatalf("load saved service: %v", err)
+	}
+	if saved.Status != "draft" {
+		t.Fatalf("service status = %q, want draft", saved.Status)
+	}
+	if !strings.Contains(saved.Values, `"architecture":"replication"`) || !strings.Contains(saved.Values, `"replica.replicaCount":"2"`) {
+		t.Fatalf("service values not saved: %s", saved.Values)
+	}
+
+	var svc paapv1.ServiceInstance
+	err = k8s.GetClient().Get(t.Context(), ctrlclient.ObjectKey{Name: "dev-redis", Namespace: "paap-app-billing"}, &svc)
+	if !apierrors.IsNotFound(err) {
+		t.Fatalf("saving draft config must not create ServiceInstance CR, got err=%v svc=%#v", err, svc)
 	}
 }
 
@@ -664,6 +952,111 @@ func TestGetEnvironmentReturnsApplicationAndServiceExternalAccess(t *testing.T) 
 	}
 	if !foundServiceEndpoint {
 		t.Fatalf("service endpoint not returned: %#v", body.Data.ExternalAccess)
+	}
+}
+
+func TestSetServiceExternalAccessPatchesLiveServiceWithoutChangingHelmValues(t *testing.T) {
+	previousDB := database.DB
+	previousClient := k8s.GetClient()
+	t.Cleanup(func() {
+		database.DB = previousDB
+		k8s.SetClient(previousClient)
+	})
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&model.Application{}, &model.Environment{}, &model.ServiceInstallation{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	database.DB = db
+
+	app := model.Application{Name: "Billing", Identifier: "billing", OwnerID: 1}
+	if err := db.Create(&app).Error; err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	env := model.Environment{ApplicationID: app.ID, Name: "Dev", Identifier: "dev", Status: "running", Namespace: "billing-dev"}
+	if err := db.Create(&env).Error; err != nil {
+		t.Fatalf("create env: %v", err)
+	}
+	inst := model.ServiceInstallation{
+		EnvironmentID: env.ID,
+		ServiceType:   "redis",
+		ServiceName:   "redis",
+		Status:        "running",
+		Namespace:     "billing-dev-redis",
+		Values:        `{"architecture":"replication","master.persistence.enabled":"false"}`,
+	}
+	if err := db.Create(&inst).Error; err != nil {
+		t.Fatalf("create service installation: %v", err)
+	}
+
+	testScheme := runtime.NewScheme()
+	if err := clientgoscheme.AddToScheme(testScheme); err != nil {
+		t.Fatalf("add client-go scheme: %v", err)
+	}
+	k8s.SetClient(fake.NewClientBuilder().WithScheme(testScheme).WithObjects(
+		&corev1.Service{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "billing-dev-redis-master",
+				Namespace: "billing-dev-redis",
+				Labels: map[string]string{
+					"app.kubernetes.io/component": "master",
+					"app.kubernetes.io/name":      "redis",
+				},
+			},
+			Spec: corev1.ServiceSpec{
+				Type:      corev1.ServiceTypeClusterIP,
+				ClusterIP: "10.96.0.10",
+				Ports:     []corev1.ServicePort{{Name: "redis", Port: 6379}},
+			},
+		},
+	).Build())
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.PUT("/api/v1/environments/:id/services/:serviceId/external-access", SetServiceExternalAccess)
+	path := fmt.Sprintf("/api/v1/environments/%d/services/%d/external-access", env.ID, inst.ID)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, path, strings.NewReader(`{"enabled":true}`))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	liveService := &corev1.Service{}
+	if err := k8s.GetClient().Get(t.Context(), types.NamespacedName{Namespace: "billing-dev-redis", Name: "billing-dev-redis-master"}, liveService); err != nil {
+		t.Fatalf("get redis service: %v", err)
+	}
+	if liveService.Spec.Type != corev1.ServiceTypeNodePort {
+		t.Fatalf("expected live Service to become NodePort, got %s", liveService.Spec.Type)
+	}
+	var saved model.ServiceInstallation
+	if err := db.First(&saved, inst.ID).Error; err != nil {
+		t.Fatalf("reload installation: %v", err)
+	}
+	if saved.Values != inst.Values {
+		t.Fatalf("external access must not mutate Helm values, got %s want %s", saved.Values, inst.Values)
+	}
+
+	liveService.Spec.Ports[0].NodePort = 30379
+	if err := k8s.GetClient().Update(t.Context(), liveService); err != nil {
+		t.Fatalf("seed nodePort: %v", err)
+	}
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPut, path, strings.NewReader(`{"enabled":false}`))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("disable status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if err := k8s.GetClient().Get(t.Context(), types.NamespacedName{Namespace: "billing-dev-redis", Name: "billing-dev-redis-master"}, liveService); err != nil {
+		t.Fatalf("get redis service after disable: %v", err)
+	}
+	if liveService.Spec.Type != corev1.ServiceTypeClusterIP || liveService.Spec.Ports[0].NodePort != 0 {
+		t.Fatalf("expected ClusterIP with cleared NodePort, got type=%s nodePort=%d", liveService.Spec.Type, liveService.Spec.Ports[0].NodePort)
 	}
 }
 

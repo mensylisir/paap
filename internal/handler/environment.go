@@ -158,7 +158,16 @@ type AdoptResourceRequest struct {
 }
 
 type InstallServiceRequest struct {
-	ServiceType string `json:"serviceType" binding:"required"`
+	ServiceType string            `json:"serviceType" binding:"required"`
+	Values      map[string]string `json:"values"`
+}
+
+type UpdateServiceRequest struct {
+	Values map[string]string `json:"values"`
+}
+
+type ServiceExternalAccessRequest struct {
+	Enabled bool `json:"enabled"`
 }
 
 type WorkspaceActionRequest struct {
@@ -216,7 +225,7 @@ func serviceResourceAnnotations(appIdentifier, envIdentifier string, svcTmpl *mo
 	return annotations
 }
 
-func buildHelmInstallSpec(app *model.Application, env *model.Environment, svcTmpl *model.ServiceTemplate, svcType string) *paapv1.HelmInstallSpec {
+func buildHelmInstallSpec(app *model.Application, env *model.Environment, svcTmpl *model.ServiceTemplate, svcType string, userValues ...map[string]string) *paapv1.HelmInstallSpec {
 	releaseName := serviceToolNamespace(*app, *env, svcTmpl, svcType)
 	toolNS := serviceToolNamespace(*app, *env, svcTmpl, svcType)
 
@@ -243,6 +252,14 @@ func buildHelmInstallSpec(app *model.Application, env *model.Environment, svcTmp
 					values[k] = v
 				}
 			}
+		}
+	}
+	if len(userValues) > 0 {
+		for k, v := range userValues[0] {
+			if strings.TrimSpace(k) == "" {
+				continue
+			}
+			values[k] = v
 		}
 	}
 
@@ -365,6 +382,17 @@ func mergeDefaultValues(defaultsJSON string, overrides map[string]string) map[st
 		result[k] = v
 	}
 	return result
+}
+
+func serviceValuesJSON(values map[string]string) string {
+	if len(values) == 0 {
+		return "{}"
+	}
+	raw, err := json.Marshal(values)
+	if err != nil {
+		return "{}"
+	}
+	return string(raw)
 }
 
 // buildContextValues builds platform context variables that are injected into
@@ -6409,6 +6437,89 @@ func nonJobPodOwnerExpr(namespacePattern string) string {
 	return fmt.Sprintf(`max by (namespace, pod) (kube_pod_owner{namespace=~"%s", owner_is_controller="true", owner_kind!="Job"})`, namespacePattern)
 }
 
+// CreateServiceDraft adds a service card to the environment canvas without
+// creating any Kubernetes runtime resources. Deployment remains explicit.
+func CreateServiceDraft(c *gin.Context) {
+	syncClusterStateIfPossible()
+
+	envID, _ := strconv.Atoi(c.Param("id"))
+
+	var req InstallServiceRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	var env model.Environment
+	if err := database.DB.First(&env, envID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "environment not found"})
+		return
+	}
+
+	var app model.Application
+	if err := database.DB.First(&app, env.ApplicationID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "application not found"})
+		return
+	}
+
+	var svcTmpl model.ServiceTemplate
+	if err := database.DB.Where("type = ?", req.ServiceType).First(&svcTmpl).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "service template not found"})
+		return
+	}
+
+	toolNS := serviceToolNamespace(app, env, &svcTmpl, req.ServiceType)
+	helmSpec := buildHelmInstallSpec(&app, &env, &svcTmpl, req.ServiceType, req.Values)
+
+	var inst model.ServiceInstallation
+	err := database.DB.Unscoped().
+		Where("environment_id = ? AND service_type = ?", env.ID, req.ServiceType).
+		Order("CASE WHEN deleted_at IS NULL THEN 0 ELSE 1 END, id").
+		First(&inst).Error
+	if err != nil && err != gorm.ErrRecordNotFound {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	statusCode := http.StatusCreated
+	if err == nil {
+		statusCode = http.StatusOK
+		if inst.DeletedAt.Valid {
+			inst.DeletedAt = gorm.DeletedAt{}
+			statusCode = http.StatusCreated
+		}
+		switch strings.ToLower(strings.TrimSpace(inst.Status)) {
+		case "running", "installing", "deleting":
+			database.DB.Save(&inst)
+			c.JSON(http.StatusOK, gin.H{"data": inst})
+			return
+		}
+	} else {
+		inst = model.ServiceInstallation{
+			EnvironmentID: env.ID,
+			ServiceType:   req.ServiceType,
+		}
+	}
+
+	inst.Status = "draft"
+	inst.ServiceName = serviceToolIdentity(&svcTmpl, req.ServiceType)
+	inst.Namespace = valueOrFallback(helmSpec.Namespace, toolNS)
+	inst.ReleaseName = valueOrFallback(helmSpec.ReleaseName, inst.Namespace)
+	inst.ErrorMessage = ""
+	inst.Values = serviceValuesJSON(helmSpec.Values)
+	if err := database.DB.Save(&inst).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if err := database.DB.Unscoped().
+		Where("environment_id = ? AND service_type = ? AND id <> ?", env.ID, req.ServiceType, inst.ID).
+		Delete(&model.ServiceInstallation{}).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(statusCode, gin.H{"data": inst})
+}
+
 // InstallService installs a service (tool) in an environment via CR
 func InstallService(c *gin.Context) {
 	syncClusterStateIfPossible()
@@ -6453,7 +6564,7 @@ func InstallService(c *gin.Context) {
 		if inst.DeletedAt.Valid {
 			inst.DeletedAt = gorm.DeletedAt{}
 		}
-		if inst.Status == "running" || inst.Status == "installing" {
+		if len(req.Values) == 0 && (inst.Status == "running" || inst.Status == "installing") {
 			database.DB.Save(&inst)
 			c.JSON(http.StatusOK, gin.H{"data": inst})
 			return
@@ -6470,6 +6581,12 @@ func InstallService(c *gin.Context) {
 	inst.Namespace = toolNS
 	inst.ReleaseName = toolNS
 	inst.ErrorMessage = ""
+
+	ctx := context.Background()
+	var manifestsRef *paapv1.ConfigMapReference
+	// 统一走 Operator：Helm chart 交给 ServiceInstance spec 记录，operator 负责安装
+	helmSpec := buildHelmInstallSpec(&app, &env, &svcTmpl, req.ServiceType, req.Values)
+	inst.Values = serviceValuesJSON(helmSpec.Values)
 	if err := database.DB.Save(&inst).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -6480,11 +6597,6 @@ func InstallService(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-
-	ctx := context.Background()
-	var manifestsRef *paapv1.ConfigMapReference
-	// 统一走 Operator：Helm chart 交给 ServiceInstance spec 记录，operator 负责安装
-	helmSpec := buildHelmInstallSpec(&app, &env, &svcTmpl, req.ServiceType)
 
 	workloadRole := getWorkloadRole(req.ServiceType)
 	toolNamespaceRole := getToolNamespaceRole(req.ServiceType)
@@ -6504,6 +6616,111 @@ func InstallService(c *gin.Context) {
 	inst.Status = "installing"
 	database.DB.Save(&inst)
 	c.JSON(http.StatusCreated, gin.H{"data": inst})
+}
+
+// UpdateService saves a service's deployable configuration. It intentionally
+// does not reconcile Kubernetes resources; deployment is an explicit action.
+func UpdateService(c *gin.Context) {
+	syncClusterStateIfPossible()
+
+	envID, _ := strconv.Atoi(c.Param("id"))
+	serviceID, _ := strconv.Atoi(c.Param("serviceId"))
+
+	var req UpdateServiceRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	var inst model.ServiceInstallation
+	if err := database.DB.Where("id = ? AND environment_id = ?", serviceID, envID).First(&inst).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "service installation not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	var env model.Environment
+	if err := database.DB.First(&env, envID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "environment not found"})
+		return
+	}
+
+	var app model.Application
+	if err := database.DB.First(&app, env.ApplicationID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "application not found"})
+		return
+	}
+
+	var svcTmpl model.ServiceTemplate
+	if err := database.DB.Where("type = ?", inst.ServiceType).First(&svcTmpl).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "service template not found"})
+		return
+	}
+
+	helmSpec := buildHelmInstallSpec(&app, &env, &svcTmpl, inst.ServiceType, req.Values)
+	inst.ServiceName = serviceToolIdentity(&svcTmpl, inst.ServiceType)
+	inst.Namespace = helmSpec.Namespace
+	inst.ReleaseName = helmSpec.ReleaseName
+	inst.Values = serviceValuesJSON(helmSpec.Values)
+	if strings.TrimSpace(inst.Status) == "" || strings.EqualFold(inst.Status, "pending") {
+		inst.Status = "draft"
+	}
+	if strings.EqualFold(inst.Status, "draft") {
+		inst.ErrorMessage = ""
+	}
+	if err := database.DB.Save(&inst).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": inst})
+}
+
+// SetServiceExternalAccess toggles external access for the live Kubernetes
+// Service behind an installed service. This is intentionally runtime state,
+// not Helm values.
+func SetServiceExternalAccess(c *gin.Context) {
+	envID, _ := strconv.Atoi(c.Param("id"))
+	serviceID, _ := strconv.Atoi(c.Param("serviceId"))
+
+	var req ServiceExternalAccessRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	var inst model.ServiceInstallation
+	if err := database.DB.Where("id = ? AND environment_id = ?", serviceID, envID).First(&inst).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "service installation not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if strings.TrimSpace(inst.Namespace) == "" {
+		c.JSON(http.StatusConflict, gin.H{"error": "service namespace is not ready"})
+		return
+	}
+
+	var env model.Environment
+	if err := database.DB.First(&env, envID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "environment not found"})
+		return
+	}
+
+	ctx := context.Background()
+	if _, err := k8s.SetNamespaceServiceExternalAccess(ctx, inst.Namespace, inst.ServiceType, req.Enabled); err != nil {
+		c.JSON(http.StatusFailedDependency, gin.H{"error": err.Error()})
+		return
+	}
+
+	access := collectEnvironmentExternalAccess(ctx, env)
+	view := enrichServiceInstallationViews(ctx, []model.ServiceInstallation{inst}, access)[0]
+	c.JSON(http.StatusOK, gin.H{"data": view, "externalAccess": access})
 }
 
 // InstallInfra installs infrastructure in an environment
