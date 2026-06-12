@@ -97,7 +97,7 @@ diagnosticMode:
 ##
 image:
   registry: docker.io
-  repository: bitnami/postgresql
+  repository: bitnamilegacy/postgresql
   tag: 15.4.0-debian-11-r45
   digest: ""
   ## Specify a imagePullPolicy
@@ -1395,7 +1395,7 @@ metrics:
   ##
   image:
     registry: docker.io
-    repository: bitnami/postgres-exporter
+    repository: bitnamilegacy/postgres-exporter
     tag: 0.14.0-debian-11-r2
     digest: ""
     pullPolicy: IfNotPresent

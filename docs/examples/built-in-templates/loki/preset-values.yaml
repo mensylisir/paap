@@ -1,5 +1,7 @@
 # 禁用内置 RBAC，由平台统一管理
 loki:
+  service:
+    type: NodePort
   serviceAccount:
     create: false
   rbac:
@@ -8,10 +10,82 @@ loki:
     enabled: false
 
 promtail:
+  initContainer:
+    - name: raise-inotify-limits
+      image: busybox:1.36
+      imagePullPolicy: IfNotPresent
+      securityContext:
+        privileged: true
+        runAsUser: 0
+      command:
+        - sh
+        - -c
+        - |
+          sysctl -w fs.inotify.max_user_watches=1048576
+          sysctl -w fs.inotify.max_user_instances=1024
   serviceAccount:
     create: false
   rbac:
     create: false
   config:
     clients:
-      - url: http://loki:3100/loki/api/v1/push
+      - url: http://{{ .Release.Name }}-loki:3100/loki/api/v1/push
+    paap:
+      envNamespaces: ""
+    snippets:
+      scrapeConfigs: |
+        - job_name: paap-environment-pods
+          pipeline_stages:
+            {{- toYaml .Values.config.snippets.pipelineStages | nindent 4 }}
+          kubernetes_sd_configs:
+          {{- range $ns := splitList "," .Values.config.paap.envNamespaces }}
+            - role: pod
+              namespaces:
+                names:
+                  - {{ $ns | quote }}
+          {{- end }}
+          relabel_configs:
+            - source_labels:
+                - __meta_kubernetes_pod_controller_name
+              regex: ([0-9a-z-.]+?)(-[0-9a-f]{8,10})?
+              action: replace
+              target_label: __tmp_controller_name
+            - source_labels:
+                - __meta_kubernetes_pod_label_app_kubernetes_io_name
+                - __meta_kubernetes_pod_label_app
+                - __tmp_controller_name
+                - __meta_kubernetes_pod_name
+              regex: ^;*([^;]+)(;.*)?$
+              action: replace
+              target_label: app
+            - source_labels:
+                - __meta_kubernetes_pod_label_app_kubernetes_io_instance
+                - __meta_kubernetes_pod_label_instance
+              regex: ^;*([^;]+)(;.*)?$
+              action: replace
+              target_label: instance
+            - source_labels:
+                - __meta_kubernetes_pod_label_app_kubernetes_io_component
+                - __meta_kubernetes_pod_label_component
+              regex: ^;*([^;]+)(;.*)?$
+              action: replace
+              target_label: component
+            - source_labels:
+                - __meta_kubernetes_namespace
+              action: replace
+              target_label: namespace
+            - source_labels:
+                - __meta_kubernetes_pod_name
+              action: replace
+              target_label: pod
+            - source_labels:
+                - __meta_kubernetes_pod_container_name
+              action: replace
+              target_label: container
+            - source_labels:
+                - __meta_kubernetes_pod_uid
+                - __meta_kubernetes_pod_container_name
+              separator: /
+              action: replace
+              replacement: /var/log/pods/*$1/*.log
+              target_label: __path__

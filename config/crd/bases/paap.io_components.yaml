@@ -83,6 +83,16 @@ spec:
                               - key
                               - name
                               type: object
+                            configMapKeyRef:
+                              properties:
+                                key:
+                                  type: string
+                                name:
+                                  type: string
+                              required:
+                              - key
+                              - name
+                              type: object
                           type: object
                       required:
                       - name

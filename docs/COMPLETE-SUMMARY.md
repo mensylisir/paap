@@ -159,7 +159,7 @@
 
 | 检查项 | 状态 | 说明 |
 |--------|------|------|
-| 术语一致性 | ✅ | permissions.scope、tool-only、environment-wide 全部一致 |
+| 术语一致性 | ✅ | toolNamespace、workloadNamespaces、environmentNamespaces 全部一致 |
 | 字段映射一致性 | ✅ | 文档描述与 Go 代码、CRD 定义一致 |
 | 流程一致性 | ✅ | 文档描述的流程与代码实现一致 |
 | 状态描述一致性 | ✅ | 所有文档诚实描述当前状态 |

@@ -25,8 +25,8 @@ custom-prometheus-template/
 
 ### 1. 动态权限管理
 
-通过 `platform-manifest.yaml` 声明 `scope: environment-wide`，平台会自动：
-- 在环境的每个 namespace 创建 Role + RoleBinding
+通过 `platform-manifest.yaml` 声明 `permissions.environmentNamespaces.rules`，平台会自动：
+- 在同环境非自身 namespace 创建 Role + RoleBinding
 - 环境新增 namespace 时自动同步权限
 - 卸载时自动清理所有权限
 
@@ -96,8 +96,8 @@ helm template my-prometheus ./chart \
 安装前请确认：
 
 - [ ] `platform-manifest.yaml` 格式正确
-- [ ] `permissions.scope` 设置为 `environment-wide`
-- [ ] `permissions.rules` 只包含必需的权限
+- [ ] `permissions.environmentNamespaces.rules` 只包含必需的权限
+- [ ] 只在确实需要控制业务负载时声明 `permissions.workloadNamespaces.rules`
 - [ ] `preset-values.yaml` 禁用了 `rbac.create` 和 `serviceAccount.create`
 - [ ] Chart 中没有 ClusterRole、CRD 等集群级资源
 - [ ] 所有资源都使用 `{{ .Values.global.namespace }}` 指定 namespace

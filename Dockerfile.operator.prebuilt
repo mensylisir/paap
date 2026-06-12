@@ -1,0 +1,8 @@
+FROM paap-operator:v0.1.32
+
+USER 0:0
+COPY tmp/paap-operator-v0.1.35 /paap-operator
+RUN chmod 0755 /paap-operator
+
+USER 65532:65532
+ENTRYPOINT ["/paap-operator"]

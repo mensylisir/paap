@@ -11,12 +11,12 @@
 ### 在 `template-system-overview.md` 中的描述
 
 ```markdown
-**scope: environment-wide**
+**environmentNamespaces.rules**
 
 平台行为：
 1. 在工具所在的 namespace 创建 ServiceAccount
-2. 在环境的每个 namespace 创建 Role（使用 permissions.rules）
-3. 在环境的每个 namespace 创建 RoleBinding（SA → Role）
+2. 在同环境非自身 namespace 创建 Role（使用 environmentNamespaces.rules）
+3. 在这些 namespace 创建 RoleBinding（SA → Role）
 
 动态同步：
 - 环境新增 namespace → 自动创建 Role + RoleBinding
@@ -30,7 +30,7 @@
 
 用户在环境中新增 namespace-03
          ↓
-平台发现该工具申请了 scope: environment-wide
+平台发现该工具声明了 environmentNamespaces.rules
          ↓
 平台自动在 namespace-03 创建 Role + RoleBinding
          ↓
@@ -210,11 +210,12 @@ for _, prev := range svc.Status.RBACNamespaces {
 
 ## 🔍 特殊情况处理
 
-### 1. ✅ 只对 environment-wide 工具生效
+### 1. ✅ 只对声明跨 namespace 权限的工具生效
 
 **验证：**
-- `WorkloadRole` 只在 `permissions.scope = environment-wide` 时有值
-- `tool-only` 工具的 `WorkloadRole` 为空，不会创建跨 namespace 的 RBAC
+- `WorkloadRole` 只来自 `permissions.workloadNamespaces.rules`
+- `EnvironmentRole` 只来自 `permissions.environmentNamespaces.rules`
+- 只声明 `toolNamespace` 的工具不会创建跨 namespace RBAC
 
 ### 2. ✅ 记录 RBAC 状态
 

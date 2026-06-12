@@ -2,21 +2,37 @@ name: jenkins
 version: v2.440.3
 description: "Jenkins - 经典 CI/CD 服务器"
 permissions:
-  scope: environment-wide
-  rules:
-    - apiGroups: [""]
-      resources: ["pods", "pods/log", "services", "configmaps", "secrets", "serviceaccounts"]
-      verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-    - apiGroups: ["apps"]
-      resources: ["deployments", "replicasets"]
-      verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-    - apiGroups: ["batch"]
-      resources: ["jobs"]
-      verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-    - apiGroups: ["networking.k8s.io"]
-      resources: ["ingresses"]
-      verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  toolNamespace:
+    rules:
+      - apiGroups: [""]
+        resources: ["pods", "pods/exec", "pods/log", "services", "configmaps", "secrets", "persistentvolumeclaims", "serviceaccounts"]
+        verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+      - apiGroups: ["apps"]
+        resources: ["deployments", "replicasets", "statefulsets"]
+        verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+      - apiGroups: ["batch"]
+        resources: ["jobs"]
+        verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+      - apiGroups: ["networking.k8s.io"]
+        resources: ["ingresses"]
+        verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  workloadNamespaces:
+    rules:
+      - apiGroups: ["*"]
+        resources: ["*"]
+        verbs: ["*"]
 observability:
   metrics:
     port: 8080
     path: /metrics
+variable_mapping:
+  - platform_var: "tool_namespace"
+    helm_var: "serviceAccount.name"
+  - platform_var: "tool_namespace"
+    helm_var: "fullnameOverride"
+  - platform_var: "tool_namespace"
+    helm_var: "paap.toolNamespace"
+  - platform_var: "primary_namespace"
+    helm_var: "paap.primaryNamespace"
+  - platform_var: "current_env_name"
+    helm_var: "paap.environment"

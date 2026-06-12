@@ -8,20 +8,20 @@
 
 ## 📦 已制作的模板列表
 
-| 模板名称 | 类型 | 权限范围 | 状态 |
+| 模板名称 | 类型 | 跨 namespace 权限 | 状态 |
 |---------|------|---------|------|
-| argocd | tool | environment-wide | ✅ 完成 |
-| harbor | tool | tool-only | ✅ 完成 |
-| jenkins | tool | environment-wide | ✅ 完成 |
-| kafka | infra | tool-only | ✅ 完成 |
-| loki | tool | environment-wide | ✅ 完成 |
-| minio | infra | tool-only | ✅ 完成 |
-| mongodb | infra | tool-only | ✅ 完成 |
-| monitor | tool | environment-wide | ✅ 完成 |
-| mysql | infra | tool-only | ✅ 完成 |
-| postgresql | infra | tool-only | ✅ 完成 |
-| rabbitmq | infra | tool-only | ✅ 完成 |
-| redis | infra | tool-only | ✅ 完成 |
+| argocd | tool | workloadNamespaces | ✅ 完成 |
+| harbor | tool | 无 | ✅ 完成 |
+| jenkins | tool | workloadNamespaces | ✅ 完成 |
+| kafka | infra | 无 | ✅ 完成 |
+| loki | tool | environmentNamespaces | ✅ 完成 |
+| minio | infra | 无 | ✅ 完成 |
+| mongodb | infra | 无 | ✅ 完成 |
+| monitor | tool | environmentNamespaces | ✅ 完成 |
+| mysql | infra | 无 | ✅ 完成 |
+| postgresql | infra | 无 | ✅ 完成 |
+| rabbitmq | infra | 无 | ✅ 完成 |
+| redis | infra | 无 | ✅ 完成 |
 
 **总计：** 12 个模板
 
@@ -47,14 +47,14 @@ template-name/
 
 ### 验证示例
 
-#### ArgoCD（environment-wide 工具）
+#### ArgoCD（控制业务负载 namespace）
 ```yaml
 name: argocd
 version: v2.13.3
 description: "ArgoCD - GitOps 持续部署工具"
 permissions:
-  scope: environment-wide
-  rules:
+  workloadNamespaces:
+    rules:
     - apiGroups: ["", "apps", "networking.k8s.io", "autoscaling"]
       resources: [...]
       verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
@@ -64,14 +64,17 @@ observability:
     path: /metrics
 ```
 
-#### Redis（tool-only 基础设施）
+#### Redis（只需要自身 namespace）
 ```yaml
 name: redis
 version: 18.6.0
 description: "Redis 缓存服务"
 permissions:
-  scope: tool-only
-  rules: []
+  toolNamespace:
+    rules:
+      - apiGroups: [""]
+        resources: ["pods", "services", "configmaps", "secrets", "persistentvolumeclaims", "serviceaccounts"]
+        verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 ```
 
 ---
@@ -115,15 +118,15 @@ permissions:
 | 检查项 | 状态 | 说明 |
 |--------|------|------|
 | scope 字段存在 | ✅ | 所有模板都声明了权限范围 |
-| environment-wide 有 rules | ✅ | 需要跨 namespace 的工具都定义了权限规则 |
-| tool-only 无 rules | ✅ | 只在自己 namespace 运行的工具 rules 为空 |
+| workload/environment rules | ✅ | 需要跨 namespace 的工具都定义了权限规则 |
+| 仅自身 namespace | ✅ | 只在自己 namespace 运行的工具不声明跨 namespace rules |
 
 ### ✅ 格式符合标准
 
 | 检查项 | 状态 | 说明 |
 |--------|------|------|
 | YAML 格式正确 | ✅ | 所有 platform-manifest.yaml 格式正确 |
-| 字段命名一致 | ✅ | 使用 permissions.scope 而不是旧的 rbac.envRole |
+| 字段命名一致 | ✅ | 使用三类 namespace 权限字段而不是旧的 scope |
 | 版本号规范 | ✅ | 所有模板都有版本号 |
 
 ---
@@ -184,9 +187,9 @@ docs/examples/
 ### 内容验证
 ```bash
 ✓ platform-manifest.yaml 格式正确
-✓ permissions.scope 字段存在
-✓ environment-wide 工具有 rules
-✓ tool-only 工具 rules 为空
+✓ toolNamespace 字段存在
+✓ 需要控制业务负载的工具声明 workloadNamespaces
+✓ 需要观察整个环境的工具声明 environmentNamespaces
 ✓ Chart.yaml 存在
 ✓ values.yaml 存在
 ✓ templates/ 目录存在

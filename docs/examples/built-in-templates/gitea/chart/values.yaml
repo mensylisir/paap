@@ -1,0 +1,41 @@
+replicaCount: 1
+
+fullnameOverride: ""
+nameOverride: ""
+
+image:
+  repository: gitea/gitea
+  tag: "1.23.8"
+  pullPolicy: IfNotPresent
+
+serviceAccount:
+  name: ""
+
+admin:
+  username: paap
+  password: paap123456
+  email: paap@paap.local
+
+service:
+  type: ClusterIP
+  http:
+    port: 3000
+  ssh:
+    port: 22
+
+persistence:
+  enabled: true
+  size: 2Gi
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+paap:
+  toolNamespace: ""
+  primaryNamespace: ""
+  environment: ""

@@ -1,8 +1,11 @@
 GO_VERSION := go1.25.7
-GOPATH := $(shell source ~/.gvm/scripts/gvm && gvm use $(GO_VERSION) && go env GOPATH)
+SHELL := /bin/bash
+GOPATH := $(shell source ~/.gvm/scripts/gvm && gvm use $(GO_VERSION) >/dev/null && go env GOPATH)
 CONTROLLER_GEN := $(GOPATH)/bin/controller-gen
+SERVER_IMAGE ?= paap-server:v0.1.272
+OPERATOR_IMAGE ?= paap-operator:v0.1.42
 
-.PHONY: run run-operator build build-operator test clean deps fmt lint manifests generate install uninstall
+.PHONY: run run-operator build build-operator test frontend-test frontend-build frontend-smoke frontend-verify verify clean deps fmt lint manifests generate install uninstall install-kpack uninstall-kpack package-built-in-templates preload-kind-images verify-server-image
 
 # ========== Server ==========
 
@@ -32,6 +35,25 @@ all: build build-operator
 # 运行测试
 test:
 	@source ~/.gvm/scripts/gvm && gvm use $(GO_VERSION) && go test ./...
+
+# 运行前端单元测试
+frontend-test:
+	cd frontend && npm run test
+
+# 构建前端
+frontend-build:
+	cd frontend && npm run build
+
+# 无 Xorg/headful browser 的前端烟测
+frontend-smoke:
+	cd frontend && npm run smoke:headless
+
+# 前端完整验证：单测、类型检查、构建、headless smoke
+frontend-verify:
+	cd frontend && npm run verify
+
+# 后端与前端完整验证
+verify: test frontend-verify
 
 # 安装依赖
 deps:
@@ -67,12 +89,32 @@ install: manifests
 uninstall:
 	kubectl delete -f config/crd/bases/ --ignore-not-found
 
+# 安装 kpack CRD/controller/webhook，供 source 组件 Buildpacks 构建使用
+install-kpack:
+	kubectl apply -f deploy/k8s/kpack-v0.17.0.yaml
+	kubectl get pods -n kpack -o wide
+	kubectl get events -n kpack --sort-by=.lastTimestamp | tail -20
+
+# 卸载 kpack
+uninstall-kpack:
+	kubectl delete -f deploy/k8s/kpack-v0.17.0.yaml --ignore-not-found
+
 # ========== Docker ==========
 
+package-built-in-templates:
+	./scripts/package-built-in-templates.sh
+
+preload-kind-images:
+	./scripts/preload-kind-images.sh
+
 # 构建 Server 镜像
-docker-build-server:
-	docker build -t paap-server:latest -f Dockerfile.server .
+docker-build-server: package-built-in-templates
+	docker build --build-arg FRONTEND_CACHE_BUST="$$(date +%s)" -t $(SERVER_IMAGE) -f Dockerfile.server .
+	$(MAKE) verify-server-image SERVER_IMAGE=$(SERVER_IMAGE)
+
+verify-server-image:
+	docker run --rm --entrypoint sh $(SERVER_IMAGE) -c 'test -x /paap-server && ls -l /paap-server'
 
 # 构建 Operator 镜像
 docker-build-operator:
-	docker build -t paap-operator:latest -f Dockerfile.operator .
+	docker build -t $(OPERATOR_IMAGE) -f Dockerfile.operator .

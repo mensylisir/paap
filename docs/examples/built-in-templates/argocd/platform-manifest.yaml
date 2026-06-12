@@ -2,20 +2,40 @@ name: argocd
 version: v2.13.3
 description: "ArgoCD - GitOps 持续部署工具"
 permissions:
-  scope: environment-wide
-  rules:
-    - apiGroups: [""]
-      resources: ["pods", "services", "configmaps", "secrets", "persistentvolumeclaims", "serviceaccounts"]
-      verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-    - apiGroups: ["apps"]
-      resources: ["deployments", "statefulsets", "replicasets"]
-      verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-    - apiGroups: ["networking.k8s.io"]
-      resources: ["ingresses"]
-      verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-    - apiGroups: ["autoscaling"]
-      resources: ["horizontalpodautoscalers"]
-      verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  toolNamespace:
+    rules:
+      - apiGroups: [""]
+        resources: ["pods", "services", "endpoints", "configmaps", "secrets", "persistentvolumeclaims", "serviceaccounts"]
+        verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+      - apiGroups: ["apps"]
+        resources: ["deployments", "statefulsets", "replicasets"]
+        verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+      - apiGroups: ["batch"]
+        resources: ["jobs", "cronjobs"]
+        verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+      - apiGroups: ["networking.k8s.io"]
+        resources: ["ingresses"]
+        verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+      - apiGroups: ["autoscaling"]
+        resources: ["horizontalpodautoscalers"]
+        verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+      - apiGroups: ["argoproj.io"]
+        resources: ["applications", "applicationsets", "applicationsets/status", "applicationsets/finalizers"]
+        verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+      - apiGroups: ["argoproj.io"]
+        resources: ["appprojects"]
+        verbs: ["get", "list", "watch"]
+      - apiGroups: ["argoproj.io"]
+        resources: ["argocds"]
+        verbs: ["get", "list", "watch"]
+      - apiGroups: ["notifications.argoproj.io"]
+        resources: ["*"]
+        verbs: ["*"]
+  workloadNamespaces:
+    rules:
+      - apiGroups: ["*"]
+        resources: ["*"]
+        verbs: ["*"]
 observability:
   metrics:
     port: 8083
@@ -23,3 +43,17 @@ observability:
 variable_mapping:
   - platform_var: "primary_namespace"
     helm_var: "global.envNamespace"
+  - platform_var: "workload_namespaces"
+    helm_var: "configs.params.application.namespaces"
+  - platform_var: "workload_namespaces"
+    helm_var: "configs.params.applicationsetcontroller.namespaces"
+  - platform_var: "tool_namespace"
+    helm_var: "controller.serviceAccount.name"
+  - platform_var: "tool_namespace"
+    helm_var: "server.serviceAccount.name"
+  - platform_var: "tool_namespace"
+    helm_var: "repoServer.serviceAccount.name"
+  - platform_var: "tool_namespace"
+    helm_var: "redis.serviceAccount.name"
+  - platform_var: "tool_namespace"
+    helm_var: "applicationSet.serviceAccount.name"

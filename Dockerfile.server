@@ -1,31 +1,36 @@
-FROM node:20-alpine AS frontend-builder
+FROM node:26-alpine AS frontend-builder
 WORKDIR /workspace/frontend
 COPY frontend/package.json frontend/package-lock.json ./
-RUN npm ci
+RUN npm config set fetch-retries 5 \
+    && npm config set fetch-retry-mintimeout 20000 \
+    && npm config set fetch-retry-maxtimeout 120000 \
+    && npm ci --prefer-offline --no-audit --fund=false
+ARG FRONTEND_CACHE_BUST=0
+RUN echo "$FRONTEND_CACHE_BUST" > /tmp/frontend-cache-bust
 COPY frontend/ .
 RUN npm run build
 
 FROM golang:1.26-alpine AS builder
 WORKDIR /workspace
 ENV GOPROXY=https://goproxy.cn,direct
+ENV GOTELEMETRY=off
+ENV GOMAXPROCS=2
+ENV GOCACHE=/tmp/go-build-cache
 RUN apk add --no-cache gcc musl-dev
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 COPY --from=frontend-builder /workspace/frontend/dist ./frontend/dist
-RUN CGO_ENABLED=1 GOOS=linux go build -o paap-server cmd/server/main.go
+RUN CGO_ENABLED=1 GOOS=linux go build -p=2 -o paap-server cmd/server/main.go
 
 FROM alpine:3.22
 WORKDIR /
+RUN apk add --no-cache ca-certificates
 COPY --from=builder /workspace/paap-server /paap-server
 COPY --from=frontend-builder /workspace/frontend/dist /frontend/dist
-RUN apk add --no-cache ca-certificates libc6-compat curl bash && \
-    curl -fsSL https://get.helm.sh/helm-v3.16.4-linux-amd64.tar.gz -o /tmp/helm.tar.gz && \
-    tar xzf /tmp/helm.tar.gz -C /tmp && \
-    mv /tmp/linux-amd64/helm /usr/local/bin/helm && \
-    rm -rf /tmp/helm.tar.gz /tmp/linux-amd64 && \
-    chmod +x /usr/local/bin/helm
-# Copy built-in chart packages
-COPY data/charts /charts
+# Copy built-in chart packages. The runtime user is non-root, so archives and directory must be traversable.
+COPY --chown=65532:65532 --chmod=0755 data/charts/ /charts/
+RUN chmod 0755 /charts \
+    && find /charts -type f -name '*.tar.gz' -exec chmod 0644 {} +
 USER 65532:65532
 ENTRYPOINT ["/paap-server"]

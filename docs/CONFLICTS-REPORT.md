@@ -16,13 +16,13 @@
 
 **custom-template-guide.md（新系统 - BYO）：**
 - 使用 `platform-manifest.yaml` 格式
-- 使用 `permissions.scope` 和 `permissions.rules` 字段
+- 使用 `permissions.toolNamespace`、`permissions.workloadNamespaces`、`permissions.environmentNamespaces` 字段
 - 基于 Helm Chart
 - 上传 tar.gz 压缩包
 
 **Go 代码实现（platform_manifest.go）：**
-- 支持 `permissions.scope: tool-only | environment-wide`
-- 支持 `permissions.rules`
+- 支持三类 namespace 权限：`toolNamespace`、`workloadNamespaces`、`environmentNamespaces`
+- 支持 `clusterResources` 集群级只读权限
 - 支持 `observability`
 - 支持 `variable_mapping`
 
@@ -33,10 +33,10 @@
 
 ### 2. ⚠️ **中等冲突：术语不一致**
 
-#### 问题 2.1：scope 值的命名
-- **Go 代码**: `tool-only` 和 `environment-wide`
-- **custom-template-guide.md**: `tool-only` 和 `environment-wide` ✅ 一致
-- **service-template-spec.md**: 没有使用 scope 概念，使用 `rbac.envRole`
+#### 问题 2.1：权限类型命名
+- **Go 代码**: `toolNamespace`、`workloadNamespaces`、`environmentNamespaces`
+- **custom-template-guide.md**: `toolNamespace`、`workloadNamespaces`、`environmentNamespaces` ✅ 一致
+- **service-template-spec.md**: 没有使用三类权限概念，仍是旧设计草案
 
 #### 问题 2.2：字段命名
 - **custom-template-guide.md**: `variable_mapping`
@@ -83,7 +83,7 @@
 | 特性 | service-template-spec.md | custom-template-guide.md | Go 代码 (platform_manifest.go) |
 |------|-------------------------|-------------------------|-------------------------------|
 | 文件格式 | `kind: ServiceTemplate` | `platform-manifest.yaml` | `PlatformManifest` struct |
-| 权限声明 | `rbac.deploymentRole` + `rbac.envRole` | `permissions.scope` + `permissions.rules` | `Permissions.Scope` + `Permissions.Rules` |
+| 权限声明 | `rbac.deploymentRole` + `rbac.envRole` | `permissions.toolNamespace/workloadNamespaces/environmentNamespaces` | `Permissions.ToolNamespace/WorkloadNamespaces/EnvironmentNamespaces` |
 | 生命周期 | `lifecycle.install` / `onEnvNsAdded` | 无（由 Helm 管理） | 无 |
 | 模板引擎 | Go `text/template` | Helm | - |
 | 存储方式 | 数据库 | 文件系统/S3 | - |

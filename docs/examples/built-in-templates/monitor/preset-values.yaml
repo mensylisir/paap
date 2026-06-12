@@ -5,27 +5,86 @@
 global:
   rbac:
     create: false
+  paap:
+    toolNamespace: ""
 
 # Global settings
 fullnameOverride: ""
 nameOverride: ""
 
+paap:
+  envNamespaces: ""
+
 # Kube State Metrics - disable cluster role
 kube-state-metrics:
+  serviceAccount:
+    create: false
+  namespaces: ""
   rbac:
     create: false
     useClusterRole: false
     extraRules: []
+  collectors:
+    - configmaps
+    - cronjobs
+    - daemonsets
+    - deployments
+    - endpoints
+    - horizontalpodautoscalers
+    - ingresses
+    - jobs
+    - limitranges
+    - namespaces
+    - networkpolicies
+    - persistentvolumeclaims
+    - poddisruptionbudgets
+    - pods
+    - replicasets
+    - replicationcontrollers
+    - resourcequotas
+    - secrets
+    - services
+    - statefulsets
+  startupProbe:
+    enabled: true
+    failureThreshold: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+  livenessProbe:
+    initialDelaySeconds: 60
+    failureThreshold: 6
+    periodSeconds: 10
+    timeoutSeconds: 5
+  readinessProbe:
+    initialDelaySeconds: 10
+    failureThreshold: 6
+    periodSeconds: 10
+    timeoutSeconds: 5
 
 # Node Exporter - disable cluster role
 prometheus-node-exporter:
+  serviceAccount:
+    create: false
   rbac:
     create: false
     pspEnabled: false
+  hostNetwork: false
+  hostPID: false
 
 # Prometheus Operator - disable cluster role and admission webhooks
 prometheusOperator:
   enabled: true
+  tls:
+    enabled: false
+  kubeletService:
+    enabled: false
+  kubeletEndpointsEnabled: false
+  kubeletEndpointSliceEnabled: false
+  namespaces:
+    releaseNamespace: true
+    additional: []
+  serviceAccount:
+    create: false
   rbac:
     create: false
   admissionWebhooks:
@@ -54,6 +113,96 @@ prometheus:
     ruleSelectorNilUsesHelmValues: false
     serviceMonitorSelectorNilUsesHelmValues: false
     podMonitorSelectorNilUsesHelmValues: false
+    additionalScrapeConfigs: |
+      - job_name: paap-kubelet-cadvisor
+        scheme: https
+        kubernetes_sd_configs:
+          - role: node
+        bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+        tls_config:
+          insecure_skip_verify: true
+        relabel_configs:
+          - target_label: __address__
+            replacement: kubernetes.default.svc:443
+          - source_labels: [__meta_kubernetes_node_name]
+            target_label: __metrics_path__
+            replacement: /api/v1/nodes/${1}/proxy/metrics/cadvisor
+          - source_labels: [__meta_kubernetes_node_name]
+            target_label: node
+      - job_name: paap-annotated-pods-named-port
+        kubernetes_sd_configs:
+        {{- range $ns := splitList "," .Values.paap.envNamespaces }}
+        {{- if $ns }}
+          - role: pod
+            namespaces:
+              names:
+                - {{ $ns | quote }}
+        {{- end }}
+        {{- end }}
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+            action: keep
+            regex: "true"
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_port]
+            action: keep
+            regex: "[A-Za-z_][A-Za-z0-9_-]*"
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_port]
+            action: keepequal
+            target_label: __meta_kubernetes_pod_container_port_name
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scheme]
+            action: replace
+            target_label: __scheme__
+            regex: (https?)
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+            action: replace
+            target_label: __metrics_path__
+            regex: (.+)
+          - source_labels: [__meta_kubernetes_namespace]
+            action: replace
+            target_label: namespace
+          - source_labels: [__meta_kubernetes_pod_name]
+            action: replace
+            target_label: pod
+          - source_labels: [__meta_kubernetes_pod_container_name]
+            action: replace
+            target_label: container
+      - job_name: paap-annotated-pods-numbered-port
+        kubernetes_sd_configs:
+        {{- range $ns := splitList "," .Values.paap.envNamespaces }}
+        {{- if $ns }}
+          - role: pod
+            namespaces:
+              names:
+                - {{ $ns | quote }}
+        {{- end }}
+        {{- end }}
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+            action: keep
+            regex: "true"
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_port]
+            action: keep
+            regex: "\\d+"
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_port]
+            action: keepequal
+            target_label: __meta_kubernetes_pod_container_port_number
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scheme]
+            action: replace
+            target_label: __scheme__
+            regex: (https?)
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+            action: replace
+            target_label: __metrics_path__
+            regex: (.+)
+          - source_labels: [__meta_kubernetes_namespace]
+            action: replace
+            target_label: namespace
+          - source_labels: [__meta_kubernetes_pod_name]
+            action: replace
+            target_label: pod
+          - source_labels: [__meta_kubernetes_pod_container_name]
+            action: replace
+            target_label: container
 
 # Alertmanager - disable cluster role
 alertmanager:
@@ -66,12 +215,25 @@ alertmanager:
 # Grafana - disable cluster role
 grafana:
   enabled: true
+  defaultDashboardsEnabled: false
+  service:
+    type: NodePort
   serviceAccount:
     create: false
   rbac:
     create: false
     pspEnabled: false
   adminPassword: "admin123"
+  sidecar:
+    dashboards:
+      searchNamespace:
+        - '{{ .Values.global.paap.toolNamespace }}'
+    datasources:
+      searchNamespace:
+        - '{{ .Values.global.paap.toolNamespace }}'
+
+nodeExporter:
+  forceDeployDashboards: false
 
 # Disable all default ServiceMonitors and other cluster-scoped resources
 defaultRules:

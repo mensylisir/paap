@@ -9,7 +9,7 @@ const routes = [
   {
     path: '/',
     component: () => import('../layouts/MainLayout.vue'),
-    redirect: '/apps',
+    redirect: '/apps?auto=true',
     children: [
       {
         path: 'apps',
@@ -19,7 +19,17 @@ const routes = [
       {
         path: 'apps/create',
         name: 'CreateApp',
-        component: () => import('../views/CreateAppView.vue'),
+        redirect: '/apps',
+      },
+      {
+        path: 'templates',
+        name: 'Templates',
+        component: () => import('../views/TemplatesView.vue'),
+      },
+      {
+        path: 'registries',
+        name: 'AppRegistries',
+        component: () => import('../views/AppRegistryView.vue'),
       },
     ],
   },
@@ -44,6 +54,11 @@ const routes = [
         component: () => import('../views/EnvDetailView.vue'),
       },
       {
+        path: 'environments/:envId/components/:compId',
+        name: 'ComponentDetail',
+        component: () => import('../views/ComponentDetailView.vue'),
+      },
+      {
         path: 'deploy',
         name: 'AppDeploy',
         component: () => import('../views/AppDeployView.vue'),
@@ -52,11 +67,6 @@ const routes = [
         path: 'ci',
         name: 'AppCI',
         component: () => import('../views/AppCIView.vue'),
-      },
-      {
-        path: 'registry',
-        name: 'AppRegistry',
-        component: () => import('../views/AppRegistryView.vue'),
       },
       {
         path: 'monitor',

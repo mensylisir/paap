@@ -3,6 +3,8 @@ package controller
 import (
 	"context"
 	"fmt"
+	"reflect"
+	"strconv"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -191,130 +193,181 @@ func (r *EnvironmentReconciler) handleDeletion(ctx context.Context, env *paapv1.
 }
 
 func (r *EnvironmentReconciler) ensureNamespace(ctx context.Context, env *paapv1.Environment, nsName string) error {
+	appIdentifier := env.Labels["paap.io/app"]
+
 	ns := &corev1.Namespace{}
 	err := r.Get(ctx, types.NamespacedName{Name: nsName}, ns)
 	if err == nil {
+		changed := ensureEnvironmentNamespaceMetadata(ns, env, appIdentifier)
+		if changed {
+			return r.Update(ctx, ns)
+		}
 		return nil
 	}
 	if !errors.IsNotFound(err) {
 		return err
 	}
 
-	appIdentifier := env.Labels["paap.io/app"]
-
 	ns = &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: nsName,
-			Labels: map[string]string{
-				"paap.io/app":        appIdentifier,
-				"paap.io/env":        env.Spec.Identifier,
-				"paap.io/role":       "workload", // 标记为负载 namespace
-				"paap.io/managed-by": "paap-operator",
-			},
-			Annotations: map[string]string{
-				"paap.io/app":            appIdentifier,
-				"paap.io/env":            env.Spec.Identifier,
-				"paap.io/role":           "workload",
-				"paap.io/environment":    env.Name,
-			},
 		},
 	}
+	ensureEnvironmentNamespaceMetadata(ns, env, appIdentifier)
 	return r.Create(ctx, ns)
+}
+
+func ensureEnvironmentNamespaceMetadata(ns *corev1.Namespace, env *paapv1.Environment, appIdentifier string) bool {
+	changed := false
+	if ns.Labels == nil {
+		ns.Labels = map[string]string{}
+		changed = true
+	}
+	labels := map[string]string{
+		"paap.io/app":        appIdentifier,
+		"paap.io/env":        env.Spec.Identifier,
+		"paap.io/role":       "workload",
+		"paap.io/managed-by": "paap-operator",
+		"paap-managed":       "true",
+	}
+	for key, value := range labels {
+		if ns.Labels[key] != value {
+			ns.Labels[key] = value
+			changed = true
+		}
+	}
+
+	if ns.Annotations == nil {
+		ns.Annotations = map[string]string{}
+		changed = true
+	}
+	annotations := map[string]string{
+		"paap.io/app":         appIdentifier,
+		"paap.io/env":         env.Spec.Identifier,
+		"paap.io/role":        "workload",
+		"paap.io/environment": env.Name,
+	}
+	for key, value := range annotations {
+		if ns.Annotations[key] != value {
+			ns.Annotations[key] = value
+			changed = true
+		}
+	}
+	return changed
 }
 
 func (r *EnvironmentReconciler) ensureNetworkPolicy(ctx context.Context, env *paapv1.Environment, nsName string) error {
 	npName := "paap-deny-cross-env"
+	appIdentifier := env.Labels["paap.io/app"]
+	desiredSpec := networkingv1.NetworkPolicySpec{
+		PodSelector: metav1.LabelSelector{},
+		PolicyTypes: []networkingv1.PolicyType{
+			networkingv1.PolicyTypeIngress,
+			networkingv1.PolicyTypeEgress,
+		},
+		Ingress: []networkingv1.NetworkPolicyIngressRule{
+			{
+				From: []networkingv1.NetworkPolicyPeer{
+					{
+						NamespaceSelector: &metav1.LabelSelector{
+							MatchLabels: map[string]string{
+								"paap.io/app": appIdentifier,
+								"paap.io/env": env.Spec.Identifier,
+							},
+						},
+					},
+					{
+						NamespaceSelector: &metav1.LabelSelector{
+							MatchLabels: map[string]string{
+								"kubernetes.io/metadata.name": "ingress-nginx",
+							},
+						},
+					},
+					{
+						NamespaceSelector: &metav1.LabelSelector{
+							MatchLabels: map[string]string{
+								"kubernetes.io/metadata.name": "paap-system",
+							},
+						},
+					},
+					{
+						IPBlock: &networkingv1.IPBlock{
+							CIDR: "0.0.0.0/0",
+							Except: []string{
+								"10.244.0.0/16", // 集群 Pod CIDR，跨环境 Pod 流量仍由 namespaceSelector 控制
+							},
+						},
+					},
+				},
+			},
+		},
+		Egress: []networkingv1.NetworkPolicyEgressRule{
+			{
+				To: []networkingv1.NetworkPolicyPeer{
+					{
+						NamespaceSelector: &metav1.LabelSelector{
+							MatchLabels: map[string]string{
+								"paap.io/app": appIdentifier,
+								"paap.io/env": env.Spec.Identifier,
+							},
+						},
+					},
+				},
+			},
+			{
+				To: []networkingv1.NetworkPolicyPeer{
+					{
+						NamespaceSelector: &metav1.LabelSelector{
+							MatchLabels: map[string]string{
+								"kubernetes.io/metadata.name": "kube-system",
+							},
+						},
+					},
+				},
+				Ports: []networkingv1.NetworkPolicyPort{
+					{
+						Protocol: func() *corev1.Protocol { p := corev1.ProtocolUDP; return &p }(),
+						Port:     func() *intstr.IntOrString { p := intstr.FromInt(53); return &p }(),
+					},
+					{
+						Protocol: func() *corev1.Protocol { p := corev1.ProtocolTCP; return &p }(),
+						Port:     func() *intstr.IntOrString { p := intstr.FromInt(53); return &p }(),
+					},
+				},
+			},
+			{
+				To: []networkingv1.NetworkPolicyPeer{
+					{
+						IPBlock: &networkingv1.IPBlock{
+							CIDR: "0.0.0.0/0",
+							Except: []string{
+								"10.244.0.0/16", // 集群 Pod CIDR，需根据实际配置调整
+							},
+						},
+					},
+				},
+			},
+		},
+	}
 	np := &networkingv1.NetworkPolicy{}
 	err := r.Get(ctx, types.NamespacedName{Name: npName, Namespace: nsName}, np)
 	if err == nil {
-		return nil // 已存在
+		if reflect.DeepEqual(np.Spec, desiredSpec) {
+			return nil
+		}
+		np.Spec = desiredSpec
+		return r.Update(ctx, np)
 	}
 	if !errors.IsNotFound(err) {
 		return err
 	}
-
-	appIdentifier := env.Labels["paap.io/app"]
 
 	np = &networkingv1.NetworkPolicy{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      npName,
 			Namespace: nsName,
 		},
-		Spec: networkingv1.NetworkPolicySpec{
-			PodSelector: metav1.LabelSelector{},
-			PolicyTypes: []networkingv1.PolicyType{
-				networkingv1.PolicyTypeIngress,
-				networkingv1.PolicyTypeEgress,
-			},
-			Ingress: []networkingv1.NetworkPolicyIngressRule{
-				{
-					From: []networkingv1.NetworkPolicyPeer{
-						{
-							NamespaceSelector: &metav1.LabelSelector{
-								MatchLabels: map[string]string{
-									"paap.io/app": appIdentifier,
-									"paap.io/env": env.Spec.Identifier,
-								},
-							},
-						},
-						{
-							NamespaceSelector: &metav1.LabelSelector{
-								MatchLabels: map[string]string{
-									"kubernetes.io/metadata.name": "ingress-nginx",
-								},
-							},
-						},
-					},
-				},
-			},
-			Egress: []networkingv1.NetworkPolicyEgressRule{
-				{
-					To: []networkingv1.NetworkPolicyPeer{
-						{
-							NamespaceSelector: &metav1.LabelSelector{
-								MatchLabels: map[string]string{
-									"paap.io/app": appIdentifier,
-									"paap.io/env": env.Spec.Identifier,
-								},
-							},
-						},
-					},
-				},
-				{
-					To: []networkingv1.NetworkPolicyPeer{
-						{
-							NamespaceSelector: &metav1.LabelSelector{
-								MatchLabels: map[string]string{
-									"kubernetes.io/metadata.name": "kube-system",
-								},
-							},
-						},
-					},
-					Ports: []networkingv1.NetworkPolicyPort{
-						{
-							Protocol: func() *corev1.Protocol { p := corev1.ProtocolUDP; return &p }(),
-							Port:     func() *intstr.IntOrString { p := intstr.FromInt(53); return &p }(),
-						},
-						{
-							Protocol: func() *corev1.Protocol { p := corev1.ProtocolTCP; return &p }(),
-							Port:     func() *intstr.IntOrString { p := intstr.FromInt(53); return &p }(),
-						},
-					},
-				},
-				{
-					To: []networkingv1.NetworkPolicyPeer{
-						{
-							IPBlock: &networkingv1.IPBlock{
-								CIDR: "0.0.0.0/0",
-								Except: []string{
-									"10.244.0.0/16", // 集群 Pod CIDR，需根据实际配置调整
-								},
-							},
-						},
-					},
-				},
-			},
-		},
+		Spec: desiredSpec,
 	}
 	return r.Create(ctx, np)
 }
@@ -378,12 +431,11 @@ func multiplyQuantity(s string, ratio float64) string {
 		return ""
 	}
 	q := resource.MustParse(s)
-	// 简单处理：转换为毫核/字节再乘
 	if q.Cmp(resource.MustParse("0")) == 0 {
 		return "0"
 	}
-	// 对于简单场景，直接返回原值（精确分摊需要更复杂的逻辑）
-	return s
+	milli := float64(q.MilliValue()) * ratio
+	return strconv.FormatInt(int64(milli), 10) + "m"
 }
 
 func (r *EnvironmentReconciler) SetupWithManager(mgr ctrl.Manager) error {

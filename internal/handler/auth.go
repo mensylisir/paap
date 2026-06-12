@@ -3,6 +3,7 @@ package handler
 import (
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -13,10 +14,11 @@ import (
 	"paap/internal/model"
 )
 
-// In-memory demo token storage for simplicity
+// In-memory token storage for the local development server.
 var tokenStore = make(map[string]uint)
+var tokenMu sync.RWMutex
 
-// For real JWT, we'd use jwt-go or similar; using simple token for demo
+// For production JWT, use signed tokens; the local server uses opaque tokens.
 type LoginRequest struct {
 	Username string `json:"username" binding:"required"`
 	Password string `json:"password" binding:"required"`
@@ -141,8 +143,8 @@ func GetCurrentUser(c *gin.Context) {
 	})
 }
 
-// SeedDemoUser creates a demo user for development
-func SeedDemoUser() {
+// SeedDefaultUsers creates local default users when the database is empty.
+func SeedDefaultUsers() {
 	var count int64
 	database.DB.Model(&model.User{}).Count(&count)
 	if count > 0 {

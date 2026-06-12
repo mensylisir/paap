@@ -10,22 +10,22 @@ import (
 // This is the implementation layer - it specifies the helm chart, default values,
 // configurable parameters, install/uninstall steps, etc.
 type ServiceTemplate struct {
-	ID          uint           `gorm:"primarykey" json:"id"`
-	CreatedAt   time.Time      `json:"createdAt"`
-	UpdatedAt   time.Time      `json:"updatedAt"`
-	DeletedAt   gorm.DeletedAt `gorm:"index" json:"deletedAt"`
+	ID        uint           `gorm:"primarykey" json:"id"`
+	CreatedAt time.Time      `json:"createdAt"`
+	UpdatedAt time.Time      `json:"updatedAt"`
+	DeletedAt gorm.DeletedAt `gorm:"index" json:"deletedAt"`
 
-	Type        string `gorm:"uniqueIndex;size:30;not null" json:"type"`     // e.g. "postgresql", "deploy", "ci"
-	Name        string `gorm:"size:50;not null" json:"name"`                   // e.g. "PostgreSQL", "部署服务"
-	Category    string `gorm:"size:20;not null" json:"category"`             // "tool" | "infra" | "middleware"
+	Type        string `gorm:"uniqueIndex;size:30;not null" json:"type"` // e.g. "postgresql", "deploy", "ci"
+	Name        string `gorm:"size:50;not null" json:"name"`             // e.g. "PostgreSQL", "部署服务"
+	Category    string `gorm:"size:20;not null" json:"category"`         // "tool" | "infra" | "middleware"
 	Description string `gorm:"size:500" json:"description"`
 	Icon        string `gorm:"size:50" json:"icon"`
 
 	// Installer configuration
-	Installer   string `gorm:"size:20;not null" json:"installer"`              // "helm" | "kubectl" | "raw-yaml"
-	ChartRepo   string `gorm:"size:200" json:"chartRepo"`                      // "https://charts.bitnami.com/bitnami"
-	ChartName   string `gorm:"size:100" json:"chartName"`                      // "bitnami/postgresql"
-	ChartVersion string `gorm:"size:30" json:"chartVersion"`                   // "12.12.10"
+	Installer    string `gorm:"size:20;not null" json:"installer"` // "helm" | "kubectl" | "raw-yaml"
+	ChartRepo    string `gorm:"size:200" json:"chartRepo"`         // "https://charts.bitnami.com/bitnami"
+	ChartName    string `gorm:"size:100" json:"chartName"`         // "bitnami/postgresql"
+	ChartVersion string `gorm:"size:30" json:"chartVersion"`       // "12.12.10"
 
 	// Default values (JSON)
 	DefaultValues string `gorm:"type:text" json:"defaultValues"`
@@ -37,13 +37,15 @@ type ServiceTemplate struct {
 	// Raw YAML template for kubectl apply mode
 	RawYamlTemplate string `gorm:"type:text" json:"rawYamlTemplate"`
 
-	// Per-tool RBAC whitelists (JSON array of PolicyRule)
-	// Defines the MAXIMUM permissions this tool is allowed in workload namespaces.
+	// Per-tool workload namespace RBAC rules (JSON array of PolicyRule).
+	// Defines the permissions projected into environment workload namespaces.
 	// Example: [{"apiGroups":[""],"resources":["pods","services"],"verbs":["get","list","watch"]}]
 	WorkloadRolePolicy string `gorm:"type:text" json:"workloadRolePolicy"`
 
-	// Defines the MAXIMUM permissions this tool is allowed in its own namespace.
-	SelfRolePolicy string `gorm:"type:text" json:"selfRolePolicy"`
+	// Per-tool environment namespace RBAC rules (JSON array of PolicyRule).
+	// Defines the permissions projected into non-self namespaces in the same environment,
+	// including middleware and other tool namespaces.
+	EnvironmentRolePolicy string `gorm:"type:text" json:"environmentRolePolicy"`
 
 	// Custom template (BYO) fields
 	// IsCustom indicates this is a user-uploaded template (not a built-in one).
@@ -51,7 +53,7 @@ type ServiceTemplate struct {
 
 	// PlatformManifestJSON stores the parsed platform-manifest.yaml as JSON.
 	// For custom templates, this declares permissions and observability requirements.
-	// Example: {"name":"custom-monitor","permissions":{"scope":"environment-wide","rules":[...]}}
+	// Example: {"name":"custom-monitor","permissions":{"environmentNamespaces":{"rules":[...]}}}
 	PlatformManifestJSON string `gorm:"type:text" json:"platformManifestJSON"`
 
 	// ChartArchivePath is the filesystem path to the uploaded chart archive (tar.gz).
@@ -77,10 +79,10 @@ type ServiceTemplate struct {
 // EnvTemplate defines WHAT services an environment contains.
 // This is the orchestration layer - it references ServiceTemplates by type.
 type EnvTemplate struct {
-	ID          uint           `gorm:"primarykey" json:"id"`
-	CreatedAt   time.Time      `json:"createdAt"`
-	UpdatedAt   time.Time      `json:"updatedAt"`
-	DeletedAt   gorm.DeletedAt `gorm:"index" json:"deletedAt"`
+	ID        uint           `gorm:"primarykey" json:"id"`
+	CreatedAt time.Time      `json:"createdAt"`
+	UpdatedAt time.Time      `json:"updatedAt"`
+	DeletedAt gorm.DeletedAt `gorm:"index" json:"deletedAt"`
 
 	Name        string `gorm:"size:50;not null" json:"name"`
 	Description string `gorm:"size:500" json:"description"`
@@ -101,15 +103,15 @@ type EnvTemplate struct {
 
 // ServiceInstallation tracks an installed service in an environment
 type ServiceInstallation struct {
-	ID            uint           `gorm:"primarykey" json:"id"`
-	CreatedAt     time.Time      `json:"createdAt"`
-	UpdatedAt     time.Time      `json:"updatedAt"`
-	DeletedAt     gorm.DeletedAt `gorm:"index" json:"deletedAt"`
+	ID        uint           `gorm:"primarykey" json:"id"`
+	CreatedAt time.Time      `json:"createdAt"`
+	UpdatedAt time.Time      `json:"updatedAt"`
+	DeletedAt gorm.DeletedAt `gorm:"index" json:"deletedAt"`
 
-	EnvironmentID   uint   `gorm:"not null;index" json:"environmentId"`
-	ServiceType     string `gorm:"size:30;not null" json:"serviceType"`  // references ServiceTemplate.Type
-	ServiceName     string `gorm:"size:50" json:"serviceName"`            // instance name
-	ReleaseName     string `gorm:"size:50" json:"releaseName"`              // helm release name
+	EnvironmentID uint   `gorm:"not null;uniqueIndex:idx_service_installation_env_type" json:"environmentId"`
+	ServiceType   string `gorm:"size:30;not null;uniqueIndex:idx_service_installation_env_type" json:"serviceType"` // references ServiceTemplate.Type
+	ServiceName   string `gorm:"size:50" json:"serviceName"`                                                        // instance name
+	ReleaseName   string `gorm:"size:50" json:"releaseName"`                                                        // helm release name
 
 	Status       string `gorm:"size:20;default:pending" json:"status"` // pending, installing, running, failed, deleting
 	ErrorMessage string `gorm:"type:text" json:"errorMessage"`
@@ -123,8 +125,8 @@ type ServiceInstallation struct {
 // EnvTemplateServiceRef is a join table for EnvTemplate -> ServiceTemplate relations
 // (used for more flexible template composition)
 type EnvTemplateServiceRef struct {
-	ID              uint   `gorm:"primarykey" json:"id"`
-	EnvTemplateID   uint   `gorm:"not null;index" json:"envTemplateId"`
-	ServiceType     string `gorm:"size:30;not null" json:"serviceType"`
-	InstallOrder    int    `gorm:"default:0" json:"installOrder"`
+	ID            uint   `gorm:"primarykey" json:"id"`
+	EnvTemplateID uint   `gorm:"not null;index" json:"envTemplateId"`
+	ServiceType   string `gorm:"size:30;not null" json:"serviceType"`
+	InstallOrder  int    `gorm:"default:0" json:"installOrder"`
 }

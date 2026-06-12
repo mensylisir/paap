@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log"
 	"os"
 
@@ -21,17 +22,23 @@ func main() {
 		log.Fatalf("Database initialization failed: %v", err)
 	}
 	defer database.Close()
-	handler.SeedDemoUser()
+	handler.SeedDefaultUsers()
 	handler.SeedServiceCatalog()
-	handler.SeedBuiltinChartsToS3()
-	service.SeedServiceTemplates()
-	service.SeedEnvTemplates()
+	handler.SeedEnvTemplates()
 
 	// 初始化 K8s client（可选，集群内运行时自动连接）
 	if err := k8s.Init(); err != nil {
 		log.Printf("K8s client init failed: %v (CR management disabled)", err)
 	} else {
 		log.Println("K8s client initialized successfully")
+		if result, err := handler.SyncBuiltinTemplatesNow(context.Background(), true); err != nil {
+			log.Printf("Built-in template sync failed: %v", err)
+		} else {
+			log.Printf("Built-in template sync completed: updated=%d", result.Updated)
+		}
+		if err := service.SyncClusterState(context.Background(), database.DB, k8s.GetClient()); err != nil {
+			log.Printf("Cluster state sync failed: %v", err)
+		}
 	}
 
 	r := gin.Default()

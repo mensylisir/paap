@@ -11,9 +11,6 @@ import (
 	"strings"
 	"time"
 
-	apiextensionsclientset "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	ctrl "sigs.k8s.io/controller-runtime"
 	"gopkg.in/yaml.v3"
 )
 
@@ -114,58 +111,29 @@ subjects:
 
 // InstallArgoCD installs a namespace-scoped ArgoCD
 func (c *Client) InstallArgoCD(namespace string) error {
-	// Use argocd namespace-install manifest
 	_, err := run(120*time.Second, "kubectl", "apply", "-n", namespace, "-f",
-		"https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/namespace-install.yaml")
+		"https://raw.githubusercontent.com/argoproj/argo-cd/v2.13.3/manifests/namespace-install.yaml")
 	return err
 }
 
 // InstallTekton installs Tekton Pipelines
 func (c *Client) InstallTekton(namespace string) error {
 	_, err := run(120*time.Second, "kubectl", "apply", "-n", namespace, "-f",
-		"https://storage.googleapis.com/tekton-releases/pipeline/latest/release.yaml")
+		"https://storage.googleapis.com/tekton-releases/pipeline/previous/v0.55.0/release.yaml")
 	return err
 }
 
-// EnsureArgoCDCRDs 删除所有 ArgoCD CRDs，让新的 Helm release 可以重新创建并拥有它们。
-// CRDs 是集群级资源，只能被一个 Helm release 拥有，所以每次安装新环境时都需要先清理。
+// EnsureArgoCDCRDs is kept for legacy callers. CRDs are cluster-scoped and must
+// not be deleted during per-environment tool installs; the Helm path now checks
+// for existing CRDs and disables CRD installation when they already exist.
 func (c *Client) EnsureArgoCDCRDs() error {
-	client := GetClient()
-	if client == nil {
-		return fmt.Errorf("k8s client not initialized")
-	}
-
-	ctx := context.Background()
-	apiextClient := apiextensionsclientset.NewForConfigOrDie(ctrl.GetConfigOrDie())
-
-	argocdCRDs := []string{
-		"applications.argoproj.io",
-		"appprojects.argoproj.io",
-		"applicationsets.argoproj.io",
-	}
-
-	for _, crdName := range argocdCRDs {
-		_, err := apiextClient.ApiextensionsV1().CustomResourceDefinitions().Get(ctx, crdName, metav1.GetOptions{})
-		if err != nil {
-			// CRD 不存在，无需处理
-			continue
-		}
-
-		// 删除 CRD（无论是否有 Helm 标签），让新 release 重新创建并拥有
-		if err := apiextClient.ApiextensionsV1().CustomResourceDefinitions().Delete(ctx, crdName, metav1.DeleteOptions{}); err != nil {
-			return fmt.Errorf("failed to delete CRD %s: %w", crdName, err)
-		}
-		log.Printf("[EnsureArgoCDCRDs] Deleted CRD %s", crdName)
-	}
-
 	return nil
 }
 
 // InstallPrometheus installs Prometheus+Grafana stack
 func (c *Client) InstallPrometheus(namespace string) error {
-	// Use prometheus-operator (simple deployment)
 	_, err := run(120*time.Second, "kubectl", "apply", "-n", namespace, "-f",
-		"https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/main/bundle.yaml")
+		"https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/v0.75.2/bundle.yaml")
 	return err
 }
 

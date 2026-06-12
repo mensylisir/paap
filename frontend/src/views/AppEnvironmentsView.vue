@@ -1,75 +1,178 @@
 <template>
-  <div class="page">
-    <div class="page-header">
-      <h2 class="bx--type-productive-heading-04">环境管理</h2>
-      <button class="bx--btn bx--btn--primary" @click="showModal=true">+ 创建环境</button>
-    </div>
-    <div v-if="environments.length===0" class="empty-state">
-      <p class="bx--type-body-long-01">暂无环境，创建第一个环境来开始部署</p>
-      <button class="bx--btn bx--btn--primary" @click="showModal=true">创建环境</button>
-    </div>
-    <div v-else class="env-list">
-      <div class="env-row" v-for="env in environments" :key="env.id" @click="goToEnv(env.id)">
-        <div>
-          <div class="bx--type-productive-heading-02">{{ env.name }}</div>
-          <div class="bx--type-caption-01" style="color:#8d8d8d">{{ env.identifier }}</div>
-        </div>
-        <div>
-          <span :class="['bx--tag', env.status==='running'?'bx--tag--green':env.status==='empty'?'':'bx--tag--red']">{{ statusText(env.status) }}</span>
-        </div>
-        <div class="bx--type-body-short-01" style="color:#525252">
-          <span v-if="components[env.id] && components[env.id].length">{{ components[env.id].length }} 个组件</span>
-          <span v-else-if="services[env.id] && services[env.id].length">{{ services[env.id].length }} 个工具</span>
-          <span v-else>空环境</span>
-        </div>
-        <div><button class="bx--btn bx--btn--ghost bx--btn--sm">进入环境</button></div>
+  <div class="rail-page">
+    <!-- Page header -->
+    <header class="page-header">
+      <div class="header-text">
+        <h1 class="page-title">环境管理</h1>
+        <p class="page-desc">管理应用的所有运行环境</p>
+      </div>
+      <button class="rail-btn rail-btn--primary" @click="openModal">
+        <svg width="16" height="16" viewBox="0 0 32 32" fill="currentColor"><path d="M17 15V7h-2v8H7v2h8v8h2v-8h8v-2z"/></svg>
+        创建环境
+      </button>
+    </header>
+
+    <!-- KPI -->
+    <div class="kpi-section">
+      <div class="kpi-card">
+        <div class="kpi-number">{{ environments.length }}</div>
+        <div class="kpi-label">环境总数</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-number" :class="{ 'text-green': runningCount > 0 }">{{ runningCount }}</div>
+        <div class="kpi-label">运行中</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-number">{{ totalServices }}</div>
+        <div class="kpi-label">已安装工具</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-number">{{ totalComponents }}</div>
+        <div class="kpi-label">业务组件</div>
       </div>
     </div>
 
-    <!-- Modal -->
+    <!-- Environment list -->
+    <section class="section-card">
+      <div class="section-header">
+        <div>
+          <h2 class="rail-section-title">环境列表</h2>
+          <p class="rail-section-desc">当前应用下的所有环境</p>
+        </div>
+      </div>
+
+      <div v-if="loading" class="loading-mask">
+        <div class="loading-spinner" />
+      </div>
+
+      <div v-else-if="environments.length === 0" class="rail-empty">
+        <svg width="48" height="48" viewBox="0 0 32 32" fill="none" style="margin-bottom:12px">
+          <rect x="4" y="8" width="24" height="16" rx="2" stroke="#d1d5db" stroke-width="1.5"/>
+          <line x1="4" y1="14" x2="28" y2="14" stroke="#d1d5db" stroke-width="1.5"/>
+          <rect x="8" y="18" width="6" height="3" rx="1" fill="#e6e8eb"/>
+          <rect x="18" y="18" width="8" height="3" rx="1" fill="#e6e8eb"/>
+        </svg>
+        <h3 class="rail-empty-title">暂无环境</h3>
+        <p class="rail-empty-desc">创建第一个环境来部署服务。</p>
+        <button class="rail-btn rail-btn--primary" style="margin-top:8px" @click="openModal">创建第一个环境</button>
+      </div>
+
+      <div v-else class="env-grid">
+        <div
+          v-for="env in environments"
+          :key="env.id"
+          class="env-card"
+          role="button"
+          tabindex="0"
+          @click="goToEnv(env.id)"
+          @keydown.enter="goToEnv(env.id)"
+          @keydown.space.prevent="goToEnv(env.id)"
+        >
+          <div class="env-card-top">
+            <div class="env-name-group">
+              <h3 class="env-name">{{ env.name }}</h3>
+              <span class="env-id">{{ env.identifier }}</span>
+            </div>
+            <div class="env-card-actions">
+              <span class="status-badge" :class="env.status">
+                <span class="rail-status-dot" :class="`rail-status-dot--${env.status === 'running' ? 'running' : env.status === 'error' ? 'error' : env.status === 'creating' ? 'creating' : 'empty'}`" />
+                {{ statusText(env.status) }}
+              </span>
+              <button
+                type="button"
+                class="rail-btn rail-btn--danger rail-btn--sm env-delete-btn"
+                :disabled="deletingEnvId === Number(env.id)"
+                @click.stop="openDeleteEnvironmentDialog(env)"
+              >
+                {{ deletingEnvId === Number(env.id) ? '删除中...' : '删除环境' }}
+              </button>
+            </div>
+          </div>
+          <div class="env-meta">
+            <span v-if="(services[env.id] || []).length" class="rail-tag rail-tag--blue">{{ (services[env.id] || []).length }} 工具</span>
+            <span v-if="(components[env.id] || []).length" class="rail-tag rail-tag--green">{{ (components[env.id] || []).length }} 组件</span>
+            <span v-if="!(services[env.id] || []).length && !(components[env.id] || []).length" class="rail-tag rail-tag--gray">空环境</span>
+          </div>
+        </div>
+      </div>
+      <div v-if="deleteError" class="form-error env-list-error" role="alert">{{ deleteError }}</div>
+    </section>
+
+    <!-- Create Modal -->
     <Teleport to="body">
-      <div v-if="showModal" class="modal-overlay" @click.self="showModal=false">
+      <div v-if="showModal" class="modal-overlay" @click.self="showModal = false">
         <div class="modal-container">
           <div class="modal-header">
             <div>
               <p class="modal-label">创建环境</p>
               <p class="modal-heading">新建环境</p>
             </div>
-            <button class="modal-close" @click="showModal=false">✕</button>
+            <button class="modal-close" @click="showModal = false">
+              <svg width="20" height="20" viewBox="0 0 32 32" fill="currentColor"><path d="M24 9.4L22.6 8 16 14.6 9.4 8 8 9.4l6.6 6.6L8 22.6 9.4 24l6.6-6.6 6.6 6.6 1.4-1.4-6.6-6.6L24 9.4z"/></svg>
+            </button>
           </div>
           <div class="modal-body">
-            <div class="form-group">
+            <div class="form-item">
               <label class="form-label">环境名称 <span class="required">*</span></label>
-              <input v-model="envForm.name" class="form-input" placeholder="例如：测试环境" />
+              <input v-model.trim="envForm.name" class="rail-input" placeholder="例如：测试环境" />
             </div>
-            <div class="form-group">
-              <label class="form-label">环境标识 <span class="required">*</span></label>
-              <input v-model="envForm.identifier" class="form-input" placeholder="例如：staging" />
-              <p class="form-hint">纯英文，用于 K8s 命名空间。小写字母、数字、短横线。</p>
+            <div class="form-item">
+              <label class="form-label">环境标识</label>
+              <input v-model.trim="envForm.identifier" class="rail-input" placeholder="留空由后台生成" />
+              <div class="form-helper">当前预览：{{ identifierPreview }}</div>
             </div>
-            <div class="form-group">
+            <div class="form-item">
               <label class="form-label">创建方式</label>
               <div class="radio-group">
-                <label class="radio-item" :class="{active: envForm.mode==='template'}">
+                <label class="radio-item" :class="{ active: envForm.mode === 'template' }">
                   <input type="radio" value="template" v-model="envForm.mode" />
                   <span>从模板创建</span>
                 </label>
-                <label class="radio-item" :class="{active: envForm.mode==='empty'}">
+                <label class="radio-item" :class="{ active: envForm.mode === 'empty' }">
                   <input type="radio" value="empty" v-model="envForm.mode" />
                   <span>创建空环境</span>
                 </label>
               </div>
             </div>
-            <div v-if="envForm.mode==='template'" class="form-group">
+            <div v-if="envForm.mode === 'template'" class="form-item">
               <label class="form-label">选择模板</label>
-              <select v-model="envForm.templateId" class="form-select">
+              <select v-model="envForm.templateId" class="rail-select">
                 <option v-for="t in templates" :key="t.id" :value="String(t.id)">{{ t.name }}</option>
               </select>
             </div>
+            <div v-if="modalError" class="form-error" role="alert">{{ modalError }}</div>
           </div>
           <div class="modal-footer">
-            <button class="btn-secondary" @click="showModal=false">取消</button>
-            <button class="btn-primary" @click="submitEnv" :disabled="!envForm.name || !envForm.identifier">创建</button>
+            <button class="rail-btn rail-btn--ghost" @click="showModal = false">取消</button>
+            <button class="rail-btn rail-btn--primary" :disabled="!envForm.name || creating" @click="submitEnv">
+              {{ creating ? '创建中...' : '创建' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <Teleport to="body">
+      <div v-if="pendingDeleteEnv" class="modal-overlay" role="dialog" aria-modal="true" @click.self="closeDeleteEnvironmentDialog">
+        <div class="modal-container">
+          <div class="modal-header">
+            <div>
+              <p class="modal-label">删除环境</p>
+              <p class="modal-heading">确认删除 {{ pendingDeleteEnv.name || pendingDeleteEnv.id }}</p>
+            </div>
+            <button class="modal-close" type="button" aria-label="关闭" :disabled="deletingEnvId !== null" @click="closeDeleteEnvironmentDialog">
+              <svg width="20" height="20" viewBox="0 0 32 32" fill="currentColor"><path d="M24 9.4L22.6 8 16 14.6 9.4 8 8 9.4l6.6 6.6L8 22.6 9.4 24l6.6-6.6 6.6 6.6 1.4-1.4-6.6-6.6L24 9.4z"/></svg>
+            </button>
+          </div>
+          <div class="modal-body">
+            <p class="confirm-text">这会删除环境记录和关联资源，请确认后继续。</p>
+            <div v-if="deleteError" class="form-error" role="alert">{{ deleteError }}</div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="rail-btn rail-btn--ghost" :disabled="deletingEnvId !== null" @click="closeDeleteEnvironmentDialog">取消</button>
+            <button type="button" class="rail-btn rail-btn--danger" :disabled="deletingEnvId !== null" @click="performDeleteEnvironment">
+              {{ deletingEnvId !== null ? '删除中...' : '确认删除' }}
+            </button>
           </div>
         </div>
       </div>
@@ -78,127 +181,231 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api } from '../api/client'
+import { toIdentifier } from '../utils/identifier'
 
 const route = useRoute()
 const router = useRouter()
 const appId = Number(route.params.id)
+
 const environments = ref<any[]>([])
-const components = ref<Record<number,any[]>>({})
-const services = ref<Record<number,any[]>>({})
+const components = ref<Record<number, any[]>>({})
+const services = ref<Record<number, any[]>>({})
 const templates = ref<any[]>([])
 const showModal = ref(false)
-const envForm = ref({ name:'', identifier:'', mode:'template', templateId:'1' })
+const loading = ref(false)
+const creating = ref(false)
+const deletingEnvId = ref<number | null>(null)
+const modalError = ref('')
+const deleteError = ref('')
+const envForm = ref({ name: '', identifier: '', mode: 'empty' as string, templateId: '1' })
+const pendingDeleteEnv = ref<any | null>(null)
+
+const runningCount = computed(() => environments.value.filter(e => e.status === 'running').length)
+const totalServices = computed(() => environments.value.reduce((s, e) => s + ((services.value[e.id] || []).length), 0))
+const totalComponents = computed(() => environments.value.reduce((s, e) => s + ((components.value[e.id] || []).length), 0))
+const identifierPreview = computed(() => toIdentifier(envForm.value.identifier || envForm.value.name, 'env'))
 
 onMounted(async () => {
   await loadEnvs()
-  try { templates.value = (await api.templates()).data || [] } catch(e){}
-  // 从概览页"创建环境"跳转过来时自动打开弹窗
-  if (route.query.create === 'true') {
-    showModal.value = true
+  try { templates.value = (await api.templates()).data || [] } catch (e) {}
+  if (route.query.create === 'true' || environments.value.length === 0) {
+    autoOpenCreateEnvironment()
+    return
   }
+  if (route.query.auto === 'true') goToDefaultEnvironment()
 })
 
 async function loadEnvs() {
+  loading.value = true
   try {
     const res = await api.listEnvs(appId)
     environments.value = res.data || []
-    for(const env of environments.value) {
-      try { components.value[env.id] = (await api.listComponents(env.id)).data || [] } catch(e){}
+    for (const env of environments.value) {
+      try { components.value[env.id] = (await api.listComponents(env.id)).data || [] } catch (e) {}
+      try { services.value[env.id] = (await api.listServices(env.id)).data || [] } catch (e) {}
     }
-  } catch(e){ console.error(e) }
+  } catch (e) { console.error(e) }
+  finally { loading.value = false }
 }
 
-const statusText = (s:string) => {
-  const m: Record<string,string> = { running:'运行中', empty:'空环境', stopped:'已停止', creating:'创建中' }
-  return m[s] || s
+function openModal() {
+  envForm.value = { name: '', identifier: '', mode: 'empty', templateId: String(templates.value[0]?.id || 1) }
+  modalError.value = ''
+  showModal.value = true
 }
+
+function autoOpenCreateEnvironment() {
+  openModal()
+}
+
+function goToDefaultEnvironment() {
+  const first = environments.value[0]
+  if (first?.id) router.replace(`/apps/${appId}/environments/${first.id}`)
+}
+
+const statusText = (s: string) => ({ running: '运行中', empty: '空环境', stopped: '已停止', creating: '创建中' }[s] || s)
 
 const submitEnv = async () => {
+  if (!envForm.value.name) return
+  creating.value = true
+  modalError.value = ''
   try {
-    const res = await api.createEnv(appId, { name:envForm.value.name, identifier:envForm.value.identifier, templateId:envForm.value.mode==='template'?Number(envForm.value.templateId):0, fromEmpty:envForm.value.mode==='empty' })
+    const res = await api.createEnv(appId, {
+      name: envForm.value.name,
+      identifier: envForm.value.identifier,
+      templateId: envForm.value.mode === 'template' ? Number(envForm.value.templateId) : 0,
+      fromEmpty: envForm.value.mode === 'empty',
+    })
     showModal.value = false
-    // 创建成功后直接进入环境详情
     const envId = res.data?.id
-    if (envId) {
-      router.push(`/apps/${appId}/environments/${envId}`)
-    } else {
-      await loadEnvs()
-    }
-  } catch(e:any) { alert('创建失败：'+e.message) }
+    if (envId) router.push(`/apps/${appId}/environments/${envId}`)
+    else await loadEnvs()
+  } catch (e: any) { modalError.value = '创建失败：' + (e?.message || '未知错误') }
+  finally { creating.value = false }
 }
 
-const goToEnv = (envId:number) => router.push(`/apps/${appId}/environments/${envId}`)
+const goToEnv = (envId: number) => router.push(`/apps/${appId}/environments/${envId}`)
+
+const openDeleteEnvironmentDialog = (env: any) => {
+  if (!env?.id || deletingEnvId.value !== null) return
+  deleteError.value = ''
+  pendingDeleteEnv.value = env
+}
+
+const closeDeleteEnvironmentDialog = () => {
+  if (deletingEnvId.value !== null) return
+  pendingDeleteEnv.value = null
+}
+
+const performDeleteEnvironment = async () => {
+  const env = pendingDeleteEnv.value
+  if (!env?.id || deletingEnvId.value !== null) return
+  deletingEnvId.value = Number(env.id)
+  deleteError.value = ''
+  try {
+    await api.deleteEnv(Number(env.id))
+    pendingDeleteEnv.value = null
+    await loadEnvs()
+  } catch (e: any) {
+    deleteError.value = '删除环境失败：' + (e?.message || '未知错误')
+  } finally {
+    deletingEnvId.value = null
+  }
+}
 </script>
 
 <style scoped>
-.page { padding:24px }
-.page-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:24px }
-.empty-state { padding:64px; text-align:center; background:#fff; border:1px solid #e0e0e0 }
-.env-list { display:flex; flex-direction:column; gap:8px }
-.env-row { display:grid; grid-template-columns:1fr auto auto auto; gap:16px; align-items:center; padding:16px; background:#fff; border:1px solid #e0e0e0; cursor:pointer }
-.env-row:hover { box-shadow:0 2px 6px rgba(0,0,0,.06) }
+.rail-page {
+  padding: 20px 20px 36px;
+  max-width: none;
+}
+
+/* Header */
+.page-header {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 20px;
+}
+.header-text { display: flex; flex-direction: column; gap: 2px; }
+.page-title { font-size: 24px; font-weight: 600; color: #11181c; letter-spacing: 0; line-height: 1.2; }
+.page-desc { font-size: 14px; color: #687076; line-height: 1.4; }
+
+/* KPI */
+.kpi-section {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 12px; margin-bottom: 32px;
+}
+.kpi-card {
+  background: #ffffff; border: 1px solid #e6e8eb; border-radius: 8px;
+  padding: 16px 18px; display: flex; flex-direction: column; gap: 8px;
+}
+.kpi-number {
+  font-size: 28px; font-weight: 600; color: #11181c;
+  letter-spacing: 0; line-height: 1.2;
+}
+.kpi-number.text-green { color: #22c55e; }
+.kpi-label { font-size: 12px; color: #687076; }
+
+/* Section */
+.section-card { background: #ffffff; border: 1px solid #e6e8eb; border-radius: 8px; padding: 24px; }
+.section-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; }
+
+/* Loading */
+.loading-mask { display: flex; align-items: center; justify-content: center; padding: 64px; }
+.loading-spinner { width: 24px; height: 24px; border: 2px solid #e6e8eb; border-top-color: #11181c; border-radius: 50%; animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Env cards */
+.env-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+.env-card {
+  background: #ffffff; border: 1px solid #e6e8eb; border-radius: 8px;
+  padding: 18px 20px; cursor: pointer; transition: all 0.15s ease;
+  display: flex; flex-direction: column; gap: 12px;
+}
+.env-card:hover { border-color: #d1d5db; box-shadow: 0 4px 12px rgba(0,0,0,0.04); }
+.env-card-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.env-name-group { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.env-name { font-size: 16px; font-weight: 600; color: #11181c; margin: 0; line-height: 1.3; }
+.env-id { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #9ba1a6; letter-spacing: 0.3px; }
+.env-card-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.env-delete-btn { white-space: nowrap; }
+.env-list-error { margin-top: 16px; }
+.status-badge {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 11px; font-weight: 500; padding: 3px 8px; border-radius: 4px;
+  background: #f1f3f5; color: #687076; white-space: nowrap; flex-shrink: 0;
+}
+.status-badge.running { background: #f0fdf4; color: #16a34a; }
+.status-badge.error { background: #fef2f2; color: #dc2626; }
+.status-badge.creating { background: #eff6ff; color: #2563eb; }
+.status-badge.empty { background: #f1f3f5; color: #687076; }
+.env-meta { display: flex; flex-wrap: wrap; gap: 6px; }
+
+/* Responsive */
+@media (max-width: 672px) {
+  .rail-page { padding: 20px 20px 32px; }
+  .page-header { flex-direction: column; align-items: flex-start; gap: 12px; }
+  .kpi-section { grid-template-columns: 1fr 1fr; }
+  .env-grid { grid-template-columns: 1fr; }
+}
 </style>
 
 <style>
-/* Modal styles (unscoped for Teleport) */
-.modal-overlay {
-  position: fixed; inset: 0; z-index: 9000;
-  background: rgba(0,0,0,.5);
-  display: flex; align-items: center; justify-content: center;
+.modal-overlay { position: fixed; inset: 0; z-index: 9000; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; padding: 24px; }
+.modal-container { background: #ffffff; width: 520px; max-height: 90vh; overflow-y: auto; border-radius: 8px; box-shadow: 0 20px 40px rgba(0,0,0,0.15); }
+.modal-header { display: flex; justify-content: space-between; align-items: flex-start; padding: 20px 24px; border-bottom: 1px solid #f1f3f5; }
+.modal-label { font-size: 11px; color: #9ba1a6; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; }
+.modal-heading { font-size: 18px; font-weight: 600; color: #11181c; margin: 0; line-height: 1.3; }
+.modal-close { background: none; border: none; color: #9ba1a6; cursor: pointer; padding: 4px; display: flex; align-items: center; justify-content: center; border-radius: 4px; transition: all 0.15s; }
+.modal-close:hover { background: #f1f3f5; color: #11181c; }
+.modal-body { padding: 24px; }
+.modal-footer { display: flex; justify-content: flex-end; gap: 8px; padding: 16px 24px; border-top: 1px solid #f1f3f5; }
+
+.form-item { display: flex; flex-direction: column; gap: 6px; margin-bottom: 20px; }
+.form-item:last-child { margin-bottom: 0; }
+.form-label { font-size: 12px; color: #687076; font-weight: 500; }
+.required { color: #ef4444; }
+.form-helper { font-size: 12px; color: #9ba1a6; margin-top: 2px; }
+.confirm-text { color: #11181c; font-size: 14px; line-height: 1.6; margin: 0; }
+.confirm-text + .form-error { margin-top: 16px; }
+.form-error {
+  border: 1px solid #fecaca;
+  background: #fef2f2;
+  color: #991b1b;
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-size: 13px;
+  line-height: 1.4;
 }
-.modal-container {
-  background: #fff; width: 520px; max-height: 90vh; overflow-y: auto;
-  box-shadow: 0 8px 32px rgba(0,0,0,.18); border-radius: 2px;
-}
-.modal-header {
-  display: flex; justify-content: space-between; align-items: flex-start;
-  padding: 20px 24px 0; border-bottom: 1px solid #e0e0e0; padding-bottom: 16px;
-}
-.modal-label { font-size: 12px; color: #6f6f6f; margin-bottom: 4px; text-transform: uppercase; letter-spacing: .5px }
-.modal-heading { font-size: 20px; font-weight: 600; color: #161616; margin: 0 }
-.modal-close {
-  background: none; border: none; font-size: 18px; color: #6f6f6f;
-  cursor: pointer; padding: 4px 8px; line-height: 1;
-}
-.modal-close:hover { color: #161616; background: #e0e0e0 }
-.modal-body { padding: 24px }
-.form-group { margin-bottom: 20px }
-.form-label { display: block; font-size: 14px; font-weight: 600; color: #161616; margin-bottom: 6px }
-.required { color: #da1e28 }
-.form-input {
-  width: 100%; padding: 10px 12px; font-size: 14px; border: 1px solid #8d8d8d;
-  background: #f4f4f4; color: #161616; outline: none; box-sizing: border-box;
-}
-.form-input:focus { border-color: #0f62fe; box-shadow: 0 0 0 1px #0f62fe }
-.form-input::placeholder { color: #a8a8a8 }
-.form-hint { font-size: 12px; color: #6f6f6f; margin-top: 4px }
-.form-select {
-  width: 100%; padding: 10px 12px; font-size: 14px; border: 1px solid #8d8d8d;
-  background: #f4f4f4; color: #161616; outline: none; box-sizing: border-box;
-}
-.radio-group { display: flex; gap: 12px; margin-top: 4px }
+
+.radio-group { display: flex; gap: 12px; }
 .radio-item {
   display: flex; align-items: center; gap: 8px; padding: 10px 16px;
-  border: 1px solid #c6c6c6; cursor: pointer; font-size: 14px; color: #161616;
+  border: 1px solid #e6e8eb; border-radius: 6px; cursor: pointer;
+  font-size: 14px; color: #11181c; transition: all 0.15s;
 }
-.radio-item.active { border-color: #0f62fe; background: #edf5ff }
-.radio-item input[type="radio"] { margin: 0 }
-.modal-footer {
-  display: flex; justify-content: flex-end; gap: 8px;
-  padding: 16px 24px; border-top: 1px solid #e0e0e0;
-}
-.btn-primary {
-  padding: 10px 24px; font-size: 14px; font-weight: 600;
-  background: #0f62fe; color: #fff; border: none; cursor: pointer;
-}
-.btn-primary:hover { background: #0043ce }
-.btn-primary:disabled { background: #c6c6c6; cursor: not-allowed }
-.btn-secondary {
-  padding: 10px 24px; font-size: 14px; font-weight: 600;
-  background: #fff; color: #0f62fe; border: 1px solid #0f62fe; cursor: pointer;
-}
-.btn-secondary:hover { background: #edf5ff }
+.radio-item.active { border-color: #3b82f6; background: #f5f9ff; }
+.radio-item:hover { border-color: #d1d5db; }
 </style>

@@ -3,3 +3,9 @@ declare module '@carbon/vue/src/components/*' {
   const component: DefineComponent<any, any, any>
   export default component
 }
+
+declare module '@carbon/icons-vue/es/*' {
+  import { DefineComponent } from 'vue'
+  const component: DefineComponent<any, any, any>
+  export default component
+}

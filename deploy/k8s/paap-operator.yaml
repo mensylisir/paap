@@ -9,46 +9,13 @@ kind: ClusterRole
 metadata:
   name: paap-operator-manager
 rules:
-  # CRD 管理
-  - apiGroups: ["paap.io"]
-    resources: ["applications", "environments", "serviceinstances", "components"]
+  # Operator 是平台安装执行器，需要能安装内置和用户自定义 Helm 模板中的任意 Kubernetes 资源。
+  # 工具 Pod 的运行期权限不使用这里的权限，仍由 platform-manifest.yaml 声明并只投射到本环境 namespace。
+  - apiGroups: ["*"]
+    resources: ["*"]
     verbs: ["*"]
-  - apiGroups: ["paap.io"]
-    resources: ["*/status", "*/finalizers"]
-    verbs: ["*"]
-  # Namespace 管理
-  - apiGroups: [""]
-    resources: ["namespaces"]
-    verbs: ["get", "list", "watch", "create", "update", "delete"]
-  # RBAC 管理
-  - apiGroups: [""]
-    resources: ["serviceaccounts"]
-    verbs: ["*"]
-  - apiGroups: ["rbac.authorization.k8s.io"]
-    resources: ["roles", "rolebindings"]
-    verbs: ["*"]
-  # 工作负载管理
-  - apiGroups: ["apps"]
-    resources: ["deployments", "statefulsets"]
-    verbs: ["*"]
-  - apiGroups: [""]
-    resources: ["services", "configmaps", "secrets", "persistentvolumeclaims"]
-    verbs: ["*"]
-  - apiGroups: ["batch"]
-    resources: ["jobs", "cronjobs"]
-    verbs: ["*"]
-  # 网络管理
-  - apiGroups: ["networking.k8s.io"]
-    resources: ["networkpolicies", "ingresses"]
-    verbs: ["*"]
-  # 配额管理
-  - apiGroups: [""]
-    resources: ["resourcequotas", "limitranges"]
-    verbs: ["*"]
-  # 事件记录
-  - apiGroups: [""]
-    resources: ["events"]
-    verbs: ["create", "patch"]
+  - nonResourceURLs: ["*"]
+    verbs: ["get"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -81,7 +48,7 @@ spec:
       serviceAccountName: paap-operator
       containers:
         - name: operator
-          image: paap-operator:latest
+          image: paap-operator:v0.1.42
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8080
@@ -94,18 +61,22 @@ spec:
               port: 8081
             initialDelaySeconds: 15
             periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 6
           readinessProbe:
             httpGet:
               path: /readyz
               port: 8081
             initialDelaySeconds: 5
             periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
           resources:
             limits:
-              cpu: 500m
-              memory: 128Mi
+              cpu: "1"
+              memory: 2Gi
             requests:
-              cpu: 10m
-              memory: 64Mi
+              cpu: 100m
+              memory: 512Mi
           securityContext:
             allowPrivilegeEscalation: false

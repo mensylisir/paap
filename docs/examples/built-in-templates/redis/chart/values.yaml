@@ -93,7 +93,7 @@ diagnosticMode:
 ##
 image:
   registry: docker.io
-  repository: bitnami/redis
+  repository: bitnamilegacy/redis
   tag: 7.2.3-debian-11-r1
   digest: ""
   ## Specify a imagePullPolicy
@@ -1070,7 +1070,7 @@ sentinel:
   ##
   image:
     registry: docker.io
-    repository: bitnami/redis-sentinel
+    repository: bitnamilegacy/redis-sentinel
     tag: 7.2.3-debian-11-r1
     digest: ""
     ## Specify a imagePullPolicy
@@ -1553,7 +1553,7 @@ metrics:
   ##
   image:
     registry: docker.io
-    repository: bitnami/redis-exporter
+    repository: bitnamilegacy/redis-exporter
     tag: 1.55.0-debian-11-r2
     digest: ""
     pullPolicy: IfNotPresent

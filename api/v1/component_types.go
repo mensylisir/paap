@@ -58,6 +58,14 @@ type DeploymentSpec struct {
 	// +optional
 	Resources *ResourceRequirements `json:"resources,omitempty"`
 
+	// 容器启动命令
+	// +optional
+	Command []string `json:"command,omitempty"`
+
+	// 容器启动参数
+	// +optional
+	Args []string `json:"args,omitempty"`
+
 	// 环境变量
 	// +optional
 	Env []EnvVar `json:"env,omitempty"`
@@ -69,16 +77,22 @@ type ResourceRequirements struct {
 }
 
 type EnvVar struct {
-	Name      string `json:"name"`
-	Value     string `json:"value,omitempty"`
+	Name      string        `json:"name"`
+	Value     string        `json:"value,omitempty"`
 	ValueFrom *EnvVarSource `json:"valueFrom,omitempty"`
 }
 
 type EnvVarSource struct {
-	SecretKeyRef *SecretKeySelector `json:"secretKeyRef,omitempty"`
+	SecretKeyRef    *SecretKeySelector    `json:"secretKeyRef,omitempty"`
+	ConfigMapKeyRef *ConfigMapKeySelector `json:"configMapKeyRef,omitempty"`
 }
 
 type SecretKeySelector struct {
+	Name string `json:"name"`
+	Key  string `json:"key"`
+}
+
+type ConfigMapKeySelector struct {
 	Name string `json:"name"`
 	Key  string `json:"key"`
 }
@@ -114,11 +128,11 @@ type ComponentStatus struct {
 }
 
 type DeploymentStatus struct {
-	Name           string `json:"name"`
-	Namespace      string `json:"namespace"`
-	ReadyReplicas  int32  `json:"readyReplicas"`
-	Replicas       int32  `json:"replicas"`
-	UpdatedReplicas int32 `json:"updatedReplicas"`
+	Name            string `json:"name"`
+	Namespace       string `json:"namespace"`
+	ReadyReplicas   int32  `json:"readyReplicas"`
+	Replicas        int32  `json:"replicas"`
+	UpdatedReplicas int32  `json:"updatedReplicas"`
 }
 
 type ServiceStatus struct {

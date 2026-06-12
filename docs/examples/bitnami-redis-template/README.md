@@ -51,11 +51,18 @@ serviceAccount:
 
 ### 2. 权限声明
 
-Redis 是一个 `tool-only` 类型的服务，只需要在自己的 namespace 内运行，不需要跨 namespace 权限。
+Redis 只需要在自己的 namespace 内运行，不声明跨 namespace 权限。
 
 ```yaml
 permissions:
-  scope: "tool-only"
+  toolNamespace:
+    rules:
+      - apiGroups: [""]
+        resources: ["pods", "services", "configmaps", "secrets", "persistentvolumeclaims", "serviceaccounts"]
+        verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+      - apiGroups: ["apps"]
+        resources: ["statefulsets", "replicasets"]
+        verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 ```
 
 ### 3. 参数映射
@@ -127,7 +134,7 @@ helm template my-redis ./chart/redis \
 - [x] **未修改** `chart/` 目录下的任何文件
 - [x] `preset-values.yaml` 禁用了 `rbac.create`
 - [x] `preset-values.yaml` 禁用了 `serviceAccount.create`
-- [x] `platform-manifest.yaml` 声明了 `scope: tool-only`
+- [x] `platform-manifest.yaml` 只声明了 `toolNamespace` 权限
 - [x] 使用 `variable_mapping` 传递密码
 - [x] 本地测试通过，无集群级资源
 

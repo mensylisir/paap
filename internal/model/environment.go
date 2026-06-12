@@ -21,15 +21,25 @@ type Environment struct {
 	ErrorMessage  string         `gorm:"type:text" json:"errorMessage,omitempty"` // 环境创建/运行过程中的错误信息
 }
 
+type EnvironmentCanvasState struct {
+	ID            uint           `gorm:"primarykey" json:"id"`
+	CreatedAt     time.Time      `json:"createdAt"`
+	UpdatedAt     time.Time      `json:"updatedAt"`
+	DeletedAt     gorm.DeletedAt `gorm:"index" json:"deletedAt"`
+	EnvironmentID uint           `gorm:"not null;uniqueIndex" json:"environmentId"`
+	Positions     string         `gorm:"type:text" json:"positions"`
+	Edges         string         `gorm:"type:text" json:"edges"`
+}
+
 type EnvironmentTemplate struct {
-	ID          uint           `gorm:"primarykey" json:"id"`
-	CreatedAt   time.Time      `json:"createdAt"`
-	UpdatedAt   time.Time      `json:"updatedAt"`
-	DeletedAt   gorm.DeletedAt `gorm:"index" json:"deletedAt"`
-	Name        string         `gorm:"size:50;not null" json:"name"`
-	Description string         `gorm:"size:200" json:"description"`
-	Services    string         `gorm:"type:text" json:"services"` // JSON array of service types
-	ResourceCPU string         `gorm:"size:20;default:4核" json:"resourceCpu"`
-	ResourceMem string         `gorm:"size:20;default:8GB" json:"resourceMem"`
-	ResourceDisk string        `gorm:"size:20;default:50GB" json:"resourceDisk"`
+	ID           uint           `gorm:"primarykey" json:"id"`
+	CreatedAt    time.Time      `json:"createdAt"`
+	UpdatedAt    time.Time      `json:"updatedAt"`
+	DeletedAt    gorm.DeletedAt `gorm:"index" json:"deletedAt"`
+	Name         string         `gorm:"size:50;not null" json:"name"`
+	Description  string         `gorm:"size:200" json:"description"`
+	Services     string         `gorm:"type:text" json:"services"` // JSON array of service types
+	ResourceCPU  string         `gorm:"size:20;default:4核" json:"resourceCpu"`
+	ResourceMem  string         `gorm:"size:20;default:8GB" json:"resourceMem"`
+	ResourceDisk string         `gorm:"size:20;default:50GB" json:"resourceDisk"`
 }

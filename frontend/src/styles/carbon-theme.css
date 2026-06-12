@@ -1,0 +1,898 @@
+@charset "UTF-8";
+/**
+ * IBM Carbon Design System - 公共基础 Token
+ * 从 carbon-tokens.css 拆分生成
+ */
+:root {
+  /* =============================================
+     COLOR SWATCHES (@carbon/colors)
+     ============================================= */
+  --cds-black: #000000; /* 纯黑 */
+  --cds-black-rgb: 0, 0, 0; /* 纯黑 RGB */
+  --cds-white: #ffffff; /* 纯白 */
+  --cds-white-rgb: 255, 255, 255; /* 纯白 RGB */
+  --cds-blue-10: #edf5ff; /* 蓝色色阶 10 */
+  --cds-blue-20: #d0e2ff; /* 蓝色色阶 20 */
+  --cds-blue-30: #a6c8ff; /* 蓝色色阶 30 */
+  --cds-blue-40: #78a9ff; /* 蓝色色阶 40 */
+  --cds-blue-50: #4589ff; /* 蓝色色阶 50 */
+  --cds-blue-60: #0f62fe; /* 蓝色色阶 60 */
+  --cds-blue-70: #0043ce; /* 蓝色色阶 70 */
+  --cds-blue-80: #002d9c; /* 蓝色色阶 80 */
+  --cds-blue-90: #001d6c; /* 蓝色色阶 90 */
+  --cds-blue-100: #001141; /* 蓝色色阶 100 */
+  --cds-gray-10: #f4f4f4; /* 灰色色阶 10 */
+  --cds-gray-20: #e0e0e0; /* 灰色色阶 20 */
+  --cds-gray-30: #c6c6c6; /* 灰色色阶 30 */
+  --cds-gray-40: #a8a8a8; /* 灰色色阶 40 */
+  --cds-gray-50: #8d8d8d; /* 灰色色阶 50 */
+  --cds-gray-60: #6f6f6f; /* 灰色色阶 60 */
+  --cds-gray-70: #525252; /* 灰色色阶 70 */
+  --cds-gray-80: #393939; /* 灰色色阶 80 */
+  --cds-gray-90: #262626; /* 灰色色阶 90 */
+  --cds-gray-100: #161616; /* 灰色色阶 100 */
+  --cds-red-10: #fff1f1; /* 红色色阶 10 */
+  --cds-red-20: #ffd7d9; /* 红色色阶 20 */
+  --cds-red-30: #ffb3b8; /* 红色色阶 30 */
+  --cds-red-40: #ff8389; /* 红色色阶 40 */
+  --cds-red-50: #fa4d56; /* 红色色阶 50 */
+  --cds-red-60: #da1e28; /* 红色色阶 60 */
+  --cds-red-70: #a2191f; /* 红色色阶 70 */
+  --cds-red-80: #750e13; /* 红色色阶 80 */
+  --cds-red-90: #520408; /* 红色色阶 90 */
+  --cds-red-100: #2d0709; /* 红色色阶 100 */
+  --cds-orange-10: #fff2e8; /* 橙色色阶 10 */
+  --cds-orange-20: #ffd9be; /* 橙色色阶 20 */
+  --cds-orange-30: #ffb784; /* 橙色色阶 30 */
+  --cds-orange-40: #ff832b; /* 橙色色阶 40 */
+  --cds-orange-50: #eb6200; /* 橙色色阶 50 */
+  --cds-orange-60: #ba4e00; /* 橙色色阶 60 */
+  --cds-orange-70: #8a3800; /* 橙色色阶 70 */
+  --cds-orange-80: #5e2900; /* 橙色色阶 80 */
+  --cds-orange-90: #3e1a00; /* 橙色色阶 90 */
+  --cds-orange-100: #231000; /* 橙色色阶 100 */
+  --cds-yellow-10: #fcf4d6; /* 黄色色阶 10 */
+  --cds-yellow-20: #fddc69; /* 黄色色阶 20 */
+  --cds-yellow-30: #f1c21b; /* 黄色色阶 30 */
+  --cds-yellow-40: #d2a106; /* 黄色色阶 40 */
+  --cds-yellow-50: #b28600; /* 黄色色阶 50 */
+  --cds-yellow-60: #8e6a00; /* 黄色色阶 60 */
+  --cds-yellow-70: #684e00; /* 黄色色阶 70 */
+  --cds-yellow-80: #483700; /* 黄色色阶 80 */
+  --cds-yellow-90: #302400; /* 黄色色阶 90 */
+  --cds-yellow-100: #1c1500; /* 黄色色阶 100 */
+  --cds-green-10: #defbe6; /* 绿色色阶 10 */
+  --cds-green-20: #a7f0ba; /* 绿色色阶 20 */
+  --cds-green-30: #6fdc8c; /* 绿色色阶 30 */
+  --cds-green-40: #42be65; /* 绿色色阶 40 */
+  --cds-green-50: #24a148; /* 绿色色阶 50 */
+  --cds-green-60: #198038; /* 绿色色阶 60 */
+  --cds-green-70: #0e6027; /* 绿色色阶 70 */
+  --cds-green-80: #044317; /* 绿色色阶 80 */
+  --cds-green-90: #022d0d; /* 绿色色阶 90 */
+  --cds-green-100: #071908; /* 绿色色阶 100 */
+  --cds-teal-10: #d9fbfb; /* 蓝绿色阶 10 */
+  --cds-teal-20: #9ef0f0; /* 蓝绿色阶 20 */
+  --cds-teal-30: #3ddbd9; /* 蓝绿色阶 30 */
+  --cds-teal-40: #08bdba; /* 蓝绿色阶 40 */
+  --cds-teal-50: #009d9a; /* 蓝绿色阶 50 */
+  --cds-teal-60: #007d79; /* 蓝绿色阶 60 */
+  --cds-teal-70: #005d5d; /* 蓝绿色阶 70 */
+  --cds-teal-80: #004144; /* 蓝绿色阶 80 */
+  --cds-teal-90: #022b30; /* 蓝绿色阶 90 */
+  --cds-teal-100: #081a1c; /* 蓝绿色阶 100 */
+  --cds-cyan-10: #e5f6ff; /* 青色色阶 10 */
+  --cds-cyan-20: #bae6ff; /* 青色色阶 20 */
+  --cds-cyan-30: #82cfff; /* 青色色阶 30 */
+  --cds-cyan-40: #33b1ff; /* 青色色阶 40 */
+  --cds-cyan-50: #1192e8; /* 青色色阶 50 */
+  --cds-cyan-60: #0072c3; /* 青色色阶 60 */
+  --cds-cyan-70: #00539a; /* 青色色阶 70 */
+  --cds-cyan-80: #003a6d; /* 青色色阶 80 */
+  --cds-cyan-90: #012749; /* 青色色阶 90 */
+  --cds-cyan-100: #061727; /* 青色色阶 100 */
+  --cds-purple-10: #f6f2ff; /* 紫色色阶 10 */
+  --cds-purple-20: #e8daff; /* 紫色色阶 20 */
+  --cds-purple-30: #d4bbff; /* 紫色色阶 30 */
+  --cds-purple-40: #be95ff; /* 紫色色阶 40 */
+  --cds-purple-50: #a56eff; /* 紫色色阶 50 */
+  --cds-purple-60: #8a3ffc; /* 紫色色阶 60 */
+  --cds-purple-70: #6929c4; /* 紫色色阶 70 */
+  --cds-purple-80: #491d8b; /* 紫色色阶 80 */
+  --cds-purple-90: #31135e; /* 紫色色阶 90 */
+  --cds-purple-100: #1c0f30; /* 紫色色阶 100 */
+  --cds-magenta-10: #fff0f7; /* 品红色阶 10 */
+  --cds-magenta-20: #ffd6e8; /* 品红色阶 20 */
+  --cds-magenta-30: #ffafd2; /* 品红色阶 30 */
+  --cds-magenta-40: #ff7eb6; /* 品红色阶 40 */
+  --cds-magenta-50: #ee5396; /* 品红色阶 50 */
+  --cds-magenta-60: #d02670; /* 品红色阶 60 */
+  --cds-magenta-70: #9f1853; /* 品红色阶 70 */
+  --cds-magenta-80: #740937; /* 品红色阶 80 */
+  --cds-magenta-90: #510224; /* 品红色阶 90 */
+  --cds-magenta-100: #2a0a18; /* 品红色阶 100 */
+  /* =============================================
+     RGB VARIANTS (for rgba() usage in themes)
+     ============================================= */
+  --cds-gray-10-rgb: 244, 244, 244;
+  --cds-gray-50-rgb: 141, 141, 141;
+  --cds-gray-90-rgb: 38, 38, 38;
+  --cds-gray-100-rgb: 22, 22, 22;
+  /* =============================================
+     SPACING TOKENS (@carbon/layout)
+     ============================================= */
+  --cds-spacing-01: 0.125rem; /* 间距 01（2px） */ /* 2px */
+  --cds-spacing-02: 0.25rem; /* 间距 02（4px） */ /* 4px */
+  --cds-spacing-03: 0.5rem; /* 间距 03（8px，基础间距单位） */ /* 8px */
+  --cds-spacing-04: 0.75rem; /* 间距 04（12px） */ /* 12px */
+  --cds-spacing-05: 1rem; /* 间距 05（16px） */ /* 16px */
+  --cds-spacing-06: 1.5rem; /* 间距 06（24px） */ /* 24px */
+  --cds-spacing-07: 2rem; /* 间距 07（32px） */ /* 32px */
+  --cds-spacing-08: 2.5rem; /* 间距 08（40px） */ /* 40px */
+  --cds-spacing-09: 3rem; /* 间距 09（48px） */ /* 48px */
+  --cds-spacing-10: 4rem; /* 间距 10（64px） */ /* 64px */
+  --cds-spacing-11: 5rem; /* 间距 11（80px） */ /* 80px */
+  --cds-spacing-12: 6rem; /* 间距 12（96px） */ /* 96px */
+  --cds-spacing-13: 10rem; /* 间距 13（160px） */ /* 160px */
+  /* =============================================
+     MOTION TOKENS (@carbon/motion)
+     ============================================= */
+  --cds-motion-easing-standard-productive: cubic-bezier(0.2, 0, 0.38, 0.9); /* 通用运动曲线（Productive，数据密集型界面） */
+  --cds-motion-easing-standard-expressive: cubic-bezier(0.4, 0.14, 0.3, 1); /* 通用运动曲线（Expressive，营销/表现型界面） */
+  --cds-motion-easing-entrance-productive: cubic-bezier(0, 0, 0.38, 0.9); /* 入场运动曲线（Productive，减速入场） */
+  --cds-motion-easing-entrance-expressive: cubic-bezier(0, 0, 0.3, 1); /* 入场运动曲线（Expressive，平滑减速入场） */
+  --cds-motion-easing-exit-productive: cubic-bezier(0.2, 0, 1, 0.9); /* 退场运动曲线（Productive，加速退场） */
+  --cds-motion-easing-exit-expressive: cubic-bezier(0.4, 0.14, 1, 1); /* 退场运动曲线（Expressive，平滑加速退场） */
+  --cds-motion-duration-fast: 110ms; /* 快速动画时长（110ms，微交互） */
+  --cds-motion-duration-moderate-01: 160ms; /* 中等动画时长 01（160ms，小幅展开） */
+  --cds-motion-duration-moderate-02: 240ms; /* 中等动画时长 02（240ms，系统通知） */
+  --cds-motion-duration-slow-01: 400ms; /* 慢速动画时长 01（400ms，大幅展开） */
+  --cds-motion-duration-slow-02: 700ms; /* 慢速动画时长 02（700ms，遮罩淡入） */
+  --cds-ease-in: cubic-bezier(0.25, 0, 1, 1); /* 退出缓动（移除元素） */
+  --cds-ease-out: cubic-bezier(0, 0, 0.25, 1); /* 进入缓动（添加元素） */
+  --cds-standard-easing: cubic-bezier(0.5, 0, 0.1, 1); /* 标准缓动（大多数动画） */
+  --cds-transition-base: 250ms; /* 基础过渡时长（250ms） */
+  --cds-transition-expansion: 300ms; /* 展开过渡时长（300ms） */
+  /* =============================================
+     GRID / BREAKPOINT TOKENS (@carbon/grid)
+     ============================================= */
+  --cds-breakpoint-sm: 20rem; /* 断点 Small（320px） */ /* 320px */
+  --cds-breakpoint-md: 42rem; /* 断点 Medium（672px） */ /* 672px */
+  --cds-breakpoint-lg: 66rem; /* 断点 Large（1056px） */ /* 1056px */
+  --cds-breakpoint-xlg: 82rem; /* 断点 Extra Large（1312px） */ /* 1312px */
+  --cds-breakpoint-max: 99rem; /* 断点 Max（1584px） */ /* 1584px */
+  --cds-grid-columns-sm: 4; /* 网格列数 Small（4列） */
+  --cds-grid-columns-md: 8; /* 网格列数 Medium（8列） */
+  --cds-grid-columns-lg: 16; /* 网格列数 Large（16列） */
+  --cds-grid-columns-xlg: 16; /* 网格列数 Extra Large（16列） */
+  --cds-grid-columns-max: 16; /* 网格列数 Max（16列） */
+  --cds-grid-margin-sm: 0; /* 网格外边距 Small（0） */ /* 0px */
+  --cds-grid-margin-md: 1rem; /* 网格外边距 Medium（16px） */ /* 16px */
+  --cds-grid-margin-lg: 1rem; /* 网格外边距 Large（16px） */ /* 16px */
+  --cds-grid-margin-xlg: 1rem; /* 网格外边距 Extra Large（16px） */ /* 16px */
+  --cds-grid-margin-max: 1.5rem; /* 网格外边距 Max（24px） */ /* 24px */
+  --cds-grid-gutter: 2rem; /* 网格间距（32px） */ /* 32px */
+  --cds-grid-gutter-condensed: 0.0625rem; /* 紧凑网格间距（1px） */ /* 1px */
+  --cds-grid-total-columns: 16; /* 网格总列数（16） */
+  /* =============================================
+     TYPOGRAPHY — Font Families (@carbon/type)
+     ============================================= */
+  --cds-font-family-mono: 'IBM Plex Mono', system-ui, -apple-system, BlinkMacSystemFont, '.SFNSText-Regular', monospace; /* 等宽字体（IBM Plex Mono） */
+  --cds-font-family-sans: 'IBM Plex Sans', system-ui, -apple-system, BlinkMacSystemFont, '.SFNSText-Regular', sans-serif; /* 无衬线字体（IBM Plex Sans） */
+  --cds-font-family-sans-condensed: 'IBM Plex Sans Condensed', system-ui, -apple-system, BlinkMacSystemFont, '.SFNSText-Regular', sans-serif; /* 窄体无衬线（IBM Plex Sans Condensed） */
+  --cds-font-family-serif: 'IBM Plex Serif', system-ui, -apple-system, BlinkMacSystemFont, '.SFNSText-Regular', serif; /* 衬线字体（IBM Plex Serif） */
+  --cds-font-weight-light: 300; /* 轻字重（300） */
+  --cds-font-weight-regular: 400; /* 常规字重（400） */
+  --cds-font-weight-semibold: 600; /* 半粗字重（600） */
+  /* =============================================
+     TYPOGRAPHY — Type Scale (@carbon/type)
+     ============================================= */
+  --cds-type-scale-01: 0.75rem; /* 字号阶梯 01 */
+  --cds-type-scale-02: 0.875rem; /* 字号阶梯 02 */
+  --cds-type-scale-03: 1rem; /* 字号阶梯 03 */
+  --cds-type-scale-04: 1.125rem; /* 字号阶梯 04 */
+  --cds-type-scale-05: 1.25rem; /* 字号阶梯 05 */
+  --cds-type-scale-06: 1.5rem; /* 字号阶梯 06 */
+  --cds-type-scale-07: 1.75rem; /* 字号阶梯 07 */
+  --cds-type-scale-08: 2rem; /* 字号阶梯 08 */
+  --cds-type-scale-09: 2.25rem; /* 字号阶梯 09 */
+  --cds-type-scale-10: 2.625rem; /* 字号阶梯 10 */
+  --cds-type-scale-11: 3rem; /* 字号阶梯 11 */
+  --cds-type-scale-12: 3.375rem; /* 字号阶梯 12 */
+  /* =============================================
+     TYPOGRAPHY STYLE PRESETS (@carbon/type)
+     ============================================= */
+  --cds-label-01-font-size: 0.75rem; /* 标签文字 01（12px，Productive） — 字号 */
+  --cds-label-01-font-weight: 400; /* 标签文字 01（12px，Productive） — 字重 */
+  --cds-label-01-line-height: 1.33333; /* 标签文字 01（12px，Productive） — 行高 */
+  --cds-label-01-letter-spacing: 0.32px; /* 标签文字 01（12px，Productive） — 字间距 */
+  --cds-label-02-font-size: 0.875rem; /* 标签文字 02（14px，Expressive） — 字号 */
+  --cds-label-02-font-weight: 400; /* 标签文字 02（14px，Expressive） — 字重 */
+  --cds-label-02-line-height: 1.28572; /* 标签文字 02（14px，Expressive） — 行高 */
+  --cds-label-02-letter-spacing: 0.16px; /* 标签文字 02（14px，Expressive） — 字间距 */
+  --cds-helper-text-01-font-size: 0.75rem; /* 辅助说明 01（12px，Productive） — 字号 */
+  --cds-helper-text-01-line-height: 1.33333; /* 辅助说明 01（12px，Productive） — 行高 */
+  --cds-helper-text-01-letter-spacing: 0.32px; /* 辅助说明 01（12px，Productive） — 字间距 */
+  --cds-helper-text-02-font-size: 0.875rem; /* 辅助说明 02（14px，Expressive） — 字号 */
+  --cds-helper-text-02-font-weight: 400; /* 辅助说明 02（14px，Expressive） — 字重 */
+  --cds-helper-text-02-line-height: 1.28572; /* 辅助说明 02（14px，Expressive） — 行高 */
+  --cds-helper-text-02-letter-spacing: 0.16px; /* 辅助说明 02（14px，Expressive） — 字间距 */
+  --cds-heading-01-font-size: 0.875rem; /* 标题 01（14px，Semi-bold） — 字号 */
+  --cds-heading-01-font-weight: 600; /* 标题 01（14px，Semi-bold） — 字重 */
+  --cds-heading-01-line-height: 1.42857; /* 标题 01（14px，Semi-bold） — 行高 */
+  --cds-heading-01-letter-spacing: 0.16px; /* 标题 01（14px，Semi-bold） — 字间距 */
+  --cds-heading-02-font-size: 1rem; /* 标题 02（16px，Semi-bold） — 字号 */
+  --cds-heading-02-font-weight: 600; /* 标题 02（16px，Semi-bold） — 字重 */
+  --cds-heading-02-line-height: 1.5; /* 标题 02（16px，Semi-bold） — 行高 */
+  --cds-heading-02-letter-spacing: 0; /* 标题 02（16px，Semi-bold） — 字间距 */
+  --cds-productive-heading-01-font-size: 0.875rem; /* Productive 标题 01（14px，Semi-bold） — 字号 */
+  --cds-productive-heading-01-font-weight: 600; /* Productive 标题 01（14px，Semi-bold） — 字重 */
+  --cds-productive-heading-01-line-height: 1.28572; /* Productive 标题 01（14px，Semi-bold） — 行高 */
+  --cds-productive-heading-01-letter-spacing: 0.16px; /* Productive 标题 01（14px，Semi-bold） — 字间距 */
+  --cds-productive-heading-02-font-size: 1rem; /* Productive 标题 02（16px，Semi-bold） — 字号 */
+  --cds-productive-heading-02-font-weight: 600; /* Productive 标题 02（16px，Semi-bold） — 字重 */
+  --cds-productive-heading-02-line-height: 1.375; /* Productive 标题 02（16px，Semi-bold） — 行高 */
+  --cds-productive-heading-02-letter-spacing: 0; /* Productive 标题 02（16px，Semi-bold） — 字间距 */
+  --cds-productive-heading-03-font-size: 1.25rem; /* Productive 标题 03（20px） — 字号 */
+  --cds-productive-heading-03-font-weight: 400; /* Productive 标题 03（20px） — 字重 */
+  --cds-productive-heading-03-line-height: 1.4; /* Productive 标题 03（20px） — 行高 */
+  --cds-productive-heading-03-letter-spacing: 0; /* Productive 标题 03（20px） — 字间距 */
+  --cds-productive-heading-04-font-size: 1.75rem; /* Productive 标题 04（28px） — 字号 */
+  --cds-productive-heading-04-font-weight: 400; /* Productive 标题 04（28px） — 字重 */
+  --cds-productive-heading-04-line-height: 1.28572; /* Productive 标题 04（28px） — 行高 */
+  --cds-productive-heading-04-letter-spacing: 0; /* Productive 标题 04（28px） — 字间距 */
+  --cds-productive-heading-05-font-size: 2rem; /* Productive 标题 05（32px） — 字号 */
+  --cds-productive-heading-05-font-weight: 400; /* Productive 标题 05（32px） — 字重 */
+  --cds-productive-heading-05-line-height: 1.25; /* Productive 标题 05（32px） — 行高 */
+  --cds-productive-heading-05-letter-spacing: 0; /* Productive 标题 05（32px） — 字间距 */
+  --cds-productive-heading-06-font-size: 2.625rem; /* Productive 标题 06（42px，Light） — 字号 */
+  --cds-productive-heading-06-font-weight: 300; /* Productive 标题 06（42px，Light） — 字重 */
+  --cds-productive-heading-06-line-height: 1.199; /* Productive 标题 06（42px，Light） — 行高 */
+  --cds-productive-heading-06-letter-spacing: 0; /* Productive 标题 06（42px，Light） — 字间距 */
+  --cds-productive-heading-07-font-size: 3.375rem; /* Productive 标题 07（54px，Light） — 字号 */
+  --cds-productive-heading-07-font-weight: 300; /* Productive 标题 07（54px，Light） — 字重 */
+  --cds-productive-heading-07-line-height: 1.19; /* Productive 标题 07（54px，Light） — 行高 */
+  --cds-productive-heading-07-letter-spacing: 0; /* Productive 标题 07（54px，Light） — 字间距 */
+  --cds-body-01-font-size: 0.875rem; /* 正文 01（14px，Productive） — 字号 */
+  --cds-body-01-font-weight: 400; /* 正文 01（14px，Productive） — 字重 */
+  --cds-body-01-line-height: 1.42857; /* 正文 01（14px，Productive） — 行高 */
+  --cds-body-01-letter-spacing: 0.16px; /* 正文 01（14px，Productive） — 字间距 */
+  --cds-body-02-font-size: 1rem; /* 正文 02（16px，Expressive） — 字号 */
+  --cds-body-02-font-weight: 400; /* 正文 02（16px，Expressive） — 字重 */
+  --cds-body-02-line-height: 1.5; /* 正文 02（16px，Expressive） — 行高 */
+  --cds-body-02-letter-spacing: 0; /* 正文 02（16px，Expressive） — 字间距 */
+  --cds-heading-03-font-size: 1.25rem; /* 标题 03（20px，Regular） — 字号 */
+  --cds-heading-03-font-weight: 400; /* 标题 03（20px，Regular） — 字重 */
+  --cds-heading-03-line-height: 1.4; /* 标题 03（20px，Regular） — 行高 */
+  --cds-heading-03-letter-spacing: 0; /* 标题 03（20px，Regular） — 字间距 */
+  --cds-heading-04-font-size: 1.75rem; /* 标题 04（28px，Regular） — 字号 */
+  --cds-heading-04-font-weight: 400; /* 标题 04（28px，Regular） — 字重 */
+  --cds-heading-04-line-height: 1.28572; /* 标题 04（28px，Regular） — 行高 */
+  --cds-heading-04-letter-spacing: 0; /* 标题 04（28px，Regular） — 字间距 */
+  --cds-heading-05-font-size: 2rem; /* 标题 05（32px，Regular） — 字号 */
+  --cds-heading-05-font-weight: 400; /* 标题 05（32px，Regular） — 字重 */
+  --cds-heading-05-line-height: 1.25; /* 标题 05（32px，Regular） — 行高 */
+  --cds-heading-05-letter-spacing: 0; /* 标题 05（32px，Regular） — 字间距 */
+  --cds-heading-06-font-size: 2.625rem; /* 标题 06（42px，Light） — 字号 */
+  --cds-heading-06-font-weight: 300; /* 标题 06（42px，Light） — 字重 */
+  --cds-heading-06-line-height: 1.199; /* 标题 06（42px，Light） — 行高 */
+  --cds-heading-06-letter-spacing: 0; /* 标题 06（42px，Light） — 字间距 */
+  --cds-heading-07-font-size: 3.375rem; /* 标题 07（54px，Light） — 字号 */
+  --cds-heading-07-font-weight: 300; /* 标题 07（54px，Light） — 字重 */
+  --cds-heading-07-line-height: 1.19; /* 标题 07（54px，Light） — 行高 */
+  --cds-heading-07-letter-spacing: 0; /* 标题 07（54px，Light） — 字间距 */
+  /* =============================================
+     BORDER RADIUS TOKENS (@carbon/components)
+     ============================================= */
+  --cds-border-radius-sm: 0px; /* 小圆角 — 按钮、输入框 */
+  --cds-border-radius-md: 2px; /* 中圆角 — Popover、Tooltip */
+  --cds-border-radius-pill: 25px; /* 药丸圆角 — Tag */
+  --cds-border-radius-round: 50%; /* 完全圆角 — Radio、Toggle、Icon Button */
+
+  /* ── 阴影层级（ELEVATION）───────────────── */
+  --cds-box-shadow-raised: 0 1px 2px 0 var(--cds-shadow); /* 轻量悬浮 — 按钮、标签、卡片抽离 */
+  --cds-box-shadow-floating: 0 2px 4px 0 var(--cds-shadow); /* 浮层面板 — Dropdown、Overflow Menu、Popover */
+  --cds-box-shadow-overlay: 0 4px 8px 0 var(--cds-shadow); /* 覆盖层 — Toast、侧边栏浮层 */
+  --cds-box-shadow-modal: 0 8px 12px 0 var(--cds-shadow); /* 模态框 — Modal、Dialog */
+}
+
+/**
+ * IBM Carbon Design System - White 主题 (默认亮色 #ffffff)
+ * 从 carbon-tokens.css 拆分生成
+ */
+
+/* =============================================
+   White Theme (default) — Light background (#ffffff)
+   ============================================= */
+:root {
+
+  /* ── 全局 ───────────────────────────────── */
+  --cds-color-scheme: light; /* 色彩方案（light/dark） */
+
+  /* ── 背景 ───────────────────────────────── */
+  --cds-background: var(--cds-white); /* 默认页面背景 */
+  --cds-background-active: rgba(var(--cds-gray-50-rgb), 0.5); /* 背景按下/激活态 */
+  --cds-background-hover: rgba(var(--cds-gray-50-rgb), 0.12); /* 背景悬停态 */
+  --cds-background-inverse: var(--cds-gray-80); /* 高对比反色背景（侧边栏、工具提示） */
+  --cds-background-inverse-hover: #474747; /* 反色背景悬停态 */
+  --cds-background-selected: rgba(var(--cds-gray-50-rgb), 0.2); /* 背景选中态 */
+  --cds-background-brand: var(--cds-blue-60); /* 品牌特征背景色 */
+  --cds-background-selected-hover: rgba(var(--cds-gray-50-rgb), 0.32); /* 背景选中悬停态 */
+
+  /* ── 图层 ───────────────────────────────── */
+  --cds-layer-01: var(--cds-white); /* 容器层级 1 背景色（第一层提升） */
+  --cds-layer-02: var(--cds-white); /* 容器层级 2 背景色（第二层提升） */
+  --cds-layer-03: var(--cds-gray-10); /* 容器层级 3 背景色（第三层提升） */
+  --cds-layer-background-01: var(--cds-white); /* 层级 01 基础背景 */
+  --cds-layer-background-02: var(--cds-gray-10); /* 层级 02 基础背景 */
+  --cds-layer-background-03: var(--cds-white); /* 层级 03 基础背景 */
+  --cds-layer-accent-01: var(--cds-gray-20); /* 层级 1 强调背景 */
+  --cds-layer-accent-02: var(--cds-gray-20); /* 层级 2 强调背景 */
+  --cds-layer-accent-03: var(--cds-gray-20); /* 层级 3 强调背景 */
+  --cds-layer-accent-active-01: var(--cds-gray-40); /* 层级 1 强调激活态 */
+  --cds-layer-accent-active-02: var(--cds-gray-40); /* 层级 2 强调激活态 */
+  --cds-layer-accent-active-03: var(--cds-gray-40); /* 层级 3 强调激活态 */
+  --cds-layer-accent-hover-01: #cacaca; /* 层级 1 强调悬停态 Gray 20 hover */
+  --cds-layer-accent-hover-02: #cacaca; /* 层级 2 强调悬停态 Gray 20 hover */
+  --cds-layer-accent-hover-03: #cacaca; /* 层级 3 强调悬停态 Gray 20 hover */
+  --cds-layer-active-01: var(--cds-gray-30); /* 层级 1 按下态 */
+  --cds-layer-active-02: var(--cds-gray-30); /* 层级 2 按下态 */
+  --cds-layer-active-03: var(--cds-gray-30); /* 层级 3 按下态 */
+  --cds-layer-hover-01: #e8e8e8; /* 层级 1 悬停态 */
+  --cds-layer-hover-02: #e8e8e8; /* 层级 2 悬停态 */
+  --cds-layer-hover-03: #e8e8e8; /* 层级 3 悬停态 */
+  --cds-layer-selected-01: var(--cds-gray-20); /* 层级 1 选中态 */
+  --cds-layer-selected-02: var(--cds-gray-20); /* 层级 2 选中态 */
+  --cds-layer-selected-03: var(--cds-gray-20); /* 层级 3 选中态 */
+  --cds-layer-selected-disabled: var(--cds-gray-50); /* 禁用选中色 */
+  --cds-layer-selected-hover-01: #d1d1d1; /* 层级 1 选中悬停态 */
+  --cds-layer-selected-hover-02: #d1d1d1; /* 层级 2 选中悬停态 */
+  --cds-layer-selected-hover-03: #d1d1d1; /* 层级 3 选中悬停态 */
+  --cds-layer-selected-inverse: var(--cds-gray-100); /* 高对比选中色 */
+
+  /* ── 边框 ───────────────────────────────── */
+  --cds-border-disabled: var(--cds-gray-30); /* 禁用边框 */
+  --cds-border-interactive: var(--cds-blue-60); /* 交互元素边框色 */
+  --cds-border-inverse: var(--cds-gray-100); /* 反色边框 */
+  --cds-border-strong-01: var(--cds-gray-50); /* 强调边框（层级 1，高对比分隔） */
+  --cds-border-strong-02: var(--cds-gray-50); /* 强调边框（层级 2） */
+  --cds-border-strong-03: var(--cds-gray-50); /* 强调边框（层级 3） */
+  --cds-border-subtle-00: var(--cds-gray-20); /* 轻量边框（基础层，最小对比度） */
+  --cds-border-subtle: var(--cds-border-subtle-01); /* 轻量边框（兼容层） */
+  --cds-border-subtle-01: var(--cds-gray-30); /* 轻量边框（层级 1） */
+  --cds-border-subtle-02: var(--cds-gray-20); /* 轻量边框（层级 2） */
+  --cds-border-subtle-03: var(--cds-gray-30); /* 轻量边框（层级 3） */
+  --cds-border-subtle-selected-01: var(--cds-gray-30); /* 选中轻量边框（层级 1） */
+  --cds-border-subtle-selected-02: var(--cds-gray-30); /* 选中轻量边框（层级 2） */
+  --cds-border-subtle-selected-03: var(--cds-gray-30); /* 选中轻量边框（层级 3） */
+  --cds-border-tile-01: var(--cds-gray-30); /* 瓷贴边框（层级 1，同色边界） */
+  --cds-border-tile-02: var(--cds-gray-40); /* 瓷贴边框（层级 2） */
+  --cds-border-tile-03: var(--cds-gray-30); /* 瓷贴边框（层级 3） */
+
+  /* ── 焦点 ───────────────────────────────── */
+  --cds-focus: var(--cds-blue-60); /* 焦点指示器颜色 */
+  --cds-focus-inset: var(--cds-white); /* 内嵌焦点指示器（填充/品牌元素上） */
+  --cds-focus-inverse: var(--cds-white); /* 反色焦点指示器 */
+
+  /* ── 交互 ───────────────────────────────── */
+  --cds-interactive: var(--cds-blue-60); /* 交互元素基础色 */
+
+  /* ── 高亮 ───────────────────────────────── */
+  --cds-highlight: var(--cds-blue-20); /* 高亮/选中文本背景色 */
+
+  /* ── 遮罩 ───────────────────────────────── */
+  --cds-overlay: rgba(var(--cds-black-rgb), 0.6); /* 遮罩层颜色（模态框背景变暗） */
+
+  /* ── 阴影 ───────────────────────────────── */
+  --cds-shadow: rgba(var(--cds-black-rgb), 0.14); /* 阴影颜色（White 主题） */
+
+  /* ── 文本 ───────────────────────────────── */
+  --cds-text-primary: var(--cds-gray-100); /* 主要文本（正文、标题） */
+  --cds-text-secondary: var(--cds-gray-70); /* 次要文本（标签、辅助文字） */
+  --cds-text-disabled: rgba(var(--cds-gray-100-rgb), 0.25); /* 禁用文本 */
+  --cds-text-error: var(--cds-red-60); /* 错误文本 */
+  --cds-text-helper: var(--cds-gray-60); /* 辅助说明文字 */
+  --cds-text-inverse: var(--cds-white); /* 反色文本（深色背景上） */
+  --cds-text-on-color: var(--cds-white); /* 彩色背景上的文本（按钮、标签） */
+  --cds-text-on-color-disabled: var(--cds-gray-50); /* 彩色背景上的禁用文本 */
+  --cds-text-placeholder: rgba(var(--cds-gray-100-rgb), 0.4); /* 占位文本（空输入框） */
+
+  /* ── 图标 ───────────────────────────────── */
+  --cds-icon-primary: var(--cds-gray-100); /* 主图标色 */
+  --cds-icon-secondary: var(--cds-gray-70); /* 次要图标色 */
+  --cds-icon-disabled: rgba(var(--cds-gray-100-rgb), 0.25); /* 禁用图标色 */
+  --cds-icon-interactive: var(--cds-blue-60); /* 可交互图标色 */
+  --cds-icon-inverse: var(--cds-white); /* 反色图标 */
+  --cds-icon-on-color: var(--cds-white); /* 彩色背景上的图标 */
+  --cds-icon-on-color-disabled: var(--cds-gray-50); /* 彩色背景上的禁用图标 */
+
+  /* ── 链接 ───────────────────────────────── */
+  --cds-link-primary: var(--cds-blue-60); /* 主链接色 */
+  --cds-link-primary-hover: var(--cds-blue-70); /* 主链接悬停态 */
+  --cds-link-secondary: var(--cds-blue-70); /* 次要链接色 */
+  --cds-link-visited: var(--cds-purple-60); /* 已访问链接色 */
+  --cds-link-inverse: var(--cds-blue-40); /* 反色链接 */
+  --cds-link-inverse-active: var(--cds-gray-10); /* 反色链接激活态 */
+  --cds-link-inverse-hover: var(--cds-blue-30); /* 反色链接悬停态 */
+  --cds-link-inverse-visited: var(--cds-purple-40); /* 反色已访问链接 */
+
+  /* ── 表单字段 ───────────────────────────── */
+  --cds-field-01: var(--cds-gray-10); /* 表单输入框背景（层级 1） */
+  --cds-field-02: var(--cds-white); /* 表单输入框背景（层级 2） */
+  --cds-field-03: var(--cds-gray-10); /* 表单输入框背景（层级 3） */
+  --cds-field-hover-01: #e8e8e8; /* 输入框悬停态（层级 1） */
+  --cds-field-hover-02: #e8e8e8; /* 输入框悬停态（层级 2） */
+  --cds-field-hover-03: #e8e8e8; /* 输入框悬停态（层级 3） */
+
+  /* ── 按钮 ───────────────────────────────── */
+  --cds-button-primary: var(--cds-blue-60);                     /* 主要按钮色 Blue 60 #0f62fe */
+  --cds-button-primary-hover: #0353e9;                           /* 主要按钮色 悬停态 Blue 60 hover（派生出，非色阶值） */
+  --cds-button-primary-active: var(--cds-blue-80);             /* 主要按钮色 激活态 Blue 80 #002d9c */
+  --cds-button-secondary: var(--cds-gray-80);                  /* 次要按钮色 Gray 80 #393939 */
+  --cds-button-secondary-hover: #4c4c4c;                         /* 次要按钮色 悬停态 Gray 80 hover（派生出，非色阶值） */
+  --cds-button-secondary-active: var(--cds-gray-60);           /* 次要按钮色 激活态 Gray 60 #6f6f6f */
+  --cds-button-tertiary: var(--cds-blue-60);                    /* 三级按钮色 Blue 60 #0f62fe */
+  --cds-button-tertiary-hover: #0353e9;                          /* 三级按钮色 悬停态 Blue 60 hover（派生出，非色阶值） */
+  --cds-button-tertiary-active: var(--cds-blue-80);            /* 三级按钮色 激活态 Blue 80 #002d9c */
+  --cds-button-danger-primary: var(--cds-red-60);              /* 危险主要按钮色 Red 60 #da1e28 */
+  --cds-button-danger-secondary: var(--cds-red-60);            /* 危险次要按钮色 Red 60 #da1e28 */
+  --cds-button-danger-hover: #ba1b23;                          /* 危险按钮悬停态 Red 60 hover（派生出，非色阶值） */
+  --cds-button-danger-active: var(--cds-red-80);               /* 危险按钮激活态 Red 80 #750e13 */
+  --cds-button-disabled: var(--cds-gray-30);                   /* 禁用按钮色 Gray 30 #c6c6c6 */
+  --cds-button-separator: var(--cds-gray-20);                  /* 按钮分隔符色 Gray 20 #e0e0e0 */
+
+  /* ── 标签 (Tag) — 用于分类、标记、组织信息的彩色胶囊 ─────────────────────
+   *
+   * 每个 Tag 颜色变体包含 4 个 Token:
+   *   --cds-tag-background-{color}  : 标签背景色（浅色调，用于视觉区分）
+   *   --cds-tag-border-{color}       : 标签边框色（中等饱和度，与背景协调）
+   *   --cds-tag-color-{color}        : 标签文字及图标色（深色，确保可读性）
+   *   --cds-tag-hover-{color}         : 标签悬停背景色（略深于背景色）
+   *
+   * Tag 颜色语义（Carbon Design System 标准）:
+   *   Blue      : 信息类标签、链接、分类标记
+   *   Cool Gray : 中性/次要标签、不带情感倾向的分类
+   *   Cyan      : 特定信息提示（如系统状态指示）
+   *   Gray      : 默认/中性标签、最通用的无色彩标签
+   *   Green     : 成功状态、完成状态、积极正向的标签
+   *   Magenta   : 特殊/重点标记、需要突出显示的分类
+   *   Purple    : 特殊类别、创意/个性化标签
+   *   Red       : 错误、危险、紧急状态、关键警告
+   *   Teal      : 反馈信息、进程状态指示
+   *   Warm Gray : 暖色调中性标签、辅助分类
+   *
+   * 使用场景示例:
+   *   - 项目/任务的优先级标签
+   *   - 状态指示（待办/进行中/已完成）
+   *   - 分类标签（需求类型、模块名称）
+   *   - 警告/提示标签（重要/紧急/信息）
+   *
+   * 注意: Cool Gray / Warm Gray 的 --cds-cool-gray-* / --cds-warm-gray-* 色阶变量
+   *       未在 carbon-tokens-common.css 中定义（Carbon 色阶仅包含主色板）。
+   *       如需使用这两种 Tag 颜色，需先补充对应色阶定义。
+   * ──────────────────────────────────────────────────────────────────────────── */
+  /* ── 标签 — Blue ─────────────────────────── */
+  --cds-tag-background-blue: var(--cds-blue-20); /* 信息标签背景 */
+  --cds-tag-border-blue: var(--cds-blue-40);     /* 信息标签边框 */
+  --cds-tag-color-blue: var(--cds-blue-70);      /* 信息标签文字/图标 */
+  --cds-tag-hover-blue: #b8d3ff;                 /* 信息标签悬停背景 */
+  /* ── 标签 — Cool Gray ───────────────────── */
+  --cds-tag-background-cool-gray: var(--cds-cool-gray-20); /* 中性次要标签背景 */
+  --cds-tag-border-cool-gray: var(--cds-cool-gray-40);     /* 中性次要标签边框 */
+  --cds-tag-color-cool-gray: var(--cds-cool-gray-100);      /* 中性次要标签文字/图标 */
+  --cds-tag-hover-cool-gray: #cdd3da;                      /* 中性次要标签悬停背景 */
+  /* ── 标签 — Cyan ────────────────────────── */
+  --cds-tag-background-cyan: var(--cds-cyan-20); /* 系统状态标签背景 */
+  --cds-tag-border-cyan: var(--cds-cyan-40);     /* 系统状态标签边框 */
+  --cds-tag-color-cyan: var(--cds-cyan-70);      /* 系统状态标签文字/图标 */
+  --cds-tag-hover-cyan: #99daff;                /* 系统状态标签悬停背景 */
+  /* ── 标签 — Gray ────────────────────────── */
+  --cds-tag-background-gray: var(--cds-gray-20); /* 默认中性标签背景 */
+  --cds-tag-border-gray: var(--cds-gray-40);     /* 默认中性标签边框 */
+  --cds-tag-color-gray: var(--cds-gray-100);     /* 默认中性标签文字/图标 */
+  --cds-tag-hover-gray: #d1d1d1;                 /* 默认中性标签悬停背景 */
+  /* ── 标签 — Green ───────────────────────── */
+  --cds-tag-background-green: var(--cds-green-20); /* 成功/完成标签背景 */
+  --cds-tag-border-green: var(--cds-green-40);     /* 成功/完成标签边框 */
+  --cds-tag-color-green: var(--cds-green-70);       /* 成功/完成标签文字/图标 */
+  --cds-tag-hover-green: #74e792;                  /* 成功/完成标签悬停背景 */
+  /* ── 标签 — Magenta ─────────────────────── */
+  --cds-tag-background-magenta: var(--cds-magenta-20); /* 特殊重点标签背景 */
+  --cds-tag-border-magenta: var(--cds-magenta-40);     /* 特殊重点标签边框 */
+  --cds-tag-color-magenta: var(--cds-magenta-70);       /* 特殊重点标签文字/图标 */
+  --cds-tag-hover-magenta: #ffbdda;                     /* 特殊重点标签悬停背景 */
+  /* ── 标签 — Purple ──────────────────────── */
+  --cds-tag-background-purple: var(--cds-purple-20); /* 特殊类别标签背景 */
+  --cds-tag-border-purple: var(--cds-purple-40);     /* 特殊类别标签边框 */
+  --cds-tag-color-purple: var(--cds-purple-70);       /* 特殊类别标签文字/图标 */
+  --cds-tag-hover-purple: #dcc7ff;                    /* 特殊类别标签悬停背景 */
+  /* ── 标签 — Red ─────────────────────────── */
+  --cds-tag-background-red: var(--cds-red-20); /* 错误/危险标签背景 */
+  --cds-tag-border-red: var(--cds-red-40);     /* 错误/危险标签边框 */
+  --cds-tag-color-red: var(--cds-red-70);       /* 错误/危险标签文字/图标 */
+  --cds-tag-hover-red: #ffc2c5;                /* 错误/危险标签悬停背景 */
+  /* ── 标签 — Teal ────────────────────────── */
+  --cds-tag-background-teal: var(--cds-teal-20); /* 反馈进程标签背景 */
+  --cds-tag-border-teal: var(--cds-teal-40);     /* 反馈进程标签边框 */
+  --cds-tag-color-teal: var(--cds-teal-70);       /* 反馈进程标签文字/图标 */
+  --cds-tag-hover-teal: #57e5e5;                 /* 反馈进程标签悬停背景 */
+  /* ── 标签 — Warm Gray ───────────────────── */
+  --cds-tag-background-warm-gray: var(--cds-warm-gray-20); /* 暖色中性标签背景 */
+  --cds-tag-border-warm-gray: var(--cds-warm-gray-40);     /* 暖色中性标签边框 */
+  --cds-tag-color-warm-gray: var(--cds-warm-gray-100);       /* 暖色中性标签文字/图标 */
+  --cds-tag-hover-warm-gray: #d8d0cf;                      /* 暖色中性标签悬停背景 */
+
+  /* ── 通知 ───────────────────────────────── */
+  --cds-notification-background-error: var(--cds-red-10); /* 错误通知背景 */
+  --cds-notification-background-info: var(--cds-blue-10); /* 信息通知背景 */
+  --cds-notification-background-success: var(--cds-green-10); /* 成功通知背景 */
+  --cds-notification-background-warning: var(--cds-yellow-10); /* 警告通知背景 */
+  --cds-notification-action-hover: var(--cds-white); /* 通知操作悬停 */
+  --cds-notification-action-tertiary-inverse: var(--cds-white); /* 反色三级操作按钮 */
+  --cds-notification-action-tertiary-inverse-active: var(--cds-gray-30); /* 反色三级操作按钮激活态 */
+  --cds-notification-action-tertiary-inverse-hover: var(--cds-gray-10); /* 反色三级操作按钮悬停态 */
+  --cds-notification-action-tertiary-inverse-text: var(--cds-gray-100); /* 反色三级操作按钮文字色 */
+  --cds-notification-action-tertiary-inverse-text-on-color-disabled: rgba(var(--cds-white-rgb), 0.25); /* 反色三级操作按钮彩色背景禁用文字 */
+
+  /* ── 状态色 ─────────────────────────────── */
+  --cds-status-accessibility-background: var(--cds-white); /* 无障碍背景色 */
+  --cds-status-blue: var(--cds-blue-70); /* 状态色 - 蓝色 */
+  --cds-status-gray: var(--cds-gray-60); /* 状态色 - 灰色 */
+  --cds-status-green: var(--cds-green-50); /* 状态色 - 绿色 */
+  --cds-status-orange: var(--cds-orange-40); /* 状态色 - 橙色 */
+  --cds-status-orange-outline: var(--cds-orange-60); /* 状态色 - 橙色轮廓 */
+  --cds-status-purple: var(--cds-purple-60); /* 状态色 - 紫色 */
+  --cds-status-red: var(--cds-red-60); /* 状态色 - 红色 */
+  --cds-status-yellow: var(--cds-yellow-30); /* 状态色 - 黄色 */
+  --cds-status-yellow-outline: var(--cds-yellow-60); /* 状态色 - 黄色轮廓 */
+
+  /* ── 反馈/支持色 ────────────────────────── */
+  --cds-support-error: var(--cds-red-60); /* 错误/危险状态色 */
+  --cds-support-error-inverse: var(--cds-red-50); /* 反色错误状态 */
+  --cds-support-success: var(--cds-green-50); /* 成功状态色 */
+  --cds-support-success-inverse: var(--cds-green-40); /* 反色成功状态 */
+  --cds-support-info: var(--cds-blue-70); /* 信息状态色 */
+  --cds-support-info-inverse: var(--cds-blue-50); /* 反色信息状态 */
+  --cds-support-warning: var(--cds-yellow-30); /* 警告状态色 */
+  --cds-support-warning-inverse: var(--cds-yellow-30); /* 反色警告状态 */
+  --cds-support-caution-major: var(--cds-orange-40); /* 重大注意状态 */
+  --cds-support-caution-minor: var(--cds-yellow-30); /* 轻微注意状态 */
+  --cds-support-caution-undefined: var(--cds-purple-60); /* 未定义注意状态 */
+
+
+  /* ── 内容切换器 ──────────────────────────── */
+  --cds-content-switcher-background: var(--cds-gray-20); /* 内容切换器 — 背景 */
+  --cds-content-switcher-background-hover: #d1d1d1; /* 内容切换器 — 背景悬停 */
+  --cds-content-switcher-selected: var(--cds-white); /* 内容切换器 — 选中态 */
+
+  /* ── 骨架屏 ─────────────────────────────── */
+  --cds-skeleton-background: #e8e8e8; /* 骨架屏背景 */
+  --cds-skeleton-element: var(--cds-gray-30); /* 骨架屏元素色 */
+
+  /* ── 切换开关 ───────────────────────────── */
+  --cds-toggle-off: var(--cds-gray-50); /* 切换开关关闭态 */
+}
+/**
+ * IBM Carbon Design System - Gray 90 主题 (深色 #262626)
+ * 从 carbon-tokens.css 拆分生成
+ */
+
+/* =============================================
+   Gray 90 (g90) Theme — Dark background (#262626)
+   ============================================= */
+[data-carbon-theme=g90] {
+
+  /* ── 全局 ───────────────────────────────── */
+  --cds-color-scheme: dark; /* 色彩方案（light/dark） */
+
+  /* ── 背景 ───────────────────────────────── */
+  --cds-background: var(--cds-gray-90); /* 默认页面背景 */
+  --cds-background-active: rgba(var(--cds-gray-50-rgb), 0.4); /* 背景按下/激活态 */
+  --cds-background-hover: rgba(var(--cds-gray-50-rgb), 0.16); /* 背景悬停态 */
+  --cds-background-inverse: var(--cds-gray-10); /* 高对比反色背景（侧边栏、工具提示） */
+  --cds-background-inverse-hover: #e8e8e8; /* 反色背景悬停态 */
+  --cds-background-selected: rgba(var(--cds-gray-50-rgb), 0.24); /* 背景选中态 */
+  --cds-background-brand: var(--cds-blue-60); /* 品牌特征背景色 */
+  --cds-background-selected-hover: rgba(var(--cds-gray-50-rgb), 0.32); /* 背景选中悬停态 */
+
+  /* ── 图层 ───────────────────────────────── */
+  --cds-layer-01: var(--cds-gray-80); /* 容器层级 1 背景色（第一层提升） */
+  --cds-layer-02: var(--cds-gray-70); /* 容器层级 2 背景色（第二层提升） */
+  --cds-layer-03: var(--cds-gray-60); /* 容器层级 3 背景色（第三层提升） */
+  --cds-layer-background-01: var(--cds-gray-90); /* 层级 01 基础背景 */
+  --cds-layer-background-02: var(--cds-gray-80); /* 层级 02 基础背景 */
+  --cds-layer-background-03: var(--cds-gray-70); /* 层级 03 基础背景 */
+  --cds-layer-accent-01: var(--cds-gray-70); /* 层级 1 强调背景 */
+  --cds-layer-accent-02: var(--cds-gray-60); /* 层级 2 强调背景 */
+  --cds-layer-accent-03: var(--cds-gray-50); /* 层级 3 强调背景 */
+  --cds-layer-accent-active-01: var(--cds-gray-60); /* 层级 1 强调激活态 */
+  --cds-layer-accent-active-02: var(--cds-gray-80); /* 层级 2 强调激活态 */
+  --cds-layer-accent-active-03: var(--cds-gray-70); /* 层级 3 强调激活态 */
+  --cds-layer-accent-hover-01: #636363; /* 层级 1 强调悬停态 */
+  --cds-layer-accent-hover-02: #5e5e5e; /* 层级 2 强调悬停态 */
+  --cds-layer-accent-hover-03: #7a7a7a; /* 层级 3 强调悬停态 */
+  --cds-layer-active-01: var(--cds-gray-60); /* 层级 1 按下态 */
+  --cds-layer-active-02: var(--cds-gray-50); /* 层级 2 按下态 */
+  --cds-layer-active-03: var(--cds-gray-80); /* 层级 3 按下态 */
+  --cds-layer-hover-01: #474747; /* 层级 1 悬停态 */
+  --cds-layer-hover-02: #636363; /* 层级 2 悬停态 */
+  --cds-layer-hover-03: #5e5e5e; /* 层级 3 悬停态 */
+  --cds-layer-selected-01: var(--cds-gray-70); /* 层级 1 选中态 */
+  --cds-layer-selected-02: var(--cds-gray-60); /* 层级 2 选中态 */
+  --cds-layer-selected-03: var(--cds-gray-70); /* 层级 3 选中态 */
+  --cds-layer-selected-disabled: var(--cds-gray-40); /* 禁用选中色 */
+  --cds-layer-selected-hover-01: #636363; /* 层级 1 选中悬停态 */
+  --cds-layer-selected-hover-02: #5e5e5e; /* 层级 2 选中悬停态 */
+  --cds-layer-selected-hover-03: #636363; /* 层级 3 选中悬停态 */
+  --cds-layer-selected-inverse: var(--cds-gray-10); /* 高对比选中色 */
+
+  /* ── 边框 ───────────────────────────────── */
+  --cds-border-disabled: rgba(var(--cds-gray-50-rgb), 0.5); /* 禁用边框 */
+  --cds-border-interactive: var(--cds-blue-50); /* 交互元素边框色 */
+  --cds-border-inverse: var(--cds-gray-10); /* 反色边框 */
+  --cds-border-strong-01: var(--cds-gray-50); /* 强调边框（层级 1，高对比分隔） */
+  --cds-border-strong-02: var(--cds-gray-40); /* 强调边框（层级 2） */
+  --cds-border-strong-03: var(--cds-gray-30); /* 强调边框（层级 3） */
+  --cds-border-subtle-00: var(--cds-gray-70); /* 轻量边框（基础层，最小对比度） */
+  --cds-border-subtle: var(--cds-border-subtle-01); /* 轻量边框（兼容层） */
+  --cds-border-subtle-01: var(--cds-gray-60); /* 轻量边框（层级 1） */
+  --cds-border-subtle-02: var(--cds-gray-50); /* 轻量边框（层级 2） */
+  --cds-border-subtle-03: var(--cds-gray-50); /* 轻量边框（层级 3） */
+  --cds-border-subtle-selected-01: var(--cds-gray-50); /* 选中轻量边框（层级 1） */
+  --cds-border-subtle-selected-02: var(--cds-gray-40); /* 选中轻量边框（层级 2） */
+  --cds-border-subtle-selected-03: var(--cds-gray-40); /* 选中轻量边框（层级 3） */
+  --cds-border-tile-01: var(--cds-gray-60); /* 瓷贴边框（层级 1，同色边界） */
+  --cds-border-tile-02: var(--cds-gray-50); /* 瓷贴边框（层级 2） */
+  --cds-border-tile-03: var(--cds-gray-40); /* 瓷贴边框（层级 3） */
+
+  /* ── 焦点 ───────────────────────────────── */
+  --cds-focus: var(--cds-white); /* 焦点指示器颜色 */
+  --cds-focus-inset: var(--cds-gray-100); /* 内嵌焦点指示器（填充/品牌元素上） */
+  --cds-focus-inverse: var(--cds-blue-60); /* 反色焦点指示器 */
+
+  /* ── 交互 ───────────────────────────────── */
+  --cds-interactive: var(--cds-blue-50); /* 交互元素基础色 */
+
+  /* ── 高亮 & 遮罩 ────────────────────────── */
+  --cds-highlight: var(--cds-blue-80); /* 高亮/选中文本背景色 */
+  --cds-overlay: rgba(var(--cds-black-rgb), 0.6); /* 遮罩层颜色（模态框背景变暗） */
+  --cds-shadow: rgba(var(--cds-black-rgb), 0.35); /* 阴影颜色 */
+
+  /* ── 文本 ───────────────────────────────── */
+  --cds-text-primary: var(--cds-gray-10); /* 主要文本（正文、标题） */
+  --cds-text-secondary: var(--cds-gray-30); /* 次要文本（标签、辅助文字） */
+  --cds-text-disabled: rgba(var(--cds-gray-10-rgb), 0.25); /* 禁用文本 */
+  --cds-text-error: var(--cds-red-30); /* 错误文本 */
+  --cds-text-helper: var(--cds-gray-30); /* 辅助说明文字 */
+  --cds-text-inverse: var(--cds-gray-100); /* 反色文本（深色背景上） */
+  --cds-text-on-color: var(--cds-white); /* 彩色背景上的文本（按钮、标签） */
+  --cds-text-on-color-disabled: rgba(var(--cds-white-rgb), 0.25); /* 彩色背景上的禁用文本 */
+  --cds-text-placeholder: rgba(var(--cds-gray-10-rgb), 0.4); /* 占位文本（空输入框） */
+
+  /* ── 图标 ───────────────────────────────── */
+  --cds-icon-primary: var(--cds-gray-10); /* 主图标色 */
+  --cds-icon-secondary: var(--cds-gray-30); /* 次要图标色 */
+  --cds-icon-disabled: rgba(var(--cds-gray-10-rgb), 0.25); /* 禁用图标色 */
+  --cds-icon-interactive: var(--cds-white); /* 可交互图标色 */
+  --cds-icon-inverse: var(--cds-gray-100); /* 反色图标 */
+  --cds-icon-on-color: var(--cds-white); /* 彩色背景上的图标 */
+  --cds-icon-on-color-disabled: rgba(var(--cds-white-rgb), 0.25); /* 彩色背景上的禁用图标 */
+
+  /* ── 链接 ───────────────────────────────── */
+  --cds-link-primary: var(--cds-blue-40); /* 主链接色 */
+  --cds-link-primary-hover: var(--cds-blue-30); /* 主链接悬停态 */
+  --cds-link-secondary: var(--cds-blue-30); /* 次要链接色 */
+  --cds-link-visited: var(--cds-purple-40); /* 已访问链接色 */
+  --cds-link-inverse: var(--cds-blue-60); /* 反色链接 */
+  --cds-link-inverse-active: var(--cds-gray-100); /* 反色链接激活态 */
+  --cds-link-inverse-hover: var(--cds-blue-70); /* 反色链接悬停态 */
+  --cds-link-inverse-visited: var(--cds-purple-60); /* 反色已访问链接 */
+
+  /* ── 表单字段 ───────────────────────────── */
+  --cds-field-01: var(--cds-gray-80); /* 表单输入框背景（层级 1） */
+  --cds-field-02: var(--cds-gray-70); /* 表单输入框背景（层级 2） */
+  --cds-field-03: var(--cds-gray-60); /* 表单输入框背景（层级 3） */
+  --cds-field-hover-01: #474747; /* 输入框悬停态（层级 1） */
+  --cds-field-hover-02: #636363; /* 输入框悬停态（层级 2） */
+  --cds-field-hover-03: #5e5e5e; /* 输入框悬停态（层级 3） */
+
+  /* ── 按钮 ───────────────────────────────── */
+  --cds-button-primary: var(--cds-blue-60); /* 主要按钮色 */
+  --cds-button-primary-active: var(--cds-blue-80); /* 主要按钮色 激活态 */
+  --cds-button-primary-hover: #0050e6; /* 主要按钮色 悬停态 */
+  --cds-button-secondary: var(--cds-gray-60); /* 次要按钮色 */
+  --cds-button-secondary-active: var(--cds-gray-80); /* 次要按钮色 激活态 */
+  --cds-button-secondary-hover: #5e5e5e; /* 次要按钮色 悬停态 */
+  --cds-button-tertiary: var(--cds-white); /* 三级按钮色 */
+  --cds-button-tertiary-active: var(--cds-gray-30); /* 三级按钮色 激活态 */
+  --cds-button-tertiary-hover: var(--cds-gray-10); /* 三级按钮色 悬停态 */
+  --cds-button-danger-primary: var(--cds-red-60); /* 危险主要按钮色 */
+  --cds-button-danger-secondary: var(--cds-red-40); /* 危险次要按钮色 */
+  --cds-button-danger-active: var(--cds-red-80); /* 危险按钮激活色 */
+  --cds-button-danger-hover: #b81921; /* 危险按钮悬停色 */
+  --cds-button-disabled: rgba(var(--cds-gray-50-rgb), 0.3); /* 禁用按钮色 */
+  --cds-button-separator: var(--cds-gray-100); /* 按钮分隔符色 */
+
+  /* ── 标签 — Blue ─────────────────────────── */
+  --cds-tag-background-blue: var(--cds-blue-70);
+  --cds-tag-border-blue: var(--cds-blue-50);
+  --cds-tag-color-blue: var(--cds-blue-20);
+  --cds-tag-hover-blue: #0053ff;
+  /* ── 标签 — Cool Gray ───────────────────── */
+  --cds-tag-background-cool-gray: var(--cds-cool-gray-70);
+  --cds-tag-border-cool-gray: var(--cds-cool-gray-50);
+  --cds-tag-color-cool-gray: var(--cds-cool-gray-10);
+  --cds-tag-hover-cool-gray: #5d646a;
+  /* ── 标签 — Cyan ────────────────────────── */
+  --cds-tag-background-cyan: var(--cds-cyan-70);
+  --cds-tag-border-cyan: var(--cds-cyan-50);
+  --cds-tag-color-cyan: var(--cds-cyan-20);
+  --cds-tag-hover-cyan: #0066bd;
+  /* ── 标签 — Gray ────────────────────────── */
+  --cds-tag-background-gray: var(--cds-gray-70);
+  --cds-tag-border-gray: var(--cds-gray-50);
+  --cds-tag-color-gray: var(--cds-gray-10);
+  --cds-tag-hover-gray: #636363;
+  /* ── 标签 — Green ───────────────────────── */
+  --cds-tag-background-green: var(--cds-green-70);
+  --cds-tag-border-green: var(--cds-green-50);
+  --cds-tag-color-green: var(--cds-green-20);
+  --cds-tag-hover-green: #11742f;
+  /* ── 标签 — Magenta ─────────────────────── */
+  --cds-tag-background-magenta: var(--cds-magenta-70);
+  --cds-tag-border-magenta: var(--cds-magenta-50);
+  --cds-tag-color-magenta: var(--cds-magenta-20);
+  --cds-tag-hover-magenta: #bf1d63;
+  /* ── 标签 — Purple ──────────────────────── */
+  --cds-tag-background-purple: var(--cds-purple-70);
+  --cds-tag-border-purple: var(--cds-purple-50);
+  --cds-tag-color-purple: var(--cds-purple-20);
+  --cds-tag-hover-purple: #7c3dd6;
+  /* ── 标签 — Red ─────────────────────────── */
+  --cds-tag-background-red: var(--cds-red-70);
+  --cds-tag-border-red: var(--cds-red-50);
+  --cds-tag-color-red: var(--cds-red-20);
+  --cds-tag-hover-red: #c21e25;
+  /* ── 标签 — Teal ────────────────────────── */
+  --cds-tag-background-teal: var(--cds-teal-70);
+  --cds-tag-border-teal: var(--cds-teal-50);
+  --cds-tag-color-teal: var(--cds-teal-20);
+  --cds-tag-hover-teal: #007070;
+  /* ── 标签 — Warm Gray ───────────────────── */
+  --cds-tag-background-warm-gray: var(--cds-warm-gray-70);
+  --cds-tag-border-warm-gray: var(--cds-warm-gray-50);
+  --cds-tag-color-warm-gray: var(--cds-warm-gray-10);
+  --cds-tag-hover-warm-gray: #696363;
+
+  /* ── 通知 ───────────────────────────────── */
+  --cds-notification-background-error: var(--cds-gray-80); /* 错误通知背景 */
+  --cds-notification-background-info: var(--cds-gray-80); /* 信息通知背景 */
+  --cds-notification-background-success: var(--cds-gray-80); /* 成功通知背景 */
+  --cds-notification-background-warning: var(--cds-gray-80); /* 警告通知背景 */
+  --cds-notification-action-hover: ; /* 通知操作悬停 */
+  --cds-notification-action-tertiary-inverse: var(--cds-blue-60); /* 反色三级操作按钮 */
+  --cds-notification-action-tertiary-inverse-active: var(--cds-blue-80); /* 反色三级操作按钮激活态 */
+  --cds-notification-action-tertiary-inverse-hover: #0050e6; /* 反色三级操作按钮悬停态 */
+  --cds-notification-action-tertiary-inverse-text: var(--cds-white); /* 反色三级操作按钮文字色 */
+  --cds-notification-action-tertiary-inverse-text-on-color-disabled: var(--cds-gray-50); /* 反色三级操作按钮彩色背景禁用文字 */
+
+  /* ── 状态色 ─────────────────────────────── */
+  --cds-status-accessibility-background: var(--cds-gray-100); /* 无障碍背景色 */
+  --cds-status-blue: var(--cds-blue-50); /* 状态色 - 蓝色 */
+  --cds-status-gray: var(--cds-gray-50); /* 状态色 - 灰色 */
+  --cds-status-green: var(--cds-green-40); /* 状态色 - 绿色 */
+  --cds-status-orange: var(--cds-orange-40); /* 状态色 - 橙色 */
+  --cds-status-orange-outline: ; /* 状态色 - 橙色轮廓 */
+  --cds-status-purple: var(--cds-purple-50); /* 状态色 - 紫色 */
+  --cds-status-red: var(--cds-red-50); /* 状态色 - 红色 */
+  --cds-status-yellow: var(--cds-yellow-30); /* 状态色 - 黄色 */
+  --cds-status-yellow-outline: ; /* 状态色 - 黄色轮廓 */
+
+  /* ── 反馈/支持色 ────────────────────────── */
+  --cds-support-error: var(--cds-red-40); /* 错误/危险状态色 */
+  --cds-support-error-inverse: var(--cds-red-60); /* 反色错误状态 */
+  --cds-support-success: var(--cds-green-40); /* 成功状态色 */
+  --cds-support-success-inverse: var(--cds-green-50); /* 反色成功状态 */
+  --cds-support-info: var(--cds-blue-50); /* 信息状态色 */
+  --cds-support-info-inverse: var(--cds-blue-70); /* 反色信息状态 */
+  --cds-support-warning: var(--cds-yellow-30); /* 警告状态色 */
+  --cds-support-warning-inverse: var(--cds-yellow-30); /* 反色警告状态 */
+  --cds-support-caution-major: var(--cds-orange-40); /* 重大注意状态 */
+  --cds-support-caution-minor: var(--cds-yellow-30); /* 轻微注意状态 */
+  --cds-support-caution-undefined: var(--cds-purple-50); /* 未定义注意状态 */
+
+  /* ── 聊天 ───────────────────────────────── */
+  --cds-chat-avatar-agent: var(--cds-gray-30); /* 聊天代理头像色 */
+  --cds-chat-avatar-bot: var(--cds-gray-50); /* 聊天机器人头像色 */
+  --cds-chat-avatar-user: var(--cds-blue-50); /* 聊天用户头像色 */
+  --cds-chat-bubble-agent: var(--cds-gray-90); /* 聊天代理气泡背景 */
+  --cds-chat-bubble-agent-text: var(--cds-gray-10); /* 聊天代理气泡文字色 */
+  --cds-chat-bubble-border: var(--cds-gray-70); /* 聊天气泡边框 */
+  --cds-chat-bubble-user: var(--cds-gray-80); /* 聊天用户气泡背景 */
+  --cds-chat-bubble-user-text: var(--cds-gray-10); /* 聊天用户气泡文字色 */
+  --cds-chat-button: var(--cds-blue-40); /* 聊天按钮色 */
+  --cds-chat-button-active: rgba(var(--cds-gray-50-rgb), 0.4); /* 聊天按钮激活色 */
+  --cds-chat-button-hover: rgba(var(--cds-gray-50-rgb), 0.16); /* 聊天按钮悬停色 */
+  --cds-chat-button-selected: rgba(var(--cds-gray-50-rgb), 0.24); /* 聊天按钮选中态 */
+  --cds-chat-button-text-hover: var(--cds-blue-30); /* 聊天按钮文字悬停 */
+  --cds-chat-button-text-selected: var(--cds-gray-30); /* 聊天按钮文字选中 */
+  --cds-chat-header-background: var(--cds-gray-90); /* 聊天头部背景 */
+  --cds-chat-header-text: var(--cds-gray-10); /* 聊天头部文字 */
+  --cds-chat-prompt-background: var(--cds-gray-100); /* 聊天输入框背景 */
+  --cds-chat-prompt-border-end: rgba(var(--cds-gray-90-rgb), 0); /* 聊天输入框边框终止色 */
+  --cds-chat-prompt-border-start: var(--cds-gray-90); /* 聊天输入框边框起始色 */
+  --cds-chat-prompt-text: var(--cds-gray-10); /* 聊天输入文字 */
+  --cds-chat-shell-background: var(--cds-gray-90); /* 聊天外壳背景 */
+
+  /* ── 内容切换器 ──────────────────────────── */
+  --cds-content-switcher-background: rgba(var(--cds-black-rgb), 0); /* 内容切换器 — 背景 */
+  --cds-content-switcher-background-hover: rgba(var(--cds-gray-50-rgb), 0.12); /* 内容切换器 — 背景悬停 */
+  --cds-content-switcher-selected: rgba(var(--cds-gray-50-rgb), 0.24); /* 内容切换器 — 选中态 */
+
+  /* ── 骨架屏 ─────────────────────────────── */
+  --cds-skeleton-background: #333333; /* 骨架屏背景 */
+  --cds-skeleton-element: var(--cds-gray-70); /* 骨架屏元素色 */
+
+  /* ── 切换开关 ───────────────────────────── */
+  --cds-toggle-off: var(--cds-gray-50); /* 切换开关关闭态 */
+
+  /* ── 间距 ───────────────────────────────── */
+  --cds-spacing-01: 0.125rem; /* 间距 01（2px） */
+  --cds-spacing-02: 0.25rem; /* 间距 02（4px） */
+  --cds-spacing-03: 0.5rem; /* 间距 03（8px，基础间距单位） */
+  --cds-spacing-04: 0.75rem; /* 间距 04（12px） */
+  --cds-spacing-05: 1rem; /* 间距 05（16px） */
+  --cds-spacing-06: 1.5rem; /* 间距 06（24px） */
+  --cds-spacing-07: 2rem; /* 间距 07（32px） */
+  --cds-spacing-08: 2.5rem; /* 间距 08（40px） */
+  --cds-spacing-09: 3rem; /* 间距 09（48px） */
+  --cds-spacing-10: 4rem; /* 间距 10（64px） */
+  --cds-spacing-11: 5rem; /* 间距 11（80px） */
+  --cds-spacing-12: 6rem; /* 间距 12（96px） */
+  --cds-spacing-13: 10rem; /* 间距 13（160px） */
+}
+html, body, #root {
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+  font-family: var(--cds-font-family-sans);
+}
+
+#root {
+  display: flex;
+  flex-direction: column;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--cds-border-subtle, #c6c6c6);
+  border-radius: 0;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--cds-border-strong, #8d8d8d);
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

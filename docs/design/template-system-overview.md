@@ -76,8 +76,12 @@ name: "MyTool"
 version: "v1.0.0"
 
 permissions:
-  scope: "tool-only"  # 或 "environment-wide"
-  rules: [...]        # 仅当 scope=environment-wide 时需要
+  toolNamespace:
+    rules: [...]
+  workloadNamespaces:
+    rules: [...]      # 需要控制业务负载 namespace 时声明
+  environmentNamespaces:
+    rules: [...]      # 需要覆盖同环境其它 namespace 时声明
 
 observability:        # 可选
   dashboard_path: "./dashboards/main.json"
@@ -94,16 +98,18 @@ variable_mapping:     # 可选
 
 ## 3. 权限模型
 
-### 3.1 两种权限范围
+### 3.1 三类 namespace 权限
 
-| scope | 说明 | 适用场景 | 示例 |
+| 权限块 | 说明 | 适用场景 | 示例 |
 |-------|------|---------|------|
-| `tool-only` | 工具只需要访问自己所在的 namespace | 数据库、缓存、消息队列 | PostgreSQL, Redis, RabbitMQ |
-| `environment-wide` | 工具需要访问环境内所有 namespace | 监控、CI/CD、日志收集 | Prometheus, ArgoCD, Loki |
+| `toolNamespace` | 工具自身 namespace 权限 | 安装和运行自身资源 | PostgreSQL, Redis, Grafana |
+| `workloadNamespaces` | 业务负载 namespace 权限 | 部署、CI、业务资源管理 | ArgoCD, Jenkins |
+| `environmentNamespaces` | 同环境其它 namespace 权限 | 监控、日志、环境级观察 | Prometheus, Loki |
+| `clusterResources` | 集群级只读权限 | 节点、namespace、存储类发现 | kube-state-metrics, Prometheus |
 
 ### 3.2 权限同步机制
 
-**scope: tool-only**
+**toolNamespace**
 ```
 平台行为：
 1. 在工具所在的 namespace 创建 ServiceAccount
@@ -111,12 +117,12 @@ variable_mapping:     # 可选
 3. 创建 RoleBinding（SA → Role）
 ```
 
-**scope: environment-wide**
+**workloadNamespaces / environmentNamespaces**
 ```
 平台行为：
 1. 在工具所在的 namespace 创建 ServiceAccount
-2. 在环境的每个 namespace 创建 Role（使用 permissions.rules）
-3. 在环境的每个 namespace 创建 RoleBinding（SA → Role）
+2. workloadNamespaces 只投射到业务负载 namespace
+3. environmentNamespaces 投射到同环境非自身 namespace，包含业务、工具、中间件、数据库 namespace
 
 动态同步：
 - 环境新增 namespace → 自动创建 Role + RoleBinding
@@ -134,7 +140,7 @@ variable_mapping:     # 可选
 | 创建方式 | 平台管理员通过代码预定义 | 用户通过 UI/API 上传 tar.gz |
 | 存储位置 | 数据库 + 文件系统/S3 | 数据库 + 文件系统/S3 |
 | 格式 | ⚠️ 迁移中（目标：platform-manifest.yaml） | ✅ platform-manifest.yaml |
-| 权限模型 | ⚠️ 部分使用旧方式 | ✅ 使用 permissions.scope + rules |
+| 权限模型 | ✅ 使用 platform-manifest.yaml | ✅ 使用 platform-manifest.yaml |
 | 可见性 | 所有用户可见 | 仅上传者可见（或全局共享） |
 | 升级方式 | 平台升级时更新 | 用户重新上传 |
 
@@ -171,8 +177,8 @@ variable_mapping:     # 可选
          ↓
 解析 platform-manifest.yaml
   - 验证格式
-  - 验证 permissions.scope
-  - 验证 permissions.rules
+  - 验证 permissions.toolNamespace / workloadNamespaces / environmentNamespaces
+  - 验证权限 rules
          ↓
 存储到数据库 + 文件系统/S3
   - ServiceTemplate 记录
@@ -191,15 +197,20 @@ variable_mapping:     # 可选
          ↓
 解析 PlatformManifestJSON
          ↓
-检查 permissions.scope
+检查 permissions.toolNamespace / workloadNamespaces / environmentNamespaces
          ↓
 ┌─────────────────────────────────────┐
-│ scope = tool-only                   │
-│   → 只在工具 namespace 创建 SA + Role│
+│ toolNamespace.rules                 │
+│   → 在工具 namespace 创建 Role       │
 └─────────────────────────────────────┘
 ┌─────────────────────────────────────┐
-│ scope = environment-wide            │
-│   → 在环境所有 namespace 创建       │
+│ workloadNamespaces.rules            │
+│   → 在业务 namespace 创建           │
+│     Role + RoleBinding              │
+└─────────────────────────────────────┘
+┌─────────────────────────────────────┐
+│ environmentNamespaces.rules         │
+│   → 在同环境非自身 namespace 创建   │
 │     Role + RoleBinding              │
 └─────────────────────────────────────┘
          ↓
@@ -239,7 +250,7 @@ Operator 监听 Environment CR 变化
          ↓
 检查 WorkloadRole 是否为空
          ↓
-如果不为空（说明是 environment-wide）
+如果 workloadNamespaces 或 environmentNamespaces 不为空
   → 在 namespace-03 创建 Role + RoleBinding
          ↓
 完成（工具立即可以访问新 namespace）
@@ -379,13 +390,14 @@ tar -czf redis-template.tar.gz redis-template/
 
 因为没有修改 Chart 代码，升级只需要替换目录。
 
-### Q4: permissions.scope 应该选哪个？
+### Q4: 三类权限应该怎么选？
 
 **A:** 根据工具的实际需求：
-- **tool-only**: 工具只在自己的 namespace 内运行（数据库、缓存）
-- **environment-wide**: 工具需要访问环境内所有 namespace（监控、CI/CD）
+- `toolNamespace`: 工具自身安装和运行资源。
+- `workloadNamespaces`: 控制业务负载 namespace，例如 ArgoCD/Jenkins。
+- `environmentNamespaces`: 覆盖同环境其它工具/中间件/数据库 namespace，例如 Prometheus/Loki。
 
-详见：[自定义模板开发指南 - permissions.scope](custom-template-guide.md#324-variable_mapping变量映射)
+详见：[自定义模板开发指南](custom-template-guide.md)
 
 ---
 

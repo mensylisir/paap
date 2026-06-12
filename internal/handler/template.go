@@ -10,12 +10,14 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
+	paapv1 "paap/api/v1"
 	"paap/internal/database"
+	paaphelm "paap/internal/helm"
 	"paap/internal/k8s"
 	"paap/internal/model"
 
@@ -109,17 +111,17 @@ func GetServiceTemplate(c *gin.Context) {
 }
 
 type CreateServiceTemplateRequest struct {
-	Type             string `json:"type" binding:"required"`
-	Name             string `json:"name" binding:"required"`
-	Category         string `json:"category" binding:"required"`
-	Description      string `json:"description"`
-	Installer        string `json:"installer" binding:"required"`
-	ChartRepo        string `json:"chartRepo"`
-	ChartName        string `json:"chartName"`
-	ChartVersion     string `json:"chartVersion"`
-	DefaultValues    string `json:"defaultValues"`
+	Type               string `json:"type" binding:"required"`
+	Name               string `json:"name" binding:"required"`
+	Category           string `json:"category" binding:"required"`
+	Description        string `json:"description"`
+	Installer          string `json:"installer" binding:"required"`
+	ChartRepo          string `json:"chartRepo"`
+	ChartName          string `json:"chartName"`
+	ChartVersion       string `json:"chartVersion"`
+	DefaultValues      string `json:"defaultValues"`
 	ConfigurableParams string `json:"configurableParams"`
-	RawYamlTemplate  string `json:"rawYamlTemplate"`
+	RawYamlTemplate    string `json:"rawYamlTemplate"`
 }
 
 // CreateServiceTemplate creates a user-defined service template
@@ -169,15 +171,15 @@ func UpdateServiceTemplate(c *gin.Context) {
 	}
 
 	updates := map[string]interface{}{
-		"name":               req.Name,
-		"description":        req.Description,
-		"installer":          req.Installer,
-		"chart_repo":         req.ChartRepo,
-		"chart_name":         req.ChartName,
-		"chart_version":      req.ChartVersion,
-		"default_values":     req.DefaultValues,
+		"name":                req.Name,
+		"description":         req.Description,
+		"installer":           req.Installer,
+		"chart_repo":          req.ChartRepo,
+		"chart_name":          req.ChartName,
+		"chart_version":       req.ChartVersion,
+		"default_values":      req.DefaultValues,
 		"configurable_params": req.ConfigurableParams,
-		"raw_yaml_template":  req.RawYamlTemplate,
+		"raw_yaml_template":   req.RawYamlTemplate,
 	}
 
 	if err := database.DB.Model(&tmpl).Updates(updates).Error; err != nil {
@@ -307,19 +309,15 @@ func ListServiceCatalog(c *gin.Context) {
 
 // SeedServiceCatalog creates default service types and templates
 func SeedServiceCatalog() {
-	var count int64
-	database.DB.Model(&model.ServiceCatalog{}).Count(&count)
-	if count > 0 {
-		return
-	}
-
 	services := []model.ServiceCatalog{
 		// Tools
 		{Type: "deploy", Name: "部署服务", Category: "tool", Description: "ArgoCD: 管理应用的部署、版本、回滚", Icon: "rocket"},
 		{Type: "ci", Name: "CI 服务", Category: "tool", Description: "Tekton/Jenkins: 自动构建和测试代码", Icon: "flow"},
 		{Type: "monitor", Name: "监控服务", Category: "tool", Description: "Prometheus+Grafana: 资源监控与告警", Icon: "chart-line"},
 		{Type: "log", Name: "日志服务", Category: "tool", Description: "Loki: 日志收集与查询", Icon: "document"},
-		{Type: "registry", Name: "镜像仓库", Category: "tool", Description: "Harbor: 容器镜像管理", Icon: "cube"},
+		{Type: "registry", Name: "轻量镜像仓库", Category: "tool", Description: "Docker Registry v2: 轻量 OCI 镜像仓库", Icon: "cube"},
+		{Type: "harbor", Name: "企业镜像仓库", Category: "tool", Description: "Harbor: 企业级容器镜像管理", Icon: "cube"},
+		{Type: "git", Name: "代码仓库", Category: "tool", Description: "Gitea: 轻量 Git 代码仓库", Icon: "document"},
 		// Infra - Database
 		{Type: "postgresql", Name: "PostgreSQL", Category: "infra", Description: "关系型数据库", Icon: "database"},
 		{Type: "mysql", Name: "MySQL", Category: "infra", Description: "关系型数据库", Icon: "database"},
@@ -337,7 +335,13 @@ func SeedServiceCatalog() {
 	}
 
 	for _, s := range services {
-		database.DB.Create(&s)
+		var existing model.ServiceCatalog
+		if err := database.DB.Where("type = ?", s.Type).Assign(s).FirstOrCreate(&existing).Error; err != nil {
+			log.Printf("[SeedServiceCatalog] failed to seed %s: %v", s.Type, err)
+		}
+	}
+	if err := database.DB.Where("type = ?", "docker-registry").Delete(&model.ServiceCatalog{}).Error; err != nil {
+		log.Printf("[SeedServiceCatalog] failed to remove obsolete docker-registry catalog: %v", err)
 	}
 
 	// Seed ServiceTemplate entries for built-in tools with Helm chart info
@@ -347,206 +351,535 @@ func SeedServiceCatalog() {
 // SeedServiceTemplates creates ServiceTemplate entries for built-in tools
 // Stores chart archives in S3 (MinIO)
 func SeedServiceTemplates() {
-	var count int64
-	database.DB.Model(&model.ServiceTemplate{}).Count(&count)
-	if count > 0 {
-		return
-	}
-
 	templates := []model.ServiceTemplate{
 		// ArgoCD (deploy)
 		{
-			Type:                 "deploy",
-			Name:                 "ArgoCD (官方)",
-			Category:             "tool",
-			Description:          "ArgoCD - GitOps 持续部署工具",
-			Icon:                 "rocket",
-			Installer:            "helm",
-			S3Bucket:             "paap-charts",
-			S3Key:                "charts/argocd.tar.gz",
-			IsCustom:             false,
-			PlatformManifestJSON: `{"name":"argocd","version":"v2.13.3","description":"ArgoCD - GitOps 持续部署工具","permissions":{"scope":"environment-wide","rules":[{"apiGroups":[""],"resources":["pods","services","configmaps","secrets","persistentvolumeclaims","serviceaccounts"],"verbs":["get","list","watch","create","update","patch","delete"]},{"apiGroups":["apps"],"resources":["deployments","statefulsets","replicasets"],"verbs":["get","list","watch","create","update","patch","delete"]},{"apiGroups":["networking.k8s.io"],"resources":["ingresses"],"verbs":["get","list","watch","create","update","patch","delete"]},{"apiGroups":["autoscaling"],"resources":["horizontalpodautoscalers"],"verbs":["get","list","watch","create","update","patch","delete"]}]},"observability":{"metrics":{"port":8083,"path":"/metrics"}}}`,
-			WorkloadRolePolicy:   `[{"apiGroups":[""],"resources":["pods","services","configmaps","secrets","persistentvolumeclaims","serviceaccounts"],"verbs":["*"]},{"apiGroups":["apps"],"resources":["deployments","statefulsets","replicasets"],"verbs":["*"]},{"apiGroups":["networking.k8s.io"],"resources":["ingresses"],"verbs":["*"]},{"apiGroups":["autoscaling"],"resources":["horizontalpodautoscalers"],"verbs":["*"]}]`,
-			Enabled:              true,
+			Type:                  "deploy",
+			Name:                  "ArgoCD (官方)",
+			Category:              "tool",
+			Description:           "ArgoCD - GitOps 持续部署工具",
+			Icon:                  "rocket",
+			Installer:             "helm",
+			S3Bucket:              "paap-charts",
+			S3Key:                 "charts/argocd.tar.gz",
+			IsCustom:              false,
+			PlatformManifestJSON:  builtInManifestJSON("argocd"),
+			WorkloadRolePolicy:    builtInWorkloadRolePolicy("argocd"),
+			EnvironmentRolePolicy: builtInEnvironmentRolePolicy("argocd"),
+			InstallOrder:          10,
+			Enabled:               true,
 		},
 		// Jenkins (ci)
 		{
-			Type:                 "ci",
-			Name:                 "Jenkins (官方)",
-			Category:             "tool",
-			Description:          "Jenkins - CI/CD 服务器",
-			Icon:                 "flow",
-			Installer:            "helm",
-			S3Bucket:             "paap-charts",
-			S3Key:                "charts/jenkins.tar.gz",
-			IsCustom:             false,
-			PlatformManifestJSON: `{"name":"jenkins","version":"v2.440.3","description":"Jenkins - CI/CD 服务器","permissions":{"scope":"environment-wide","rules":[{"apiGroups":[""],"resources":["pods","pods/log","services","configmaps","secrets","serviceaccounts"],"verbs":["get","list","watch","create","update","patch","delete"]},{"apiGroups":["apps"],"resources":["deployments","replicasets"],"verbs":["get","list","watch","create","update","patch","delete"]},{"apiGroups":["batch"],"resources":["jobs"],"verbs":["get","list","watch","create","update","patch","delete"]},{"apiGroups":["networking.k8s.io"],"resources":["ingresses"],"verbs":["get","list","watch","create","update","patch","delete"]}]},"observability":{"metrics":{"port":8080,"path":"/metrics"}}}`,
-			WorkloadRolePolicy:   `[{"apiGroups":[""],"resources":["pods","pods/log","services","configmaps","secrets","serviceaccounts"],"verbs":["*"]},{"apiGroups":["apps"],"resources":["deployments","replicasets"],"verbs":["*"]},{"apiGroups":["batch"],"resources":["jobs"],"verbs":["*"]},{"apiGroups":["networking.k8s.io"],"resources":["ingresses"],"verbs":["*"]}]`,
-			Enabled:              true,
+			Type:                  "ci",
+			Name:                  "Jenkins (官方)",
+			Category:              "tool",
+			Description:           "Jenkins - CI/CD 服务器",
+			Icon:                  "flow",
+			Installer:             "helm",
+			S3Bucket:              "paap-charts",
+			S3Key:                 "charts/jenkins.tar.gz",
+			IsCustom:              false,
+			PlatformManifestJSON:  builtInManifestJSON("jenkins"),
+			WorkloadRolePolicy:    builtInWorkloadRolePolicy("jenkins"),
+			EnvironmentRolePolicy: builtInEnvironmentRolePolicy("jenkins"),
+			InstallOrder:          40,
+			Enabled:               true,
 		},
 		// Prometheus+Grafana (monitor)
 		{
-			Type:                 "monitor",
-			Name:                 "Prometheus+Grafana (官方)",
-			Category:             "tool",
-			Description:          "Prometheus + Grafana - 全栈监控",
-			Icon:                 "chart-line",
-			Installer:            "helm",
-			S3Bucket:             "paap-charts",
-			S3Key:                "charts/monitor.tar.gz",
-			IsCustom:             false,
-			PlatformManifestJSON: `{"name":"kube-prometheus-stack","version":"v0.78.2","description":"Prometheus + Grafana + Alertmanager 全栈监控","permissions":{"scope":"environment-wide","rules":[{"apiGroups":[""],"resources":["pods","services","endpoints","nodes","namespaces","configmaps","secrets"],"verbs":["get","list","watch"]},{"apiGroups":[""],"resources":["nodes/metrics","nodes/proxy"],"verbs":["get","list","watch"]},{"apiGroups":["apps"],"resources":["deployments","daemonsets","statefulsets","replicasets"],"verbs":["get","list","watch"]},{"apiGroups":["networking.k8s.io"],"resources":["ingresses"],"verbs":["get","list","watch"]},{"apiGroups":["autoscaling"],"resources":["horizontalpodautoscalers"],"verbs":["get","list","watch"]}]},"observability":{"metrics":{"port":9090,"path":"/metrics"}}}`,
-			WorkloadRolePolicy:   `[{"apiGroups":[""],"resources":["pods","services","endpoints","nodes","namespaces","configmaps","secrets"],"verbs":["get","list","watch"]},{"apiGroups":[""],"resources":["nodes/metrics","nodes/proxy"],"verbs":["get","list","watch"]},{"apiGroups":["apps"],"resources":["deployments","daemonsets","statefulsets","replicasets"],"verbs":["get","list","watch"]},{"apiGroups":["networking.k8s.io"],"resources":["ingresses"],"verbs":["get","list","watch"]},{"apiGroups":["autoscaling"],"resources":["horizontalpodautoscalers"],"verbs":["get","list","watch"]}]`,
-			Enabled:              true,
+			Type:                  "monitor",
+			Name:                  "Prometheus+Grafana (官方)",
+			Category:              "tool",
+			Description:           "Prometheus + Grafana - 全栈监控",
+			Icon:                  "chart-line",
+			Installer:             "helm",
+			S3Bucket:              "paap-charts",
+			S3Key:                 "charts/monitor.tar.gz",
+			IsCustom:              false,
+			PlatformManifestJSON:  builtInManifestJSON("monitor"),
+			WorkloadRolePolicy:    builtInWorkloadRolePolicy("monitor"),
+			EnvironmentRolePolicy: builtInEnvironmentRolePolicy("monitor"),
+			InstallOrder:          50,
+			Enabled:               true,
 		},
 		// Loki (log)
 		{
-			Type:                 "log",
-			Name:                 "Loki+Promtail (官方)",
-			Category:             "tool",
-			Description:          "Loki + Promtail - 日志收集与查询",
-			Icon:                 "document",
-			Installer:            "helm",
-			S3Bucket:             "paap-charts",
-			S3Key:                "charts/loki.tar.gz",
-			IsCustom:             false,
-			PlatformManifestJSON: `{"name":"loki","version":"v2.9.4","description":"Loki + Promtail - 日志收集与查询","permissions":{"scope":"environment-wide","rules":[{"apiGroups":[""],"resources":["pods","pods/log"],"verbs":["get","list","watch"]}]},"observability":{"metrics":{"port":3100,"path":"/metrics"}}}`,
-			WorkloadRolePolicy:   `[{"apiGroups":[""],"resources":["pods","pods/log"],"verbs":["get","list","watch"]}]`,
-			Enabled:              true,
+			Type:                  "log",
+			Name:                  "Loki+Promtail (官方)",
+			Category:              "tool",
+			Description:           "Loki + Promtail - 日志收集与查询",
+			Icon:                  "document",
+			Installer:             "helm",
+			S3Bucket:              "paap-charts",
+			S3Key:                 "charts/loki.tar.gz",
+			IsCustom:              false,
+			PlatformManifestJSON:  builtInManifestJSON("loki"),
+			WorkloadRolePolicy:    builtInWorkloadRolePolicy("loki"),
+			EnvironmentRolePolicy: builtInEnvironmentRolePolicy("loki"),
+			InstallOrder:          60,
+			Enabled:               true,
 		},
-		// Harbor (registry)
+		// Docker Registry v2 (lightweight registry)
 		{
-			Type:                 "registry",
-			Name:                 "Harbor (官方)",
-			Category:             "tool",
-			Description:          "Harbor - 企业级容器镜像仓库",
-			Icon:                 "cube",
-			Installer:            "helm",
-			S3Bucket:             "paap-charts",
-			S3Key:                "charts/harbor.tar.gz",
-			IsCustom:             false,
-			PlatformManifestJSON: `{"name":"harbor","version":"v2.12.0","description":"Harbor - 企业级容器镜像仓库","permissions":{"scope":"tool-only","rules":[]},"observability":{"metrics":{"port":9090,"path":"/metrics"}}}`,
-			WorkloadRolePolicy:   `[]`,
-			Enabled:              true,
+			Type:                  "registry",
+			Name:                  "Docker Registry v2",
+			Category:              "tool",
+			Description:           "Docker Registry v2 - 轻量 OCI 镜像仓库，适合开发测试环境",
+			Icon:                  "cube",
+			Installer:             "helm",
+			S3Bucket:              "paap-charts",
+			S3Key:                 "charts/registry.tar.gz",
+			IsCustom:              false,
+			PlatformManifestJSON:  builtInManifestJSON("registry"),
+			WorkloadRolePolicy:    builtInWorkloadRolePolicy("registry"),
+			EnvironmentRolePolicy: builtInEnvironmentRolePolicy("registry"),
+			InstallOrder:          20,
+			Enabled:               true,
+		},
+		// Harbor (advanced/heavy option)
+		{
+			Type:                  "harbor",
+			Name:                  "Harbor (官方)",
+			Category:              "tool",
+			Description:           "Harbor - 企业级镜像仓库，组件多、镜像大，建议生产或资源充足环境使用",
+			Icon:                  "cube",
+			Installer:             "helm",
+			S3Bucket:              "paap-charts",
+			S3Key:                 "charts/harbor.tar.gz",
+			IsCustom:              false,
+			PlatformManifestJSON:  builtInManifestJSON("harbor"),
+			WorkloadRolePolicy:    builtInWorkloadRolePolicy("harbor"),
+			EnvironmentRolePolicy: builtInEnvironmentRolePolicy("harbor"),
+			InstallOrder:          900,
+			Enabled:               true,
+		},
+		// Gitea (git)
+		{
+			Type:                  "git",
+			Name:                  "Gitea",
+			Category:              "tool",
+			Description:           "Gitea - 轻量 Git 代码仓库",
+			Icon:                  "document",
+			Installer:             "helm",
+			S3Bucket:              "paap-charts",
+			S3Key:                 "charts/gitea.tar.gz",
+			IsCustom:              false,
+			PlatformManifestJSON:  builtInManifestJSON("gitea"),
+			WorkloadRolePolicy:    builtInWorkloadRolePolicy("gitea"),
+			EnvironmentRolePolicy: builtInEnvironmentRolePolicy("gitea"),
+			InstallOrder:          30,
+			Enabled:               true,
 		},
 		// PostgreSQL
 		{
-			Type:                 "postgresql",
-			Name:                 "PostgreSQL (Bitnami)",
-			Category:             "infra",
-			Description:          "PostgreSQL - 关系型数据库",
-			Icon:                 "database",
-			Installer:            "helm",
-			S3Bucket:             "paap-charts",
-			S3Key:                "charts/postgresql.tar.gz",
-			IsCustom:             false,
-			PlatformManifestJSON: `{"name":"postgresql","version":"12.12.10","description":"PostgreSQL - 关系型数据库","permissions":{"scope":"tool-only","rules":[]}}`,
-			WorkloadRolePolicy:   `[]`,
-			Enabled:              true,
+			Type:                  "postgresql",
+			Name:                  "PostgreSQL (Bitnami)",
+			Category:              "infra",
+			Description:           "PostgreSQL - 关系型数据库",
+			Icon:                  "database",
+			Installer:             "helm",
+			S3Bucket:              "paap-charts",
+			S3Key:                 "charts/postgresql.tar.gz",
+			IsCustom:              false,
+			PlatformManifestJSON:  builtInManifestJSON("postgresql"),
+			WorkloadRolePolicy:    builtInWorkloadRolePolicy("postgresql"),
+			EnvironmentRolePolicy: builtInEnvironmentRolePolicy("postgresql"),
+			InstallOrder:          100,
+			Enabled:               true,
 		},
 		// MySQL
 		{
-			Type:                 "mysql",
-			Name:                 "MySQL (Bitnami)",
-			Category:             "infra",
-			Description:          "MySQL - 关系型数据库",
-			Icon:                 "database",
-			Installer:            "helm",
-			S3Bucket:             "paap-charts",
-			S3Key:                "charts/mysql.tar.gz",
-			IsCustom:             false,
-			PlatformManifestJSON: `{"name":"mysql","version":"9.12.0","description":"MySQL - 关系型数据库","permissions":{"scope":"tool-only","rules":[]}}`,
-			WorkloadRolePolicy:   `[]`,
-			Enabled:              true,
+			Type:                  "mysql",
+			Name:                  "MySQL (Bitnami)",
+			Category:              "infra",
+			Description:           "MySQL - 关系型数据库",
+			Icon:                  "database",
+			Installer:             "helm",
+			S3Bucket:              "paap-charts",
+			S3Key:                 "charts/mysql.tar.gz",
+			IsCustom:              false,
+			PlatformManifestJSON:  builtInManifestJSON("mysql"),
+			WorkloadRolePolicy:    builtInWorkloadRolePolicy("mysql"),
+			EnvironmentRolePolicy: builtInEnvironmentRolePolicy("mysql"),
+			InstallOrder:          110,
+			Enabled:               true,
 		},
 		// MongoDB
 		{
-			Type:                 "mongodb",
-			Name:                 "MongoDB (Bitnami)",
-			Category:             "infra",
-			Description:          "MongoDB - 文档型数据库",
-			Icon:                 "database",
-			Installer:            "helm",
-			S3Bucket:             "paap-charts",
-			S3Key:                "charts/mongodb.tar.gz",
-			IsCustom:             false,
-			PlatformManifestJSON: `{"name":"mongodb","version":"14.0.0","description":"MongoDB - 文档型数据库","permissions":{"scope":"tool-only","rules":[]}}`,
-			WorkloadRolePolicy:   `[]`,
-			Enabled:              true,
+			Type:                  "mongodb",
+			Name:                  "MongoDB (Bitnami)",
+			Category:              "infra",
+			Description:           "MongoDB - 文档型数据库",
+			Icon:                  "database",
+			Installer:             "helm",
+			S3Bucket:              "paap-charts",
+			S3Key:                 "charts/mongodb.tar.gz",
+			IsCustom:              false,
+			PlatformManifestJSON:  builtInManifestJSON("mongodb"),
+			WorkloadRolePolicy:    builtInWorkloadRolePolicy("mongodb"),
+			EnvironmentRolePolicy: builtInEnvironmentRolePolicy("mongodb"),
+			InstallOrder:          120,
+			Enabled:               true,
 		},
 		// Redis
 		{
-			Type:                 "redis",
-			Name:                 "Redis (Bitnami)",
-			Category:             "infra",
-			Description:          "Redis - 缓存服务",
-			Icon:                 "cloud",
-			Installer:            "helm",
-			S3Bucket:             "paap-charts",
-			S3Key:                "charts/redis.tar.gz",
-			IsCustom:             false,
-			PlatformManifestJSON: `{"name":"redis","version":"18.6.0","description":"Redis - 缓存服务","permissions":{"scope":"tool-only","rules":[]}}`,
-			WorkloadRolePolicy:   `[]`,
-			Enabled:              true,
+			Type:                  "redis",
+			Name:                  "Redis (Bitnami)",
+			Category:              "infra",
+			Description:           "Redis - 缓存服务",
+			Icon:                  "cloud",
+			Installer:             "helm",
+			S3Bucket:              "paap-charts",
+			S3Key:                 "charts/redis.tar.gz",
+			IsCustom:              false,
+			PlatformManifestJSON:  builtInManifestJSON("redis"),
+			WorkloadRolePolicy:    builtInWorkloadRolePolicy("redis"),
+			EnvironmentRolePolicy: builtInEnvironmentRolePolicy("redis"),
+			InstallOrder:          130,
+			Enabled:               true,
 		},
 		// RabbitMQ
 		{
-			Type:                 "rabbitmq",
-			Name:                 "RabbitMQ (Bitnami)",
-			Category:             "infra",
-			Description:          "RabbitMQ - 消息队列",
-			Icon:                 "network",
-			Installer:            "helm",
-			S3Bucket:             "paap-charts",
-			S3Key:                "charts/rabbitmq.tar.gz",
-			IsCustom:             false,
-			PlatformManifestJSON: `{"name":"rabbitmq","version":"12.0.0","description":"RabbitMQ - 消息队列","permissions":{"scope":"tool-only","rules":[]}}`,
-			WorkloadRolePolicy:   `[]`,
-			Enabled:              true,
+			Type:                  "rabbitmq",
+			Name:                  "RabbitMQ (Bitnami)",
+			Category:              "infra",
+			Description:           "RabbitMQ - 消息队列",
+			Icon:                  "network",
+			Installer:             "helm",
+			S3Bucket:              "paap-charts",
+			S3Key:                 "charts/rabbitmq.tar.gz",
+			IsCustom:              false,
+			PlatformManifestJSON:  builtInManifestJSON("rabbitmq"),
+			WorkloadRolePolicy:    builtInWorkloadRolePolicy("rabbitmq"),
+			EnvironmentRolePolicy: builtInEnvironmentRolePolicy("rabbitmq"),
+			InstallOrder:          140,
+			Enabled:               true,
 		},
 		// Kafka
 		{
-			Type:                 "kafka",
-			Name:                 "Kafka (Bitnami)",
-			Category:             "infra",
-			Description:          "Apache Kafka - 流处理平台",
-			Icon:                 "network",
-			Installer:            "helm",
-			S3Bucket:             "paap-charts",
-			S3Key:                "charts/kafka.tar.gz",
-			IsCustom:             false,
-			PlatformManifestJSON: `{"name":"kafka","version":"26.0.0","description":"Apache Kafka - 流处理平台","permissions":{"scope":"tool-only","rules":[]}}`,
-			WorkloadRolePolicy:   `[]`,
-			Enabled:              true,
+			Type:                  "kafka",
+			Name:                  "Kafka (Bitnami)",
+			Category:              "infra",
+			Description:           "Apache Kafka - 流处理平台",
+			Icon:                  "network",
+			Installer:             "helm",
+			S3Bucket:              "paap-charts",
+			S3Key:                 "charts/kafka.tar.gz",
+			IsCustom:              false,
+			PlatformManifestJSON:  builtInManifestJSON("kafka"),
+			WorkloadRolePolicy:    builtInWorkloadRolePolicy("kafka"),
+			EnvironmentRolePolicy: builtInEnvironmentRolePolicy("kafka"),
+			InstallOrder:          150,
+			Enabled:               true,
 		},
 		// MinIO
 		{
-			Type:                 "minio",
-			Name:                 "MinIO (Bitnami)",
-			Category:             "infra",
-			Description:          "MinIO - 对象存储",
-			Icon:                 "data-base",
-			Installer:            "helm",
-			S3Bucket:             "paap-charts",
-			S3Key:                "charts/minio.tar.gz",
-			IsCustom:             false,
-			PlatformManifestJSON: `{"name":"minio","version":"13.0.0","description":"MinIO - 对象存储","permissions":{"scope":"tool-only","rules":[]}}`,
-			WorkloadRolePolicy:   `[]`,
-			Enabled:              true,
+			Type:                  "minio",
+			Name:                  "MinIO (Bitnami)",
+			Category:              "infra",
+			Description:           "MinIO - 对象存储",
+			Icon:                  "data-base",
+			Installer:             "helm",
+			S3Bucket:              "paap-charts",
+			S3Key:                 "charts/minio.tar.gz",
+			IsCustom:              false,
+			PlatformManifestJSON:  builtInManifestJSON("minio"),
+			WorkloadRolePolicy:    builtInWorkloadRolePolicy("minio"),
+			EnvironmentRolePolicy: builtInEnvironmentRolePolicy("minio"),
+			InstallOrder:          160,
+			Enabled:               true,
 		},
 	}
 
 	for _, t := range templates {
-		database.DB.Create(&t)
+		var existing model.ServiceTemplate
+		if err := database.DB.Where("type = ?", t.Type).Assign(t).FirstOrCreate(&existing).Error; err != nil {
+			log.Printf("[SeedServiceTemplates] failed to seed %s: %v", t.Type, err)
+			continue
+		}
+		if existing.ID != 0 {
+			t.ID = existing.ID
+			if err := database.DB.Model(&existing).Updates(t).Error; err != nil {
+				log.Printf("[SeedServiceTemplates] failed to update %s: %v", t.Type, err)
+			}
+		}
 	}
+	removeObsoleteDockerRegistryTemplate()
 
-	// Upload built-in chart packages to S3
-	SeedBuiltinChartsToS3()
 }
 
-// SeedBuiltinChartsToS3 uploads built-in chart packages to S3 if they don't exist.
-// This ensures all built-in templates are available in S3 for installation.
-func SeedBuiltinChartsToS3() {
+func builtInManifestJSON(templateType string) string {
+	manifest, err := readBuiltInManifest(templateType)
+	if err != nil {
+		log.Printf("[builtInManifestJSON] failed to read %s manifest: %v", templateType, err)
+		return ""
+	}
+	data, err := json.Marshal(manifest)
+	if err != nil {
+		log.Printf("[builtInManifestJSON] failed to marshal %s manifest: %v", templateType, err)
+		return ""
+	}
+	return string(data)
+}
+
+func builtInWorkloadRolePolicy(templateType string) string {
+	manifest, err := readBuiltInManifest(templateType)
+	if err != nil {
+		log.Printf("[builtInWorkloadRolePolicy] failed to read %s manifest: %v", templateType, err)
+		return "[]"
+	}
+	return manifest.ToWorkloadRoleJSON()
+}
+
+func builtInEnvironmentRolePolicy(templateType string) string {
+	manifest, err := readBuiltInManifest(templateType)
+	if err != nil {
+		log.Printf("[builtInEnvironmentRolePolicy] failed to read %s manifest: %v", templateType, err)
+		return "[]"
+	}
+	return manifest.ToEnvironmentRoleJSON()
+}
+
+func readBuiltInManifest(templateType string) (*model.PlatformManifest, error) {
+	examplePath := filepath.Join("docs", "examples", "built-in-templates", templateType, "platform-manifest.yaml")
+	if data, err := os.ReadFile(examplePath); err == nil {
+		var manifest model.PlatformManifest
+		if err := yaml.Unmarshal(data, &manifest); err != nil {
+			return nil, err
+		}
+		return &manifest, nil
+	}
+
+	chartPath := filepath.Join("/charts", templateType+".tar.gz")
+	return extractManifestFromTar(chartPath)
+}
+
+type builtInTemplateArchive struct {
+	ServiceType string
+	ChartName   string
+}
+
+func builtInTemplateArchives() []builtInTemplateArchive {
+	return []builtInTemplateArchive{
+		{ServiceType: "deploy", ChartName: "argocd"},
+		{ServiceType: "ci", ChartName: "jenkins"},
+		{ServiceType: "monitor", ChartName: "monitor"},
+		{ServiceType: "log", ChartName: "loki"},
+		{ServiceType: "registry", ChartName: "registry"},
+		{ServiceType: "harbor", ChartName: "harbor"},
+		{ServiceType: "git", ChartName: "gitea"},
+		{ServiceType: "postgresql", ChartName: "postgresql"},
+		{ServiceType: "mysql", ChartName: "mysql"},
+		{ServiceType: "mongodb", ChartName: "mongodb"},
+		{ServiceType: "redis", ChartName: "redis"},
+		{ServiceType: "rabbitmq", ChartName: "rabbitmq"},
+		{ServiceType: "kafka", ChartName: "kafka"},
+		{ServiceType: "minio", ChartName: "minio"},
+	}
+}
+
+func builtInServiceTemplateByType(serviceType string) (model.ServiceTemplate, bool) {
+	templates := map[string]model.ServiceTemplate{
+		"deploy": {
+			Type:         "deploy",
+			Name:         "ArgoCD (官方)",
+			Category:     "tool",
+			Description:  "ArgoCD - GitOps 持续部署工具",
+			Icon:         "rocket",
+			Installer:    "helm",
+			S3Bucket:     "paap-charts",
+			S3Key:        "charts/argocd.tar.gz",
+			IsCustom:     false,
+			InstallOrder: 10,
+			Enabled:      true,
+		},
+		"ci": {
+			Type:         "ci",
+			Name:         "Jenkins (官方)",
+			Category:     "tool",
+			Description:  "Jenkins - CI/CD 服务器",
+			Icon:         "flow",
+			Installer:    "helm",
+			S3Bucket:     "paap-charts",
+			S3Key:        "charts/jenkins.tar.gz",
+			IsCustom:     false,
+			InstallOrder: 40,
+			Enabled:      true,
+		},
+		"monitor": {
+			Type:         "monitor",
+			Name:         "Prometheus+Grafana (官方)",
+			Category:     "tool",
+			Description:  "Prometheus + Grafana - 全栈监控",
+			Icon:         "chart-line",
+			Installer:    "helm",
+			S3Bucket:     "paap-charts",
+			S3Key:        "charts/monitor.tar.gz",
+			IsCustom:     false,
+			InstallOrder: 50,
+			Enabled:      true,
+		},
+		"log": {
+			Type:         "log",
+			Name:         "Loki+Promtail (官方)",
+			Category:     "tool",
+			Description:  "Loki + Promtail - 日志收集与查询",
+			Icon:         "document",
+			Installer:    "helm",
+			S3Bucket:     "paap-charts",
+			S3Key:        "charts/loki.tar.gz",
+			IsCustom:     false,
+			InstallOrder: 60,
+			Enabled:      true,
+		},
+		"registry": {
+			Type:         "registry",
+			Name:         "Docker Registry v2",
+			Category:     "tool",
+			Description:  "Docker Registry v2 - 轻量 OCI 镜像仓库，适合开发测试环境",
+			Icon:         "cube",
+			Installer:    "helm",
+			S3Bucket:     "paap-charts",
+			S3Key:        "charts/registry.tar.gz",
+			IsCustom:     false,
+			InstallOrder: 20,
+			Enabled:      true,
+		},
+		"harbor": {
+			Type:         "harbor",
+			Name:         "Harbor (官方)",
+			Category:     "tool",
+			Description:  "Harbor - 企业级镜像仓库，组件多、镜像大，建议生产或资源充足环境使用",
+			Icon:         "cube",
+			Installer:    "helm",
+			S3Bucket:     "paap-charts",
+			S3Key:        "charts/harbor.tar.gz",
+			IsCustom:     false,
+			InstallOrder: 900,
+			Enabled:      true,
+		},
+		"git": {
+			Type:         "git",
+			Name:         "Gitea",
+			Category:     "tool",
+			Description:  "Gitea - 轻量 Git 代码仓库",
+			Icon:         "document",
+			Installer:    "helm",
+			S3Bucket:     "paap-charts",
+			S3Key:        "charts/gitea.tar.gz",
+			IsCustom:     false,
+			InstallOrder: 30,
+			Enabled:      true,
+		},
+		"postgresql": {
+			Type:         "postgresql",
+			Name:         "PostgreSQL (Bitnami)",
+			Category:     "infra",
+			Description:  "PostgreSQL - 关系型数据库",
+			Icon:         "database",
+			Installer:    "helm",
+			S3Bucket:     "paap-charts",
+			S3Key:        "charts/postgresql.tar.gz",
+			IsCustom:     false,
+			InstallOrder: 100,
+			Enabled:      true,
+		},
+		"mysql": {
+			Type:         "mysql",
+			Name:         "MySQL (Bitnami)",
+			Category:     "infra",
+			Description:  "MySQL - 关系型数据库",
+			Icon:         "database",
+			Installer:    "helm",
+			S3Bucket:     "paap-charts",
+			S3Key:        "charts/mysql.tar.gz",
+			IsCustom:     false,
+			InstallOrder: 110,
+			Enabled:      true,
+		},
+		"mongodb": {
+			Type:         "mongodb",
+			Name:         "MongoDB (Bitnami)",
+			Category:     "infra",
+			Description:  "MongoDB - 文档型数据库",
+			Icon:         "database",
+			Installer:    "helm",
+			S3Bucket:     "paap-charts",
+			S3Key:        "charts/mongodb.tar.gz",
+			IsCustom:     false,
+			InstallOrder: 120,
+			Enabled:      true,
+		},
+		"redis": {
+			Type:         "redis",
+			Name:         "Redis (Bitnami)",
+			Category:     "infra",
+			Description:  "Redis - 缓存服务",
+			Icon:         "cloud",
+			Installer:    "helm",
+			S3Bucket:     "paap-charts",
+			S3Key:        "charts/redis.tar.gz",
+			IsCustom:     false,
+			InstallOrder: 130,
+			Enabled:      true,
+		},
+		"rabbitmq": {
+			Type:         "rabbitmq",
+			Name:         "RabbitMQ (Bitnami)",
+			Category:     "infra",
+			Description:  "RabbitMQ - 消息队列",
+			Icon:         "network",
+			Installer:    "helm",
+			S3Bucket:     "paap-charts",
+			S3Key:        "charts/rabbitmq.tar.gz",
+			IsCustom:     false,
+			InstallOrder: 140,
+			Enabled:      true,
+		},
+		"kafka": {
+			Type:         "kafka",
+			Name:         "Kafka (Bitnami)",
+			Category:     "infra",
+			Description:  "Apache Kafka - 流处理平台",
+			Icon:         "network",
+			Installer:    "helm",
+			S3Bucket:     "paap-charts",
+			S3Key:        "charts/kafka.tar.gz",
+			IsCustom:     false,
+			InstallOrder: 150,
+			Enabled:      true,
+		},
+		"minio": {
+			Type:         "minio",
+			Name:         "MinIO (Bitnami)",
+			Category:     "infra",
+			Description:  "MinIO - 对象存储",
+			Icon:         "data-base",
+			Installer:    "helm",
+			S3Bucket:     "paap-charts",
+			S3Key:        "charts/minio.tar.gz",
+			IsCustom:     false,
+			InstallOrder: 160,
+			Enabled:      true,
+		},
+	}
+	tmpl, ok := templates[serviceType]
+	return tmpl, ok
+}
+
+func removeObsoleteDockerRegistryTemplate() {
+	if err := database.DB.Where("type = ?", "docker-registry").Delete(&model.ServiceTemplate{}).Error; err != nil {
+		log.Printf("[SeedServiceTemplates] failed to remove obsolete docker-registry template: %v", err)
+	}
+	if err := database.DB.Where("service_type = ?", "docker-registry").Delete(&model.ServiceInstallation{}).Error; err != nil {
+		log.Printf("[SeedServiceTemplates] failed to remove obsolete docker-registry installs: %v", err)
+	}
+}
+
+// SeedBuiltinChartsToS3 uploads built-in chart packages to S3.
+// If force=true, re-uploads even if already exists (for template updates).
+func SeedBuiltinChartsToS3(force bool) {
 	log.Printf("[SeedBuiltinChartsToS3] Starting seed process...")
 
 	s3, err := getOrCreateS3Client()
@@ -557,33 +890,273 @@ func SeedBuiltinChartsToS3() {
 
 	log.Printf("[SeedBuiltinChartsToS3] S3 client created successfully")
 
-	chartTypes := []string{
-		"argocd", "jenkins", "monitor", "loki", "harbor",
-		"postgresql", "mysql", "mongodb", "redis", "rabbitmq", "kafka", "minio",
-	}
-
 	ctx := context.Background()
-	for _, ct := range chartTypes {
-		s3Key := fmt.Sprintf("charts/%s.tar.gz", ct)
-		if s3.ObjectExists(ctx, s3Key) {
+	for _, archive := range builtInTemplateArchives() {
+		s3Key := fmt.Sprintf("charts/%s.tar.gz", archive.ChartName)
+		if !force && s3.ObjectExists(ctx, s3Key) {
 			log.Printf("[SeedBuiltinChartsToS3] %s already exists in S3, skipping", s3Key)
 			continue
 		}
+		if force && s3.ObjectExists(ctx, s3Key) {
+			log.Printf("[SeedBuiltinChartsToS3] %s exists in S3, force re-uploading", s3Key)
+		}
 
-		localPath := fmt.Sprintf("/charts/%s.tar.gz", ct)
+		localPath := fmt.Sprintf("/charts/%s.tar.gz", archive.ChartName)
 		if _, err := os.Stat(localPath); os.IsNotExist(err) {
 			log.Printf("[SeedBuiltinChartsToS3] local file not found: %s, skipping", localPath)
 			continue
 		}
 
 		if err := s3.UploadFile(ctx, s3Key, localPath, "application/gzip"); err != nil {
-			log.Printf("[SeedBuiltinChartsToS3] failed to upload %s: %v", ct, err)
+			log.Printf("[SeedBuiltinChartsToS3] failed to upload %s: %v", archive.ChartName, err)
 		} else {
-			log.Printf("[SeedBuiltinChartsToS3] uploaded %s to S3", ct)
+			log.Printf("[SeedBuiltinChartsToS3] uploaded %s to S3", archive.ChartName)
 		}
 	}
 
 	log.Printf("[SeedBuiltinChartsToS3] Seed process completed")
+}
+
+type BuiltInTemplateSyncResult struct {
+	Updated int `json:"updated"`
+}
+
+func SyncBuiltinTemplatesNow(ctx context.Context, forceUpload bool) (BuiltInTemplateSyncResult, error) {
+	if forceUpload {
+		SeedBuiltinChartsToS3(true)
+	}
+	removeObsoleteDockerRegistryTemplate()
+
+	updated := 0
+	for _, archive := range builtInTemplateArchives() {
+		localPath := fmt.Sprintf("/charts/%s.tar.gz", archive.ChartName)
+		if _, err := os.Stat(localPath); os.IsNotExist(err) {
+			continue
+		}
+
+		manifest, err := extractManifestFromTar(localPath)
+		if err != nil {
+			log.Printf("[SyncBuiltinTemplates] failed to parse %s: %v", archive.ChartName, err)
+			continue
+		}
+
+		manifestJSON, _ := json.Marshal(manifest)
+		workloadRoleJSON := manifest.ToWorkloadRoleJSON()
+		environmentRoleJSON := manifest.ToEnvironmentRoleJSON()
+		updates := map[string]interface{}{
+			"platform_manifest_json":  string(manifestJSON),
+			"workload_role_policy":    workloadRoleJSON,
+			"environment_role_policy": environmentRoleJSON,
+			"install_order":           builtInInstallOrder(archive.ServiceType),
+		}
+		if tmpl, ok := builtInServiceTemplateByType(archive.ServiceType); ok {
+			updates["name"] = tmpl.Name
+			updates["category"] = tmpl.Category
+			updates["description"] = tmpl.Description
+			updates["icon"] = tmpl.Icon
+			updates["installer"] = tmpl.Installer
+			updates["chart_repo"] = tmpl.ChartRepo
+			updates["chart_name"] = tmpl.ChartName
+			updates["chart_version"] = tmpl.ChartVersion
+			updates["default_values"] = tmpl.DefaultValues
+			updates["configurable_params"] = tmpl.ConfigurableParams
+			updates["raw_yaml_template"] = tmpl.RawYamlTemplate
+			updates["is_custom"] = tmpl.IsCustom
+			updates["chart_archive_path"] = tmpl.ChartArchivePath
+			updates["s3_bucket"] = tmpl.S3Bucket
+			updates["s3_key"] = tmpl.S3Key
+			updates["preset_values"] = tmpl.PresetValues
+			updates["enabled"] = tmpl.Enabled
+		} else if description := builtInDescriptionOverride(archive.ServiceType); description != "" {
+			updates["description"] = description
+		}
+
+		result := database.DB.Model(&model.ServiceTemplate{}).Where("type = ?", archive.ServiceType).Updates(updates)
+		if result.Error != nil {
+			return BuiltInTemplateSyncResult{Updated: updated}, result.Error
+		}
+		if result.RowsAffected > 0 {
+			updated++
+			log.Printf("[SyncBuiltinTemplates] updated DB for %s", archive.ServiceType)
+		} else if tmpl, ok := builtInServiceTemplateByType(archive.ServiceType); ok {
+			tmpl.PlatformManifestJSON = string(manifestJSON)
+			tmpl.WorkloadRolePolicy = workloadRoleJSON
+			tmpl.EnvironmentRolePolicy = environmentRoleJSON
+			if err := database.DB.Create(&tmpl).Error; err != nil {
+				return BuiltInTemplateSyncResult{Updated: updated}, err
+			}
+			updated++
+			log.Printf("[SyncBuiltinTemplates] created DB template for %s", archive.ServiceType)
+		}
+
+		var refreshedTemplate model.ServiceTemplate
+		if err := database.DB.Where("type = ?", archive.ServiceType).First(&refreshedTemplate).Error; err != nil {
+			return BuiltInTemplateSyncResult{Updated: updated}, err
+		}
+		if k8s.GetClient() != nil {
+			if err := refreshBuiltInServiceInstances(ctx, archive.ServiceType, refreshedTemplate); err != nil {
+				return BuiltInTemplateSyncResult{Updated: updated}, err
+			}
+		}
+	}
+
+	return BuiltInTemplateSyncResult{Updated: updated}, nil
+}
+
+// SyncBuiltinTemplates forces re-upload of all built-in charts to S3 and updates
+// the DB with platform-manifest.yaml parsed from each tar file.
+func SyncBuiltinTemplates(c *gin.Context) {
+	result, err := SyncBuiltinTemplatesNow(c.Request.Context(), true)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error(), "updated": result.Updated})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"message": "sync completed",
+		"updated": result.Updated,
+	})
+}
+
+func refreshBuiltInServiceInstances(ctx context.Context, serviceType string, template model.ServiceTemplate) error {
+	var installs []model.ServiceInstallation
+	if err := database.DB.Where("service_type = ?", serviceType).Find(&installs).Error; err != nil {
+		return err
+	}
+	for _, inst := range installs {
+		var env model.Environment
+		if err := database.DB.First(&env, inst.EnvironmentID).Error; err != nil {
+			return err
+		}
+		var app model.Application
+		if err := database.DB.First(&app, env.ApplicationID).Error; err != nil {
+			return err
+		}
+
+		helmSpec := buildHelmInstallSpec(&app, &env, &template, serviceType)
+		if strings.TrimSpace(inst.Namespace) != "" {
+			helmSpec.Namespace = strings.TrimSpace(inst.Namespace)
+			rewriteServiceTemplateToolNamespaceValues(helmSpec, helmSpec.Namespace)
+		}
+		if strings.TrimSpace(inst.ReleaseName) != "" {
+			helmSpec.ReleaseName = strings.TrimSpace(inst.ReleaseName)
+			if helmSpec.Values != nil {
+				if _, ok := helmSpec.Values["fullnameOverride"]; ok {
+					helmSpec.Values["fullnameOverride"] = helmSpec.ReleaseName
+				}
+			}
+		}
+		workloadRole := getWorkloadRole(serviceType)
+		toolNamespaceRole := getToolNamespaceRole(serviceType)
+		environmentRole := getEnvironmentRole(serviceType)
+		clusterRole := getClusterRole(serviceType)
+		resourceLabels := serviceResourceLabels(app.Identifier, env.Identifier, &template, serviceType)
+		resourceAnnotations := serviceResourceAnnotations(app.Identifier, env.Identifier, &template, serviceType)
+		if err := k8s.UpsertServiceInstanceCR(ctx, app.Identifier, env.Identifier, serviceType, workloadRole, toolNamespaceRole, environmentRole, clusterRole, nil, helmSpec, resourceLabels, resourceAnnotations); err != nil {
+			return err
+		}
+
+		inst.Namespace = helmSpec.Namespace
+		inst.ReleaseName = helmSpec.ReleaseName
+		inst.Values = "{}"
+		inst.Status = "installing"
+		inst.ErrorMessage = ""
+		if err := database.DB.Save(&inst).Error; err != nil {
+			return err
+		}
+
+		time.Sleep(10 * time.Millisecond)
+	}
+	return nil
+}
+
+func rewriteServiceTemplateToolNamespaceValues(helmSpec *paapv1.HelmInstallSpec, toolNS string) {
+	if helmSpec == nil || helmSpec.Values == nil || strings.TrimSpace(toolNS) == "" {
+		return
+	}
+	for _, key := range []string{
+		"tool_namespace",
+		"paap.toolNamespace",
+		"global.paap.toolNamespace",
+		"serviceAccount.name",
+		"controller.serviceAccount.name",
+		"server.serviceAccount.name",
+		"repoServer.serviceAccount.name",
+		"redis.serviceAccount.name",
+		"applicationSet.serviceAccount.name",
+	} {
+		if _, ok := helmSpec.Values[key]; ok {
+			helmSpec.Values[key] = toolNS
+		}
+	}
+}
+
+func builtInInstallOrder(serviceType string) int {
+	orders := map[string]int{
+		"deploy":     10,
+		"registry":   20,
+		"git":        30,
+		"ci":         40,
+		"monitor":    50,
+		"log":        60,
+		"postgresql": 100,
+		"mysql":      110,
+		"mongodb":    120,
+		"redis":      130,
+		"rabbitmq":   140,
+		"kafka":      150,
+		"minio":      160,
+		"harbor":     900,
+	}
+	if order, ok := orders[serviceType]; ok {
+		return order
+	}
+	return 500
+}
+
+func builtInDescriptionOverride(serviceType string) string {
+	descriptions := map[string]string{
+		"registry": "Docker Registry v2 - 轻量 OCI 镜像仓库，适合开发测试环境",
+		"harbor":   "Harbor - 企业级镜像仓库，组件多、镜像大，建议生产或资源充足环境使用",
+	}
+	return descriptions[serviceType]
+}
+
+// extractManifestFromTar reads a tar.gz and extracts platform-manifest.yaml
+func extractManifestFromTar(tarPath string) (*model.PlatformManifest, error) {
+	f, err := os.Open(tarPath)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	gz, err := gzip.NewReader(f)
+	if err != nil {
+		return nil, err
+	}
+	defer gz.Close()
+
+	tr := tar.NewReader(gz)
+	for {
+		header, err := tr.Next()
+		if err != nil {
+			return nil, fmt.Errorf("platform-manifest.yaml not found in tar")
+		}
+		name := header.Name
+		if len(name) > 2 && name[:2] == "./" {
+			name = name[2:]
+		}
+		if name == "platform-manifest.yaml" {
+			data, err := io.ReadAll(tr)
+			if err != nil {
+				return nil, err
+			}
+			var manifest model.PlatformManifest
+			if err := yaml.Unmarshal(data, &manifest); err != nil {
+				return nil, err
+			}
+			return &manifest, nil
+		}
+	}
 }
 
 // --- BYO Custom Template Upload ---
@@ -690,19 +1263,20 @@ func UploadTemplate(c *gin.Context) {
 	}
 
 	tmpl := model.ServiceTemplate{
-		Type:                 typ,
-		Name:                 name,
-		Category:             category,
-		Description:          description,
-		Icon:                 "puzzle",
-		Installer:            "helm",
-		WorkloadRolePolicy:   manifest.ToWorkloadRoleJSON(),
-		IsCustom:             true,
-		PlatformManifestJSON: string(manifestJSON),
-		S3Bucket:             s3BucketName,
-		S3Key:                s3Key,
-		PresetValues:         presetValues,
-		Enabled:              true,
+		Type:                  typ,
+		Name:                  name,
+		Category:              category,
+		Description:           description,
+		Icon:                  "puzzle",
+		Installer:             "helm",
+		WorkloadRolePolicy:    manifest.ToWorkloadRoleJSON(),
+		EnvironmentRolePolicy: manifest.ToEnvironmentRoleJSON(),
+		IsCustom:              true,
+		PlatformManifestJSON:  string(manifestJSON),
+		S3Bucket:              s3BucketName,
+		S3Key:                 s3Key,
+		PresetValues:          presetValues,
+		Enabled:               true,
 	}
 
 	if err := database.DB.Create(&tmpl).Error; err != nil {
@@ -726,7 +1300,7 @@ func UploadTemplate(c *gin.Context) {
 //	  dashboards/               (optional - Grafana dashboard JSONs)
 //	    main-metrics.json
 //
-// It extracts the manifest, preset-values, dashboard JSONs, and uses helm template to
+// It extracts the manifest, preset-values, dashboard JSONs, and uses the Helm SDK to
 // render the chart with preset-values, then scans the rendered output for forbidden RBAC kinds.
 func extractAndValidateArchive(r io.Reader) (manifestYaml, presetValues string, dashboards map[string]string, forbiddenKinds []string, err error) {
 	// Create temp directory for extraction
@@ -804,23 +1378,19 @@ func extractAndValidateArchive(r io.Reader) (manifestYaml, presetValues string, 
 		return "", "", nil, nil, fmt.Errorf("archive must contain a chart/ directory with the Helm chart")
 	}
 
-	// Render chart with helm template and scan output for forbidden kinds
+	// Render chart with Helm SDK and scan output for forbidden kinds
 	chartPath := filepath.Join(tmpDir, "chart")
-	args := []string{"template", "validate-release", chartPath, "--namespace", "paap-validate"}
-	if presetValues != "" {
-		presetPath := filepath.Join(tmpDir, "preset-values.yaml")
-		args = append(args, "-f", presetPath)
-	}
-
-	cmd := exec.Command("helm", args...)
-	rendered, err := cmd.CombinedOutput()
+	values, err := paaphelm.BuildValues(presetValues, nil)
 	if err != nil {
-		return "", "", nil, nil, fmt.Errorf("helm template failed: %s", string(rendered))
+		return "", "", nil, nil, fmt.Errorf("preset-values.yaml parse failed: %w", err)
+	}
+	rendered, err := paaphelm.NewClient().RenderTemplate("validate-release", "paap-validate", chartPath, values)
+	if err != nil {
+		return "", "", nil, nil, fmt.Errorf("helm template validation failed: %w", err)
 	}
 
 	// Scan rendered output for ClusterRole or ClusterRoleBinding
-	renderedStr := string(rendered)
-	for _, line := range strings.Split(renderedStr, "\n") {
+	for _, line := range strings.Split(rendered, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "kind: ClusterRole" || strings.Contains(line, "kind: ClusterRoleBinding") {
 			if strings.Contains(line, "ClusterRoleBinding") {

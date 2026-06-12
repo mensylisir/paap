@@ -1,31 +1,39 @@
 <template>
-  <div class="page">
-    <div class="form-card" style="max-width:640px">
-      <nav class="bx--breadcrumb bx--breadcrumb--no-trailing-slash">
-        <div class="bx--breadcrumb-item"><router-link to="/apps">我的应用</router-link></div>
-        <div class="bx--breadcrumb-item bx--breadcrumb-item--current">创建应用</div>
-      </nav>
+  <div class="rail-page">
+    <nav class="breadcrumb">
+      <router-link to="/apps" class="breadcrumb-link">我的应用</router-link>
+      <span class="breadcrumb-sep">/</span>
+      <span class="breadcrumb-current">创建应用</span>
+    </nav>
 
-      <h1 class="bx--type-productive-heading-04" style="margin:16px 0 24px">创建应用</h1>
+    <header class="page-header">
+      <h1 class="page-title">创建应用</h1>
+      <p class="page-subtitle">填写基本信息，快速创建一个新的应用</p>
+    </header>
 
-      <form @submit.prevent="submit" class="bx--form">
-        <div class="bx--form-item">
-          <label class="bx--label">应用名称 <span class="required">*</span></label>
-          <input v-model="form.name" class="bx--text-input" placeholder="例如：订单服务" required />
-        </div>
-        <div class="bx--form-item">
-          <label class="bx--label">应用标识 <span class="required">*</span></label>
-          <input v-model="form.identifier" class="bx--text-input" placeholder="例如：order-service" pattern="[a-z0-9-]+" required />
-          <div class="bx--form__helper-text">唯一英文标识，用于生成命名空间。仅支持小写字母、数字、短横线。</div>
-        </div>
-        <div class="bx--form-item">
-          <label class="bx--label">应用描述</label>
-          <input v-model="form.description" class="bx--text-input" placeholder="简要描述应用的用途" />
+    <div class="form-card">
+      <form @submit.prevent="submit">
+        <div class="form-group">
+          <label class="form-label">应用名称 <span class="required">*</span></label>
+          <input v-model.trim="form.name" class="form-input" placeholder="例如：订单服务" required />
         </div>
 
-        <div class="bx--btn-set" style="margin-top:32px">
-          <button type="button" class="bx--btn bx--btn--secondary" @click="$router.push('/apps')">取消</button>
-          <button type="submit" class="bx--btn bx--btn--primary" :disabled="submitting">
+        <div class="form-group">
+          <label class="form-label">应用标识</label>
+          <input v-model.trim="form.identifier" class="form-input" placeholder="留空由后台生成唯一标识" pattern="[a-z0-9-]+" />
+          <p class="form-hint">可选。留空时后台会根据应用名称生成唯一英文标识，当前预览：<code>{{ identifierPreview }}</code></p>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">应用描述</label>
+          <textarea v-model.trim="form.description" class="form-textarea" rows="3" placeholder="简要描述应用的用途"></textarea>
+        </div>
+
+        <div v-if="formError" class="form-error" role="alert">{{ formError }}</div>
+
+        <div class="form-actions">
+          <button type="button" class="btn btn--ghost" @click="$router.push('/apps')">取消</button>
+          <button type="submit" class="btn btn--primary" :disabled="submitting">
             {{ submitting ? '创建中...' : '创建应用' }}
           </button>
         </div>
@@ -35,17 +43,21 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '../api/client'
+import { toIdentifier } from '../utils/identifier'
 
 const router = useRouter()
 const form = ref({ name: '', identifier: '', description: '' })
 const submitting = ref(false)
+const formError = ref('')
+const identifierPreview = computed(() => toIdentifier(form.value.identifier || form.value.name, 'app'))
 
 const submit = async () => {
-  if (!form.value.name || !form.value.identifier) return
+  if (!form.value.name) return
   submitting.value = true
+  formError.value = ''
   try {
     const res = await api.createApp({
       name: form.value.name,
@@ -54,7 +66,7 @@ const submit = async () => {
     })
     router.push(`/apps/${res.data.id}/overview`)
   } catch (e: any) {
-    alert('创建失败：' + e.message)
+    formError.value = '创建失败：' + (e?.message || '未知错误')
   } finally {
     submitting.value = false
   }
@@ -62,18 +74,199 @@ const submit = async () => {
 </script>
 
 <style scoped>
-.page {
-  padding: 32px;
+.rail-page {
+  padding: var(--paap-space-10) var(--paap-space-8) var(--paap-space-16);
+  max-width: 640px;
 }
+
+/* Breadcrumb */
+.breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: var(--paap-space-2);
+  margin-bottom: var(--paap-space-6);
+  font-size: 14px;
+}
+.breadcrumb-link {
+  color: var(--paap-muted);
+  text-decoration: none;
+}
+.breadcrumb-link:hover {
+  color: var(--paap-text);
+  text-decoration: underline;
+}
+.breadcrumb-sep {
+  color: var(--paap-border-strong);
+}
+.breadcrumb-current {
+  color: var(--paap-text);
+  font-weight: 500;
+}
+
+/* Header */
+.page-header {
+  margin-bottom: var(--paap-space-8);
+}
+.page-title {
+  font-size: 28px;
+  font-weight: 600;
+  color: var(--paap-text);
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  margin: 0;
+}
+.page-subtitle {
+  font-size: 14px;
+  color: var(--paap-muted);
+  margin-top: var(--paap-space-1);
+}
+
+/* Form card */
 .form-card {
-  background: #fff;
-  border: 1px solid #e0e0e0;
-  padding: 32px;
+  background: var(--paap-panel);
+  border: 1px solid var(--paap-border);
+  border-radius: var(--paap-radius);
+  padding: var(--paap-space-8);
+}
+
+/* Form groups */
+.form-group {
+  margin-bottom: var(--paap-space-6);
+}
+.form-group:last-of-type {
+  margin-bottom: 0;
+}
+.form-label {
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--paap-text);
+  margin-bottom: var(--paap-space-2);
 }
 .required {
-  color: #da1e28;
+  color: var(--paap-danger);
 }
-.bx--form-item {
-  margin-bottom: 24px;
+.form-input {
+  width: 100%;
+  padding: 10px 12px;
+  font-size: 14px;
+  border: 1px solid var(--paap-border);
+  border-radius: var(--paap-radius-sm);
+  background: var(--paap-panel);
+  color: var(--paap-text);
+  outline: none;
+  font-family: inherit;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.form-input:focus {
+  border-color: var(--paap-accent);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+.form-input::placeholder {
+  color: var(--paap-muted-2);
+}
+.form-textarea {
+  width: 100%;
+  resize: vertical;
+  padding: 10px 12px;
+  font-size: 14px;
+  border: 1px solid var(--paap-border);
+  border-radius: var(--paap-radius-sm);
+  background: var(--paap-panel);
+  color: var(--paap-text);
+  outline: none;
+  font-family: inherit;
+  line-height: 1.5;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.form-textarea:focus {
+  border-color: var(--paap-accent);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+.form-textarea::placeholder {
+  color: var(--paap-muted-2);
+}
+.form-hint {
+  font-size: 12px;
+  color: var(--paap-muted);
+  margin-top: var(--paap-space-1);
+  line-height: 1.5;
+}
+.form-hint code {
+  font-family: var(--paap-mono);
+  font-size: 11px;
+  background: var(--paap-panel-subtle);
+  padding: 1px 4px;
+  border-radius: var(--paap-radius-xs);
+}
+
+/* Error */
+.form-error {
+  border: 1px solid #fecaca;
+  background: var(--paap-danger-soft);
+  color: #991b1b;
+  border-radius: var(--paap-radius);
+  padding: 10px 12px;
+  font-size: 13px;
+  line-height: 1.4;
+  margin-bottom: var(--paap-space-6);
+}
+
+/* Actions */
+.form-actions {
+  display: flex;
+  gap: var(--paap-space-3);
+  margin-top: var(--paap-space-8);
+  padding-top: var(--paap-space-6);
+  border-top: 1px solid var(--paap-border);
+}
+
+/* Buttons */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  outline: none;
+  border: 1px solid transparent;
+  height: 40px;
+  padding: 0 20px;
+  border-radius: var(--paap-radius-sm);
+  transition: all 0.15s;
+  gap: 6px;
+}
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.btn--primary {
+  background: var(--cds-button-primary, var(--paap-accent));
+  color: #ffffff;
+}
+.btn--primary:hover:not(:disabled) {
+  background: var(--cds-button-primary-hover, var(--paap-accent-hover));
+}
+.btn--ghost {
+  background: var(--paap-panel);
+  color: var(--paap-text-soft);
+  border-color: var(--paap-border);
+}
+.btn--ghost:hover:not(:disabled) {
+  background: var(--paap-panel-subtle);
+  color: var(--paap-text);
+  border-color: var(--paap-border-strong);
+}
+
+@media (max-width: 640px) {
+  .rail-page {
+    padding: var(--paap-space-6) var(--paap-space-4) var(--paap-space-10);
+    max-width: none;
+  }
+  .form-card { padding: var(--paap-space-6); }
+  .form-actions { flex-direction: column; }
+  .btn { width: 100%; }
 }
 </style>

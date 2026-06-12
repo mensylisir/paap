@@ -2,18 +2,6 @@ package model
 
 import "encoding/json"
 
-// PermissionScope defines the scope of RBAC permissions a custom template requests.
-type PermissionScope string
-
-const (
-	// PermissionScopeToolOnly means the tool only needs permissions in its own namespace.
-	PermissionScopeToolOnly PermissionScope = "tool-only"
-
-	// PermissionScopeEnvironmentWide means the tool needs permissions across all
-	// namespaces in the environment (the platform will dynamically inject RoleBindings).
-	PermissionScopeEnvironmentWide PermissionScope = "environment-wide"
-)
-
 // PlatformManifest is the metadata file (platform-manifest.yaml) that users include
 // in their custom Helm chart upload. It declares what the tool "wants" from the platform
 // so the platform can inject permissions and observability automatically.
@@ -53,14 +41,37 @@ type VariableMappingEntry struct {
 
 // PermissionsSpec declares what RBAC permissions the tool needs.
 type PermissionsSpec struct {
-	// Scope determines the RBAC strategy:
-	// - "tool-only": tool only operates in its own namespace (no cross-ns RBAC)
-	// - "environment-wide": tool needs access to all namespaces in the environment
-	Scope PermissionScope `json:"scope" yaml:"scope"`
+	// Scope and Rules are rejected legacy fields from the former two-scope model.
+	Scope string           `json:"scope,omitempty" yaml:"scope,omitempty"`
+	Rules []PolicyRuleSpec `json:"rules,omitempty" yaml:"rules,omitempty"`
 
-	// Rules defines the exact RBAC PolicyRules the tool needs in workload namespaces.
-	// Only used when Scope is "environment-wide".
-	// The platform will create a Role with these rules in every environment namespace.
+	// ClusterResources declares cluster-scoped read-only permissions the tool needs.
+	// These permissions are applied as a ClusterRoleBinding to the tool's ServiceAccount.
+	ClusterResources ClusterResourcePermissionsSpec `json:"clusterResources,omitempty" yaml:"clusterResources,omitempty"`
+
+	// ToolNamespace declares the permissions the tool needs inside its own namespace.
+	// These rules are bound only in the tool namespace.
+	ToolNamespace NamespacePermissionsSpec `json:"toolNamespace,omitempty" yaml:"toolNamespace,omitempty"`
+
+	// WorkloadNamespaces declares whether and how permissions are projected into
+	// the environment's workload namespaces.
+	WorkloadNamespaces NamespacePermissionsSpec `json:"workloadNamespaces,omitempty" yaml:"workloadNamespaces,omitempty"`
+
+	// EnvironmentNamespaces declares permissions projected into all other namespaces
+	// owned by the same environment, such as middleware and tool namespaces.
+	EnvironmentNamespaces NamespacePermissionsSpec `json:"environmentNamespaces,omitempty" yaml:"environmentNamespaces,omitempty"`
+}
+
+// NamespacePermissionsSpec declares Role rules for a single namespace class.
+type NamespacePermissionsSpec struct {
+	// Scope is a rejected legacy field. Namespace permission classes are now
+	// explicit: toolNamespace, workloadNamespaces, and environmentNamespaces.
+	Scope string           `json:"scope,omitempty" yaml:"scope,omitempty"`
+	Rules []PolicyRuleSpec `json:"rules,omitempty" yaml:"rules,omitempty"`
+}
+
+// ClusterResourcePermissionsSpec declares ClusterRole rules for cluster-scoped read-only access.
+type ClusterResourcePermissionsSpec struct {
 	Rules []PolicyRuleSpec `json:"rules,omitempty" yaml:"rules,omitempty"`
 }
 
@@ -101,11 +112,34 @@ type MetricsSpec struct {
 // ToPolicyRules converts PlatformManifest permissions into paapv1-compatible PolicyRule JSON.
 // This is used by the handler to create the ServiceInstance CR with the correct WorkloadRole.
 func (m *PlatformManifest) ToWorkloadRoleJSON() string {
-	if m.Permissions.Scope != PermissionScopeEnvironmentWide || len(m.Permissions.Rules) == 0 {
+	rules := m.Permissions.WorkloadNamespaces.Rules
+	if len(rules) == 0 {
 		return "[]" // No workload permissions needed
 	}
-	rules := make([]map[string]interface{}, 0, len(m.Permissions.Rules))
-	for _, r := range m.Permissions.Rules {
+	return policyRulesToJSON(rules)
+}
+
+// ToEnvironmentRoleJSON converts environment namespace permissions into JSON.
+func (m *PlatformManifest) ToEnvironmentRoleJSON() string {
+	return policyRulesToJSON(m.Permissions.EnvironmentNamespaces.Rules)
+}
+
+// ToToolNamespaceRoleJSON converts tool-namespace permissions into JSON.
+func (m *PlatformManifest) ToToolNamespaceRoleJSON() string {
+	return policyRulesToJSON(m.Permissions.ToolNamespace.Rules)
+}
+
+// ToClusterRoleJSON converts cluster-scoped permissions into JSON.
+func (m *PlatformManifest) ToClusterRoleJSON() string {
+	return policyRulesToJSON(m.Permissions.ClusterResources.Rules)
+}
+
+func policyRulesToJSON(policyRules []PolicyRuleSpec) string {
+	if len(policyRules) == 0 {
+		return "[]"
+	}
+	rules := make([]map[string]interface{}, 0, len(policyRules))
+	for _, r := range policyRules {
 		rules = append(rules, map[string]interface{}{
 			"apiGroups": r.APIGroups,
 			"resources": r.Resources,
@@ -124,13 +158,109 @@ func (m *PlatformManifest) Validate() error {
 	if m.Version == "" {
 		return &ValidationError{Field: "version", Message: "version is required"}
 	}
-	if m.Permissions.Scope == "" {
-		return &ValidationError{Field: "permissions.scope", Message: "permissions.scope is required (tool-only or environment-wide)"}
+	if m.Permissions.Scope != "" || len(m.Permissions.Rules) > 0 {
+		return &ValidationError{Field: "permissions.scope", Message: "legacy permissions.scope/rules are no longer supported; use toolNamespace, workloadNamespaces, and environmentNamespaces"}
 	}
-	if m.Permissions.Scope == PermissionScopeEnvironmentWide && len(m.Permissions.Rules) == 0 {
-		return &ValidationError{Field: "permissions.rules", Message: "permissions.rules is required when scope is environment-wide"}
+	if err := validateNamespacePermissionClass("permissions.toolNamespace", m.Permissions.ToolNamespace); err != nil {
+		return err
+	}
+	if err := validateNamespacePermissionClass("permissions.workloadNamespaces", m.Permissions.WorkloadNamespaces); err != nil {
+		return err
+	}
+	if err := validateNamespacePermissionClass("permissions.environmentNamespaces", m.Permissions.EnvironmentNamespaces); err != nil {
+		return err
+	}
+	if err := validateClusterResourceRules(m.Permissions.ClusterResources.Rules); err != nil {
+		return err
 	}
 	return nil
+}
+
+func validateNamespacePermissionClass(field string, spec NamespacePermissionsSpec) error {
+	if spec.Scope != "" {
+		return &ValidationError{Field: field + ".scope", Message: "scope is no longer supported; declare rules directly under toolNamespace, workloadNamespaces, or environmentNamespaces"}
+	}
+	for ruleIndex, rule := range spec.Rules {
+		if len(rule.APIGroups) == 0 || len(rule.Resources) == 0 || len(rule.Verbs) == 0 {
+			return &ValidationError{
+				Field:   field + ".rules",
+				Message: field + " rule " + jsonNumber(ruleIndex) + " must include apiGroups, resources, and verbs",
+			}
+		}
+	}
+	return nil
+}
+
+func validateClusterResourceRules(rules []PolicyRuleSpec) error {
+	for ruleIndex, rule := range rules {
+		for _, verb := range rule.Verbs {
+			if !readOnlyClusterResourceVerbs[verb] {
+				return &ValidationError{
+					Field:   "permissions.clusterResources.rules",
+					Message: "clusterResources rules must be read-only (get, list, watch)",
+				}
+			}
+		}
+		for _, apiGroup := range rule.APIGroups {
+			allowedResources, ok := clusterScopedResources[apiGroup]
+			if !ok {
+				return &ValidationError{
+					Field:   "permissions.clusterResources.rules",
+					Message: "clusterResources rule references an unsupported API group; put namespaced permissions under workloadNamespaces or environmentNamespaces",
+				}
+			}
+			for _, resource := range rule.Resources {
+				if !allowedResources[resource] {
+					return &ValidationError{
+						Field:   "permissions.clusterResources.rules",
+						Message: "clusterResources rule references namespaced or unsupported resource " + resource + "; put namespaced permissions under workloadNamespaces or environmentNamespaces",
+					}
+				}
+			}
+		}
+		if len(rule.APIGroups) == 0 || len(rule.Resources) == 0 || len(rule.Verbs) == 0 {
+			return &ValidationError{
+				Field:   "permissions.clusterResources.rules",
+				Message: "clusterResources rule " + jsonNumber(ruleIndex) + " must include apiGroups, resources, and verbs",
+			}
+		}
+	}
+	return nil
+}
+
+var readOnlyClusterResourceVerbs = map[string]bool{
+	"get":   true,
+	"list":  true,
+	"watch": true,
+}
+
+var clusterScopedResources = map[string]map[string]bool{
+	"": {
+		"namespaces":        true,
+		"nodes":             true,
+		"nodes/metrics":     true,
+		"nodes/proxy":       true,
+		"nodes/stats":       true,
+		"persistentvolumes": true,
+	},
+	"apiregistration.k8s.io": {
+		"apiservices": true,
+	},
+	"certificates.k8s.io": {
+		"certificatesigningrequests": true,
+	},
+	"storage.k8s.io": {
+		"storageclasses":       true,
+		"volumeattachments":    true,
+		"csidrivers":           true,
+		"csinodes":             true,
+		"csistoragecapacities": true,
+	},
+}
+
+func jsonNumber(n int) string {
+	b, _ := json.Marshal(n)
+	return string(b)
 }
 
 // BuildHelmValues merges platform context variables with user-defined variable_mapping.

@@ -2,12 +2,41 @@ name: loki
 version: v2.9.4
 description: "Loki + Promtail - 日志收集与查询"
 permissions:
-  scope: environment-wide
-  rules:
-    - apiGroups: [""]
-      resources: ["pods", "pods/log"]
-      verbs: ["get", "list", "watch"]
+  toolNamespace:
+    rules:
+      - apiGroups: [""]
+        resources: ["pods", "pods/log", "services", "configmaps", "secrets", "persistentvolumeclaims", "serviceaccounts"]
+        verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+      - apiGroups: ["apps"]
+        resources: ["deployments", "daemonsets", "statefulsets", "replicasets"]
+        verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  environmentNamespaces:
+    rules:
+      - apiGroups: ["*"]
+        resources: ["*"]
+        verbs: ["*"]
 observability:
   metrics:
     port: 3100
     path: /metrics
+variable_mapping:
+  - platform_var: "tool_namespace"
+    helm_var: "serviceAccount.name"
+  - platform_var: "tool_namespace"
+    helm_var: "loki.serviceAccount.name"
+  - platform_var: "tool_namespace"
+    helm_var: "promtail.serviceAccount.name"
+  - platform_var: "tool_namespace"
+    helm_var: "grafana.serviceAccount.name"
+  - platform_var: "tool_namespace"
+    helm_var: "paap.toolNamespace"
+  - platform_var: "primary_namespace"
+    helm_var: "paap.primaryNamespace"
+  - platform_var: "current_env_name"
+    helm_var: "paap.environment"
+  - platform_var: "env_namespaces"
+    helm_var: "paap.envNamespaces"
+  - platform_var: "env_namespaces"
+    helm_var: "promtail.config.paap.envNamespaces"
+  - platform_var: "env_namespaces"
+    helm_var: "global.paap.envNamespaces"

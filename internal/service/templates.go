@@ -18,7 +18,7 @@ rules:
     resources: ["*"]
     verbs: ["*"]
   - apiGroups: ["argoproj.io"]
-    resources: ["applications", "appprojects"]
+    resources: ["applications", "appprojects", "applicationsets", "applicationsets/status", "applicationsets/finalizers"]
     verbs: ["*"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1

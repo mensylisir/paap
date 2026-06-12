@@ -1,7 +1,21 @@
 expose:
-  type: nodePort
+  type: ingress
   tls:
-    enabled: false
+    enabled: true
+    certSource: auto
+    auto:
+      commonName: "harbor.paap.local"
+    secret:
+      secretName: ""
+  ingress:
+    hosts:
+      core: harbor.paap.local
+    annotations:
+      ingress.kubernetes.io/ssl-redirect: "true"
+      ingress.kubernetes.io/proxy-body-size: "0"
+      nginx.ingress.kubernetes.io/ssl-redirect: "true"
+      nginx.ingress.kubernetes.io/proxy-body-size: "0"
+externalURL: https://harbor.paap.local
 persistence:
   enabled: false
 trivy:

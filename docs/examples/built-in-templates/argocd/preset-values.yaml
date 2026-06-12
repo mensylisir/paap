@@ -5,12 +5,55 @@
 createClusterRoles: false
 createAggregateRoles: false
 
+configs:
+  cm:
+    resource.inclusions: |
+      - apiGroups:
+        - ""
+        kinds:
+        - Pod
+        - Service
+        - PersistentVolumeClaim
+        - ServiceAccount
+        - Endpoints
+        - Event
+        clusters:
+        - "*"
+      - apiGroups:
+        - apps
+        kinds:
+        - Deployment
+        - StatefulSet
+        - ReplicaSet
+        clusters:
+        - "*"
+      - apiGroups:
+        - batch
+        kinds:
+        - Job
+        - CronJob
+        clusters:
+        - "*"
+      - apiGroups:
+        - networking.k8s.io
+        kinds:
+        - Ingress
+        clusters:
+        - "*"
+      - apiGroups:
+        - autoscaling
+        kinds:
+        - HorizontalPodAutoscaler
+        clusters:
+        - "*"
+
 # Controller (application controller)
 controller:
   rbac:
     create: false
   serviceAccount:
     create: false
+    name: ""
 
 # Server
 server:
@@ -18,16 +61,21 @@ server:
     create: false
   serviceAccount:
     create: false
+    name: ""
+  service:
+    type: NodePort
+    nodePortHttp:
+    nodePortHttps:
   # Disable cluster-scoped resources
   clusterAdminAccess:
     enabled: false
 
 # Repo Server
 repoServer:
-  rbac:
-    create: false
+  rbac: []
   serviceAccount:
     create: false
+    name: ""
 
 # Dex (SSO)
 dex:
@@ -43,6 +91,7 @@ redis:
     create: false
   serviceAccount:
     create: false
+    name: ""
 
 # HA components
 redis-ha:
@@ -50,11 +99,13 @@ redis-ha:
 
 # ApplicationSet
 applicationSet:
-  enabled: false
+  replicas: 1
+  allowAnyNamespace: false
   rbac:
     create: false
   serviceAccount:
     create: false
+    name: ""
 
 # Notifications
 notifications:

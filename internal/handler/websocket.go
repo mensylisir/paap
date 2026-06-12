@@ -55,7 +55,7 @@ func (h *Hub) run() {
 			log.Printf("WebSocket client disconnected, total: %d", len(h.clients))
 
 		case message := <-h.broadcast:
-			h.mu.RLock()
+			h.mu.Lock()
 			for client := range h.clients {
 				err := client.WriteMessage(websocket.TextMessage, message)
 				if err != nil {
@@ -63,7 +63,7 @@ func (h *Hub) run() {
 					delete(h.clients, client)
 				}
 			}
-			h.mu.RUnlock()
+			h.mu.Unlock()
 		}
 	}
 }

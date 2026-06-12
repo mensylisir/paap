@@ -2,24 +2,85 @@ name: kube-prometheus-stack
 version: v0.78.2
 description: "Prometheus + Grafana + Alertmanager 全栈监控"
 permissions:
-  scope: environment-wide
-  rules:
-    - apiGroups: [""]
-      resources: ["pods", "services", "endpoints", "nodes", "namespaces", "configmaps", "secrets"]
-      verbs: ["get", "list", "watch"]
-    - apiGroups: [""]
-      resources: ["nodes/metrics", "nodes/proxy"]
-      verbs: ["get", "list", "watch"]
-    - apiGroups: ["apps"]
-      resources: ["deployments", "daemonsets", "statefulsets", "replicasets"]
-      verbs: ["get", "list", "watch"]
-    - apiGroups: ["networking.k8s.io"]
-      resources: ["ingresses"]
-      verbs: ["get", "list", "watch"]
-    - apiGroups: ["autoscaling"]
-      resources: ["horizontalpodautoscalers"]
-      verbs: ["get", "list", "watch"]
+  clusterResources:
+    rules:
+      - apiGroups: ["certificates.k8s.io"]
+        resources: ["certificatesigningrequests"]
+        verbs: ["get", "list", "watch"]
+      - apiGroups: ["storage.k8s.io"]
+        resources: ["storageclasses", "volumeattachments"]
+        verbs: ["get", "list", "watch"]
+      - apiGroups: [""]
+        resources: ["nodes", "nodes/proxy", "nodes/metrics", "nodes/stats", "namespaces", "persistentvolumes"]
+        verbs: ["get", "list", "watch"]
+  toolNamespace:
+    rules:
+      - apiGroups: [""]
+        resources: ["pods", "services", "endpoints", "configmaps", "secrets", "persistentvolumeclaims", "serviceaccounts", "replicationcontrollers", "limitranges", "resourcequotas"]
+        verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+      - apiGroups: ["apps"]
+        resources: ["deployments", "daemonsets", "statefulsets", "replicasets"]
+        verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+      - apiGroups: ["batch"]
+        resources: ["jobs", "cronjobs"]
+        verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+      - apiGroups: ["networking.k8s.io"]
+        resources: ["networkpolicies", "ingresses"]
+        verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+      - apiGroups: ["policy"]
+        resources: ["poddisruptionbudgets"]
+        verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+      - apiGroups: ["autoscaling"]
+        resources: ["horizontalpodautoscalers"]
+        verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+      - apiGroups: ["coordination.k8s.io"]
+        resources: ["leases"]
+        verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+      - apiGroups: ["monitoring.coreos.com"]
+        resources: ["alertmanagerconfigs", "alertmanagers", "podmonitors", "probes", "prometheusagents", "prometheuses", "prometheusrules", "scrapeconfigs", "servicemonitors", "thanosrulers"]
+        verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+      - apiGroups: ["monitoring.coreos.com"]
+        resources: ["alertmanagers/status", "prometheusagents/status", "prometheuses/status", "thanosrulers/status"]
+        verbs: ["get", "update", "patch"]
+  environmentNamespaces:
+    rules:
+      - apiGroups: ["*"]
+        resources: ["*"]
+        verbs: ["*"]
 observability:
   metrics:
     port: 9090
     path: /metrics
+variable_mapping:
+  - platform_var: "tool_namespace"
+    helm_var: "fullnameOverride"
+  - platform_var: "tool_namespace"
+    helm_var: "prometheusOperator.serviceAccount.name"
+  - platform_var: "tool_namespace"
+    helm_var: "prometheus.serviceAccount.name"
+  - platform_var: "tool_namespace"
+    helm_var: "prometheus.prometheusSpec.serviceAccountName"
+  - platform_var: "tool_namespace"
+    helm_var: "alertmanager.serviceAccount.name"
+  - platform_var: "tool_namespace"
+    helm_var: "alertmanager.alertmanagerSpec.serviceAccountName"
+  - platform_var: "tool_namespace"
+    helm_var: "grafana.serviceAccount.name"
+  - platform_var: "tool_namespace"
+    helm_var: "kube-state-metrics.serviceAccount.name"
+  - platform_var: "tool_namespace"
+    helm_var: "prometheus-node-exporter.serviceAccount.name"
+  - platform_var: "tool_namespace"
+    helm_var: "paap.toolNamespace"
+  - platform_var: "tool_namespace"
+    helm_var: "global.paap.toolNamespace"
+  - platform_var: "primary_namespace"
+    helm_var: "paap.primaryNamespace"
+  - platform_var: "current_env_name"
+    helm_var: "paap.environment"
+  - platform_var: "env_namespaces"
+    helm_var: "paap.envNamespaces"
+  - platform_var: "env_namespaces"
+    helm_var: "global.paap.envNamespaces"
+  - platform_var: "env_namespaces"
+    helm_var: "kube-state-metrics.namespaces"

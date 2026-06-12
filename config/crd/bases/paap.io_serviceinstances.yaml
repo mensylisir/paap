@@ -49,8 +49,35 @@ spec:
           spec:
             description: ServiceInstanceSpec defines the desired state of ServiceInstance
             properties:
-              deploymentRole:
-                description: 工具自身 Deployment 需要的权限（在 ToolNamespace 内）
+              clusterRole:
+                description: 工具需要的集群级只读权限（例如 ArgoCD/Prometheus 的 discovery/cache）
+                properties:
+                  rules:
+                    items:
+                      properties:
+                        apiGroups:
+                          items:
+                            type: string
+                          type: array
+                        resources:
+                          items:
+                            type: string
+                          type: array
+                        verbs:
+                          items:
+                            type: string
+                          type: array
+                      required:
+                      - apiGroups
+                      - resources
+                      - verbs
+                      type: object
+                    type: array
+                required:
+                - rules
+                type: object
+              environmentRole:
+                description: 工具需要对同环境内其它 namespace 的操作权限（工具/中间件/数据库等）
                 properties:
                   rules:
                     items:
@@ -84,6 +111,37 @@ spec:
                 required:
                 - name
                 type: object
+              helm:
+                description: Helm chart installation managed by the operator.
+                properties:
+                  chartArchivePath:
+                    type: string
+                  chartName:
+                    type: string
+                  chartRepo:
+                    type: string
+                  chartVersion:
+                    type: string
+                  namespace:
+                    type: string
+                  platformManifest:
+                    type: string
+                  presetValues:
+                    type: string
+                  releaseName:
+                    type: string
+                  s3Bucket:
+                    type: string
+                  s3Key:
+                    type: string
+                  values:
+                    additionalProperties:
+                      type: string
+                    type: object
+                required:
+                - namespace
+                - releaseName
+                type: object
               manifestsRef:
                 description: 渲染后的部署清单（存储在 ConfigMap 中）
                 properties:
@@ -114,6 +172,33 @@ spec:
               toolNamespace:
                 description: 工具独占的 namespace（{app}-{env}-{tool}）
                 type: string
+              toolNamespaceRole:
+                description: 工具在自己 namespace 内需要的权限（如访问 CRD）
+                properties:
+                  rules:
+                    items:
+                      properties:
+                        apiGroups:
+                          items:
+                            type: string
+                          type: array
+                        resources:
+                          items:
+                            type: string
+                          type: array
+                        verbs:
+                          items:
+                            type: string
+                          type: array
+                      required:
+                      - apiGroups
+                      - resources
+                      - verbs
+                      type: object
+                    type: array
+                required:
+                - rules
+                type: object
               type:
                 description: 服务类型：deploy / ci / monitor / postgresql / redis / ...
                 type: string
@@ -160,10 +245,14 @@ spec:
                   properties:
                     kind:
                       type: string
+                    message:
+                      type: string
                     name:
                       type: string
                     ready:
                       type: boolean
+                    reason:
+                      type: string
                     replicas:
                       type: string
                   required:

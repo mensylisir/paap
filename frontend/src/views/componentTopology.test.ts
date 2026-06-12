@@ -1,0 +1,237 @@
+import { describe, expect, it } from 'vitest'
+import {
+  buildComponentDependencyEdges,
+  buildComponentTopologyNodes,
+  buildComponentTopologyLanes,
+  componentTopologyCanvasViewBox,
+  componentTopologyEdgePath,
+  findTopologyNodeAtPoint,
+  hasComponentTopologyDragMoved,
+  nextComponentTopologyDragPosition,
+  nodeKey,
+  parseComponentTopologyManualEdges,
+  parseComponentTopologyPositions,
+  serializeComponentTopologyManualEdges,
+  serializeComponentTopologyPositions,
+  shouldSuppressComponentTopologyClick,
+} from './componentTopology'
+
+describe('componentTopology', () => {
+  it('does not invent dependencies when components do not declare them', () => {
+    const components = [
+      { id: 1, name: 'web', type: 'frontend' },
+      { id: 2, name: 'api', type: 'backend' },
+      { id: 3, name: 'redis', type: 'middleware' },
+    ]
+
+    expect(buildComponentDependencyEdges(components)).toEqual([])
+  })
+
+  it('builds declared component dependencies by id or name', () => {
+    const components = [
+      { id: 1, name: 'web', type: 'frontend', dependencies: ['api'] },
+      { id: 2, name: 'api', type: 'backend', dependencies: [3] },
+      { id: 3, name: 'redis', type: 'middleware' },
+    ]
+
+    expect(buildComponentDependencyEdges(components)).toEqual([
+      { from: 'web', to: 'api', fromId: 1, toId: 2 },
+      { from: 'api', to: 'redis', fromId: 2, toId: 3 },
+    ])
+  })
+
+  it('limits topology lanes to visible components without dropping lane labels', () => {
+    const lanes = buildComponentTopologyLanes([
+      { id: 1, name: 'web', type: 'frontend' },
+      { id: 2, name: 'api', type: 'backend' },
+      { id: 3, name: 'queue', type: 'middleware' },
+    ])
+
+    expect(lanes.map((lane) => lane.label)).toEqual(['入口层', '服务层', '数据/中间件'])
+    expect(lanes.flatMap((lane) => lane.nodes.map((node) => node.name))).toEqual(['web', 'api', 'queue'])
+  })
+
+  it('adds installed middleware as real topology nodes without inventing relationships', () => {
+    const nodes = buildComponentTopologyNodes(
+      [
+        { id: 1, name: 'web', type: 'frontend' },
+        { id: 2, name: 'api', type: 'backend' },
+      ],
+      [{ id: 10, name: 'redis-cache', type: 'redis', status: 'running' }]
+    )
+
+    expect(nodes.map((node) => ({ topologyId: node.topologyId, topologyKind: node.topologyKind, name: node.name }))).toEqual([
+      { topologyId: 'component:1', topologyKind: 'component', name: 'web' },
+      { topologyId: 'component:2', topologyKind: 'component', name: 'api' },
+      { topologyId: 'service:10', topologyKind: 'service', name: 'redis-cache' },
+    ])
+    expect(buildComponentDependencyEdges(nodes)).toEqual([])
+  })
+
+  it('builds explicit component dependencies from JSON config to installed services', () => {
+    const nodes = buildComponentTopologyNodes(
+      [
+        {
+          id: 1,
+          name: 'api',
+          type: 'backend',
+          config: JSON.stringify({ dependencies: ['redis-cache'] }),
+        },
+      ],
+      [{ id: 10, name: 'redis-cache', type: 'redis', status: 'running' }]
+    )
+
+    expect(buildComponentDependencyEdges(nodes)).toEqual([
+      {
+        from: 'api',
+        to: 'redis-cache',
+        fromId: 1,
+        toId: 10,
+        fromKey: 'component:1',
+        toKey: 'service:10',
+      },
+    ])
+  })
+
+  it('normalizes installed service installations before resolving dependencies', () => {
+    const nodes = buildComponentTopologyNodes(
+      [
+        {
+          id: 1,
+          name: 'api',
+          type: 'backend',
+          config: JSON.stringify({ dependencies: ['redis'] }),
+        },
+      ],
+      [{ id: 10, serviceName: '', serviceType: 'redis', status: 'running' } as any]
+    )
+
+    expect(nodes.find((node) => node.topologyId === 'service:10')).toMatchObject({
+      name: 'redis',
+      type: 'redis',
+    })
+    expect(buildComponentDependencyEdges(nodes)).toEqual([
+      {
+        from: 'api',
+        to: 'redis',
+        fromId: 1,
+        toId: 10,
+        fromKey: 'component:1',
+        toKey: 'service:10',
+      },
+    ])
+  })
+
+  it('parses only valid saved canvas positions', () => {
+    expect(parseComponentTopologyPositions('{"component:1":{"x":120,"y":88},"bad":{"x":"no","y":12},"service:2":{"x":"240","y":"144"}}')).toEqual({
+      'component:1': { x: 120, y: 88 },
+      'service:2': { x: 240, y: 144 },
+    })
+    expect(parseComponentTopologyPositions('not-json')).toEqual({})
+  })
+
+  it('serializes only finite canvas positions', () => {
+    expect(serializeComponentTopologyPositions({
+      'component:1': { x: 120, y: 88 },
+      bad: { x: Number.NaN, y: 12 },
+    })).toBe('{"component:1":{"x":120,"y":88}}')
+  })
+
+  it('keeps the SVG viewBox in canvas coordinates so CSS zoom does not break links', () => {
+    expect(componentTopologyCanvasViewBox({ width: 1280, height: 720 })).toBe('0 0 1280 720')
+    expect(componentTopologyCanvasViewBox({ width: 0, height: -1 })).toBe('0 0 0 0')
+  })
+
+  it('persists only explicit canvas links without duplicates or self links', () => {
+    expect(parseComponentTopologyManualEdges(JSON.stringify([
+      { fromKey: 'component:1', toKey: 'component:2' },
+      { fromKey: 'component:1', toKey: 'component:2' },
+      { fromKey: 'component:1', toKey: 'component:1' },
+      { fromKey: '', toKey: 'service:1' },
+      { fromKey: 'component:2', toKey: 'service:10' },
+    ]))).toEqual([
+      { fromKey: 'component:1', toKey: 'component:2' },
+      { fromKey: 'component:2', toKey: 'service:10' },
+    ])
+    expect(parseComponentTopologyManualEdges('not-json')).toEqual([])
+
+    expect(serializeComponentTopologyManualEdges([
+      { fromKey: 'component:1', toKey: 'component:2' },
+      { fromKey: 'component:1', toKey: 'component:2' },
+      { fromKey: 'component:2', toKey: 'component:2' },
+    ])).toBe('[{"fromKey":"component:1","toKey":"component:2"}]')
+  })
+
+  it('finds connection targets from canvas coordinates instead of browser hit testing', () => {
+    const nodes = [
+      { topologyId: 'component:1', x: 120, y: 80, width: 196, height: 70 },
+      { topologyId: 'component:2', x: 420, y: 210, width: 196, height: 70 },
+    ]
+
+    expect(nodeKey(nodes[0])).toBe('component:1')
+    expect(findTopologyNodeAtPoint(nodes, { x: 500, y: 245 }, 'component:1')?.topologyId).toBe('component:2')
+    expect(findTopologyNodeAtPoint(nodes, { x: 130, y: 90 }, 'component:1')).toBeNull()
+    expect(findTopologyNodeAtPoint(nodes, { x: 20, y: 20 })).toBeNull()
+  })
+
+  it('treats pointerup displacement as a drag so node clicks do not open the side drawer', () => {
+    expect(hasComponentTopologyDragMoved({ startX: 120, startY: 90, currentX: 124, currentY: 90 })).toBe(false)
+    expect(hasComponentTopologyDragMoved({ startX: 120, startY: 90, currentX: 126, currentY: 91 })).toBe(true)
+    expect(hasComponentTopologyDragMoved({ startX: 120, startY: 90, currentX: 120, currentY: 96 })).toBe(true)
+  })
+
+  it('suppresses the click fired after dragging a topology node', () => {
+    expect(shouldSuppressComponentTopologyClick('component:1', {
+      suppressNext: true,
+      suppressKey: 'component:1',
+    })).toBe(true)
+
+    expect(shouldSuppressComponentTopologyClick('component:1', {
+      suppressNext: false,
+      recentDragKey: 'component:1',
+      recentDragAt: 1000,
+      now: 1200,
+      windowMs: 350,
+    })).toBe(true)
+
+    expect(shouldSuppressComponentTopologyClick('component:1', {
+      suppressNext: false,
+      recentDragKey: 'component:1',
+      recentDragAt: 1000,
+      now: 1500,
+      windowMs: 350,
+    })).toBe(false)
+  })
+
+  it('clamps dragged component positions inside the visible canvas area', () => {
+    expect(nextComponentTopologyDragPosition({
+      originX: 24,
+      originY: 36,
+      startX: 100,
+      startY: 100,
+      currentX: 40,
+      currentY: 42,
+    })).toEqual({ x: 12, y: 46 })
+
+    expect(nextComponentTopologyDragPosition({
+      originX: 24,
+      originY: 36,
+      startX: 100,
+      startY: 100,
+      currentX: 140,
+      currentY: 160,
+    })).toEqual({ x: 64, y: 96 })
+  })
+
+  it('draws canvas links from the nearest node boundaries instead of through cards', () => {
+    expect(componentTopologyEdgePath({
+      fromNode: { x: 120, y: 80, width: 196, height: 70 },
+      toNode: { x: 520, y: 210, width: 196, height: 70 },
+    })).toBe('M 316 115 H 418 V 245 H 520')
+
+    expect(componentTopologyEdgePath({
+      fromNode: { x: 520, y: 210, width: 196, height: 70 },
+      toNode: { x: 120, y: 80, width: 196, height: 70 },
+    })).toBe('M 520 245 H 418 V 115 H 316')
+  })
+})

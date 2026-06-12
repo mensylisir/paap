@@ -23,16 +23,28 @@ type ServiceInstanceSpec struct {
 	// SA 配置（自动生成，namespace 为 ToolNamespace）
 	ServiceAccount ServiceAccountSpec `json:"serviceAccount"`
 
-	// 工具自身 Deployment 需要的权限（在 ToolNamespace 内）
+	// 工具在自己 namespace 内需要的权限（如访问 CRD）
 	// +optional
-	DeploymentRole *RoleSpec `json:"deploymentRole,omitempty"`
+	ToolNamespaceRole *RoleSpec `json:"toolNamespaceRole,omitempty"`
+
+	// 工具需要的集群级只读权限（例如 ArgoCD/Prometheus 的 discovery/cache）
+	// +optional
+	ClusterRole *RoleSpec `json:"clusterRole,omitempty"`
 
 	// 工具需要对负载 namespace 的操作权限
 	WorkloadRole RoleSpec `json:"workloadRole"`
 
+	// 工具需要对同环境内其它 namespace 的操作权限（工具/中间件/数据库等）
+	// +optional
+	EnvironmentRole *RoleSpec `json:"environmentRole,omitempty"`
+
 	// 渲染后的部署清单（存储在 ConfigMap 中）
 	// +optional
 	ManifestsRef *ConfigMapReference `json:"manifestsRef,omitempty"`
+
+	// Helm chart installation managed by the operator.
+	// +optional
+	Helm *HelmInstallSpec `json:"helm,omitempty"`
 }
 
 type ObjectReference struct {
@@ -57,6 +69,20 @@ type PolicyRule struct {
 type ConfigMapReference struct {
 	Name      string `json:"name"`
 	Namespace string `json:"namespace"`
+}
+
+type HelmInstallSpec struct {
+	ReleaseName      string            `json:"releaseName"`
+	Namespace        string            `json:"namespace"`
+	ChartRepo        string            `json:"chartRepo,omitempty"`
+	ChartName        string            `json:"chartName,omitempty"`
+	ChartVersion     string            `json:"chartVersion,omitempty"`
+	ChartArchivePath string            `json:"chartArchivePath,omitempty"`
+	S3Bucket         string            `json:"s3Bucket,omitempty"`
+	S3Key            string            `json:"s3Key,omitempty"`
+	PresetValues     string            `json:"presetValues,omitempty"`
+	PlatformManifest string            `json:"platformManifest,omitempty"`
+	Values           map[string]string `json:"values,omitempty"`
 }
 
 // ServiceInstanceStatus defines the observed state of ServiceInstance
@@ -87,9 +113,9 @@ type ServiceAccountStatus struct {
 }
 
 type RBACNamespaceStatus struct {
-	Namespace        string `json:"namespace"`
-	RoleCreated      bool   `json:"roleCreated"`
-	RoleBindingCreated bool `json:"roleBindingCreated"`
+	Namespace          string `json:"namespace"`
+	RoleCreated        bool   `json:"roleCreated"`
+	RoleBindingCreated bool   `json:"roleBindingCreated"`
 }
 
 type ToolComponentStatus struct {
@@ -97,6 +123,8 @@ type ToolComponentStatus struct {
 	Kind     string `json:"kind"`
 	Ready    bool   `json:"ready"`
 	Replicas string `json:"replicas"`
+	Reason   string `json:"reason,omitempty"`
+	Message  string `json:"message,omitempty"`
 }
 
 // +kubebuilder:object:root=true
@@ -165,16 +193,31 @@ func (in *ServiceInstanceSpec) DeepCopyInto(out *ServiceInstanceSpec) {
 		}
 	}
 	out.ServiceAccount = in.ServiceAccount
-	if in.DeploymentRole != nil {
-		in, out := &in.DeploymentRole, &out.DeploymentRole
+	if in.ToolNamespaceRole != nil {
+		in, out := &in.ToolNamespaceRole, &out.ToolNamespaceRole
+		*out = new(RoleSpec)
+		(*in).DeepCopyInto(*out)
+	}
+	if in.ClusterRole != nil {
+		in, out := &in.ClusterRole, &out.ClusterRole
 		*out = new(RoleSpec)
 		(*in).DeepCopyInto(*out)
 	}
 	in.WorkloadRole.DeepCopyInto(&out.WorkloadRole)
+	if in.EnvironmentRole != nil {
+		in, out := &in.EnvironmentRole, &out.EnvironmentRole
+		*out = new(RoleSpec)
+		(*in).DeepCopyInto(*out)
+	}
 	if in.ManifestsRef != nil {
 		in, out := &in.ManifestsRef, &out.ManifestsRef
 		*out = new(ConfigMapReference)
 		**out = **in
+	}
+	if in.Helm != nil {
+		in, out := &in.Helm, &out.Helm
+		*out = new(HelmInstallSpec)
+		(*in).DeepCopyInto(*out)
 	}
 }
 
@@ -238,6 +281,26 @@ func (in *RoleSpec) DeepCopy() *RoleSpec {
 		return nil
 	}
 	out := new(RoleSpec)
+	in.DeepCopyInto(out)
+	return out
+}
+
+func (in *HelmInstallSpec) DeepCopyInto(out *HelmInstallSpec) {
+	*out = *in
+	if in.Values != nil {
+		in, out := &in.Values, &out.Values
+		*out = make(map[string]string, len(*in))
+		for key, val := range *in {
+			(*out)[key] = val
+		}
+	}
+}
+
+func (in *HelmInstallSpec) DeepCopy() *HelmInstallSpec {
+	if in == nil {
+		return nil
+	}
+	out := new(HelmInstallSpec)
 	in.DeepCopyInto(out)
 	return out
 }

@@ -1,16 +1,47 @@
 const API_BASE = '/api/v1'
+const inflightGetRequests = new Map<string, Promise<any>>()
+const completedGetRequests = new Map<string, { expiresAt: number; value: any }>()
+const GET_CACHE_TTL_MS = 1500
 
 async function request(path: string, options: RequestInit = {}) {
   const url = `${API_BASE}${path}`
-  const res = await fetch(url, {
-    headers: { 'Content-Type': 'application/json' },
-    ...options,
-  })
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: res.statusText }))
-    throw new Error(err.error || res.statusText)
+  const method = String(options.method || 'GET').toUpperCase()
+  const canDedupe = method === 'GET' && !options.body
+  if (canDedupe) {
+    const completed = completedGetRequests.get(url)
+    if (completed && completed.expiresAt > Date.now()) return completed.value
+    if (completed) completedGetRequests.delete(url)
+    const existing = inflightGetRequests.get(url)
+    if (existing) return existing
   }
-  return res.json()
+  const headers = options.body instanceof FormData
+    ? options.headers
+    : { 'Content-Type': 'application/json', ...(options.headers || {}) }
+  const promise = fetch(url, {
+    ...options,
+    method,
+    headers,
+  }).then(async (res) => {
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: res.statusText }))
+      throw new Error(err.error || res.statusText)
+    }
+    return res.json()
+  })
+  if (canDedupe) inflightGetRequests.set(url, promise)
+  try {
+    const value = await promise
+    if (canDedupe) {
+      completedGetRequests.set(url, { expiresAt: Date.now() + GET_CACHE_TTL_MS, value })
+    } else {
+      completedGetRequests.clear()
+    }
+    return value
+  } finally {
+    if (canDedupe && inflightGetRequests.get(url) === promise) {
+      inflightGetRequests.delete(url)
+    }
+  }
 }
 
 export const api = {
@@ -21,6 +52,9 @@ export const api = {
 
   // Templates
   templates: () => request('/templates'),
+  listServiceTemplates: () => request('/service-templates'),
+  uploadServiceTemplate: (data: FormData) => request('/service-templates/upload', { method: 'POST', body: data }),
+  syncBuiltinServiceTemplates: () => request('/service-templates/sync', { method: 'POST' }),
 
   // Applications
   listApps: () => request('/applications'),
@@ -33,14 +67,24 @@ export const api = {
   listEnvs: (appId: number) => request(`/applications/${appId}/environments`),
   createEnv: (appId: number, data: any) => request(`/applications/${appId}/environments`, { method: 'POST', body: JSON.stringify(data) }),
   getEnv: (id: number) => request(`/environments/${id}`),
+  getEnvironmentCanvasState: (id: number) => request(`/environments/${id}/canvas-state`),
+  saveEnvironmentCanvasState: (id: number, data: any) => request(`/environments/${id}/canvas-state`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteEnv: (id: number) => request(`/environments/${id}`, { method: 'DELETE' }),
 
   // Components
   listComponents: (envId: number) => request(`/environments/${envId}/components`),
   createComponent: (envId: number, data: any) => request(`/environments/${envId}/components`, { method: 'POST', body: JSON.stringify(data) }),
+  listAdoptableResources: (envId: number) => request(`/environments/${envId}/adoptable-resources`),
+  adoptResource: (envId: number, data: any) => request(`/environments/${envId}/adoptable-resources`, { method: 'POST', body: JSON.stringify(data) }),
+  updateComponent: (id: number, data: any) => request(`/components/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deployComponent: (id: number, data: any) => request(`/components/${id}/deploy`, { method: 'POST', body: JSON.stringify(data) }),
   deleteComponent: (id: number) => request(`/components/${id}`, { method: 'DELETE' }),
 
   // Services
-  listServices: (appId: number) => request(`/applications/${appId}/services`),
-  installService: (appId: number, data: any) => request(`/applications/${appId}/services`, { method: 'POST', body: JSON.stringify(data) }),
+  listServices: (envId: number) => request(`/environments/${envId}/services`),
+  getServiceWorkspace: (envId: number, serviceId: number) => request(`/environments/${envId}/services/${serviceId}/workspace`),
+  runServiceWorkspaceAction: (envId: number, serviceId: number, action: string, target?: string, params?: Record<string, string>) =>
+    request(`/environments/${envId}/services/${serviceId}/workspace/actions`, { method: 'POST', body: JSON.stringify({ action, target, params }) }),
+  installService: (envId: number, data: any) => request(`/environments/${envId}/services`, { method: 'POST', body: JSON.stringify(data) }),
+  uninstallService: (envId: number, serviceId: number) => request(`/environments/${envId}/services/${serviceId}`, { method: 'DELETE' }),
 }

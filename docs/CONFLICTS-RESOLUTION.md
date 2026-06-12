@@ -59,8 +59,8 @@ PAAP 模板系统
 
 | service-template-spec.md（未实现） | 实际实现（platform-manifest.yaml） | ServiceInstance CRD |
 |-----------------------------------|----------------------------------|---------------------|
-| `rbac.deploymentRole` | `permissions.scope: tool-only` | `DeploymentRole` |
-| `rbac.envRole` | `permissions.scope: environment-wide` + `permissions.rules` | `WorkloadRole` |
+| `rbac.deploymentRole` | `permissions.toolNamespace.rules` | `ToolNamespaceRole` |
+| `rbac.envRole` | `permissions.workloadNamespaces.rules` / `permissions.environmentNamespaces.rules` | `WorkloadRole` / `EnvironmentRole` |
 | `lifecycle.install` | 由 Helm Chart 管理 | - |
 | `lifecycle.onEnvNsAdded` | 由 Operator 自动创建 RoleBinding | - |
 

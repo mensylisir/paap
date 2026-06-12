@@ -72,11 +72,11 @@
    description: "GitOps 持续部署工具"
    
    permissions:
-     scope: "environment-wide"
-     rules:
-       - apiGroups: ["", "apps"]
-         resources: ["deployments", "services"]
-         verbs: ["*"]
+     workloadNamespaces:
+       rules:
+         - apiGroups: ["", "apps"]
+           resources: ["deployments", "services"]
+           verbs: ["*"]
    ```
 
 4. **创建 preset-values.yaml**
@@ -135,7 +135,11 @@
    description: "Bitnami Redis 缓存服务"
    
    permissions:
-     scope: "tool-only"  # Redis 不需要跨 namespace 权限
+     toolNamespace:
+       rules:
+         - apiGroups: [""]
+           resources: ["pods", "services", "configmaps", "secrets", "persistentvolumeclaims", "serviceaccounts"]
+           verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
    
    observability:
      metrics:
@@ -295,8 +299,9 @@ func migrateArgoCD() error {
         Name:    "ArgoCD",
         Version: "v2.10.0",
         Permissions: model.PermissionsSpec{
-            Scope: model.PermissionScopeEnvironmentWide,
-            Rules: convertWorkloadRolePolicy(template.WorkloadRolePolicy),
+            WorkloadNamespaces: model.NamespacePermissionsSpec{
+                Rules: convertWorkloadRolePolicy(template.WorkloadRolePolicy),
+            },
         },
     }
     
@@ -363,8 +368,8 @@ func InstallService(template *model.ServiceTemplate, env *model.Environment) err
 
 - [ ] platform-manifest.yaml 格式正确
   - [ ] `name` 和 `version` 字段存在
-  - [ ] `permissions.scope` 正确设置
-  - [ ] `permissions.rules` 遵循最小权限原则
+  - [ ] 三类 namespace 权限字段按需设置
+  - [ ] 所有 `rules` 遵循最小权限原则
 
 - [ ] Chart 不包含违规资源
   - [ ] 没有 ClusterRole/ClusterRoleBinding

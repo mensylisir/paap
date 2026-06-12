@@ -79,20 +79,32 @@ description: "自定义 Prometheus 监控服务，支持环境级权限动态同
 
 # 1. 权限申请声明
 permissions:
-  # 权限范围：
-  #   - tool-only: 工具只需要访问自己所在的 namespace
-  #   - environment-wide: 工具需要访问该环境下所有 namespace
-  scope: "environment-wide"
-  
-  # 具体的权限内容（仅当 scope=environment-wide 时需要）
-  # 平台会在环境的每个 namespace 中创建 Role + RoleBinding
-  rules:
-    - apiGroups: [""]
-      resources: ["pods", "services", "endpoints"]
-      verbs: ["get", "list", "watch"]
-    - apiGroups: ["apps"]
-      resources: ["deployments", "statefulsets"]
-      verbs: ["get", "list", "watch"]
+  # 工具自身 namespace 权限，安装和运行自身资源使用。
+  toolNamespace:
+    rules:
+      - apiGroups: [""]
+        resources: ["pods", "services", "endpoints", "configmaps", "secrets", "serviceaccounts"]
+        verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+      - apiGroups: ["apps"]
+        resources: ["deployments", "statefulsets"]
+        verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+  # 业务负载 namespace 权限。部署/CI 工具需要控制业务资源时使用。
+  workloadNamespaces:
+    rules:
+      - apiGroups: ["*"]
+        resources: ["*"]
+        verbs: ["*"]
+
+  # 同环境其它 namespace 权限。监控/日志工具需要看数据库、中间件、其它工具 namespace 时使用。
+  environmentNamespaces:
+    rules:
+      - apiGroups: [""]
+        resources: ["pods", "services", "endpoints"]
+        verbs: ["get", "list", "watch"]
+      - apiGroups: ["apps"]
+        resources: ["deployments", "statefulsets"]
+        verbs: ["get", "list", "watch"]
 
 # 2. 可观测性声明（可选）
 observability:
@@ -130,18 +142,24 @@ variable_mapping:
 
 | 字段 | 类型 | 必需 | 说明 |
 |------|------|------|------|
-| `scope` | string | ✅ | `tool-only` 或 `environment-wide` |
-| `rules` | array | ⚠️ | 当 scope=environment-wide 时必需 |
+| `toolNamespace.rules` | array | ✅ | 工具自身 namespace 内的 Role 规则 |
+| `workloadNamespaces.rules` | array | ❌ | 投射到业务负载 namespace 的 Role 规则 |
+| `environmentNamespaces.rules` | array | ❌ | 投射到同环境其它 namespace 的 Role 规则 |
+| `clusterResources.rules` | array | ❌ | 集群级只读权限，例如 nodes、namespaces、storageclasses |
 
-**scope 说明：**
+**权限类型说明：**
 
-- **`tool-only`**: 工具只在自己的 namespace 内运行，不需要访问其他 namespace
-  - 示例：PostgreSQL、Redis、MinIO
-  - 平台行为：只在工具所在 namespace 创建基本权限
+- **`toolNamespace`**: 工具只在自己的 namespace 内运行或管理自身资源
+  - 示例：PostgreSQL、Redis、MinIO、Harbor 自身组件
+  - 平台行为：只在工具所在 namespace 创建 Role + RoleBinding
 
-- **`environment-wide`**: 工具需要访问环境内所有 namespace
-  - 示例：Prometheus（监控所有 namespace）、ArgoCD（部署到所有 namespace）
-  - 平台行为：在环境的每个 namespace 创建 Role + RoleBinding
+- **`workloadNamespaces`**: 工具需要读写业务负载 namespace
+  - 示例：ArgoCD、Jenkins
+  - 平台行为：在当前环境的业务 namespace 创建 Role + RoleBinding
+
+- **`environmentNamespaces`**: 工具需要访问同环境其它工具、中间件、数据库和业务 namespace
+  - 示例：Prometheus、Loki
+  - 平台行为：在当前环境的所有非自身 namespace 创建 Role + RoleBinding，并随 namespace 增删动态同步
 
 **rules 格式：**
 
@@ -339,15 +357,20 @@ replicaCount: 1
          ↓
 平台读取 platform-manifest.yaml
          ↓
-检查 permissions.scope
+检查 permissions.toolNamespace / workloadNamespaces / environmentNamespaces
          ↓
 ┌─────────────────────────────────────┐
-│ scope = tool-only                   │
-│   → 只在工具 namespace 创建 SA + Role│
+│ toolNamespace.rules                 │
+│   → 在工具 namespace 创建 Role       │
 └─────────────────────────────────────┘
 ┌─────────────────────────────────────┐
-│ scope = environment-wide            │
-│   → 在环境所有 namespace 创建       │
+│ workloadNamespaces.rules            │
+│   → 在业务 namespace 创建           │
+│     Role + RoleBinding              │
+└─────────────────────────────────────┘
+┌─────────────────────────────────────┐
+│ environmentNamespaces.rules         │
+│   → 在同环境非自身 namespace 创建   │
 │     Role + RoleBinding              │
 └─────────────────────────────────────┘
          ↓
@@ -371,7 +394,7 @@ Operator 监听 CR 并创建 K8s 资源
          ↓
 平台查询该环境已安装的服务
          ↓
-发现 CustomPrometheus 声明了 scope: environment-wide
+发现 CustomPrometheus 声明了 environmentNamespaces.rules
          ↓
 平台自动在 namespace-03 创建 Role + RoleBinding
          ↓
@@ -411,14 +434,27 @@ version: "v2.45.0"
 description: "自定义 Prometheus 监控服务，支持环境级动态权限"
 
 permissions:
-  scope: "environment-wide"
-  rules:
-    - apiGroups: [""]
-      resources: ["pods", "services", "endpoints", "nodes"]
-      verbs: ["get", "list", "watch"]
-    - apiGroups: ["apps"]
-      resources: ["deployments", "statefulsets", "daemonsets"]
-      verbs: ["get", "list", "watch"]
+  clusterResources:
+    rules:
+      - apiGroups: [""]
+        resources: ["nodes"]
+        verbs: ["get", "list", "watch"]
+  toolNamespace:
+    rules:
+      - apiGroups: [""]
+        resources: ["pods", "services", "endpoints", "configmaps", "secrets", "serviceaccounts"]
+        verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+      - apiGroups: ["apps"]
+        resources: ["deployments", "statefulsets", "daemonsets"]
+        verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  environmentNamespaces:
+    rules:
+      - apiGroups: [""]
+        resources: ["pods", "services", "endpoints"]
+        verbs: ["get", "list", "watch"]
+      - apiGroups: ["apps"]
+        resources: ["deployments", "statefulsets", "daemonsets"]
+        verbs: ["get", "list", "watch"]
 
 observability:
   dashboard_path: "./dashboards/prometheus-overview.json"
@@ -601,20 +637,18 @@ helm template my-release ./chart -f preset-values.yaml -f test-values.yaml
 # 3. 检查输出的 YAML 是否符合预期
 ```
 
-### 8.4 permissions.scope 应该选哪个？
+### 8.4 三类权限应该怎么选？
 
 **答：** 根据工具的实际需求：
 
-| 工具类型 | scope | 示例 |
-|---------|-------|------|
-| 数据库、缓存 | `tool-only` | PostgreSQL, Redis, MinIO |
-| 监控工具 | `environment-wide` | Prometheus, Grafana |
-| CI/CD 工具 | `environment-wide` | ArgoCD, Tekton, Jenkins |
-| 消息队列 | `tool-only` | RabbitMQ, Kafka |
+| 需求 | 权限块 | 示例 |
+|------|--------|------|
+| 工具安装和运行自身资源 | `toolNamespace` | PostgreSQL, Redis, MinIO |
+| 控制业务负载 namespace | `workloadNamespaces` | ArgoCD, Jenkins |
+| 观察或操作同环境工具/中间件/数据库 namespace | `environmentNamespaces` | Prometheus, Loki |
+| 集群级只读发现 | `clusterResources` | nodes, namespaces, storageclasses |
 
-**判断标准：** 工具是否需要访问环境内其他 namespace 的资源？
-- 需要 → `environment-wide`
-- 不需要 → `tool-only`
+**判断标准：** 工具要管理哪类 namespace，就只声明对应权限块；没有声明的块不会创建跨 namespace RBAC。
 
 ---
 
@@ -728,7 +762,14 @@ version: "17.11.3"
 description: "Bitnami Redis 缓存服务"
 
 permissions:
-  scope: "tool-only"  # Redis 不需要跨 namespace 权限
+  toolNamespace:
+    rules:
+      - apiGroups: [""]
+        resources: ["pods", "services", "configmaps", "secrets", "persistentvolumeclaims", "serviceaccounts"]
+        verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+      - apiGroups: ["apps"]
+        resources: ["statefulsets", "replicasets"]
+        verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 
 # 参数映射：把平台变量翻译给第三方 Chart
 variable_mapping:
@@ -821,18 +862,17 @@ description: "GitOps 持续部署工具，支持环境级权限隔离"
 
 # 声明权限需求
 permissions:
-  scope: "environment-wide"  # ArgoCD 需要部署到环境内所有 namespace
-  
-  rules:
-    # 管理应用资源
-    - apiGroups: ["", "apps", "batch"]
-      resources: ["*"]
-      verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-    
-    # 管理 ArgoCD 自定义资源
-    - apiGroups: ["argoproj.io"]
-      resources: ["applications", "appprojects"]
-      verbs: ["*"]
+  toolNamespace:
+    rules:
+      - apiGroups: ["argoproj.io"]
+        resources: ["applications", "appprojects"]
+        verbs: ["*"]
+  workloadNamespaces:
+    rules:
+      # 管理应用资源
+      - apiGroups: ["", "apps", "batch"]
+        resources: ["*"]
+        verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 
 # 可观测性
 observability:
@@ -924,9 +964,9 @@ tar -czf argocd-template.tar.gz argocd-template/
          ↓
 平台读取 platform-manifest.yaml
          ↓
-平台检查 permissions.scope = environment-wide
+平台发现 workloadNamespaces.rules
          ↓
-平台在环境的所有 namespace 创建 Role + RoleBinding
+平台在业务负载 namespace 创建 Role + RoleBinding
          ↓
 平台合并 values：
   1. chart/values.yaml（官方默认值）
@@ -1053,8 +1093,8 @@ webhook:
 - [ ] `preset-values.yaml` 禁用了 `rbac.create`
 - [ ] `preset-values.yaml` 禁用了 `serviceAccount.create`
 - [ ] `preset-values.yaml` 禁用了 `installCRDs`（如果有）
-- [ ] `platform-manifest.yaml` 正确声明了 `permissions.scope`
-- [ ] `platform-manifest.yaml` 的 `permissions.rules` 遵循最小权限原则
+- [ ] `platform-manifest.yaml` 正确声明了三类 namespace 权限
+- [ ] `platform-manifest.yaml` 的所有 `rules` 遵循最小权限原则
 - [ ] 使用 `variable_mapping` 将平台变量传递给 Chart
 - [ ] 本地测试：`helm template` 渲染成功，无集群级资源
 
@@ -1116,8 +1156,10 @@ type PlatformManifest struct {
 
 // PermissionsSpec 声明工具需要的 RBAC 权限
 type PermissionsSpec struct {
-    Scope PermissionScope `yaml:"scope"` // "tool-only" | "environment-wide"
-    Rules []PolicyRuleSpec `yaml:"rules,omitempty"`
+    ClusterResources ClusterResourcePermissionsSpec `yaml:"clusterResources,omitempty"`
+    ToolNamespace NamespacePermissionsSpec `yaml:"toolNamespace,omitempty"`
+    WorkloadNamespaces NamespacePermissionsSpec `yaml:"workloadNamespaces,omitempty"`
+    EnvironmentNamespaces NamespacePermissionsSpec `yaml:"environmentNamespaces,omitempty"`
 }
 
 // PolicyRuleSpec 对应 K8s rbac.PolicyRule

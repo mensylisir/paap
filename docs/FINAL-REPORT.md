@@ -99,9 +99,9 @@
 
 | 术语 | 所有文档 | 状态 |
 |------|---------|------|
-| `permissions.scope` | ✅ 一致 | 统一使用 |
-| `tool-only` | ✅ 一致 | 统一使用 |
-| `environment-wide` | ✅ 一致 | 统一使用 |
+| `permissions.toolNamespace` | ✅ 一致 | 统一使用 |
+| `permissions.workloadNamespaces` | ✅ 一致 | 统一使用 |
+| `permissions.environmentNamespaces` | ✅ 一致 | 统一使用 |
 | `variable_mapping` | ✅ 一致 | 统一使用 |
 | `platform-manifest.yaml` | ✅ 一致 | 统一使用 |
 

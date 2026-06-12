@@ -13,6 +13,7 @@ bin/
 
 # Dependency directories
 vendor/
+node_modules/
 
 # IDE
 .vscode/
@@ -37,3 +38,11 @@ logs/
 # Database
 *.db
 *.sqlite
+
+# Local build/debug outputs
+server
+tmp/
+
+# Local agent configuration
+.claude/
+.codex/

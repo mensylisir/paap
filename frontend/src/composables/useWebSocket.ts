@@ -21,7 +21,6 @@ export function useWebSocket() {
 
     ws.onopen = () => {
       connected.value = true
-      console.log('WebSocket connected')
     }
 
     ws.onmessage = (event) => {
@@ -35,7 +34,6 @@ export function useWebSocket() {
 
     ws.onclose = () => {
       connected.value = false
-      console.log('WebSocket disconnected, reconnecting in 3s...')
       reconnectTimer = window.setTimeout(connect, 3000)
     }
 

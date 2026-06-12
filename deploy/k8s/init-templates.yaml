@@ -6,22 +6,19 @@ metadata:
   namespace: paap-system
 data:
   init.sh: |
-    #!/bin/bash
+    #!/bin/sh
     set -e
 
     echo "=== PAAP Template Initialization ==="
     echo "Waiting for MinIO to be ready..."
 
-    # 等待 MinIO 就绪
-    until curl -sf http://minio.paap-system.svc.cluster.local:9000/minio/health/live; do
+    # 配置 mc (MinIO Client)
+    echo "Configuring MinIO client..."
+    until mc alias set paap-minio http://minio.paap-system.svc.cluster.local:9000 minioadmin minioadmin123; do
       echo "MinIO not ready, waiting..."
       sleep 5
     done
     echo "✓ MinIO is ready!"
-
-    # 配置 mc (MinIO Client)
-    echo "Configuring MinIO client..."
-    mc alias set paap-minio http://minio.paap-system.svc.cluster.local:9000 minioadmin minioadmin123
 
     # 创建 bucket
     echo "Creating bucket 'paap-charts'..."
@@ -43,7 +40,7 @@ data:
       template_name=$(basename "$template")
       echo "Uploading $template_name..."
 
-      mc cp "$template" "paap-minio/paap-charts/templates/$template_name"
+      mc cp "$template" "paap-minio/paap-charts/charts/$template_name"
 
       if [ $? -eq 0 ]; then
         echo "✓ Uploaded $template_name"
@@ -60,7 +57,7 @@ data:
 
     # 列出所有模板
     echo "Templates in MinIO:"
-    mc ls paap-minio/paap-charts/templates/
+    mc ls paap-minio/paap-charts/charts/
 
     echo ""
     echo "✓ Template initialization complete!"
@@ -98,10 +95,25 @@ spec:
               sleep 5
             done
             echo "MinIO service is up!"
+      - name: stage-templates
+        image: paap-server:v0.1.272
+        imagePullPolicy: IfNotPresent
+        securityContext:
+          runAsUser: 0
+        command:
+          - sh
+          - -c
+          - |
+            echo "Staging built-in templates from /charts..."
+            cp /charts/*.tar.gz /templates/
+            ls -la /templates
+        volumeMounts:
+        - name: templates
+          mountPath: /templates
       containers:
       - name: upload-templates
         image: minio/mc:RELEASE.2024-05-09T17-04-24Z
-        command: ["/bin/bash", "/scripts/init.sh"]
+        command: ["/bin/sh", "/scripts/init.sh"]
         volumeMounts:
         - name: script
           mountPath: /scripts
@@ -120,8 +132,4 @@ spec:
           name: init-templates-script
           defaultMode: 0755
       - name: templates
-        hostPath:
-          # 这个路径需要在部署脚本中动态设置
-          # 或者使用 ConfigMap/PVC 挂载模板文件
-          path: /tmp/paap-charts
-          type: Directory
+        emptyDir: {}

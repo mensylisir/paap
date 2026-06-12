@@ -5,14 +5,19 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "test": "vitest run",
     "build": "vue-tsc -b && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "smoke:headless": "node scripts/headless-smoke.mjs",
+    "verify": "npm run test && npm run build && npm run smoke:headless"
   },
   "dependencies": {
     "@carbon/icons-vue": "^10.130.0",
     "@carbon/styles": "^1.107.0",
     "@carbon/vue": "^3.0.30",
     "axios": "^1.16.1",
+    "framer-motion": "^12.40.0",
+    "motion": "^12.40.0",
     "pinia": "^3.0.4",
     "vue": "^3.5.34",
     "vue-router": "^4.6.4"
@@ -21,9 +26,13 @@
     "@types/node": "^24.12.3",
     "@vitejs/plugin-vue": "^6.0.6",
     "@vue/tsconfig": "^0.9.1",
+    "autoprefixer": "^10.5.0",
+    "postcss": "^8.5.15",
     "sass": "^1.100.0",
+    "tailwindcss": "^4.3.0",
     "typescript": "~6.0.2",
     "vite": "^8.0.12",
+    "vitest": "^4.1.8",
     "vue-tsc": "^3.2.8"
   }
 }

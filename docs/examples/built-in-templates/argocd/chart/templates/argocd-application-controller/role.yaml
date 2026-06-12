@@ -19,7 +19,6 @@ rules:
   - argoproj.io
   resources:
   - applications
-  - appprojects
   verbs:
   - create
   - get
@@ -28,6 +27,14 @@ rules:
   - update
   - patch
   - delete
+- apiGroups:
+  - argoproj.io
+  resources:
+  - appprojects
+  verbs:
+  - get
+  - list
+  - watch
 - apiGroups:
   - ""
   resources:

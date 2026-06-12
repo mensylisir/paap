@@ -1,0 +1,65 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "registry.fullname" . }}
+  labels:
+    app.kubernetes.io/name: {{ include "registry.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    paap.io/environment: {{ .Values.paap.environment | quote }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "registry.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "registry.name" . }}
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        paap.io/environment: {{ .Values.paap.environment | quote }}
+    spec:
+      serviceAccountName: {{ include "registry.serviceAccountName" . }}
+      containers:
+        - name: registry
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: REGISTRY_HTTP_ADDR
+              value: "0.0.0.0:{{ .Values.service.port }}"
+            - name: REGISTRY_STORAGE_FILESYSTEM_ROOTDIRECTORY
+              value: /var/lib/registry
+            - name: REGISTRY_STORAGE_DELETE_ENABLED
+              value: {{ .Values.deleteEnabled | quote }}
+{{- if .Values.tls.enabled }}
+            - name: REGISTRY_HTTP_TLS_CERTIFICATE
+              value: /certs/tls.crt
+            - name: REGISTRY_HTTP_TLS_KEY
+              value: /certs/tls.key
+{{- end }}
+          ports:
+            - name: {{ ternary "https" "http" .Values.tls.enabled }}
+              containerPort: {{ .Values.service.port }}
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/registry
+{{- if .Values.tls.enabled }}
+            - name: tls
+              mountPath: /certs
+              readOnly: true
+{{- end }}
+          resources:
+{{ toYaml .Values.resources | indent 12 }}
+      volumes:
+        - name: data
+{{- if .Values.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "registry.fullname" . }}-data
+{{- else }}
+          emptyDir: {}
+{{- end }}
+{{- if .Values.tls.enabled }}
+        - name: tls
+          secret:
+            secretName: {{ include "registry.tlsSecretName" . }}
+{{- end }}

@@ -84,9 +84,9 @@ docs/
 
 | 术语 | custom-template-guide.md | template-system-overview.md | Go 代码 | 状态 |
 |------|-------------------------|----------------------------|---------|------|
-| `permissions.scope` | ✅ | ✅ | ✅ | 一致 |
-| `tool-only` | ✅ | ✅ | ✅ | 一致 |
-| `environment-wide` | ✅ | ✅ | ✅ | 一致 |
+| `permissions.toolNamespace` | ✅ | ✅ | ✅ | 一致 |
+| `permissions.workloadNamespaces` | ✅ | ✅ | ✅ | 一致 |
+| `permissions.environmentNamespaces` | ✅ | ✅ | ✅ | 一致 |
 | `variable_mapping` | ✅ | ✅ | ✅ | 一致 |
 | `observability` | ✅ | ✅ | ✅ | 一致 |
 
@@ -94,8 +94,9 @@ docs/
 
 | 概念 | 文档描述 | Go 代码 | ServiceInstance CRD | 状态 |
 |------|---------|---------|---------------------|------|
-| 工具级权限 | `scope: tool-only` | `PermissionScopeToolOnly` | `DeploymentRole` | ✅ 一致 |
-| 环境级权限 | `scope: environment-wide` + `rules` | `PermissionScopeEnvironmentWide` + `Rules` | `WorkloadRole` | ✅ 一致 |
+| 工具级权限 | `toolNamespace.rules` | `Permissions.ToolNamespace` | `ToolNamespaceRole` | ✅ 一致 |
+| 业务负载权限 | `workloadNamespaces.rules` | `Permissions.WorkloadNamespaces` | `WorkloadRole` | ✅ 一致 |
+| 环境内其它 namespace 权限 | `environmentNamespaces.rules` | `Permissions.EnvironmentNamespaces` | `EnvironmentRole` | ✅ 一致 |
 | 可观测性 | `observability` | `Observability` | - | ✅ 一致 |
 | 变量映射 | `variable_mapping` | `VariableMapping` | - | ✅ 一致 |
 
@@ -126,10 +127,10 @@ docs/
 
 **问题：**
 - `service-template-spec.md` 使用 `rbac.envRole`
-- `custom-template-guide.md` 使用 `permissions.scope`
+- `custom-template-guide.md` 使用三类 namespace 权限字段
 
 **解决方案：**
-- 明确 `permissions.scope` 是实际实现
+- 明确三类 namespace 权限字段是实际实现
 - 在总览文档中说明两者的对应关系
 
 ### 冲突 3：文档引用不完整 ✅
