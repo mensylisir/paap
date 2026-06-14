@@ -461,7 +461,10 @@ func builtinComponentConfigTemplates() []model.ComponentConfigTemplate {
 				}, "\n")}),
 			},
 			[]map[string]interface{}{
-				configMap("{{secretName}}", map[string]string{"SPRING_DATASOURCE_PASSWORD": "", "REDIS_PASSWORD": ""}),
+				configMap("{{secretName}}", map[string]string{
+					"SPRING_DATASOURCE_PASSWORD": "[[paap:database.password]]",
+					"REDIS_PASSWORD":             "[[paap:redis.password]]",
+				}),
 			},
 			[]map[string]interface{}{file("spring-application-paap", "{{configMapName}}", "application-paap.yml", "/etc/paap/application-paap.yml")},
 			nil,
@@ -488,7 +491,11 @@ func builtinComponentConfigTemplates() []model.ComponentConfigTemplate {
 			},
 			nil,
 			[]map[string]interface{}{
-				configMap("{{secretName}}", map[string]string{"DATABASE_URL": "", "REDIS_URL": "", "JWT_SECRET": ""}),
+				configMap("{{secretName}}", map[string]string{
+					"DATABASE_URL": "[[paap:database.url]]",
+					"REDIS_URL":    "[[paap:redis.url]]",
+					"JWT_SECRET":   "[[paap:jwt.secret]]",
+				}),
 			},
 			nil,
 			nil,
@@ -515,7 +522,10 @@ func builtinComponentConfigTemplates() []model.ComponentConfigTemplate {
 			},
 			nil,
 			[]map[string]interface{}{
-				configMap("{{secretName}}", map[string]string{"DATABASE_URL": "", "JWT_SECRET": ""}),
+				configMap("{{secretName}}", map[string]string{
+					"DATABASE_URL": "[[paap:database.url]]",
+					"JWT_SECRET":   "[[paap:jwt.secret]]",
+				}),
 			},
 			nil,
 			nil,
@@ -543,7 +553,12 @@ func builtinComponentConfigTemplates() []model.ComponentConfigTemplate {
 			},
 			nil,
 			[]map[string]interface{}{
-				configMap("{{secretName}}", map[string]string{"DATABASE_URL": "", "REDIS_URL": "", "DJANGO_SECRET_KEY": "", "SECRET_KEY": ""}),
+				configMap("{{secretName}}", map[string]string{
+					"DATABASE_URL":      "[[paap:database.url]]",
+					"REDIS_URL":         "[[paap:redis.url]]",
+					"DJANGO_SECRET_KEY": "[[paap:app.secret]]",
+					"SECRET_KEY":        "[[paap:app.secret]]",
+				}),
 			},
 			nil,
 			nil,

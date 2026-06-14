@@ -484,12 +484,25 @@ func mergeComponentRuntimeConfig(existingRaw, runtimeRaw string) string {
 	if err != nil {
 		return existingRaw
 	}
-	existing.Env = runtime.Env
+	if len(existing.Env) == 0 && !componentConfigHasManagedSurface(existing) {
+		existing.Env = runtime.Env
+	}
 	merged, err := existing.JSON()
 	if err != nil {
 		return existingRaw
 	}
 	return merged
+}
+
+func componentConfigHasManagedSurface(cfg model.ComponentConfig) bool {
+	return strings.TrimSpace(cfg.Framework) != "" ||
+		len(cfg.Command) > 0 ||
+		len(cfg.Args) > 0 ||
+		len(cfg.ConfigMaps) > 0 ||
+		len(cfg.Secrets) > 0 ||
+		len(cfg.Files) > 0 ||
+		len(cfg.Bindings) > 0 ||
+		len(cfg.Dependencies) > 0
 }
 
 func reconcileEnvironmentStatuses(db *gorm.DB, envsByKey map[string]model.Environment, serviceKeys map[string]struct{}, componentKeys map[string]struct{}) error {

@@ -96,7 +96,7 @@ spec:
             done
             echo "MinIO service is up!"
       - name: stage-templates
-        image: paap-server:v0.1.362
+        image: paap-server:v0.1.366
         imagePullPolicy: IfNotPresent
         securityContext:
           runAsUser: 0

@@ -1405,116 +1405,105 @@
 
             <section v-if="configDrawerTab === 'variables' && configDrawer.kind === 'component'" class="config-section">
               <div class="config-section-title"><span>配置</span></div>
-              <div class="component-config-flow">
-                <div class="component-config-step">
-                  <div class="component-config-step__head">
-                    <span>1</span>
-                    <strong>选择模板</strong>
-                    <input v-model.trim="componentConfigTemplateSearch" class="bx--text-input" placeholder="搜索模板" />
-                  </div>
-                  <div class="config-form-grid">
-                    <label>
-                      <span>组件用途</span>
-                      <select v-model="componentDrawerRole" class="bx--select-input">
-                        <option v-for="option in componentDrawerRoleOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
-                      </select>
-                    </label>
-                    <label>
-                      <span>应用框架</span>
-                      <select v-model="configForm.framework" class="bx--select-input" @change="syncGeneratedSpringConfig">
-                        <option v-for="option in configFrameworkOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
-                      </select>
-                    </label>
-                    <label>
-                      <span>注入方式</span>
-                      <select v-model="configForm.bindingMode" class="bx--select-input">
-                        <option v-for="option in configBindingModeOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
-                      </select>
-                    </label>
-                  </div>
-                  <div v-if="componentVisibleConfigTemplates.length" class="component-template-list">
-                    <div
-                      v-for="template in componentVisibleConfigTemplates"
-                      :key="template.id"
-                      class="component-template-row"
+              <div class="component-config-flow component-config-flow--guided">
+                <label class="component-template-select">
+                  <span>配置模板</span>
+                  <select v-model="selectedComponentConfigTemplateId" class="bx--select-input">
+                    <option value="">{{ componentConfigTemplatesLoading ? '配置模板加载中...' : '请选择配置模板' }}</option>
+                    <option
+                      v-for="template in componentSelectableConfigTemplates"
+                      :key="componentTemplateOptionValue(template)"
+                      :value="componentTemplateOptionValue(template)"
                     >
-                      <span>
-                        <strong>{{ template.name }}</strong>
-                        <small>{{ componentConfigTemplateMeta(template) }}</small>
-                      </span>
-                      <code>{{ componentUserTemplateSummary(template) }}</code>
-                      <button type="button" class="rail-btn rail-btn--secondary rail-btn--sm" @click="applyUserComponentConfigTemplate(template)">应用</button>
-                    </div>
-                  </div>
-                  <div v-else class="config-empty">{{ componentConfigTemplatesLoading ? '配置模板加载中...' : '没有匹配的配置模板。' }}</div>
-                  <details class="component-template-advanced">
-                    <summary>模板维护</summary>
-                    <div class="component-template-actions">
-                      <button type="button" class="text-btn" @click="componentTemplateEditorVisible = !componentTemplateEditorVisible">
-                        {{ componentTemplateEditorVisible ? '收起' : '新建模板' }}
-                      </button>
-                      <button type="button" class="text-btn" :disabled="!configFormHasTemplateContent" @click="prefillComponentTemplateDraft">
-                        保存当前为模板
-                      </button>
-                    </div>
-                    <div v-if="componentTemplateEditorVisible" class="component-template-editor">
-                      <input
-                        v-model.trim="componentTemplateDraft.name"
-                        class="bx--text-input"
-                        placeholder="模板名称，例如 Spring Boot + PostgreSQL + Redis"
-                      />
-                      <textarea
-                        v-model.trim="componentTemplateDraft.description"
-                        class="bx--text-input"
-                        rows="2"
-                        placeholder="说明模板会生成哪些运行参数、普通配置、敏感配置或配置文件"
-                      ></textarea>
-                      <div class="component-template-editor-actions">
-                        <button type="button" class="bx--btn bx--btn--primary bx--btn--sm" :disabled="!componentTemplateDraft.name.trim() || !configFormHasTemplateContent" @click="saveCurrentComponentConfigTemplate">
-                          保存模板
-                        </button>
-                        <button type="button" class="text-btn" @click="resetComponentTemplateDraft">清空</button>
-                      </div>
-                    </div>
-                  </details>
-                </div>
+                      {{ template.name }}
+                    </option>
+                  </select>
+                </label>
 
-                <div class="component-config-step">
-                  <div class="component-config-step__head">
-                    <span>2</span>
-                    <strong>连接服务</strong>
-                  </div>
-                  <div class="config-binding-form">
-                    <select v-model="configForm.bindingTargetKey" class="bx--select-input">
-                      <option value="">选择组件、数据库、缓存或消息队列</option>
-                      <option v-for="target in componentConnectionTargets" :key="target.key" :value="target.key">
-                        {{ target.name }} · {{ targetTypeLabel(target) }}
+                <div v-if="selectedComponentConfigTemplate" class="component-template-summary">
+                  <strong>{{ selectedComponentConfigTemplate.name }}</strong>
+                  <span>{{ selectedComponentConfigTemplate.description || componentUserTemplateSummary(selectedComponentConfigTemplate) }}</span>
+                </div>
+                <div v-else class="config-empty">选择一个配置模板后，下面只会出现需要填写的业务配置。</div>
+
+                <div v-if="componentTemplateFields.length" class="component-template-field-list">
+                  <label
+                    v-for="field in componentTemplateFields"
+                    :key="componentTemplateFieldKey(field)"
+                    class="component-template-field"
+                  >
+                    <span>
+                      {{ componentTemplateFieldLabel(field) }}
+                      <em v-if="componentTemplateFieldRequiredForUser(field)">必填</em>
+                    </span>
+                    <select
+                      v-if="componentTemplateFieldUsesTargetSelect(field)"
+                      v-model="componentTemplateFieldValues[componentTemplateFieldKey(field)]"
+                      class="bx--select-input"
+                    >
+                      <option value="">{{ componentTemplateFieldPlaceholder(field) }}</option>
+                      <option v-for="option in componentTemplateFieldOptions(field)" :key="option.value" :value="option.value">
+                        {{ option.label }}
                       </option>
                     </select>
-                    <button type="button" class="bx--btn bx--btn--primary bx--btn--sm" :disabled="configDrawer.saving || !selectedConnectionTarget" @click="applySelectedConfigBinding">
-                      应用连接
-                    </button>
-                  </div>
-                  <div v-if="configForm.bindings.length" class="config-binding-list">
-                    <div v-for="(binding, idx) in configForm.bindings" :key="`${binding.targetKey || binding.targetName}-${idx}`" class="config-binding-row">
-                      <span>
-                        <strong>{{ binding.targetName }}</strong>
-                        <small>{{ typeLabel(binding.targetType) || compTypeText(binding.targetType) || binding.targetType }}</small>
-                      </span>
-                      <code>{{ componentBindingGeneratedSummary(binding) }}</code>
-                      <button type="button" class="text-btn danger" @click="removeConfigBinding(idx)">移除</button>
-                    </div>
-                  </div>
-                  <div v-else class="config-empty">当前没有服务连接。</div>
+                    <input
+                      v-else
+                      v-model.trim="componentTemplateFieldValues[componentTemplateFieldKey(field)]"
+                      class="bx--text-input"
+                      :type="componentTemplateFieldInputType(field)"
+                      :placeholder="componentTemplateFieldPlaceholder(field)"
+                    />
+                    <small v-if="componentTemplateFieldHint(field)">{{ componentTemplateFieldHint(field) }}</small>
+                  </label>
+                </div>
+                <div v-else-if="selectedComponentConfigTemplate" class="config-empty">这个模板不需要额外填写，直接应用即可。</div>
+
+                <div class="component-config-actions">
+                  <button
+                    type="button"
+                    class="bx--btn bx--btn--primary bx--btn--sm"
+                    :disabled="configDrawer.saving || !selectedComponentConfigTemplate || !componentTemplateRequiredFieldsComplete"
+                    @click="applySelectedComponentConfigTemplate"
+                  >
+                    应用配置模板
+                  </button>
+                  <span v-if="selectedComponentConfigTemplate && !componentTemplateRequiredFieldsComplete" class="component-config-warning">请先补全必填项。</span>
                 </div>
 
-                <div v-if="componentNginxRouteEditorVisible" class="component-config-step">
-                  <div class="component-config-step__head">
-                    <span>3</span>
-                    <strong>前端代理路由</strong>
-                    <button type="button" class="text-btn" @click="addNginxRoute">添加路由</button>
+                <div v-if="configForm.bindings.length" class="component-connected-list">
+                  <span>已连接服务</span>
+                  <div v-for="(binding, idx) in configForm.bindings" :key="`${binding.targetKey || binding.targetName}-${idx}`" class="component-connected-row">
+                    <strong>{{ binding.targetName }}</strong>
+                    <small>{{ typeLabel(binding.targetType) || compTypeText(binding.targetType) || binding.targetType }} · {{ componentBindingGeneratedSummary(binding) }}</small>
+                    <button type="button" class="text-btn danger" @click="removeConfigBinding(idx)">移除</button>
                   </div>
-                  <div v-if="nginxRouteRows.length" class="nginx-route-list">
+                </div>
+
+                <details class="component-template-advanced">
+                  <summary>高级预览</summary>
+                  <div class="config-ref-grid">
+                    <div>
+                      <span>运行参数</span>
+                      <strong>{{ componentRuntimeParamSummary(configForm.env) }}</strong>
+                    </div>
+                    <div>
+                      <span>应用配置</span>
+                      <strong>{{ componentConfigObjectSummary(configForm.configMaps) }}</strong>
+                    </div>
+                    <div>
+                      <span>敏感项</span>
+                      <strong>{{ componentSecretSummary(configForm.secrets) }}</strong>
+                    </div>
+                    <div>
+                      <span>配置文件</span>
+                      <strong>{{ componentConfigFileSummary(configForm.files) }}</strong>
+                    </div>
+                  </div>
+                  <div class="component-advanced-tools">
+                    <button type="button" class="text-btn" @click="addConfigEnv">添加自定义运行参数</button>
+                    <button v-if="componentNginxRouteEditorVisible" type="button" class="text-btn" @click="addNginxRoute">添加前端代理路由</button>
+                  </div>
+                  <div v-if="componentNginxRouteEditorVisible && nginxRouteRows.length" class="nginx-route-list">
                     <div v-for="(route, idx) in nginxRouteRows" :key="idx" class="nginx-route-row">
                       <input v-model.trim="route.path" class="bx--text-input" placeholder="/api/" />
                       <select v-model="route.targetKey" class="bx--select-input" @change="syncNginxRouteTarget(route)">
@@ -1526,71 +1515,47 @@
                       <input v-model.trim="route.targetUrl" class="bx--text-input" placeholder="http://backend" />
                       <button type="button" class="text-btn danger" @click="removeNginxRoute(idx)">删除</button>
                     </div>
+                    <button type="button" class="rail-btn rail-btn--secondary rail-btn--sm" @click="applyNginxRoutes">更新代理配置</button>
                   </div>
-                  <div v-else class="config-empty">当前还没有代理路由。</div>
-                  <button type="button" class="rail-btn rail-btn--secondary rail-btn--sm" @click="applyNginxRoutes">生成代理配置</button>
-                </div>
-
-                <div class="component-config-step">
-                  <div class="component-config-step__head">
-                    <span>{{ componentNginxRouteEditorVisible ? '4' : '3' }}</span>
-                    <strong>生成结果</strong>
+                  <div v-if="configForm.env.length" class="config-env-list">
+                    <div v-for="(envItem, idx) in configForm.env" :key="idx" class="config-env-row" :class="{ 'config-env-row--managed': envItem.managed }">
+                      <template v-if="envItem.managed">
+                        <strong class="config-env-managed-name">{{ envItem.name }}</strong>
+                        <span class="config-env-managed-secret">平台注入</span>
+                        <span class="config-env-managed-value">{{ managedEnvDisplay(envItem) }}</span>
+                      </template>
+                      <template v-else>
+                        <input v-model.trim="envItem.name" class="bx--text-input" list="component-config-key-suggestions" placeholder="NAME" />
+                        <select v-model="envItem.source" class="bx--select-input" @change="normalizeConfigEnvSource(envItem)">
+                          <option value="value">直接填写</option>
+                          <option value="configMap">应用配置</option>
+                          <option value="secret">敏感项</option>
+                        </select>
+                        <input v-if="envItem.source === 'value'" v-model="envItem.value" class="bx--text-input" placeholder="value" />
+                        <template v-else-if="envItem.source === 'configMap'">
+                          <span class="config-env-managed-secret">平台管理</span>
+                          <input v-model.trim="envItem.refKey" class="bx--text-input" :placeholder="envItem.name || '配置项'" />
+                        </template>
+                        <template v-else>
+                          <span class="config-env-managed-secret">平台管理</span>
+                          <input v-model.trim="envItem.refKey" class="bx--text-input" :placeholder="envItem.name || '敏感项'" />
+                        </template>
+                      </template>
+                      <button type="button" class="text-btn danger" @click="removeConfigEnv(idx)">删除</button>
+                    </div>
+                    <datalist id="component-config-key-suggestions">
+                      <option v-for="item in componentDrawerConfigKeySuggestions" :key="item.key" :value="item.key">{{ item.description }}</option>
+                    </datalist>
                   </div>
-                  <div class="config-ref-grid">
-                    <div>
-                      <span>普通配置</span>
-                      <strong>{{ componentConfigObjectSummary(configForm.configMaps) }}</strong>
-                    </div>
-                    <div>
-                      <span>敏感配置</span>
-                      <strong>{{ componentSecretSummary(configForm.secrets) }}</strong>
-                    </div>
-                    <div>
-                      <span>配置文件</span>
-                      <strong>{{ configForm.files.map(item => item.mountPath).join(', ') || '-' }}</strong>
-                    </div>
-                  </div>
-                </div>
+                </details>
               </div>
             </section>
 
-            <section v-if="configDrawerTab === 'variables' && (configDrawer.kind === 'component' || (drawerRuntime.env || []).length)" class="config-section">
+            <section v-if="configDrawerTab === 'variables' && configDrawer.kind === 'service' && (drawerRuntime.env || []).length" class="config-section">
               <div class="config-section-title">
                 <span>运行参数</span>
-                <button v-if="configDrawer.kind === 'component'" type="button" class="text-btn" @click="addConfigEnv">添加</button>
               </div>
-              <div v-if="configDrawer.kind === 'component'" class="config-env-list">
-                <div v-for="(envItem, idx) in configForm.env" :key="idx" class="config-env-row" :class="{ 'config-env-row--managed': envItem.managed }">
-                  <template v-if="envItem.managed">
-                    <strong class="config-env-managed-name">{{ envItem.name }}</strong>
-                    <span class="config-env-managed-secret">平台注入</span>
-                    <span class="config-env-managed-value">{{ managedEnvDisplay(envItem) }}</span>
-                  </template>
-                  <template v-else>
-                    <input v-model.trim="envItem.name" class="bx--text-input" list="component-config-key-suggestions" placeholder="NAME" />
-                    <select v-model="envItem.source" class="bx--select-input" @change="normalizeConfigEnvSource(envItem)">
-                      <option value="value">值</option>
-                      <option value="configMap">普通配置</option>
-                      <option value="secret">敏感配置</option>
-                    </select>
-                    <input v-if="envItem.source === 'value'" v-model="envItem.value" class="bx--text-input" placeholder="value" />
-                    <template v-else-if="envItem.source === 'configMap'">
-                      <span class="config-env-managed-secret">PAAP 管理</span>
-                      <input v-model.trim="envItem.refKey" class="bx--text-input" :placeholder="envItem.name || '配置 key'" />
-                    </template>
-                    <template v-else>
-                      <span class="config-env-managed-secret">PAAP 管理</span>
-                      <input v-model.trim="envItem.refKey" class="bx--text-input" :placeholder="envItem.name || '敏感配置 key'" />
-                    </template>
-                  </template>
-                  <button type="button" class="text-btn danger" @click="removeConfigEnv(idx)">删除</button>
-                </div>
-                <datalist id="component-config-key-suggestions">
-                  <option v-for="item in componentDrawerConfigKeySuggestions" :key="item.key" :value="item.key">{{ item.description }}</option>
-                </datalist>
-                <div v-if="!configForm.env.length" class="config-empty">当前没有显式环境变量。</div>
-              </div>
-              <div v-else class="config-readonly-list">
+              <div class="config-readonly-list">
                 <div v-for="envItem in drawerRuntime.env || []" :key="envItem.name" class="config-readonly-row">
                   <strong>{{ envItem.name }}</strong>
                   <span>{{ runtimeEnvValue(envItem) }}</span>
@@ -2272,9 +2237,8 @@ const loadUserComponentConfigTemplates = async () => {
 }
 const componentConfigTemplatesLoading = ref(false)
 const componentUserConfigTemplates = ref<UserComponentConfigTemplate[]>([])
-const componentConfigTemplateSearch = ref('')
-const componentTemplateEditorVisible = ref(false)
-const componentTemplateDraft = ref({ name: '', description: '' })
+const selectedComponentConfigTemplateId = ref('')
+const componentTemplateFieldValues = ref<Record<string, string>>({})
 const nginxRouteRows = ref<NginxRouteRow[]>([])
 const defaultServiceConfigForm = (): ServiceConfigForm => ({})
 const serviceConfigForm = ref<ServiceConfigForm>(defaultServiceConfigForm())
@@ -4732,6 +4696,8 @@ const openServiceConfigDrawer = (svc:any) => {
   configForm.value = defaultConfigForm()
   nginxRouteRows.value = []
   serviceConfigForm.value = serviceConfigFormFromInstallation(actual)
+  selectedComponentConfigTemplateId.value = ''
+  componentTemplateFieldValues.value = {}
   void loadServiceDrawerWorkspace(actual)
 }
 const closeConfigDrawer = () => {
@@ -4741,6 +4707,8 @@ const closeConfigDrawer = () => {
   configDrawer.value = { visible: false, kind: 'component', component: null, service: null, saving: false, error: '', message: '' }
   configForm.value = defaultConfigForm()
   nginxRouteRows.value = []
+  selectedComponentConfigTemplateId.value = ''
+  componentTemplateFieldValues.value = {}
   componentDrawerRole.value = 'custom'
   serviceConfigForm.value = defaultServiceConfigForm()
   runtimeMetrics.value = null
@@ -4792,8 +4760,10 @@ const loadComponentConfigForm = (comp:any) => {
     commandText: linesFromArray(cfg.command?.length ? cfg.command : runtime.command),
     argsText: linesFromArray(cfg.args?.length ? cfg.args : runtime.args),
   }
-  componentConfigTemplateSearch.value = ''
   nginxRouteRows.value = nginxRoutesFromCurrentConfig()
+  selectedComponentConfigTemplateId.value = ''
+  componentTemplateFieldValues.value = {}
+  selectRecommendedComponentConfigTemplate()
 }
 const configEnvFromRuntime = (item:any) => {
   if (item?.secretName || item?.secretKey) return { name: String(item.name || ''), source: 'secret' as const, value: '', refName: String(item.secretName || ''), refKey: String(item.secretKey || '') }
@@ -4804,8 +4774,8 @@ const managedConnectionEnvNames = (binding:any) => {
   const names = new Set(Object.keys(binding?.generated || {}).map((key) => String(key || '').trim()).filter(Boolean))
   const type = String(binding?.targetType || '').toLowerCase()
   const add = (items:string[]) => items.forEach((item) => names.add(item))
-  if (type === 'postgresql') add(['POSTGRES_HOST', 'POSTGRES_PORT', 'POSTGRES_USERNAME', 'POSTGRES_DATABASE', 'POSTGRES_PASSWORD'])
-  if (type === 'mysql') add(['MYSQL_HOST', 'MYSQL_PORT', 'MYSQL_USERNAME', 'MYSQL_DATABASE', 'MYSQL_PASSWORD'])
+  if (type === 'postgresql') add(['POSTGRES_HOST', 'POSTGRES_PORT', 'POSTGRES_USERNAME', 'POSTGRES_DATABASE', 'POSTGRES_PASSWORD', 'SPRING_DATASOURCE_PASSWORD'])
+  if (type === 'mysql') add(['MYSQL_HOST', 'MYSQL_PORT', 'MYSQL_USERNAME', 'MYSQL_DATABASE', 'MYSQL_PASSWORD', 'SPRING_DATASOURCE_PASSWORD'])
   if (type === 'redis') add(['REDIS_HOST', 'REDIS_PORT', 'REDIS_PASSWORD', 'REDIS_SENTINEL_HOST', 'REDIS_SENTINEL_PORT', 'REDIS_SENTINEL_MASTER_NAME'])
   if (type === 'mongodb') add(['MONGODB_HOST', 'MONGODB_PORT', 'MONGODB_USERNAME', 'MONGODB_DATABASE', 'MONGODB_PASSWORD', 'MONGODB_URL'])
   if (type === 'rabbitmq') add(['RABBITMQ_HOST', 'RABBITMQ_PORT', 'RABBITMQ_USERNAME', 'RABBITMQ_PASSWORD', 'RABBITMQ_URL'])
@@ -4842,6 +4812,18 @@ const markManagedConfigEnvRows = (rows:ComponentConfigEnvRow[], bindings:any[]) 
   })
 }
 const managedEnvDisplay = (envItem:ComponentConfigEnvRow) => envItem.managedLabel || `由平台注入${managedEnvKindLabel(envItem.name, envItem.source)}`
+const clearManagedConnectionEnvForTarget = (target:any) => {
+  if (!target?.key) return
+  const names = new Set<string>()
+  for (const binding of configForm.value.bindings || []) {
+    if (binding.targetKey !== target.key) continue
+    for (const name of managedConnectionEnvNames(binding)) names.add(name)
+    for (const name of Object.keys(binding.generated || {})) names.add(name)
+    if (['postgresql', 'mysql'].includes(String(binding.targetType || '').toLowerCase())) names.add('SPRING_DATASOURCE_PASSWORD')
+  }
+  if (!names.size) return
+  configForm.value.env = configForm.value.env.filter((row:any) => !names.has(String(row.name || '').trim()) || !row.managed)
+}
 const linesFromArray = (items:any) => Array.isArray(items) ? items.map((item:any) => String(item).trim()).filter(Boolean).join('\n') : ''
 const arrayFromLines = (text:string) => String(text || '').split('\n').map(item => item.trim()).filter(Boolean)
 const addConfigEnv = () => {
@@ -4867,26 +4849,58 @@ const normalizeConfigEnvSource = (envItem:ComponentConfigEnvRow) => {
   envItem.refName = ''
   envItem.refKey = ''
 }
-const configFormHasTemplateContent = computed(() =>
-  configForm.value.framework !== 'auto' ||
-  configForm.value.bindingMode !== 'recommended' ||
-  configForm.value.env.some((item:any) => String(item.name || '').trim()) ||
-  configForm.value.configMaps.length > 0 ||
-  configForm.value.secrets.length > 0 ||
-  configForm.value.files.length > 0 ||
-  String(configForm.value.commandText || '').trim().length > 0 ||
-  String(configForm.value.argsText || '').trim().length > 0
-)
 const componentTemplateTokenContext = () => ({
   componentName: componentGeneratedBaseName(),
   configMapName: componentGeneratedConfigMapName(),
   secretName: componentGeneratedSecretName(),
 })
-const renderComponentTemplateValue = (value:string, context = componentTemplateTokenContext()) => String(value || '')
+const componentTemplateFieldByKey = (key:string) =>
+  componentTemplateFields.value.find((field:any) => componentTemplateFieldKey(field) === key) || null
+const componentTemplateTargetRenderedValue = (field:any, target:any, credentials:any[] = []) => {
+  const key = componentTemplateFieldKey(field)
+  if (!target) return ''
+  if (target.kind === 'component') return `http://${target.serviceName || target.name}`
+
+  const serviceType = String(target.type || '').toLowerCase()
+  const endpoint = serviceInternalEndpoint(target.service || {})
+  const [host, portText] = splitEndpoint(endpoint, defaultServicePortForBinding(serviceType))
+  const password = credentialValue(credentials, credentialPasswordKeys(serviceType))
+  const passwordPart = password ? `:${encodeURIComponent(password)}` : ''
+  const username = credentialValue(credentials, credentialUsernameKeys(serviceType)) || defaultCredentialUsername(serviceType)
+  const database = defaultCredentialDatabase(serviceType)
+
+  if (key.endsWith('.jdbcUrl')) {
+    if (serviceType === 'mysql') return `jdbc:mysql://${host}:${portText}/${database}`
+    if (serviceType === 'postgresql') return `jdbc:postgresql://${host}:${portText}/${database}`
+  }
+  if (key.endsWith('.url')) {
+    if (serviceType === 'postgresql') return `postgresql://${username}${passwordPart}@${host}:${portText}/${database}`
+    if (serviceType === 'mysql') return `mysql://${username}${passwordPart}@${host}:${portText}/${database}`
+    if (serviceType === 'mongodb') return `mongodb://${username}${passwordPart}@${host}:${portText}/${database}`
+    if (serviceType === 'redis') return password ? `redis://:${encodeURIComponent(password)}@${host}:${portText}` : `redis://${host}:${portText}`
+  }
+  if (key.endsWith('.addr')) return `${host}:${portText}`
+  if (key.endsWith('.host')) return host
+  if (key.endsWith('.port')) return String(portText)
+  return endpoint || host
+}
+const componentTemplateRenderFieldValue = (key:string, fieldValues:Record<string, string>, credentialsByTargetKey:Record<string, any[]> = {}) => {
+  const raw = String(fieldValues[key] ?? '').trim()
+  const field = componentTemplateFieldByKey(key)
+  if (field && componentTemplateFieldType(field) === 'serviceref') {
+    const target = componentTemplateTargetForValue(raw)
+    if (target) return componentTemplateTargetRenderedValue(field, target, credentialsByTargetKey[target.key] || [])
+  }
+  return raw
+}
+const renderComponentTemplateValue = (value:string, context = componentTemplateTokenContext(), fieldValues:Record<string, string> = {}, credentialsByTargetKey:Record<string, any[]> = {}) => String(value || '')
   .replace(/\{\{\s*componentName\s*\}\}/g, context.componentName)
   .replace(/\{\{\s*configMapName\s*\}\}/g, context.configMapName)
   .replace(/\{\{\s*secretName\s*\}\}/g, context.secretName)
-  .replace(/\[\[\s*paap:([^\]\s]+)([^\]]*)\]\]/g, (_match, key, options) => componentTemplatePlaceholderDefault(String(key), String(options || '')))
+  .replace(/\[\[\s*paap:([^\]\s]+)([^\]]*)\]\]/g, (_match, key, options) => {
+    const rendered = componentTemplateRenderFieldValue(String(key), fieldValues, credentialsByTargetKey)
+    return rendered || componentTemplatePlaceholderDefault(String(key), String(options || ''))
+  })
 const componentTemplatePlaceholderDefault = (key:string, options:string) => {
   const defaultMatch = options.match(/\bdefault=("[^"]*"|'[^']*'|[^\s\]]+)/)
   if (defaultMatch) return defaultMatch[1].replace(/^['"]|['"]$/g, '')
@@ -4894,91 +4908,28 @@ const componentTemplatePlaceholderDefault = (key:string, options:string) => {
   if (key.endsWith('.port')) return ''
   return ''
 }
-const tokenizeComponentTemplateValue = (value:string) => {
-  const context = componentTemplateTokenContext()
-  return String(value || '')
-    .replaceAll(context.configMapName, '{{configMapName}}')
-    .replaceAll(context.secretName, '{{secretName}}')
-    .replaceAll(context.componentName, '{{componentName}}')
+const credentialPasswordKeys = (serviceType:string) => {
+  if (serviceType === 'postgresql') return ['postgres-password', 'password']
+  if (serviceType === 'mysql') return ['mysql-root-password', 'mysql-password', 'password']
+  if (serviceType === 'redis') return ['redis-password', 'password']
+  if (serviceType === 'mongodb') return ['mongodb-root-password', 'mongodb-password', 'password']
+  return ['password']
 }
-const cloneComponentTemplateEnvRows = (rows:ComponentConfigEnvRow[]) => rows
-  .map((item:any) => ({
-    name: String(item.name || '').trim(),
-    source: item.source,
-    value: configKeyLooksSensitive(item.name) ? '' : tokenizeComponentTemplateValue(item.value || ''),
-    refName: '',
-    refKey: tokenizeComponentTemplateValue(item.refKey || ''),
-  }))
-  .filter((item:ComponentConfigEnvRow) => item.name)
-const cloneComponentTemplateObjectRows = (rows:ComponentConfigObjectRow[], sensitive = false) => rows
-  .map((item:any) => ({
-    name: '',
-    data: Object.fromEntries(Object.entries(item.data || {}).map(([key, value]) => [
-      String(key).trim(),
-      sensitive ? '' : tokenizeComponentTemplateValue(String(value ?? '')),
-    ]).filter(([key]) => key)),
-  }))
-  .filter((item:ComponentConfigObjectRow) => Object.keys(item.data).length)
-const cloneComponentTemplateFiles = (rows:ComponentConfigFileRow[]) => rows
-  .map((item:any) => ({
-    name: '',
-    configMapName: '',
-    key: tokenizeComponentTemplateValue(String(item.key || '').trim()),
-    mountPath: tokenizeComponentTemplateValue(String(item.mountPath || '').trim()),
-    readOnly: item.readOnly !== false,
-  }))
-  .filter((item:ComponentConfigFileRow) => item.key && item.mountPath)
-const prefillComponentTemplateDraft = () => {
-  componentTemplateEditorVisible.value = true
-  if (!componentTemplateDraft.value.name.trim()) {
-    const framework = componentDrawerInferredFramework.value === 'unknown' ? '通用' : componentFrameworkLabel(componentDrawerInferredFramework.value)
-    componentTemplateDraft.value.name = `${configDrawerTitle.value || '组件'} ${framework} 配置`
-  }
+const credentialUsernameKeys = (serviceType:string) => {
+  if (serviceType === 'postgresql') return ['postgres-username', 'username']
+  if (serviceType === 'mysql') return ['mysql-root-user', 'mysql-username', 'username']
+  if (serviceType === 'mongodb') return ['mongodb-root-user', 'mongodb-username', 'username']
+  return ['username']
 }
-const resetComponentTemplateDraft = () => {
-  componentTemplateDraft.value = { name: '', description: '' }
+const defaultCredentialUsername = (serviceType:string) => {
+  if (serviceType === 'mysql') return 'root'
+  if (serviceType === 'mongodb') return 'root'
+  return 'postgres'
 }
-const saveCurrentComponentConfigTemplate = async () => {
-  const rawTemplate = {
-    name: componentTemplateDraft.value.name,
-    description: componentTemplateDraft.value.description,
-    framework: configForm.value.framework,
-    bindingMode: configForm.value.bindingMode,
-    componentTypes: [componentDrawerRole.value].filter(Boolean),
-    fields: [],
-    syntax: '使用 [[paap:<field>]] 占位符描述用户填写字段；底层配置对象由平台按组件自动生成。',
-    env: cloneComponentTemplateEnvRows(configForm.value.env),
-    configMaps: cloneComponentTemplateObjectRows(configForm.value.configMaps),
-    secrets: cloneComponentTemplateObjectRows(configForm.value.secrets, true),
-    files: cloneComponentTemplateFiles(configForm.value.files),
-    command: arrayFromLines(configForm.value.commandText),
-    args: arrayFromLines(configForm.value.argsText),
-  }
-  const template = normalizeUserComponentConfigTemplate(rawTemplate)
-  if (!template) {
-    configDrawer.value.error = '请输入模板名称。'
-    return
-  }
-  configDrawer.value.saving = true
-  configDrawer.value.error = ''
-  try {
-    const res = await api.createComponentConfigTemplate(template)
-    const saved = normalizeUserComponentConfigTemplate(res.data)
-    if (saved) {
-      const existingIdx = componentUserConfigTemplates.value.findIndex((item) => Number(item.id) === Number(saved.id) || item.key === saved.key)
-      if (existingIdx >= 0) componentUserConfigTemplates.value.splice(existingIdx, 1, saved)
-      else componentUserConfigTemplates.value.push(saved)
-    } else {
-      await loadUserComponentConfigTemplates()
-    }
-    componentTemplateEditorVisible.value = false
-    resetComponentTemplateDraft()
-    configDrawer.value.message = `组件模板 ${template.name} 已保存。`
-  } catch (e:any) {
-    configDrawer.value.error = '保存配置模板失败：' + (e?.message || '未知错误')
-  } finally {
-    configDrawer.value.saving = false
-  }
+const defaultCredentialDatabase = (serviceType:string) => {
+  if (serviceType === 'mysql') return 'mysql'
+  if (serviceType === 'mongodb') return 'admin'
+  return 'postgres'
 }
 const componentUserTemplateSummary = (template:UserComponentConfigTemplate) => {
   const parts = []
@@ -4990,6 +4941,7 @@ const componentUserTemplateSummary = (template:UserComponentConfigTemplate) => {
   if (template.files.length) parts.push(`${template.files.length} 个配置文件`)
   return parts.join(' / ') || '框架模板'
 }
+const componentTemplateOptionValue = (template:UserComponentConfigTemplate) => String(template?.key || template?.id || '')
 const componentTemplateMatchesCurrentComponent = (template:UserComponentConfigTemplate) => {
   const types = Array.isArray(template.componentTypes) ? template.componentTypes.map((item) => String(item).toLowerCase()) : []
   const currentType = componentDrawerType.value
@@ -4998,29 +4950,146 @@ const componentTemplateMatchesCurrentComponent = (template:UserComponentConfigTe
   const frameworkMatches = framework === 'auto' || configForm.value.framework === 'auto' || framework === configForm.value.framework
   return typeMatches && frameworkMatches
 }
-const componentVisibleConfigTemplates = computed(() => {
-  const query = componentConfigTemplateSearch.value.toLowerCase().trim()
-  return componentUserConfigTemplates.value
-    .filter((template) => componentTemplateMatchesCurrentComponent(template))
-    .filter((template) => {
-      if (!query) return true
-      return [
-        template.name,
-        template.description,
-        template.framework,
-        componentUserTemplateSummary(template),
-      ].some((item) => String(item || '').toLowerCase().includes(query))
-    })
-    .slice(0, 12)
-})
-const componentConfigTemplateMeta = (template:UserComponentConfigTemplate) => {
-  const types = (template.componentTypes || [])
-    .map((item) => compTypeText(item))
-    .filter(Boolean)
-    .join('、')
-  const framework = template.framework && template.framework !== 'auto' ? componentFrameworkLabel(template.framework) : '通用'
-  return [types || '全部组件', framework, template.isBuiltin ? '内置' : '自定义'].join(' · ')
+const componentSelectableConfigTemplates = computed(() =>
+  componentUserConfigTemplates.value.filter((template) => componentTemplateMatchesCurrentComponent(template))
+)
+const selectedComponentConfigTemplate = computed(() =>
+  componentSelectableConfigTemplates.value.find((template) => componentTemplateOptionValue(template) === selectedComponentConfigTemplateId.value) || null
+)
+const componentTemplateFields = computed(() =>
+  Array.isArray(selectedComponentConfigTemplate.value?.fields)
+    ? selectedComponentConfigTemplate.value.fields.filter((field:any) => componentTemplateFieldKey(field))
+    : []
+)
+const componentTemplateFieldKey = (field:any) => String(field?.key || '').trim()
+const componentTemplateFieldLabel = (field:any) => String(field?.label || componentTemplateFieldKey(field) || '配置项').trim()
+const componentTemplateFieldType = (field:any) => String(field?.type || 'text').trim().toLowerCase()
+const componentTemplateFieldRequired = (field:any) => Boolean(field?.required)
+const componentTemplateFieldTargetTokens = (field:any) => String(field?.target || '')
+  .toLowerCase()
+  .split('|')
+  .map((item) => item.trim())
+  .filter(Boolean)
+const componentTemplateSelectedServiceTargetForGroup = (field:any) => {
+  const group = componentTemplateFieldKey(field).split('.')[0]
+  if (!group) return null
+  const serviceRefField = componentTemplateFields.value.find((candidate:any) =>
+    componentTemplateFieldType(candidate) === 'serviceref'
+    && componentTemplateFieldKey(candidate).startsWith(`${group}.`)
+  )
+  if (!serviceRefField) return null
+  const target = componentTemplateTargetForValue(componentTemplateFieldValues.value[componentTemplateFieldKey(serviceRefField)])
+  return target?.kind === 'service' ? target : null
 }
+const componentTemplateFieldAutofillsFromService = (field:any) =>
+  componentTemplateFieldType(field) === 'password' && Boolean(componentTemplateSelectedServiceTargetForGroup(field))
+const componentTemplateFieldRequiredForUser = (field:any) =>
+  componentTemplateFieldRequired(field) && !componentTemplateFieldAutofillsFromService(field)
+const componentTemplateFieldDefaultValue = (field:any) => {
+  const value = field?.default
+  if (value !== undefined && value !== null) return String(value)
+  return componentTemplatePlaceholderDefault(componentTemplateFieldKey(field), '')
+}
+const componentTemplateFieldInputType = (field:any) => {
+  const type = componentTemplateFieldType(field)
+  if (type === 'password') return 'password'
+  if (type === 'number') return 'number'
+  return 'text'
+}
+const componentTemplateFieldOptions = (field:any) => {
+  if (componentTemplateFieldType(field) !== 'serviceref') return []
+  const targets = componentTemplateFieldTargetTokens(field)
+  const matchesBackend = targets.includes('backend')
+  const candidates = matchesBackend
+    ? componentDrawerBackendTargets.value
+    : componentConnectionTargets.value.filter((target:any) => {
+      if (target.kind !== 'service') return false
+      if (!targets.length) return true
+      return targets.includes(String(target.type || '').toLowerCase())
+    })
+  return candidates.map((target:any) => ({
+    value: target.key,
+    label: `${target.name} · ${targetTypeLabel(target) || '服务'}`,
+    target,
+  }))
+}
+const componentTemplateFieldUsesTargetSelect = (field:any) =>
+  componentTemplateFieldType(field) === 'serviceref' && componentTemplateFieldOptions(field).length > 0
+const componentTemplateFieldPlaceholder = (field:any) => {
+  const type = componentTemplateFieldType(field)
+  if (type === 'serviceref') {
+    const targets = componentTemplateFieldTargetTokens(field)
+    if (targets.includes('backend')) return componentTemplateFieldOptions(field).length ? '选择后端组件' : '暂无后端组件，可输入地址'
+    if (targets.includes('redis')) return componentTemplateFieldOptions(field).length ? '选择 Redis' : '暂无 Redis，可输入地址'
+    if (targets.some((item) => ['postgresql', 'mysql', 'mongodb'].includes(item))) return componentTemplateFieldOptions(field).length ? '选择数据库' : '暂无数据库，可输入地址'
+    return componentTemplateFieldOptions(field).length ? '选择服务' : '暂无可选服务，可输入地址'
+  }
+  if (type === 'password' && componentTemplateFieldAutofillsFromService(field)) return '留空时使用所选服务的密码'
+  return componentTemplateFieldDefaultValue(field) || componentTemplateFieldLabel(field)
+}
+const componentTemplateFieldHint = (field:any) => {
+  if (field?.description) return String(field.description)
+  if (componentTemplateFieldAutofillsFromService(field)) return '留空时平台会读取所选服务的连接凭据。'
+  if (componentTemplateFieldType(field) === 'serviceref' && !componentTemplateFieldOptions(field).length) {
+    return '画布上有匹配服务时会自动提供下拉选择。'
+  }
+  return ''
+}
+const componentTemplateTargetForValue = (value:string) =>
+  componentConnectionTargets.value.find((target:any) => target.key === value) || null
+const componentTemplateExistingTargetKey = (field:any) => {
+  const targets = componentTemplateFieldTargetTokens(field)
+  const binding = configForm.value.bindings.find((item:any) => {
+    const targetType = String(item.targetType || '').toLowerCase()
+    if (targets.includes('backend')) return item.role === 'backend' || targetType === 'backend'
+    return targets.includes(targetType)
+  })
+  return binding?.targetKey || ''
+}
+const componentTemplateInitialFieldValue = (field:any) => {
+  if (componentTemplateFieldType(field) === 'serviceref') {
+    return componentTemplateExistingTargetKey(field) || componentTemplateFieldOptions(field)[0]?.value || ''
+  }
+  return componentTemplateFieldDefaultValue(field)
+}
+const initializeComponentTemplateFieldValues = (force = false) => {
+  const next: Record<string, string> = {}
+  for (const field of componentTemplateFields.value) {
+    const key = componentTemplateFieldKey(field)
+    const current = componentTemplateFieldValues.value[key]
+    next[key] = !force && current !== undefined ? current : componentTemplateInitialFieldValue(field)
+  }
+  componentTemplateFieldValues.value = next
+}
+const selectRecommendedComponentConfigTemplate = () => {
+  const current = componentSelectableConfigTemplates.value.find((template) => componentTemplateOptionValue(template) === selectedComponentConfigTemplateId.value)
+  if (current) {
+    initializeComponentTemplateFieldValues(false)
+    return
+  }
+  const recommended = componentSelectableConfigTemplates.value[0]
+  selectedComponentConfigTemplateId.value = recommended ? componentTemplateOptionValue(recommended) : ''
+  initializeComponentTemplateFieldValues(true)
+}
+const componentTemplateRequiredFieldsComplete = computed(() =>
+  componentTemplateFields.value.every((field:any) => {
+    if (!componentTemplateFieldRequiredForUser(field)) return true
+    const key = componentTemplateFieldKey(field)
+    return String(componentTemplateFieldValues.value[key] || '').trim().length > 0
+  })
+)
+const applySelectedComponentConfigTemplate = () => {
+  if (!selectedComponentConfigTemplate.value) return
+  return applyUserComponentConfigTemplate(selectedComponentConfigTemplate.value)
+}
+watch(() => selectedComponentConfigTemplate.value ? componentTemplateOptionValue(selectedComponentConfigTemplate.value) : '', () => {
+  initializeComponentTemplateFieldValues(true)
+})
+watch([componentSelectableConfigTemplates, () => configDrawer.value.visible, () => configDrawer.value.kind], () => {
+  if (configDrawer.value.visible && configDrawer.value.kind === 'component') {
+    selectRecommendedComponentConfigTemplate()
+  }
+})
 const componentConnectionTargets = computed(() => {
   const currentId = Number(configDrawer.value.component?.id)
   const componentTargets = components.value
@@ -5066,11 +5135,6 @@ const runComponentDrawerSuggestion = (key: string) => {
   }
 }
 const configFrameworkOptions = componentFrameworkOptions
-const configBindingModeOptions = [
-  { value: 'recommended', label: '推荐方式' },
-  { value: 'env', label: '环境变量 + 敏感配置' },
-  { value: 'springboot-file', label: 'Spring Boot 配置文件' },
-]
 const targetTypeLabel = (target:any) => target?.kind === 'component' ? compTypeText(target.type) : typeLabel(target?.type || '')
 const componentBindingGeneratedSummary = (binding:any) => {
   const keys = Object.keys(binding?.generated || {}).filter(Boolean)
@@ -5137,22 +5201,26 @@ const applyServiceTargetBinding = async (target:any) => {
   const credentials = await serviceCredentials(target.service)
   const secretName = componentGeneratedSecretName()
   const generated: Record<string, string> = {}
+  clearManagedConnectionEnvForTarget(target)
 
   if (serviceType === 'postgresql' || serviceType === 'mysql') {
     const prefix = serviceType === 'mysql' ? 'MYSQL' : 'POSTGRES'
     const passwordKey = `${prefix}_PASSWORD`
+    const springPasswordKey = 'SPRING_DATASOURCE_PASSWORD'
     const username = serviceType === 'mysql' ? 'root' : 'postgres'
     const database = serviceType === 'mysql' ? 'mysql' : 'postgres'
     const password = credentialValue(credentials, serviceType === 'mysql' ? ['mysql-root-password', 'mysql-password', 'password'] : ['postgres-password', 'password'])
-    upsertSecretValue(secretName, passwordKey, password)
-    upsertEnvSecret(passwordKey, secretName, passwordKey, managedEnvOptionsForTarget(target, passwordKey, 'secret'))
     if (mode === 'springboot-file') {
+      upsertSecretValue(secretName, springPasswordKey, password)
+      upsertEnvSecret(springPasswordKey, secretName, springPasswordKey, managedEnvOptionsForTarget(target, springPasswordKey, 'secret'))
       generated[`${prefix}_HOST`] = host
       generated[`${prefix}_PORT`] = String(portText)
       generated[`${prefix}_USERNAME`] = username
       generated[`${prefix}_DATABASE`] = database
-      generated[passwordKey] = `${secretName}/${passwordKey}`
+      generated[springPasswordKey] = `${secretName}/${springPasswordKey}`
     } else {
+      upsertSecretValue(secretName, passwordKey, password)
+      upsertEnvSecret(passwordKey, secretName, passwordKey, managedEnvOptionsForTarget(target, passwordKey, 'secret'))
       upsertEnvValue(`${prefix}_HOST`, host, managedEnvOptionsForTarget(target, `${prefix}_HOST`))
       upsertEnvValue(`${prefix}_PORT`, String(portText), managedEnvOptionsForTarget(target, `${prefix}_PORT`))
       upsertEnvValue(`${prefix}_USERNAME`, username, managedEnvOptionsForTarget(target, `${prefix}_USERNAME`))
@@ -5364,87 +5432,135 @@ const upsertSecretValue = (name:string, key:string, value:string) => {
   if (idx >= 0) configForm.value.secrets.splice(idx, 1, current)
   else configForm.value.secrets.push(current)
 }
-const configKeyLooksSensitive = (key:string) => {
-  const upper = String(key || '').toUpperCase()
-  return upper.includes('PASSWORD') || upper.includes('SECRET') || upper.includes('TOKEN') || upper.includes('ACCESS_KEY')
+const componentTemplateCredentialsForTarget = async (target:any, cache:Record<string, any[]>) => {
+  if (!target?.key || target.kind !== 'service') return []
+  if (cache[target.key]) return cache[target.key]
+  const credentials = await serviceCredentials(target.service)
+  cache[target.key] = credentials
+  return credentials
 }
-const applyUserComponentConfigTemplate = (template: UserComponentConfigTemplate) => {
+const buildComponentTemplateFieldRenderValues = async () => {
+  const fieldValues = { ...componentTemplateFieldValues.value }
+  const credentialsByTargetKey: Record<string, any[]> = {}
+  for (const field of componentTemplateFields.value) {
+    if (componentTemplateFieldType(field) !== 'serviceref') continue
+    const key = componentTemplateFieldKey(field)
+    const target = componentTemplateTargetForValue(fieldValues[key])
+    if (!target) continue
+    const credentials = await componentTemplateCredentialsForTarget(target, credentialsByTargetKey)
+    fieldValues[key] = componentTemplateTargetRenderedValue(field, target, credentials)
+    if (target.kind !== 'service') continue
+
+    const serviceType = String(target.type || '').toLowerCase()
+    const password = credentialValue(credentials, credentialPasswordKeys(serviceType))
+    if (['postgresql', 'mysql', 'mongodb'].includes(serviceType)) {
+      if (!fieldValues['database.username']) fieldValues['database.username'] = credentialValue(credentials, credentialUsernameKeys(serviceType)) || defaultCredentialUsername(serviceType)
+      if (!fieldValues['database.password']) fieldValues['database.password'] = password
+    }
+    if (serviceType === 'redis' && !fieldValues['redis.password']) {
+      fieldValues['redis.password'] = password
+    }
+  }
+  return { fieldValues, credentialsByTargetKey }
+}
+const applyComponentTemplateServiceRefs = async () => {
+  const applied = new Set<string>()
+  for (const field of componentTemplateFields.value) {
+    if (componentTemplateFieldType(field) !== 'serviceref') continue
+    const target = componentTemplateTargetForValue(componentTemplateFieldValues.value[componentTemplateFieldKey(field)])
+    if (!target?.key || applied.has(target.key)) continue
+    applied.add(target.key)
+    if (target.kind === 'component') applyComponentTargetBinding(target)
+    else await applyServiceTargetBinding(target)
+  }
+}
+const applyUserComponentConfigTemplate = async (template: UserComponentConfigTemplate) => {
   if (!template) return
   const context = componentTemplateTokenContext()
-  if (template.framework && template.framework !== 'auto') configForm.value.framework = template.framework
-  if (template.bindingMode) configForm.value.bindingMode = template.bindingMode
-
-  const usedConfigNames = new Set<string>()
-  const configBlocks = (template.configMaps || []).map((item, idx) => {
-    const renderedName = renderComponentTemplateValue(item.name, context)
-    const name = resolveTemplateObjectName(renderedName, context.configMapName, idx, usedConfigNames)
-    const keys = new Set(Object.keys(item.data || {}).map((key) => renderComponentTemplateValue(key, context)).filter(Boolean))
-    return { item, name, keys, renderedName }
-  })
-  for (const block of configBlocks) {
-    const { item, name } = block
-    for (const [key, value] of Object.entries(item.data || {})) {
-      const renderedKey = renderComponentTemplateValue(key, context)
-      if (renderedKey) upsertConfigMapValue(name, renderedKey, renderComponentTemplateValue(String(value), context))
-    }
-  }
-  const usedSecretNames = new Set<string>()
-  const secretBlocks = (template.secrets || []).map((item, idx) => {
-    const renderedName = renderComponentTemplateValue(item.name, context)
-    const name = resolveTemplateObjectName(renderedName, context.secretName, idx, usedSecretNames)
-    const keys = new Set(Object.keys(item.data || {}).map((key) => renderComponentTemplateValue(key, context)).filter(Boolean))
-    return { item, name, keys, renderedName }
-  })
-  for (const block of secretBlocks) {
-    const { item, name } = block
-    for (const [key, value] of Object.entries(item.data || {})) {
-      const renderedKey = renderComponentTemplateValue(key, context)
-      if (renderedKey) upsertSecretValue(name, renderedKey, renderComponentTemplateValue(String(value), context))
-    }
-  }
-  for (const item of template.files || []) {
-    const renderedKey = renderComponentTemplateValue(item.key, context)
-    const rawConfigMapName = String(item.configMapName || '')
-    const renderedConfigName = renderComponentTemplateValue(item.configMapName, context)
-    const platformGeneratedRef = !rawConfigMapName.trim() || /\{\{\s*configMapName\s*\}\}/.test(rawConfigMapName)
-    const matchedBlock = platformGeneratedRef
-      ? configBlocks.find((block) => renderedKey && block.keys.has(renderedKey))
-      : configBlocks.find((block) => block.name === renderedConfigName || block.renderedName === renderedConfigName)
-    upsertConfigFile({
-      name: renderComponentTemplateValue(item.name, context),
-      configMapName: matchedBlock?.name || renderedConfigName || configBlocks[0]?.name || context.configMapName,
-      key: renderedKey,
-      mountPath: renderComponentTemplateValue(item.mountPath, context),
-      readOnly: item.readOnly !== false,
-    })
-  }
-  for (const item of template.env || []) {
-    const name = renderComponentTemplateValue(item.name, context)
-    if (!name) continue
-    if (item.source === 'secret') {
-      const secretKey = renderComponentTemplateValue(item.refKey, context) || name
-      const renderedSecretName = renderComponentTemplateValue(item.refName, context)
-      const secretName = secretBlocks.find((block) => secretKey && block.keys.has(secretKey))?.name || renderedSecretName || secretBlocks[0]?.name || context.secretName
-      if (item.value) upsertSecretValue(secretName, secretKey, renderComponentTemplateValue(item.value, context))
-      upsertEnvSecret(name, secretName, secretKey)
-    } else if (item.source === 'configMap') {
-      const refKey = renderComponentTemplateValue(item.refKey, context) || name
-      const renderedRefName = renderComponentTemplateValue(item.refName, context)
-      const refName = configBlocks.find((block) => refKey && block.keys.has(refKey))?.name || renderedRefName || configBlocks[0]?.name || context.configMapName
-      const idx = configForm.value.env.findIndex((envItem:any) => envItem.name === name)
-      const row = { name, source: 'configMap' as const, value: '', refName, refKey }
-      if (idx >= 0) configForm.value.env.splice(idx, 1, row)
-      else configForm.value.env.push(row)
-    } else {
-      upsertEnvValue(name, renderComponentTemplateValue(item.value, context))
-    }
-  }
-  if (template.command?.length) configForm.value.commandText = template.command.map((item) => renderComponentTemplateValue(item, context)).join('\n')
-  if (template.args?.length) configForm.value.argsText = template.args.map((item) => renderComponentTemplateValue(item, context)).join('\n')
-  syncGeneratedSpringConfig()
-  if (configForm.value.framework === 'nginx') nginxRouteRows.value = nginxRoutesFromCurrentConfig()
+  configDrawer.value.saving = true
   configDrawer.value.error = ''
-  configDrawer.value.message = `已应用组件模板 ${template.name}。`
+  try {
+    if (template.framework && template.framework !== 'auto') configForm.value.framework = template.framework
+    if (template.bindingMode) configForm.value.bindingMode = template.bindingMode
+    await applyComponentTemplateServiceRefs()
+    const { fieldValues, credentialsByTargetKey } = await buildComponentTemplateFieldRenderValues()
+    const render = (value:string) => renderComponentTemplateValue(value, context, fieldValues, credentialsByTargetKey)
+
+    const usedConfigNames = new Set<string>()
+    const configBlocks = (template.configMaps || []).map((item, idx) => {
+      const renderedName = render(item.name)
+      const name = resolveTemplateObjectName(renderedName, context.configMapName, idx, usedConfigNames)
+      const keys = new Set(Object.keys(item.data || {}).map((key) => render(key)).filter(Boolean))
+      return { item, name, keys, renderedName }
+    })
+    for (const block of configBlocks) {
+      const { item, name } = block
+      for (const [key, value] of Object.entries(item.data || {})) {
+        const renderedKey = render(key)
+        if (renderedKey) upsertConfigMapValue(name, renderedKey, render(String(value)))
+      }
+    }
+    const usedSecretNames = new Set<string>()
+    const secretBlocks = (template.secrets || []).map((item, idx) => {
+      const renderedName = render(item.name)
+      const name = resolveTemplateObjectName(renderedName, context.secretName, idx, usedSecretNames)
+      const keys = new Set(Object.keys(item.data || {}).map((key) => render(key)).filter(Boolean))
+      return { item, name, keys, renderedName }
+    })
+    for (const block of secretBlocks) {
+      const { item, name } = block
+      for (const [key, value] of Object.entries(item.data || {})) {
+        const renderedKey = render(key)
+        if (renderedKey) upsertSecretValue(name, renderedKey, render(String(value)))
+      }
+    }
+    for (const item of template.files || []) {
+      const renderedKey = render(item.key)
+      const rawConfigMapName = String(item.configMapName || '')
+      const renderedConfigName = render(item.configMapName)
+      const platformGeneratedRef = !rawConfigMapName.trim() || /\{\{\s*configMapName\s*\}\}/.test(rawConfigMapName)
+      const matchedBlock = platformGeneratedRef
+        ? configBlocks.find((block) => renderedKey && block.keys.has(renderedKey))
+        : configBlocks.find((block) => block.name === renderedConfigName || block.renderedName === renderedConfigName)
+      upsertConfigFile({
+        name: render(item.name),
+        configMapName: matchedBlock?.name || renderedConfigName || configBlocks[0]?.name || context.configMapName,
+        key: renderedKey,
+        mountPath: render(item.mountPath),
+        readOnly: item.readOnly !== false,
+      })
+    }
+    for (const item of template.env || []) {
+      const name = render(item.name)
+      if (!name) continue
+      if (item.source === 'secret') {
+        const secretKey = render(item.refKey) || name
+        const renderedSecretName = render(item.refName)
+        const secretName = secretBlocks.find((block) => secretKey && block.keys.has(secretKey))?.name || renderedSecretName || secretBlocks[0]?.name || context.secretName
+        if (item.value) upsertSecretValue(secretName, secretKey, render(item.value))
+        upsertEnvSecret(name, secretName, secretKey)
+      } else if (item.source === 'configMap') {
+        const refKey = render(item.refKey) || name
+        const renderedRefName = render(item.refName)
+        const refName = configBlocks.find((block) => refKey && block.keys.has(refKey))?.name || renderedRefName || configBlocks[0]?.name || context.configMapName
+        const idx = configForm.value.env.findIndex((envItem:any) => envItem.name === name)
+        const row = { name, source: 'configMap' as const, value: '', refName, refKey }
+        if (idx >= 0) configForm.value.env.splice(idx, 1, row)
+        else configForm.value.env.push(row)
+      } else {
+        upsertEnvValue(name, render(item.value))
+      }
+    }
+    if (template.command?.length) configForm.value.commandText = template.command.map((item) => render(item)).join('\n')
+    if (template.args?.length) configForm.value.argsText = template.args.map((item) => render(item)).join('\n')
+    syncGeneratedSpringConfig()
+    if (configForm.value.framework === 'nginx') nginxRouteRows.value = nginxRoutesFromCurrentConfig()
+    configDrawer.value.message = `已应用组件模板 ${template.name}。`
+  } catch (e:any) {
+    configDrawer.value.error = '应用配置模板失败：' + (e?.message || '未知错误')
+  } finally {
+    configDrawer.value.saving = false
+  }
 }
 const componentNginxRouteEditorVisible = computed(() =>
   configDrawer.value.kind === 'component'
@@ -5632,7 +5748,7 @@ const buildSpringBootConfig = (bindings:any[]) => {
     lines.push('  datasource:')
     lines.push(`    url: jdbc:${driver}://${db.generated?.[`${prefix}_HOST`] || db.targetName}:${db.generated?.[`${prefix}_PORT`] || defaultServicePortForBinding(db.targetType)}/${database}`)
     lines.push(`    username: ${db.generated?.[`${prefix}_USERNAME`] || (db.targetType === 'mysql' ? 'root' : 'postgres')}`)
-    lines.push(`    password: \${${prefix}_PASSWORD}`)
+    lines.push('    password: ${SPRING_DATASOURCE_PASSWORD}')
   }
   const redis = bindings.find((item:any) => item.targetType === 'redis')
   if (redis) {
@@ -5936,6 +6052,16 @@ const componentSecretSummary = (items:any[]) => {
   if (!Array.isArray(items) || !items.length) return '-'
   const keys = items.flatMap((item:any) => Object.keys(item?.data || {})).filter(Boolean)
   return keys.length ? `${items.length} 组敏感配置 · ${keys.join(', ')}` : `${items.length} 组敏感配置`
+}
+const componentRuntimeParamSummary = (items:any[]) => {
+  if (!Array.isArray(items) || !items.length) return '-'
+  const names = items.map((item:any) => String(item?.name || '').trim()).filter(Boolean)
+  return names.length ? `${names.length} 项 · ${names.join(', ')}` : `${items.length} 项`
+}
+const componentConfigFileSummary = (items:any[]) => {
+  if (!Array.isArray(items) || !items.length) return '-'
+  const paths = items.map((item:any) => String(item?.mountPath || '').trim()).filter(Boolean)
+  return paths.length ? `${paths.length} 个文件 · ${paths.join(', ')}` : `${items.length} 个文件`
 }
 const runtimeObjectSummary = (items:any[]) => Array.isArray(items) && items.length
   ? items.map((item:any) => Array.isArray(item.keys) && item.keys.length ? item.keys.join(', ') : '已配置').join('；')
@@ -8208,6 +8334,110 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   gap: var(--paap-space-4);
   min-width: 0;
 }
+.component-config-flow--guided {
+  gap: var(--paap-space-3);
+}
+.component-template-select {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+.component-template-select > span,
+.component-template-field > span,
+.component-connected-list > span {
+  color: var(--paap-muted);
+  font-size: 12px;
+  font-weight: 650;
+}
+.component-template-summary {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--paap-border);
+}
+.component-template-summary strong {
+  min-width: 0;
+  color: var(--paap-text);
+  font-size: 13px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.component-template-summary span {
+  color: var(--paap-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.component-template-field-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--paap-space-3);
+  min-width: 0;
+}
+.component-template-field {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+.component-template-field > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.component-template-field em {
+  color: var(--paap-danger);
+  font-size: 11px;
+  font-style: normal;
+}
+.component-template-field small {
+  color: var(--paap-muted-2);
+  font-size: 11px;
+  line-height: 1.35;
+}
+.component-config-actions,
+.component-advanced-tools {
+  display: flex;
+  align-items: center;
+  gap: var(--paap-space-2);
+  flex-wrap: wrap;
+}
+.component-config-warning {
+  color: var(--paap-danger);
+  font-size: 12px;
+}
+.component-connected-list {
+  display: grid;
+  gap: var(--paap-space-2);
+  min-width: 0;
+  padding-top: var(--paap-space-2);
+  border-top: 1px solid var(--paap-border);
+}
+.component-connected-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: var(--paap-space-2);
+  min-width: 0;
+  padding: 8px 0;
+}
+.component-connected-row strong,
+.component-connected-row small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.component-connected-row strong {
+  color: var(--paap-text);
+  font-size: 12px;
+  font-weight: 650;
+}
+.component-connected-row small {
+  color: var(--paap-muted-2);
+  font-size: 11px;
+}
 .component-config-step {
   display: grid;
   gap: var(--paap-space-3);
@@ -8251,45 +8481,10 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 .component-config-step__head .text-btn {
   justify-self: end;
 }
-.component-template-list,
 .nginx-route-list {
   display: grid;
   gap: var(--paap-space-2);
   min-width: 0;
-}
-.component-template-row {
-  display: grid;
-  grid-template-columns: minmax(140px, 1fr) minmax(120px, 0.8fr) auto;
-  align-items: center;
-  gap: var(--paap-space-2);
-  min-width: 0;
-  padding: 8px 10px;
-  border: 1px solid var(--paap-border);
-  border-radius: 7px;
-  background: var(--paap-panel-subtle);
-}
-.component-template-row span {
-  display: grid;
-  gap: 2px;
-  min-width: 0;
-}
-.component-template-row strong,
-.component-template-row small,
-.component-template-row code {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.component-template-row strong {
-  color: var(--paap-text);
-  font-size: 12px;
-  font-weight: 650;
-}
-.component-template-row small,
-.component-template-row code {
-  color: var(--paap-muted-2);
-  font-size: 11px;
 }
 .component-template-advanced {
   margin-top: 0;
@@ -9283,7 +9478,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   .form-row { grid-template-columns: 1fr; }
   .config-binding-form,
   .config-binding-row,
-  .component-template-row,
+  .component-template-field-list,
   .nginx-route-row,
   .component-preset-grid,
   .component-discovered-row {

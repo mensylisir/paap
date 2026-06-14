@@ -665,8 +665,17 @@ func TestSyncClusterStatePreservesHighLevelComponentConfig(t *testing.T) {
 	if merged.Framework != "springboot" || len(merged.ConfigMaps) != 1 || len(merged.Secrets) != 1 || len(merged.Files) != 1 || len(merged.Bindings) != 1 {
 		t.Fatalf("high-level config was not preserved: %#v", merged)
 	}
-	if len(merged.Env) != 1 || merged.Env[0].Name != "RUNTIME" || merged.Env[0].Value != "fresh" {
-		t.Fatalf("runtime env was not refreshed: %#v", merged.Env)
+	if len(merged.Env) != 1 || merged.Env[0].Name != "OLD" || merged.Env[0].Value != "stale" {
+		t.Fatalf("platform env config should not be overwritten by stale runtime env: %#v", merged.Env)
+	}
+
+	adopted := mergeComponentRuntimeConfig("", `{"env":[{"name":"RUNTIME","value":"fresh"}]}`)
+	adoptedCfg, err := model.ParseComponentConfig(adopted)
+	if err != nil {
+		t.Fatalf("parse adopted runtime config: %v", err)
+	}
+	if len(adoptedCfg.Env) != 1 || adoptedCfg.Env[0].Name != "RUNTIME" || adoptedCfg.Env[0].Value != "fresh" {
+		t.Fatalf("empty platform config should still adopt runtime env: %#v", adoptedCfg.Env)
 	}
 }
 
