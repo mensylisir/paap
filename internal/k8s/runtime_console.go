@@ -31,12 +31,12 @@ func StreamPodConsole(ctx context.Context, target RuntimeMetricsTarget, stdin io
 	if err == nil || !shouldFallbackToAttach(err) {
 		return err
 	}
-	_, _ = io.WriteString(stdout, fmt.Sprintf("\r\nNo shell was found in container %s; opening a PAAP debug container in the same Pod.\r\n", target.Container))
+	_, _ = io.WriteString(stdout, "\r\n当前运行镜像没有可用命令环境，PAAP 正在打开调试终端。\r\n")
 	debugTarget, err := ensurePodDebugContainer(ctx, target, ConsoleDebugImage(), stdout)
 	if err != nil {
-		return fmt.Errorf("no shell found in target container and debug container could not be started: %w", err)
+		return fmt.Errorf("当前运行镜像没有可用命令环境，调试终端启动失败: %w", err)
 	}
-	_, _ = io.WriteString(stdout, fmt.Sprintf("Connected through debug container %s. It shares the Pod network namespace with %s.\r\n", debugTarget.Container, target.Container))
+	_, _ = io.WriteString(stdout, "已连接调试终端，可访问当前卡片的运行网络。\r\n")
 	return streamPodExec(ctx, debugTarget, stdin, stdout, stderr)
 }
 
@@ -163,7 +163,7 @@ func ensurePodDebugContainer(ctx context.Context, target RuntimeMetricsTarget, i
 	podName := strings.TrimSpace(target.Pod)
 	targetContainer := strings.TrimSpace(target.Container)
 	if namespace == "" || podName == "" || targetContainer == "" {
-		return RuntimeMetricsTarget{}, fmt.Errorf("namespace, pod and target container are required")
+		return RuntimeMetricsTarget{}, fmt.Errorf("运行实例定位信息不完整")
 	}
 
 	for attempt := 0; attempt < 3; attempt++ {
@@ -180,7 +180,7 @@ func ensurePodDebugContainer(ctx context.Context, target RuntimeMetricsTarget, i
 		nextPod := pod.DeepCopy()
 		nextPod.Spec.EphemeralContainers = append(nextPod.Spec.EphemeralContainers, debugEphemeralContainer(name, image, targetContainer))
 		if stdout != nil {
-			_, _ = io.WriteString(stdout, fmt.Sprintf("Starting debug container %s with image %s...\r\n", name, image))
+			_, _ = io.WriteString(stdout, "正在准备调试终端...\r\n")
 		}
 		if _, err := clientset.CoreV1().Pods(namespace).UpdateEphemeralContainers(ctx, podName, nextPod, metav1.UpdateOptions{}); err != nil {
 			if apierrors.IsConflict(err) {
@@ -196,7 +196,7 @@ func ensurePodDebugContainer(ctx context.Context, target RuntimeMetricsTarget, i
 		next.Container = name
 		return next, nil
 	}
-	return RuntimeMetricsTarget{}, fmt.Errorf("pod %s/%s changed while adding debug container", namespace, podName)
+	return RuntimeMetricsTarget{}, fmt.Errorf("运行实例正在变化，请稍后重试")
 }
 
 func debugEphemeralContainer(name, image, targetContainer string) corev1.EphemeralContainer {
@@ -229,7 +229,7 @@ func waitForDebugContainer(ctx context.Context, clientset *kubernetes.Clientset,
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-deadline.C:
-			return fmt.Errorf("debug container %s did not become ready before timeout", containerName)
+			return fmt.Errorf("调试终端未在超时时间内就绪")
 		case <-ticker.C:
 			pod, err := clientset.CoreV1().Pods(namespace).Get(ctx, podName, metav1.GetOptions{})
 			if err != nil {
@@ -244,13 +244,13 @@ func waitForDebugContainer(ctx context.Context, clientset *kubernetes.Clientset,
 			}
 			if status.State.Terminated != nil {
 				terminated := status.State.Terminated
-				return fmt.Errorf("debug container %s terminated: %s %s", containerName, terminated.Reason, terminated.Message)
+				return fmt.Errorf("调试终端已退出: %s %s", terminated.Reason, terminated.Message)
 			}
 			if status.State.Waiting != nil {
 				waiting := status.State.Waiting
 				switch waiting.Reason {
 				case "ErrImagePull", "ImagePullBackOff", "InvalidImageName", "CreateContainerConfigError", "CreateContainerError":
-					return fmt.Errorf("debug container %s is waiting: %s %s", containerName, waiting.Reason, waiting.Message)
+					return fmt.Errorf("调试终端等待启动: %s %s", waiting.Reason, waiting.Message)
 				}
 			}
 		}

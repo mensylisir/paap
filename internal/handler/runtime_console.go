@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -92,7 +93,7 @@ func streamRuntimeConsole(c *gin.Context, target k8s.RuntimeMetricsTarget) {
 	defer stdinReader.Close()
 
 	writer := &lockedWebSocketWriter{conn: conn}
-	_, _ = writer.Write([]byte(fmt.Sprintf("Opening console in %s/%s (%s)\r\n", target.Namespace, target.Pod, target.Container)))
+	_, _ = writer.Write([]byte(fmt.Sprintf("正在打开运行实例控制台：%s\r\n", runtimeConsoleTargetName(target))))
 
 	go func() {
 		defer cancel()
@@ -116,8 +117,18 @@ func streamRuntimeConsole(c *gin.Context, target k8s.RuntimeMetricsTarget) {
 	}()
 
 	if err := k8s.StreamPodConsole(ctx, target, stdinReader, writer, writer); err != nil {
-		_, _ = writer.Write([]byte("\r\nConsole disconnected: " + err.Error() + "\r\n"))
+		_, _ = writer.Write([]byte("\r\n控制台已断开：" + err.Error() + "\r\n"))
 	}
+}
+
+func runtimeConsoleTargetName(target k8s.RuntimeMetricsTarget) string {
+	if name := strings.TrimSpace(target.Container); name != "" {
+		return name
+	}
+	if name := strings.TrimSpace(target.Pod); name != "" {
+		return name
+	}
+	return "当前卡片"
 }
 
 type lockedWebSocketWriter struct {
