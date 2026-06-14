@@ -816,21 +816,30 @@ describe('Vue view markup', () => {
     }
   })
 
-  it('embeds database cache and queue action forms inside the drawer workspace', async () => {
+  it('embeds data middleware action forms inside the drawer workspace', async () => {
     const envDetail = await import('./EnvDetailView.vue?raw')
     const databaseWorkspace = await import('../components/workspaces/DatabaseWorkspace.vue?raw')
     const redisWorkspace = await import('../components/workspaces/RedisWorkspace.vue?raw')
+    const mongoWorkspace = await import('../components/workspaces/MongoWorkspace.vue?raw')
     const rabbitWorkspace = await import('../components/workspaces/RabbitWorkspace.vue?raw')
+    const kafkaWorkspace = await import('../components/workspaces/KafkaWorkspace.vue?raw')
+    const minioWorkspace = await import('../components/workspaces/MinioWorkspace.vue?raw')
     const actionForm = await import('../components/workspaces/WorkspaceActionForm.vue?raw')
 
     expect(envDetail.default).toContain('serviceDrawerWorkspaceEmbedsActions')
+    expect(envDetail.default).toContain("'mongodb'")
+    expect(envDetail.default).toContain("'kafka'")
+    expect(envDetail.default).toContain("'minio'")
     expect(envDetail.default).toContain('serviceDrawerWorkspaceEmbeddedActionProps')
     expect(envDetail.default).toContain('!serviceDrawerWorkspaceEmbedsActions')
     expect(envDetail.default).toContain('onUpdateActionParam: setWorkspaceActionParam')
     expect(databaseWorkspace.default).toContain('WorkspaceActionForm')
     expect(redisWorkspace.default).toContain('WorkspaceActionForm')
     expect(redisWorkspace.default).toContain("r.type === 'Redis Key'")
+    expect(mongoWorkspace.default).toContain('WorkspaceActionForm')
     expect(rabbitWorkspace.default).toContain('WorkspaceActionForm')
+    expect(kafkaWorkspace.default).toContain('WorkspaceActionForm')
+    expect(minioWorkspace.default).toContain('WorkspaceActionForm')
     expect(actionForm.default).toContain('workspace-action-form')
   })
 

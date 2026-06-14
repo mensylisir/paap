@@ -3574,7 +3574,7 @@ const submitWorkspaceActionInline = async () => {
 }
 const serviceDrawerWorkspaceEmbedsActions = computed(() => {
   const type = serviceDrawerType.value
-  return ['postgresql', 'mysql', 'redis', 'rabbitmq'].includes(type)
+  return ['postgresql', 'mysql', 'mongodb', 'redis', 'rabbitmq', 'kafka', 'minio'].includes(type)
 })
 const serviceDrawerWorkspaceEmbeddedActionProps = computed(() => {
   if (!serviceDrawerWorkspaceEmbedsActions.value || !activeWorkspaceActionBelongsToDrawer.value) return {}

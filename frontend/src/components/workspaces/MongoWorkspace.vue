@@ -7,6 +7,17 @@
           <span v-if="tab.count" class="ws-tab-badge">{{ tab.count }}</span>
         </button>
       </div>
+      <WorkspaceActionForm
+        v-if="workspaceActiveAction"
+        :action="workspaceActiveAction"
+        :params="actionParams"
+        :running="actionRunning"
+        :error="actionError"
+        title="MongoDB 操作"
+        @update-param="(payload) => emit('update-action-param', payload)"
+        @submit="emit('submit-action')"
+        @cancel="emit('cancel-action')"
+      />
 
       <div v-if="activeTab === 'dbs'" class="tab-panel">
         <div v-if="dbs.length" class="db-grid">
@@ -92,6 +103,17 @@
           </button>
           <span v-if="!(selectedResource.actions || []).length" class="empty-inline">暂无对象操作</span>
         </div>
+        <WorkspaceActionForm
+          v-if="selectedResourceActiveAction"
+          :action="selectedResourceActiveAction"
+          :params="actionParams"
+          :running="actionRunning"
+          :error="actionError"
+          title="对象操作"
+          @update-param="(payload) => emit('update-action-param', payload)"
+          @submit="emit('submit-action')"
+          @cancel="emit('cancel-action')"
+        />
       </aside>
     </template>
   </ToolWorkspaceFrame>
@@ -100,14 +122,23 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import ToolWorkspaceFrame from './ToolWorkspaceFrame.vue'
+import WorkspaceActionForm from './WorkspaceActionForm.vue'
 import type { WorkspaceAction, WorkspaceResource } from '../../views/serviceWorkspace'
 
 const props = defineProps<{
   resources: WorkspaceResource[]
+  activeAction?: WorkspaceAction | null
+  activeActionTarget?: string
+  actionParams?: Record<string, string>
+  actionRunning?: boolean
+  actionError?: string
 }>()
 
 const emit = defineEmits<{
   (e: 'action', action: WorkspaceAction, target?: string): void
+  (e: 'update-action-param', payload: { name: string; value: string }): void
+  (e: 'submit-action'): void
+  (e: 'cancel-action'): void
 }>()
 
 const dbs = computed(() => props.resources.filter(r => r.type === 'Database'))
@@ -124,6 +155,22 @@ const selectedResource = ref<WorkspaceResource | null>(firstSelectableResource()
 const selectResource = (resource: WorkspaceResource) => {
   selectedResource.value = resource
 }
+
+const actionTarget = (action: WorkspaceAction, fallback = '') => String(action.target || fallback || '')
+const activeActionTarget = computed(() => actionTarget(props.activeAction || { label: '', description: '' }, props.activeActionTarget || ''))
+const selectedResourceActiveAction = computed(() => {
+  const action = props.activeAction
+  const resource = selectedResource.value
+  if (!action || !resource) return null
+  const target = activeActionTarget.value
+  const matches = (resource.actions || []).some((candidate) =>
+    candidate.key === action.key && (!target || actionTarget(candidate, resource.name) === target)
+  )
+  return matches ? action : null
+})
+const workspaceActiveAction = computed(() =>
+  props.activeAction && !selectedResourceActiveAction.value ? props.activeAction : null
+)
 
 const annotationItems = (resource: WorkspaceResource) =>
   Object.entries(resource.annotations || {}).map(([key, value]) => ({ key, value: Array.isArray(value) ? value.join(', ') : String(value) }))
