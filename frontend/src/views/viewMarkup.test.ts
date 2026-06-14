@@ -863,6 +863,7 @@ describe('Vue view markup', () => {
     expect(envDetail.default).toContain('registryHostForDrawer')
     expect(envDetail.default).toContain('仓库地址')
     expect(envDetail.default).toContain('镜像:Tag')
+    expect(envDetail.default).toContain('完整镜像')
     expect(envDetail.default).toContain('ensureRegistryWorkspaces')
     expect(envDetail.default).toContain("x.type === 'Image Repository'")
     expect(envDetail.default).toContain("x.type === 'Harbor Repository'")
@@ -876,6 +877,8 @@ describe('Vue view markup', () => {
     expect(envDetail.default).toContain('imageRefFromRegistryFields')
     expect(envDetail.default).toContain('list="component-registry-image-tags"')
     expect(envDetail.default).toContain('<datalist id="component-registry-image-tags">')
+    expect(envDetail.default).toContain('.cds-image-preview__label')
+    expect(envDetail.default).toContain('overflow-wrap: anywhere')
   })
 
   it('keeps component drawers adaptive for unknown workloads', async () => {

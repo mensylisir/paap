@@ -1392,6 +1392,7 @@
               </div>
               <div class="cds-image-preview" v-if="registryImageFromConfig">
                 <svg class="cds-image-preview__icon" width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1zm0 12.5a5.5 5.5 0 1 1 0-11 5.5 5.5 0 0 1 0 11zM8 4a.75.75 0 0 1 .75.75v2.5h2.5a.75.75 0 0 1 0 1.5h-2.5v2.5a.75.75 0 0 1-1.5 0v-2.5h-2.5a.75.75 0 0 1 0-1.5h2.5v-2.5A.75.75 0 0 1 8 4z"/></svg>
+                <span class="cds-image-preview__label">完整镜像</span>
                 <code class="cds-image-preview__text">{{ registryImageFromConfig }}</code>
               </div>
               <p class="cds-helper-text">仓库地址来自当前环境镜像仓库；镜像:Tag 填写镜像名和明确 Tag。</p>
@@ -8007,8 +8008,8 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 }
 .cds-image-fields {
   display: grid;
-  grid-template-columns: minmax(160px, 0.7fr) minmax(300px, 1.5fr);
-  gap: var(--cds-spacing-03, 8px);
+  grid-template-columns: 1fr;
+  gap: var(--paap-space-3);
   align-items: start;
 }
 .cds-image-field {
@@ -8038,6 +8039,8 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   line-height: 1.4;
   color: var(--cds-text-primary, #161616);
   outline: none;
+  min-width: 0;
+  text-overflow: ellipsis;
   transition: border-color 110ms;
 }
 .cds-text-input:focus {
@@ -8053,7 +8056,8 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   color: var(--cds-text-placeholder, rgba(22,22,22,0.4));
 }
 .cds-image-preview {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
   align-items: center;
   gap: var(--cds-spacing-02, 4px);
   margin-top: var(--cds-spacing-02, 4px);
@@ -8065,13 +8069,19 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   flex-shrink: 0;
   color: var(--cds-blue-60, #0f62fe);
 }
+.cds-image-preview__label {
+  color: var(--paap-muted);
+  font-size: 12px;
+  font-weight: 650;
+  white-space: nowrap;
+}
 .cds-image-preview__text {
   font-family: var(--cds-font-family-mono, monospace);
   font-size: 12px;
   color: var(--cds-text-primary, #161616);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 .config-kv-grid,
 .config-ref-grid,
