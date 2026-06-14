@@ -37,7 +37,7 @@ func StreamPodConsole(ctx context.Context, target RuntimeMetricsTarget, stdin io
 		return fmt.Errorf("当前运行镜像没有可用命令环境，调试终端启动失败: %w", err)
 	}
 	_, _ = io.WriteString(stdout, "已连接调试终端，可访问当前卡片的运行网络。\r\n")
-	return streamPodExec(ctx, debugTarget, stdin, stdout, stderr)
+	return streamPodAttach(ctx, debugTarget, stdin, stdout, stderr)
 }
 
 func streamPodExec(ctx context.Context, target RuntimeMetricsTarget, stdin io.Reader, stdout, stderr io.Writer) error {
@@ -207,8 +207,6 @@ func debugEphemeralContainer(name, image, targetContainer string) corev1.Ephemer
 			ImagePullPolicy: corev1.PullIfNotPresent,
 			Command: []string{
 				"/bin/sh",
-				"-c",
-				"trap 'exit 0' TERM INT; while true; do sleep 3600; done",
 			},
 			Stdin:                    true,
 			TTY:                      true,
@@ -263,6 +261,9 @@ func reusableDebugContainerName(pod *corev1.Pod, targetContainer string) (string
 		if container.TargetContainerName != targetContainer || !strings.HasPrefix(container.Name, prefix) {
 			continue
 		}
+		if !debugContainerSupportsAttach(container) {
+			continue
+		}
 		status, ok := debugContainerStatus(pod, container.Name)
 		if !ok || status.State.Running != nil {
 			return container.Name, true
@@ -303,6 +304,14 @@ func trimDebugContainerPrefix(value string, max int) string {
 		return value
 	}
 	return strings.Trim(value[:max], "-")
+}
+
+func debugContainerSupportsAttach(container corev1.EphemeralContainer) bool {
+	command := container.Command
+	if len(command) == 0 {
+		return true
+	}
+	return len(command) == 1 && command[0] == "/bin/sh"
 }
 
 var dns1123Cleaner = regexp.MustCompile(`[^a-z0-9-]+`)
