@@ -301,6 +301,14 @@ func TestBuildToolWorkspaceExposesDatabaseManagementActions(t *testing.T) {
 	want := map[string]bool{
 		"check_database_connection": false,
 		"list_databases":            false,
+		"create_database":           false,
+		"drop_database":             false,
+		"create_database_backup":    false,
+		"create_table":              false,
+		"drop_table":                false,
+		"insert_table_row":          false,
+		"update_table_row":          false,
+		"delete_table_row":          false,
 	}
 	for _, action := range workspace.Actions {
 		if _, ok := want[action.Key]; ok {

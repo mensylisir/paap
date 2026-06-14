@@ -4476,7 +4476,7 @@ func enrichDatabaseWorkspace(ctx context.Context, workspace service.ToolWorkspac
 		resources = append(resources, databaseBackupResource(backup))
 	}
 	workspace.Resources = resources
-	workspace.Config = append(workspace.Config, service.ToolWorkspaceConfig{Label: "备份存储", Value: "Kubernetes Secret"})
+	workspace.Config = append(workspace.Config, service.ToolWorkspaceConfig{Label: "备份存储", Value: publicDatabaseBackupStorage("")})
 	if backupErr != nil {
 		workspace.Config = append(workspace.Config, service.ToolWorkspaceConfig{Label: "备份状态", Value: "查询失败: " + backupErr.Error()})
 	}
@@ -4631,8 +4631,7 @@ func databaseBackupResource(backup k8s.DatabaseBackupMetadata) service.ToolWorks
 			"database":            backup.Database,
 			"engine":              backup.Engine,
 			"createdAt":           backup.CreatedAt,
-			"storage":             backup.Storage,
-			"secretName":          backup.SecretName,
+			"storage":             publicDatabaseBackupStorage(backup.Storage),
 			"originalSizeBytes":   backup.OriginalSizeBytes,
 			"compressedSizeBytes": backup.CompressedSizeBytes,
 			"size":                humanSize(backup.CompressedSizeBytes),
@@ -4640,6 +4639,14 @@ func databaseBackupResource(backup k8s.DatabaseBackupMetadata) service.ToolWorks
 			"rows":                backup.RowCount,
 		},
 	}
+}
+
+func publicDatabaseBackupStorage(storage string) string {
+	storage = strings.TrimSpace(storage)
+	if storage == "" || strings.EqualFold(storage, "Kubernetes Secret") {
+		return "平台备份"
+	}
+	return storage
 }
 
 func humanSize(value int) string {

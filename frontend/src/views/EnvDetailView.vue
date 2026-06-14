@@ -1143,7 +1143,7 @@
                   <span>{{ backup.annotations?.tables || 0 }} tables</span>
                   <span>{{ backup.annotations?.rows || 0 }} rows</span>
                   <code>{{ backup.annotations?.size || '-' }}</code>
-                  <small>{{ backup.annotations?.secretName || backup.name }}</small>
+                  <small>{{ backupStorageLabel(backup) }}</small>
                 </div>
               </div>
               <div v-else class="config-empty">当前数据库还没有备份。点击“创建备份”会导出真实表结构和数据，并保存为平台备份。</div>
@@ -4391,20 +4391,25 @@ const serviceDrawerVariableRows = computed(() => {
 const serviceDrawerDatabaseRows = computed(() => {
   const type = serviceDrawerType.value
   const form = serviceConfigForm.value
-  return [
-    { label: 'Engine', value: svcLabel(type) || type || '-' },
-    { label: 'Endpoint', value: serviceDrawerInternalEndpoint.value || '部署后生成' },
-    { label: 'Architecture', value: String(form.architecture || 'standalone') },
-    { label: 'Storage', value: String(form['primary.persistence.size'] || form['persistence.size'] || '临时存储') },
-  ]
-})
+	  return [
+	    { label: '引擎', value: svcLabel(type) || type || '-' },
+	    { label: '连接地址', value: serviceDrawerInternalEndpoint.value || '部署后生成' },
+	    { label: '架构', value: String(form.architecture || 'standalone') },
+	    { label: '存储', value: String(form['primary.persistence.size'] || form['persistence.size'] || '临时存储') },
+	  ]
+	})
 const serviceDrawerDefaultDatabase = computed(() => serviceDrawerType.value === 'mysql' ? 'mysql' : 'postgres')
 const serviceDrawerBackups = computed(() =>
   (serviceDrawerWorkspaceData.value.resources || []).filter((resource: WorkspaceResource) => resource.type === 'Backup')
 )
+const backupStorageLabel = (backup: WorkspaceResource) => {
+  const storage = String(backup?.annotations?.storage || '').trim()
+  if (!storage || storage.toLowerCase() === 'kubernetes secret') return '平台备份'
+  return storage
+}
 const serviceDrawerBackupStorage = computed(() => {
   const backup = serviceDrawerBackups.value[0]
-  if (backup?.annotations?.storage) return String(backup.annotations.storage)
+  if (backup?.annotations?.storage) return backupStorageLabel(backup)
   return '平台备份'
 })
 const serviceDrawerBackupAction = computed<WorkspaceAction>(() => {
@@ -4428,34 +4433,34 @@ const serviceDrawerBackupAction = computed<WorkspaceAction>(() => {
   }
 })
 const serviceDrawerDataRows = computed(() => [
-  { label: 'Mode', value: String(serviceConfigForm.value.architecture || 'standalone') },
-  { label: 'Endpoint', value: serviceDrawerInternalEndpoint.value || '部署后生成' },
-  { label: 'Persistence', value: serviceConfigForm.value.architecture === 'cluster' ? (serviceConfigForm.value['persistence.enabled'] ? String(serviceConfigForm.value['persistence.size'] || '已启用') : '临时存储') : (serviceConfigForm.value['master.persistence.enabled'] ? String(serviceConfigForm.value['master.persistence.size'] || '已启用') : '临时存储') },
-  { label: 'Replicas', value: serviceConfigForm.value.architecture === 'cluster' ? String(serviceConfigForm.value['cluster.replicas'] || 0) : String(serviceConfigForm.value['replica.replicaCount'] || 0) },
-  { label: 'Cluster nodes', value: serviceConfigForm.value.architecture === 'cluster' ? String(serviceConfigForm.value['cluster.nodes'] || 0) : '-' },
+  { label: '模式', value: String(serviceConfigForm.value.architecture || 'standalone') },
+  { label: '连接地址', value: serviceDrawerInternalEndpoint.value || '部署后生成' },
+  { label: '存储', value: serviceConfigForm.value.architecture === 'cluster' ? (serviceConfigForm.value['persistence.enabled'] ? String(serviceConfigForm.value['persistence.size'] || '已启用') : '临时存储') : (serviceConfigForm.value['master.persistence.enabled'] ? String(serviceConfigForm.value['master.persistence.size'] || '已启用') : '临时存储') },
+  { label: '副本', value: serviceConfigForm.value.architecture === 'cluster' ? String(serviceConfigForm.value['cluster.replicas'] || 0) : String(serviceConfigForm.value['replica.replicaCount'] || 0) },
+  { label: '集群节点', value: serviceConfigForm.value.architecture === 'cluster' ? String(serviceConfigForm.value['cluster.nodes'] || 0) : '-' },
   { label: 'Sentinel', value: serviceConfigForm.value.architecture === 'sentinel' ? '启用' : '未启用' },
 ])
 const serviceDrawerQueueRows = computed(() => {
   if (serviceDrawerType.value === 'kafka') {
-    return [
-      { label: 'Bootstrap', value: serviceDrawerInternalEndpoint.value || '部署后生成' },
-      { label: 'Controllers', value: String(serviceConfigForm.value['controller.replicaCount'] || 3) },
-      { label: 'Brokers', value: String(serviceConfigForm.value['broker.replicaCount'] || 0) },
-      { label: 'Persistence', value: serviceConfigForm.value['controller.persistence.enabled'] ? String(serviceConfigForm.value['controller.persistence.size'] || '已启用') : '临时存储' },
-    ]
-  }
-  return [
-    { label: 'AMQP', value: serviceDrawerInternalEndpoint.value || '部署后生成' },
-    { label: 'Replicas', value: String(serviceConfigForm.value.replicaCount || 1) },
-    { label: 'VHost', value: '/' },
-    { label: 'Persistence', value: serviceConfigForm.value['persistence.enabled'] ? String(serviceConfigForm.value['persistence.size'] || '已启用') : '临时存储' },
-  ]
-})
+	    return [
+	      { label: '连接地址', value: serviceDrawerInternalEndpoint.value || '部署后生成' },
+	      { label: '控制节点', value: String(serviceConfigForm.value['controller.replicaCount'] || 3) },
+	      { label: '消息节点', value: String(serviceConfigForm.value['broker.replicaCount'] || 0) },
+	      { label: '存储', value: serviceConfigForm.value['controller.persistence.enabled'] ? String(serviceConfigForm.value['controller.persistence.size'] || '已启用') : '临时存储' },
+	    ]
+	  }
+	  return [
+	    { label: 'AMQP', value: serviceDrawerInternalEndpoint.value || '部署后生成' },
+	    { label: '副本', value: String(serviceConfigForm.value.replicaCount || 1) },
+	    { label: 'VHost', value: '/' },
+	    { label: '存储', value: serviceConfigForm.value['persistence.enabled'] ? String(serviceConfigForm.value['persistence.size'] || '已启用') : '临时存储' },
+	  ]
+	})
 const serviceDrawerBucketRows = computed(() => [
-  { label: 'Endpoint', value: serviceDrawerInternalEndpoint.value || '部署后生成' },
-  { label: 'Mode', value: String(serviceConfigForm.value.mode || 'standalone') },
-  { label: 'Nodes', value: String(serviceConfigForm.value['statefulset.replicaCount'] || 1) },
-  { label: 'Storage', value: serviceConfigForm.value['persistence.enabled'] ? String(serviceConfigForm.value['persistence.size'] || '已启用') : '临时存储' },
+  { label: '连接地址', value: serviceDrawerInternalEndpoint.value || '部署后生成' },
+  { label: '模式', value: String(serviceConfigForm.value.mode || 'standalone') },
+  { label: '节点', value: String(serviceConfigForm.value['statefulset.replicaCount'] || 1) },
+  { label: '存储', value: serviceConfigForm.value['persistence.enabled'] ? String(serviceConfigForm.value['persistence.size'] || '已启用') : '临时存储' },
 ])
 const runtimeMetricSamples = computed(() => Array.isArray(runtimeMetrics.value?.samples) ? runtimeMetrics.value.samples : [])
 const runtimeLogSamples = computed(() => Array.isArray(runtimeLogs.value?.samples) ? runtimeLogs.value.samples : [])

@@ -55,7 +55,7 @@ func StoreDatabaseBackup(ctx context.Context, namespace, serviceType string, doc
 		return meta, err
 	}
 	if len(compressed) > maxDatabaseBackupSecretBytes {
-		return meta, fmt.Errorf("backup is %s after compression; Kubernetes Secret storage is limited to %s, configure object storage before backing up this database", formatBackupBytes(len(compressed)), formatBackupBytes(maxDatabaseBackupSecretBytes))
+		return meta, fmt.Errorf("backup is %s after compression; platform backup storage is limited to %s, configure object storage before backing up this database", formatBackupBytes(len(compressed)), formatBackupBytes(maxDatabaseBackupSecretBytes))
 	}
 	now := time.Now().UTC()
 	if strings.TrimSpace(meta.CreatedAt) == "" {

@@ -825,8 +825,15 @@ describe('Vue view markup', () => {
     expect(envDetail.default).toContain('beginDrawerWorkspaceAction(action, action.target)')
     expect(envDetail.default).toContain('beginCapabilityWorkspaceAction(action, action.target)')
     expect(envDetail.default).toContain('workspaceActionButtonClass(action)')
+    expect(envDetail.default).toContain('serviceDrawerBackupAction')
+    expect(envDetail.default).toContain('backupStorageLabel')
+    expect(envDetail.default).toContain('create_database_backup')
     expect(toolWorkspace.default).toContain('create_database')
+    expect(toolWorkspace.default).toContain('create_database_backup')
     expect(toolWorkspace.default).toContain('create_table')
+    expect(toolWorkspace.default).toContain('insert_table_row')
+    expect(toolWorkspace.default).toContain('update_table_row')
+    expect(toolWorkspace.default).toContain('delete_table_row')
     expect(toolWorkspace.default).toContain('set_redis_key')
     expect(toolWorkspace.default).toContain('create_minio_bucket')
     expect(toolWorkspace.default).toContain('create_mongodb_collection')
@@ -834,6 +841,7 @@ describe('Vue view markup', () => {
     expect(toolWorkspace.default).toContain('create_kafka_topic')
     expect(toolWorkspace.default).toContain('read_kafka_messages')
     expect(toolWorkspace.default).toContain('produce_kafka_message')
+    expect(envDetail.default).not.toContain('backup.annotations?.secretName')
   })
 
   it('renders Kafka messages returned by real workspace actions', async () => {
