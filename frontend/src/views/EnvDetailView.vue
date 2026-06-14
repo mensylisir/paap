@@ -934,6 +934,19 @@
                       :placeholder="volume.placeholder"
                     />
                   </label>
+                  <div class="service-volume-presets" aria-label="常用容量">
+                    <button
+                      v-for="preset in serviceVolumeSizePresets"
+                      :key="`${volume.sizeKey}-${preset}`"
+                      type="button"
+                      class="service-volume-preset"
+                      :class="{ active: String(serviceConfigForm[volume.sizeKey] || '') === preset }"
+                      :disabled="Boolean(volume.enabledKey) && !serviceConfigForm[volume.enabledKey]"
+                      @click="setServiceVolumeSize(volume, preset)"
+                    >
+                      {{ preset }}
+                    </button>
+                  </div>
                 </article>
               </div>
             </section>
@@ -1277,18 +1290,18 @@
             </section>
 
             <section v-if="configDrawerTab === 'api' && configDrawer.kind === 'component'" class="config-section">
-              <div class="config-section-title"><span>Backend/API Binding</span></div>
+              <div class="config-section-title"><span>后端地址</span></div>
               <div class="config-kv-grid service-summary-grid">
                 <div>
-                  <span>Public entry</span>
+                  <span>外部入口</span>
                   <strong>{{ configDrawerExternalUrl || '未暴露' }}</strong>
                 </div>
                 <div>
-                  <span>Backend candidates</span>
+                  <span>可选后端</span>
                   <strong>{{ componentDrawerBackendTargets.length }}</strong>
                 </div>
                 <div>
-                  <span>Configured API</span>
+                  <span>当前地址</span>
                   <strong>{{ componentDrawerBindingValue('BACKEND_URL') || '未配置' }}</strong>
                 </div>
               </div>
@@ -1300,14 +1313,14 @@
                   </option>
                 </select>
                 <button type="button" class="bx--btn bx--btn--primary bx--btn--sm" :disabled="configDrawer.saving || !selectedConnectionTarget" @click="applySelectedConfigBinding">
-                  应用 API 地址
+                  应用后端地址
                 </button>
               </div>
-              <div class="config-inline-note">前端绑定后端时会生成 `BACKEND_URL`，并在画布上自动形成前端到后端的依赖线。</div>
+              <div class="config-inline-note">前端绑定后端后，平台会自动写入后端地址并在画布上形成依赖线。</div>
             </section>
 
             <section v-if="configDrawerTab === 'dependencies' && configDrawer.kind === 'component'" class="config-section">
-              <div class="config-section-title"><span>Runtime Dependencies</span></div>
+              <div class="config-section-title"><span>运行依赖</span></div>
               <div class="config-binding-form">
                 <select v-model="configForm.bindingTargetKey" class="bx--select-input">
                   <option value="">选择数据库、缓存、消息队列或对象存储</option>
@@ -1333,7 +1346,7 @@
             </section>
 
             <section v-if="configDrawerTab === 'data' && configDrawer.kind === 'component'" class="config-section">
-              <div class="config-section-title"><span>{{ componentDrawerType === 'database' ? 'Data Workload' : 'Middleware Workload' }}</span></div>
+              <div class="config-section-title"><span>{{ componentDrawerType === 'database' ? '数据服务' : '中间件服务' }}</span></div>
               <div class="config-kv-grid service-summary-grid">
                 <div v-for="row in componentDrawerDataRows" :key="row.label">
                   <span>{{ row.label }}</span>
@@ -1421,7 +1434,7 @@
                     </select>
                   </label>
                   <p v-if="selectedComponentConfigTemplate" class="component-template-helper">
-                    {{ componentTemplateDisplayDescription(selectedComponentConfigTemplate) }}
+                    {{ componentTemplateInlineHelp(selectedComponentConfigTemplate) }}
                   </p>
                   <p v-else class="component-template-helper">
                     选择模板后，下方只显示这个模板需要填写的业务配置。
@@ -1477,7 +1490,7 @@
                 </div>
 
                 <details class="component-template-advanced">
-                  <summary>查看生成结果</summary>
+                  <summary>高级选项</summary>
                   <div v-if="configForm.bindings.length" class="component-connected-list">
                     <span>自动连接</span>
                     <div v-for="(binding, idx) in configForm.bindings" :key="`${binding.targetKey || binding.targetName}-${idx}`" class="component-connected-row">
@@ -4180,6 +4193,7 @@ const serviceDrawerVolumeFields = computed<ServiceVolumeField[]>(() => {
       }
     })
 })
+const serviceVolumeSizePresets = ['1Gi', '5Gi', '10Gi', '20Gi', '50Gi']
 const serviceDrawerPreviewValues = computed(() => {
   const svc = drawerService.value
   if (!svc) return {}
@@ -4231,8 +4245,18 @@ const serviceVolumeLabel = (field: ServiceConfigField) => {
   return label || '数据卷'
 }
 const serviceVolumeDescription = (sizeField: ServiceConfigField, enabledField?: ServiceConfigField) => {
-  if (!enabledField) return '当前服务的持久化数据容量'
-  return `${enabledField.label} · ${sizeField.key}`
+  const label = String(sizeField.label || enabledField?.label || '').toLowerCase()
+  if (label.includes('grafana')) return '保存 Grafana 仪表盘、插件和运行数据。'
+  if (label.includes('loki')) return '保存日志索引和日志块数据。'
+  if (label.includes('registry')) return '保存镜像层、Manifest 和 Tag 数据。'
+  if (label.includes('jenkins')) return '保存流水线配置、任务历史和工作目录。'
+  if (label.includes('harbor')) return '保存 Harbor 组件的运行数据。'
+  if (label.includes('redis')) return '保存缓存快照、AOF 或集群节点数据。'
+  if (label.includes('replica') || label.includes('secondary') || label.includes('read replica')) return '保存副本实例的数据。'
+  if (label.includes('primary') || label.includes('master')) return '保存主实例的数据。'
+  if (label.includes('queue') || label.includes('broker') || label.includes('controller')) return '保存消息队列和控制面数据。'
+  if (label.includes('对象') || label.includes('bucket')) return '保存对象和 Bucket 元数据。'
+  return '保存当前服务的持久化数据。'
 }
 const setServiceVolumeEnabled = (volume: ServiceVolumeField, event: Event) => {
   if (!volume.enabledKey) return
@@ -4241,6 +4265,10 @@ const setServiceVolumeEnabled = (volume: ServiceVolumeField, event: Event) => {
   if (checked && !String(serviceConfigForm.value[volume.sizeKey] || '').trim()) {
     serviceConfigForm.value[volume.sizeKey] = volume.placeholder || '8Gi'
   }
+}
+const setServiceVolumeSize = (volume: ServiceVolumeField, size: string) => {
+  if (volume.enabledKey && !serviceConfigForm.value[volume.enabledKey]) return
+  serviceConfigForm.value[volume.sizeKey] = size
 }
 const configDrawerTitle = computed(() => configDrawer.value.component?.name || configDrawer.value.service?.serviceName || configDrawer.value.service?.name || configDrawer.value.service?.serviceType || '-')
 const configDrawerSubtitle = computed(() => {
@@ -4603,7 +4631,7 @@ const showServiceRawVariables = () => {
 }
 const showServiceNewVariableHint = () => {
   configDrawer.value.error = ''
-  configDrawer.value.message = '新增应用变量请在组件的 Variables 中选择该服务并应用连接，服务侧只展示模板生成的连接参数。'
+  configDrawer.value.message = '新增应用变量请在组件配置中选择该服务并应用连接，服务侧只展示模板生成的连接参数。'
 }
 const drawerRuntimeMetricsKey = computed(() => {
   if (!configDrawer.value.visible) return ''
@@ -4937,18 +4965,8 @@ const defaultCredentialDatabase = (serviceType:string) => {
   if (serviceType === 'mongodb') return 'admin'
   return 'postgres'
 }
-const componentUserTemplateSummary = (template:UserComponentConfigTemplate) => {
-  const parts = []
-  if (template.framework && template.framework !== 'auto') parts.push(componentFrameworkLabel(template.framework))
-  if (template.fields?.length) parts.push(`${template.fields.length} 个字段`)
-  if (template.env.length) parts.push(`${template.env.length} 个变量`)
-  if (template.configMaps.length) parts.push(`${template.configMaps.length} 普通配置`)
-  if (template.secrets.length) parts.push(`${template.secrets.length} 敏感配置`)
-  if (template.files.length) parts.push(`${template.files.length} 个配置文件`)
-  return parts.join(' / ') || '框架模板'
-}
-const componentTemplateDisplayDescription = (template:UserComponentConfigTemplate) =>
-  String(template?.description || componentUserTemplateSummary(template) || '')
+const componentTemplateInlineHelp = (template:UserComponentConfigTemplate) =>
+  String(template?.description || '下方已按模板抽取出需要填写的配置项。')
     .replace(/ConfigMap/g, '普通配置')
     .replace(/Secret keys/gi, '敏感配置项')
     .replace(/Secret/g, '敏感配置')
@@ -5130,12 +5148,12 @@ const selectedConnectionTarget = computed(() =>
 )
 const runComponentDrawerSuggestion = (key: string) => {
   if (key === 'select-backend') {
-    configDrawerTab.value = 'api'
+    configDrawerTab.value = 'variables'
     configForm.value.bindingTargetKey = componentDrawerBackendTargets.value[0]?.key || ''
     return
   }
   if (key === 'select-dependency') {
-    configDrawerTab.value = 'dependencies'
+    configDrawerTab.value = 'variables'
     configForm.value.bindingTargetKey = componentDrawerDependencyTargets.value[0]?.key || ''
     return
   }
@@ -8138,6 +8156,33 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 .service-volume-size .bx--text-input:disabled {
   color: var(--paap-muted-2);
   background: var(--paap-panel-subtle);
+}
+.service-volume-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+.service-volume-preset {
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--paap-border);
+  border-radius: 6px;
+  background: var(--paap-panel-subtle);
+  color: var(--paap-muted);
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+}
+.service-volume-preset:hover:not(:disabled),
+.service-volume-preset.active {
+  border-color: var(--paap-primary);
+  background: #eef5ff;
+  color: var(--paap-primary);
+}
+.service-volume-preset:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
 }
 .service-topology-list {
   display: grid;
