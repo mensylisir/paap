@@ -1232,8 +1232,9 @@
                     autocomplete="off"
                     spellcheck="false"
                     placeholder="输入命令"
+                    @keydown.enter.prevent="sendDrawerConsoleInput"
                   />
-                  <button type="submit" class="bx--btn bx--btn--primary bx--btn--sm" :disabled="!runtimeConsoleConnected || !runtimeConsoleInput.trim()">发送</button>
+                  <button type="button" class="bx--btn bx--btn--primary bx--btn--sm" :disabled="!runtimeConsoleConnected || !runtimeConsoleInput.trim()" @click="sendDrawerConsoleInput">发送</button>
                 </form>
                 <p v-if="runtimeConsoleError" class="modal-error" role="alert">{{ runtimeConsoleError }}</p>
               </div>

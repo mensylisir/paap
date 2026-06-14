@@ -51,18 +51,44 @@ func streamPodExec(ctx context.Context, target RuntimeMetricsTarget, stdin io.Re
 	}
 	var lastErr error
 	for _, command := range podConsoleCommands() {
-		lastErr = streamPodExecCommand(ctx, config, clientset, target, command, stdin, stdout, stderr)
-		if lastErr == nil {
-			return nil
-		}
+		lastErr = probePodExecCommand(ctx, config, clientset, target, command)
 		if !shouldTryNextShell(lastErr) {
-			return lastErr
+			if lastErr != nil {
+				return lastErr
+			}
+			return streamPodExecCommand(ctx, config, clientset, target, command, stdin, stdout, stderr)
 		}
 	}
 	if lastErr != nil {
 		return lastErr
 	}
 	return fmt.Errorf("no shell command candidates were configured")
+}
+
+func probePodExecCommand(ctx context.Context, config *rest.Config, clientset *kubernetes.Clientset, target RuntimeMetricsTarget, command []string) error {
+	probe := podConsoleProbeCommand(command)
+	req := clientset.CoreV1().RESTClient().Post().
+		Resource("pods").
+		Name(target.Pod).
+		Namespace(target.Namespace).
+		SubResource("exec").
+		VersionedParams(&corev1.PodExecOptions{
+			Container: target.Container,
+			Command:   probe,
+			Stdin:     false,
+			Stdout:    true,
+			Stderr:    true,
+			TTY:       false,
+		}, k8sscheme.ParameterCodec)
+	exec, err := remotecommand.NewSPDYExecutor(config, http.MethodPost, req.URL())
+	if err != nil {
+		return err
+	}
+	return exec.StreamWithContext(ctx, remotecommand.StreamOptions{
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Tty:    false,
+	})
 }
 
 func streamPodExecCommand(ctx context.Context, config *rest.Config, clientset *kubernetes.Clientset, target RuntimeMetricsTarget, command []string, stdin io.Reader, stdout, stderr io.Writer) error {
@@ -319,7 +345,18 @@ func podConsoleCommands() [][]string {
 	}
 }
 
+func podConsoleProbeCommand(command []string) []string {
+	if len(command) == 0 {
+		return []string{"/bin/sh", "-c", "exit 0"}
+	}
+	shell := command[0]
+	return []string{shell, "-c", "exit 0"}
+}
+
 func shouldTryNextShell(err error) bool {
+	if err == nil {
+		return false
+	}
 	message := strings.ToLower(err.Error())
 	for _, marker := range []string{
 		"no such file",

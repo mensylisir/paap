@@ -967,6 +967,8 @@ describe('Vue view markup', () => {
     expect(envDetail.default).toContain('输入命令')
     expect(envDetail.default).toContain('进入当前卡片的运行实例')
     expect(envDetail.default).toContain('PAAP 会自动准备调试环境')
+    expect(envDetail.default).toContain('@keydown.enter.prevent="sendDrawerConsoleInput"')
+    expect(envDetail.default).toContain('@click="sendDrawerConsoleInput"')
     expect(envDetail.default).not.toContain('等效 kubectl exec')
     expect(envDetail.default).not.toContain('pod/<resolved-pod>')
     expect(envDetail.default).not.toContain('attach 到当前卡片 Pod 的容器进程')

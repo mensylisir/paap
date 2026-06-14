@@ -64,3 +64,30 @@ func TestAvailableDebugContainerNameSkipsTerminatedContainers(t *testing.T) {
 		t.Fatalf("available debug container name = %q", got)
 	}
 }
+
+func TestDebugEphemeralContainerDoesNotSetForbiddenResources(t *testing.T) {
+	container := debugEphemeralContainer("paap-debug-frontend-1", "busybox:1.36", "frontend-1")
+
+	if len(container.Resources.Requests) != 0 || len(container.Resources.Limits) != 0 {
+		t.Fatalf("debug ephemeral container must not set resources, got %#v", container.Resources)
+	}
+	if container.TargetContainerName != "frontend-1" {
+		t.Fatalf("target container = %q", container.TargetContainerName)
+	}
+}
+
+func TestPodConsoleProbeCommandDoesNotUseInteractiveFlags(t *testing.T) {
+	got := podConsoleProbeCommand([]string{"/bin/bash", "-l"})
+	want := []string{"/bin/bash", "-c", "exit 0"}
+	if len(got) != len(want) {
+		t.Fatalf("probe command length = %d, want %d", len(got), len(want))
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("probe command[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+	if shouldTryNextShell(nil) {
+		t.Fatal("nil error should not try next shell")
+	}
+}
