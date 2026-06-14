@@ -37,7 +37,7 @@ type ComponentReconciler struct {
 // +kubebuilder:rbac:groups=paap.io,resources=components/finalizers,verbs=update
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;delete
 // +kubebuilder:rbac:groups=argoproj.io,resources=applications,verbs=get;list;watch;delete
-// +kubebuilder:rbac:groups="",resources=services;configmaps,verbs=get;list;watch;create;update;delete
+// +kubebuilder:rbac:groups="",resources=services;configmaps;secrets,verbs=get;list;watch;create;update;delete
 
 func (r *ComponentReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
@@ -158,6 +158,10 @@ func (r *ComponentReconciler) handleDeletion(ctx context.Context, comp *paapv1.C
 		r.Delete(ctx, svc)
 	}
 
+	if err := r.deleteComponentConfigResourcesByName(ctx, comp); err != nil {
+		return ctrl.Result{}, err
+	}
+
 	for _, selector := range []map[string]string{
 		{"paap.io/component": comp.Spec.Identifier},
 		{"app": comp.Spec.Identifier},
@@ -175,6 +179,81 @@ func (r *ComponentReconciler) handleDeletion(ctx context.Context, comp *paapv1.C
 
 	logger.Info("Component deleted", "name", comp.Name)
 	return ctrl.Result{}, nil
+}
+
+func (r *ComponentReconciler) deleteComponentConfigResourcesByName(ctx context.Context, comp *paapv1.Component) error {
+	namespace := strings.TrimSpace(comp.Spec.Deployment.Namespace)
+	identifier := strings.TrimSpace(comp.Spec.Identifier)
+	if namespace == "" || identifier == "" {
+		return nil
+	}
+
+	configMapNames := map[string]struct{}{
+		identifier + "-config": {},
+	}
+	secretNames := map[string]struct{}{
+		identifier + "-secret": {},
+	}
+	for _, env := range comp.Spec.Deployment.Env {
+		if env.ValueFrom == nil {
+			continue
+		}
+		if env.ValueFrom.ConfigMapKeyRef != nil {
+			name := strings.TrimSpace(env.ValueFrom.ConfigMapKeyRef.Name)
+			if name != "" {
+				configMapNames[name] = struct{}{}
+			}
+		}
+		if env.ValueFrom.SecretKeyRef != nil {
+			name := strings.TrimSpace(env.ValueFrom.SecretKeyRef.Name)
+			if name != "" {
+				secretNames[name] = struct{}{}
+			}
+		}
+	}
+
+	for name := range configMapNames {
+		configMap := &corev1.ConfigMap{}
+		key := types.NamespacedName{Name: name, Namespace: namespace}
+		if err := r.Get(ctx, key, configMap); err != nil {
+			if apierrors.IsNotFound(err) {
+				continue
+			}
+			return err
+		}
+		if componentOwnsConfigResource(comp, configMap.GetLabels()) {
+			if err := r.Delete(ctx, configMap); err != nil && !apierrors.IsNotFound(err) {
+				return err
+			}
+		}
+	}
+
+	for name := range secretNames {
+		secret := &corev1.Secret{}
+		key := types.NamespacedName{Name: name, Namespace: namespace}
+		if err := r.Get(ctx, key, secret); err != nil {
+			if apierrors.IsNotFound(err) {
+				continue
+			}
+			return err
+		}
+		if componentOwnsConfigResource(comp, secret.GetLabels()) {
+			if err := r.Delete(ctx, secret); err != nil && !apierrors.IsNotFound(err) {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+func componentOwnsConfigResource(comp *paapv1.Component, labels map[string]string) bool {
+	identifier := strings.TrimSpace(comp.Spec.Identifier)
+	if identifier == "" || len(labels) == 0 {
+		return false
+	}
+	return strings.TrimSpace(labels["paap.io/component"]) == identifier ||
+		strings.TrimSpace(labels["app"]) == identifier
 }
 
 func (r *ComponentReconciler) deleteRuntimeResourcesByLabels(ctx context.Context, namespace string, selector map[string]string) error {
@@ -214,6 +293,26 @@ func (r *ComponentReconciler) deleteRuntimeResourcesByLabels(ctx context.Context
 	}
 	for i := range services.Items {
 		if err := r.Delete(ctx, &services.Items[i]); err != nil && !apierrors.IsNotFound(err) {
+			return err
+		}
+	}
+
+	configMaps := &corev1.ConfigMapList{}
+	if err := r.List(ctx, configMaps, client.InNamespace(namespace), client.MatchingLabels(selector)); err != nil {
+		return err
+	}
+	for i := range configMaps.Items {
+		if err := r.Delete(ctx, &configMaps.Items[i]); err != nil && !apierrors.IsNotFound(err) {
+			return err
+		}
+	}
+
+	secrets := &corev1.SecretList{}
+	if err := r.List(ctx, secrets, client.InNamespace(namespace), client.MatchingLabels(selector)); err != nil {
+		return err
+	}
+	for i := range secrets.Items {
+		if err := r.Delete(ctx, &secrets.Items[i]); err != nil && !apierrors.IsNotFound(err) {
 			return err
 		}
 	}

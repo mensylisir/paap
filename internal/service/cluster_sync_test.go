@@ -70,21 +70,22 @@ func TestSyncClusterStateRestoresDBFromExistingCRs(t *testing.T) {
 			},
 			&paapv1.ServiceInstance{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "staging-deploy",
+					Name:      "staging-argocd",
 					Namespace: "paap-app-test",
 					Labels: map[string]string{
-						"paap.io/app":  "test",
-						"paap.io/env":  "staging",
-						"paap.io/tool": "deploy",
+						"paap.io/app":          "test",
+						"paap.io/env":          "staging",
+						"paap.io/service-type": "deploy",
+						"paap.io/tool":         "argocd",
 					},
 				},
 				Spec: paapv1.ServiceInstanceSpec{
 					EnvironmentRef: paapv1.ObjectReference{Name: "staging"},
 					Type:           "deploy",
-					ToolNamespace:  "test-staging-deploy",
+					ToolNamespace:  "test-staging-argocd",
 					Helm: &paapv1.HelmInstallSpec{
-						ReleaseName: "test-staging-deploy",
-						Namespace:   "test-staging-deploy",
+						ReleaseName: "test-staging-argocd",
+						Namespace:   "test-staging-argocd",
 					},
 				},
 				Status: paapv1.ServiceInstanceStatus{
@@ -155,7 +156,7 @@ func TestSyncClusterStateRestoresDBFromExistingCRs(t *testing.T) {
 	if err := db.Where("environment_id = ? AND service_type = ?", env.ID, "deploy").First(&install).Error; err != nil {
 		t.Fatalf("service installation not restored: %v", err)
 	}
-	if install.Namespace != "test-staging-deploy" || install.ReleaseName != "test-staging-deploy" || install.Status != "running" {
+	if install.ServiceName != "staging-argocd" || install.Namespace != "test-staging-argocd" || install.ReleaseName != "test-staging-argocd" || install.Status != "running" {
 		t.Fatalf("unexpected service installation: %#v", install)
 	}
 	if install.ErrorMessage != "Back-off pulling image" {
@@ -171,6 +172,84 @@ func TestSyncClusterStateRestoresDBFromExistingCRs(t *testing.T) {
 	}
 	if comp.ArgoCDApp != "test-staging-order-api" {
 		t.Fatalf("expected argocd app synced, got %#v", comp)
+	}
+}
+
+func TestSyncClusterStateIgnoresLegacyServiceTypeNamedServiceInstances(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := db.AutoMigrate(
+		&model.Application{},
+		&model.AppMember{},
+		&model.Environment{},
+		&model.ServiceInstallation{},
+		&model.Component{},
+	); err != nil {
+		t.Fatalf("migrate db: %v", err)
+	}
+
+	scheme := runtime.NewScheme()
+	if err := clientgoscheme.AddToScheme(scheme); err != nil {
+		t.Fatalf("add client-go scheme: %v", err)
+	}
+	if err := paapv1.AddToScheme(scheme); err != nil {
+		t.Fatalf("add paap scheme: %v", err)
+	}
+
+	k8sClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(
+			&paapv1.Application{
+				ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "paap-system"},
+				Spec:       paapv1.ApplicationSpec{Name: "测试服务", Identifier: "test"},
+				Status:     paapv1.ApplicationStatus{Phase: "Active"},
+			},
+			&paapv1.Environment{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "staging",
+					Namespace: "paap-app-test",
+					Labels:    map[string]string{"paap.io/app": "test", "paap.io/env": "staging"},
+				},
+				Spec:   paapv1.EnvironmentSpec{Name: "预发", Identifier: "staging", PrimaryNamespace: "test-staging"},
+				Status: paapv1.EnvironmentStatus{Phase: "Running"},
+			},
+			&paapv1.ServiceInstance{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "staging-deploy",
+					Namespace: "paap-app-test",
+					Labels: map[string]string{
+						"paap.io/app":          "test",
+						"paap.io/env":          "staging",
+						"paap.io/service-type": "deploy",
+						"paap.io/tool":         "argocd",
+					},
+				},
+				Spec: paapv1.ServiceInstanceSpec{
+					EnvironmentRef: paapv1.ObjectReference{Name: "staging"},
+					Type:           "deploy",
+					ToolNamespace:  "test-staging-argocd",
+					Helm: &paapv1.HelmInstallSpec{
+						ReleaseName: "test-staging-argocd",
+						Namespace:   "test-staging-argocd",
+					},
+				},
+				Status: paapv1.ServiceInstanceStatus{Phase: "Running"},
+			},
+		).
+		Build()
+
+	if err := SyncClusterState(context.Background(), db, k8sClient); err != nil {
+		t.Fatalf("sync cluster state: %v", err)
+	}
+
+	var count int64
+	if err := db.Model(&model.ServiceInstallation{}).Count(&count).Error; err != nil {
+		t.Fatalf("count service installations: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("legacy service-type named ServiceInstance should be ignored, got %d installs", count)
 	}
 }
 
@@ -447,6 +526,147 @@ func TestSyncClusterStateUpdatesComponentRegistryImageFromCR(t *testing.T) {
 	}
 	if updated.DeliveryMode != "source" || updated.JenkinsJob != "test-staging-source-smoke-build" || updated.PipelineStatus != "configured" {
 		t.Fatalf("existing source delivery metadata was not preserved: %#v", updated)
+	}
+}
+
+func TestSyncClusterStatePreservesHighLevelComponentConfig(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := db.AutoMigrate(
+		&model.Application{},
+		&model.AppMember{},
+		&model.Environment{},
+		&model.ServiceInstallation{},
+		&model.Component{},
+	); err != nil {
+		t.Fatalf("migrate db: %v", err)
+	}
+	app := model.Application{Name: "test", Identifier: "test", OwnerID: 1}
+	if err := db.Create(&app).Error; err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	env := model.Environment{ApplicationID: app.ID, Name: "预发", Identifier: "staging", Namespace: "test-staging", Status: "running"}
+	if err := db.Create(&env).Error; err != nil {
+		t.Fatalf("create env: %v", err)
+	}
+	cfgJSON, err := (model.ComponentConfig{
+		Framework: "springboot",
+		Env: []model.ComponentEnvVar{
+			{Name: "OLD", Value: "stale"},
+		},
+		ConfigMaps: []model.ComponentConfigMap{{
+			Name: "api-config",
+			Data: map[string]string{"application-paap.yml": "spring: {}\n"},
+		}},
+		Secrets: []model.ComponentSecret{{
+			Name: "api-secret",
+			Data: map[string]string{"POSTGRES_PASSWORD": "secret"},
+		}},
+		Files: []model.ComponentConfigFile{{
+			Name:          "spring-config",
+			ConfigMapName: "api-config",
+			Key:           "application-paap.yml",
+			MountPath:     "/etc/paap/application-paap.yml",
+		}},
+		Bindings: []model.ComponentBinding{{
+			TargetKey:  "service:1",
+			TargetName: "postgresql",
+			TargetType: "postgresql",
+			Role:       "database",
+			Mode:       "springboot-file",
+		}},
+		Dependencies: []string{"postgresql"},
+	}).JSON()
+	if err != nil {
+		t.Fatalf("config json: %v", err)
+	}
+	if err := db.Create(&model.Component{
+		EnvironmentID: env.ID,
+		Name:          "api",
+		Type:          "backend",
+		Image:         "registry/api:v1",
+		Version:       "v1",
+		Replicas:      1,
+		Status:        "running",
+		Config:        cfgJSON,
+	}).Error; err != nil {
+		t.Fatalf("create component: %v", err)
+	}
+
+	scheme := runtime.NewScheme()
+	if err := clientgoscheme.AddToScheme(scheme); err != nil {
+		t.Fatalf("add client-go scheme: %v", err)
+	}
+	if err := paapv1.AddToScheme(scheme); err != nil {
+		t.Fatalf("add paap scheme: %v", err)
+	}
+	k8sClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(
+			&paapv1.Application{
+				ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "paap-system"},
+				Spec:       paapv1.ApplicationSpec{Name: "测试服务", Identifier: "test"},
+				Status:     paapv1.ApplicationStatus{Phase: "Active"},
+			},
+			&paapv1.Environment{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "staging",
+					Namespace: "paap-app-test",
+					Labels:    map[string]string{"paap.io/app": "test", "paap.io/env": "staging"},
+				},
+				Spec:   paapv1.EnvironmentSpec{Name: "预发", Identifier: "staging", PrimaryNamespace: "test-staging"},
+				Status: paapv1.EnvironmentStatus{Phase: "Running"},
+			},
+			&paapv1.Component{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "staging-api",
+					Namespace: "paap-app-test",
+					Labels:    map[string]string{"paap.io/app": "test", "paap.io/env": "staging", "paap.io/component": "api"},
+				},
+				Spec: paapv1.ComponentSpec{
+					EnvironmentRef: paapv1.ObjectReference{Name: "staging"},
+					Name:           "api",
+					Identifier:     "api",
+					Type:           "backend",
+					ManagedBy:      "argocd",
+					Deployment: paapv1.DeploymentSpec{
+						Namespace: "test-staging",
+						Image:     "registry/api:v2",
+						Tag:       "v2",
+						Replicas:  1,
+						Env: []paapv1.EnvVar{{
+							Name:  "RUNTIME",
+							Value: "fresh",
+						}},
+					},
+				},
+				Status: paapv1.ComponentStatus{Phase: "Running"},
+			},
+		).
+		Build()
+
+	if err := SyncClusterState(context.Background(), db, k8sClient); err != nil {
+		t.Fatalf("sync cluster state: %v", err)
+	}
+
+	var updated model.Component
+	if err := db.Where("environment_id = ? AND name = ?", env.ID, "api").First(&updated).Error; err != nil {
+		t.Fatalf("component not found: %v", err)
+	}
+	if updated.Image != "registry/api:v1" || updated.Version != "v1" {
+		t.Fatalf("sync must not overwrite image delivery edits from runtime CR, got image=%q version=%q", updated.Image, updated.Version)
+	}
+	merged, err := model.ParseComponentConfig(updated.Config)
+	if err != nil {
+		t.Fatalf("parse merged config: %v", err)
+	}
+	if merged.Framework != "springboot" || len(merged.ConfigMaps) != 1 || len(merged.Secrets) != 1 || len(merged.Files) != 1 || len(merged.Bindings) != 1 {
+		t.Fatalf("high-level config was not preserved: %#v", merged)
+	}
+	if len(merged.Env) != 1 || merged.Env[0].Name != "RUNTIME" || merged.Env[0].Value != "fresh" {
+		t.Fatalf("runtime env was not refreshed: %#v", merged.Env)
 	}
 }
 

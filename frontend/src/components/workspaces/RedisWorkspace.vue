@@ -117,7 +117,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import ToolWorkspaceFrame from './ToolWorkspaceFrame.vue'
 import type { WorkspaceAction, WorkspaceResource } from '../../views/serviceWorkspace'
 
@@ -135,7 +135,8 @@ const keys = computed(() => props.resources.filter(r =>
 const info = computed(() => props.resources.filter(r =>
   r.type === 'Info' || r.type === 'Health' || r.type === 'health'
 ))
-const selectedResource = ref<WorkspaceResource | null>(props.resources.find(r => r.type !== 'Connection') || props.resources[0] || null)
+const firstSelectableResource = () => props.resources.find(r => r.type !== 'Connection') || props.resources[0] || null
+const selectedResource = ref<WorkspaceResource | null>(firstSelectableResource())
 
 const selectResource = (resource: WorkspaceResource) => {
   selectedResource.value = resource
@@ -155,6 +156,18 @@ const availableTabs = computed(() => {
 })
 
 const activeTab = ref(keys.value.length ? 'keys' : (info.value.length ? 'info' : 'resources'))
+
+const resourceKey = (resource?: WorkspaceResource | null) => resource ? `${resource.type}:${resource.name}` : ''
+const syncWorkspaceState = () => {
+  const currentKey = resourceKey(selectedResource.value)
+  const refreshed = currentKey ? props.resources.find((resource) => resourceKey(resource) === currentKey) : null
+  selectedResource.value = refreshed || firstSelectableResource()
+  if (!availableTabs.value.some((tab) => tab.key === activeTab.value)) {
+    activeTab.value = availableTabs.value[0]?.key || 'resources'
+  }
+}
+watch(() => props.resources, syncWorkspaceState, { deep: true })
+watch(availableTabs, syncWorkspaceState)
 
 const statusBadge = (s?: string) => {
   const v = String(s || '').toLowerCase()

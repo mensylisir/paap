@@ -228,11 +228,13 @@ func serviceResourceAnnotations(appIdentifier, envIdentifier string, svcTmpl *mo
 func buildHelmInstallSpec(app *model.Application, env *model.Environment, svcTmpl *model.ServiceTemplate, svcType string, userValues ...map[string]string) *paapv1.HelmInstallSpec {
 	releaseName := serviceToolNamespace(*app, *env, svcTmpl, svcType)
 	toolNS := serviceToolNamespace(*app, *env, svcTmpl, svcType)
+	userValueOverrides := normalizeServiceUserValues(svcType, firstUserValues(userValues...), *svcTmpl)
+	selectedTemplate := serviceTemplateForValues(*svcTmpl, svcType, userValueOverrides)
 
-	manifestJSON := svcTmpl.PlatformManifestJSON
-	values := mergeDefaultValues(svcTmpl.DefaultValues, nil)
+	manifestJSON := selectedTemplate.PlatformManifestJSON
+	values := mergeDefaultValues(selectedTemplate.DefaultValues, nil)
 
-	if svcTmpl.S3Bucket != "" || svcTmpl.ChartArchivePath != "" {
+	if selectedTemplate.S3Bucket != "" || selectedTemplate.ChartArchivePath != "" {
 		primaryNS := app.Identifier + "-" + env.Identifier
 		allNS := []string{primaryNS, primaryNS + "-app"}
 		platformVars := map[string]string{
@@ -254,8 +256,8 @@ func buildHelmInstallSpec(app *model.Application, env *model.Environment, svcTmp
 			}
 		}
 	}
-	if len(userValues) > 0 {
-		for k, v := range userValues[0] {
+	if len(userValueOverrides) > 0 {
+		for k, v := range userValueOverrides {
 			if strings.TrimSpace(k) == "" {
 				continue
 			}
@@ -266,16 +268,375 @@ func buildHelmInstallSpec(app *model.Application, env *model.Environment, svcTmp
 	return &paapv1.HelmInstallSpec{
 		ReleaseName:      releaseName,
 		Namespace:        toolNS,
-		ChartRepo:        svcTmpl.ChartRepo,
-		ChartName:        svcTmpl.ChartName,
-		ChartVersion:     svcTmpl.ChartVersion,
-		ChartArchivePath: svcTmpl.ChartArchivePath,
-		S3Bucket:         svcTmpl.S3Bucket,
-		S3Key:            svcTmpl.S3Key,
-		PresetValues:     svcTmpl.PresetValues,
+		ChartRepo:        selectedTemplate.ChartRepo,
+		ChartName:        selectedTemplate.ChartName,
+		ChartVersion:     selectedTemplate.ChartVersion,
+		ChartArchivePath: selectedTemplate.ChartArchivePath,
+		S3Bucket:         selectedTemplate.S3Bucket,
+		S3Key:            selectedTemplate.S3Key,
+		PresetValues:     selectedTemplate.PresetValues,
 		PlatformManifest: manifestJSON,
 		Values:           values,
 	}
+}
+
+func firstUserValues(userValues ...map[string]string) map[string]string {
+	if len(userValues) == 0 {
+		return nil
+	}
+	return userValues[0]
+}
+
+func normalizeServiceUserValues(svcType string, values map[string]string, templates ...model.ServiceTemplate) map[string]string {
+	if len(values) == 0 {
+		return nil
+	}
+	normalizedType := serviceValueProfileKey(svcType, templates...)
+	allowed, known := serviceAllowedUserValueKeys(normalizedType)
+	out := make(map[string]string, len(values))
+	for key, value := range values {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		if known {
+			if _, ok := allowed[key]; !ok {
+				continue
+			}
+		}
+		out[key] = strings.TrimSpace(value)
+	}
+
+	switch normalizedType {
+	case "redis":
+		normalizeRedisUserValues(out)
+	case "mysql":
+		normalizeMySQLUserValues(out)
+	case "postgresql":
+		normalizePostgreSQLUserValues(out)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func serviceValueProfileKey(svcType string, templates ...model.ServiceTemplate) string {
+	candidates := make([]string, 0, 1+len(templates)*5)
+	for _, tmpl := range templates {
+		candidates = append(candidates,
+			tmpl.Name,
+			tmpl.ChartName,
+			tmpl.S3Key,
+			tmpl.ChartArchivePath,
+			tmpl.Type,
+		)
+	}
+	candidates = append(candidates, svcType)
+	for _, candidate := range candidates {
+		if key := normalizeServiceValueProfileKey(candidate); key != "" {
+			return key
+		}
+	}
+	return strings.ToLower(strings.TrimSpace(svcType))
+}
+
+func normalizeServiceValueProfileKey(value string) string {
+	text := strings.ToLower(strings.TrimSpace(value))
+	if text == "" {
+		return ""
+	}
+	switch {
+	case strings.Contains(text, "harbor"):
+		return "harbor"
+	case strings.Contains(text, "docker-registry") || strings.Contains(text, "registry.tar.gz") || text == "registry" || strings.Contains(text, "docker registry"):
+		return "registry"
+	case strings.Contains(text, "gitea") || text == "git":
+		return "git"
+	case strings.Contains(text, "jenkins") || text == "ci":
+		return "ci"
+	case strings.Contains(text, "argocd") || strings.Contains(text, "argo cd") || text == "deploy":
+		return "deploy"
+	case strings.Contains(text, "loki") || strings.Contains(text, "promtail") || text == "log":
+		return "log"
+	case strings.Contains(text, "prometheus") || strings.Contains(text, "grafana") || strings.Contains(text, "monitor.tar.gz") || text == "monitor":
+		return "monitor"
+	case strings.Contains(text, "postgres"):
+		return "postgresql"
+	case strings.Contains(text, "mysql"):
+		return "mysql"
+	case strings.Contains(text, "mongo"):
+		return "mongodb"
+	case strings.Contains(text, "redis"):
+		return "redis"
+	case strings.Contains(text, "rabbit"):
+		return "rabbitmq"
+	case strings.Contains(text, "kafka"):
+		return "kafka"
+	case strings.Contains(text, "minio"):
+		return "minio"
+	}
+	return text
+}
+
+func serviceAllowedUserValueKeys(profileKey string) (map[string]struct{}, bool) {
+	keys := map[string][]string{
+		"git":      {"replicaCount", "persistence.enabled", "persistence.size"},
+		"ci":       {"controller.numExecutors", "controller.javaOpts", "persistence.enabled", "persistence.size"},
+		"deploy":   {"controller.replicas", "server.replicas", "repoServer.replicas", "applicationSet.replicas"},
+		"monitor":  {"prometheus.prometheusSpec.replicas", "prometheus.prometheusSpec.shards", "grafana.persistence.enabled", "grafana.persistence.size"},
+		"log":      {"loki.replicas", "loki.persistence.enabled", "loki.persistence.size"},
+		"registry": {"replicaCount", "persistence.enabled", "persistence.size", "deleteEnabled"},
+		"harbor": {
+			"core.replicas", "portal.replicas", "registry.replicas", "jobservice.replicas",
+			"trivy.enabled", "trivy.replicas", "persistence.enabled",
+			"persistence.persistentVolumeClaim.registry.size",
+			"persistence.persistentVolumeClaim.database.size",
+			"persistence.persistentVolumeClaim.redis.size",
+			"persistence.persistentVolumeClaim.jobservice.jobLog.size",
+			"persistence.persistentVolumeClaim.trivy.size",
+		},
+		"redis": {
+			"architecture", "replica.replicaCount", "sentinel.enabled", "sentinel.masterSet",
+			"cluster.init", "cluster.nodes", "cluster.replicas", "usePassword",
+			"persistence.enabled", "persistence.size",
+			"master.persistence.enabled", "master.persistence.size",
+			"replica.persistence.enabled", "replica.persistence.size",
+		},
+		"mysql": {
+			"architecture", "secondary.replicaCount",
+			"primary.persistence.enabled", "primary.persistence.size",
+			"secondary.persistence.enabled", "secondary.persistence.size",
+			"paap.architecture", "replicaCount", "persistence.enabled", "persistence.size",
+		},
+		"postgresql": {
+			"architecture", "readReplicas.replicaCount",
+			"primary.persistence.enabled", "primary.persistence.size",
+			"readReplicas.persistence.enabled", "readReplicas.persistence.size",
+			"paap.architecture", "postgresql.replicaCount", "pgpool.replicaCount", "persistence.enabled", "persistence.size",
+		},
+		"mongodb":  {"architecture", "replicaCount", "persistence.enabled", "persistence.size"},
+		"rabbitmq": {"replicaCount", "persistence.enabled", "persistence.size"},
+		"kafka": {
+			"controller.replicaCount", "broker.replicaCount",
+			"controller.persistence.enabled", "controller.persistence.size",
+			"broker.persistence.enabled", "broker.persistence.size",
+		},
+		"minio": {"mode", "statefulset.replicaCount", "persistence.enabled", "persistence.size"},
+	}
+	allowedKeys, ok := keys[profileKey]
+	if !ok {
+		return nil, false
+	}
+	allowed := make(map[string]struct{}, len(allowedKeys))
+	for _, key := range allowedKeys {
+		allowed[key] = struct{}{}
+	}
+	return allowed, true
+}
+
+func normalizeDatabaseUserValues(values map[string]string, replicaPrefix string) {
+	if len(values) == 0 {
+		return
+	}
+	architecture := strings.ToLower(strings.TrimSpace(values["architecture"]))
+	if architecture != "replication" {
+		if _, ok := values["architecture"]; ok || hasUserValuesWithPrefix(values, replicaPrefix) {
+			values["architecture"] = "standalone"
+		}
+		deleteUserValuesWithPrefix(values, replicaPrefix)
+		return
+	}
+	values["architecture"] = "replication"
+}
+
+func normalizeMySQLUserValues(values map[string]string) {
+	if len(values) == 0 {
+		return
+	}
+	switch selectedDatabaseArchitecture(values) {
+	case "dual-master", "galera", "cluster":
+		architecture := selectedDatabaseArchitecture(values)
+		if architecture == "cluster" {
+			architecture = "galera"
+		}
+		minNodes := 3
+		if architecture == "dual-master" {
+			minNodes = 2
+		}
+		values["paap.architecture"] = architecture
+		values["replicaCount"] = atLeastIntString(values["replicaCount"], minNodes)
+		delete(values, "architecture")
+		deleteUserValuesWithPrefix(values, "primary.")
+		deleteUserValuesWithPrefix(values, "secondary.")
+	case "replication":
+		values["architecture"] = "replication"
+		delete(values, "paap.architecture")
+		delete(values, "replicaCount")
+		delete(values, "persistence.enabled")
+		delete(values, "persistence.size")
+	default:
+		if _, ok := values["architecture"]; ok || strings.TrimSpace(values["paap.architecture"]) != "" || hasUserValuesWithPrefix(values, "secondary.") {
+			values["architecture"] = "standalone"
+		}
+		delete(values, "paap.architecture")
+		delete(values, "replicaCount")
+		delete(values, "persistence.enabled")
+		delete(values, "persistence.size")
+		deleteUserValuesWithPrefix(values, "secondary.")
+	}
+}
+
+func normalizePostgreSQLUserValues(values map[string]string) {
+	if len(values) == 0 {
+		return
+	}
+	switch selectedDatabaseArchitecture(values) {
+	case "ha-cluster", "cluster", "ha":
+		values["paap.architecture"] = "ha-cluster"
+		values["postgresql.replicaCount"] = atLeastIntString(values["postgresql.replicaCount"], 3)
+		values["pgpool.replicaCount"] = atLeastIntString(values["pgpool.replicaCount"], 1)
+		delete(values, "architecture")
+		deleteUserValuesWithPrefix(values, "primary.")
+		deleteUserValuesWithPrefix(values, "readReplicas.")
+	case "replication":
+		values["architecture"] = "replication"
+		delete(values, "paap.architecture")
+		delete(values, "postgresql.replicaCount")
+		delete(values, "pgpool.replicaCount")
+		delete(values, "persistence.enabled")
+		delete(values, "persistence.size")
+	default:
+		if _, ok := values["architecture"]; ok || strings.TrimSpace(values["paap.architecture"]) != "" || hasUserValuesWithPrefix(values, "readReplicas.") {
+			values["architecture"] = "standalone"
+		}
+		delete(values, "paap.architecture")
+		delete(values, "postgresql.replicaCount")
+		delete(values, "pgpool.replicaCount")
+		delete(values, "persistence.enabled")
+		delete(values, "persistence.size")
+		deleteUserValuesWithPrefix(values, "readReplicas.")
+	}
+}
+
+func selectedDatabaseArchitecture(values map[string]string) string {
+	if values == nil {
+		return ""
+	}
+	if architecture := strings.ToLower(strings.TrimSpace(values["paap.architecture"])); architecture != "" {
+		return architecture
+	}
+	return strings.ToLower(strings.TrimSpace(values["architecture"]))
+}
+
+func normalizeRedisUserValues(values map[string]string) {
+	if len(values) == 0 {
+		return
+	}
+	switch strings.ToLower(strings.TrimSpace(values["architecture"])) {
+	case "cluster":
+		values["architecture"] = "cluster"
+		values["cluster.init"] = "true"
+		values["usePassword"] = "true"
+		values["sentinel.enabled"] = "false"
+		clusterReplicas := nonNegativeIntString(values["cluster.replicas"], 1)
+		minNodes := 3 * (clusterReplicas + 1)
+		if minNodes < 3 {
+			minNodes = 3
+		}
+		clusterNodes := nonNegativeIntString(values["cluster.nodes"], minNodes)
+		if clusterNodes < minNodes {
+			clusterNodes = minNodes
+		}
+		values["cluster.replicas"] = fmt.Sprintf("%d", clusterReplicas)
+		values["cluster.nodes"] = fmt.Sprintf("%d", clusterNodes)
+		deleteUserValuesWithPrefix(values, "master.")
+		deleteUserValuesWithPrefix(values, "replica.")
+	case "sentinel":
+		values["architecture"] = "replication"
+		values["sentinel.enabled"] = "true"
+		if strings.TrimSpace(values["sentinel.masterSet"]) == "" {
+			values["sentinel.masterSet"] = "mymaster"
+		}
+	case "replication":
+		values["architecture"] = "replication"
+		values["sentinel.enabled"] = "false"
+	default:
+		if _, ok := values["architecture"]; ok {
+			values["architecture"] = "standalone"
+		}
+		values["sentinel.enabled"] = "false"
+		deleteUserValuesWithPrefix(values, "replica.")
+	}
+}
+
+func hasUserValuesWithPrefix(values map[string]string, prefix string) bool {
+	for key := range values {
+		if strings.HasPrefix(key, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+func deleteUserValuesWithPrefix(values map[string]string, prefix string) {
+	for key := range values {
+		if strings.HasPrefix(key, prefix) {
+			delete(values, key)
+		}
+	}
+}
+
+func nonNegativeIntString(value string, fallback int) int {
+	parsed, err := strconv.Atoi(strings.TrimSpace(value))
+	if err != nil || parsed < 0 {
+		return fallback
+	}
+	return parsed
+}
+
+func atLeastIntString(value string, minimum int) string {
+	parsed, err := strconv.Atoi(strings.TrimSpace(value))
+	if err != nil || parsed < minimum {
+		parsed = minimum
+	}
+	return fmt.Sprintf("%d", parsed)
+}
+
+func serviceTemplateForValues(svcTmpl model.ServiceTemplate, svcType string, values map[string]string) model.ServiceTemplate {
+	switch svcType {
+	case "redis":
+		if strings.ToLower(strings.TrimSpace(values["architecture"])) == "cluster" {
+			return serviceTemplateWithBuiltInChart(svcTmpl, "redis-cluster")
+		}
+	case "mysql":
+		switch selectedDatabaseArchitecture(values) {
+		case "dual-master", "galera", "cluster":
+			return serviceTemplateWithBuiltInChart(svcTmpl, "mysql-galera")
+		}
+	case "postgresql":
+		switch selectedDatabaseArchitecture(values) {
+		case "ha-cluster", "cluster", "ha":
+			return serviceTemplateWithBuiltInChart(svcTmpl, "postgresql-ha")
+		}
+	}
+	return svcTmpl
+}
+
+func serviceTemplateWithBuiltInChart(svcTmpl model.ServiceTemplate, chartName string) model.ServiceTemplate {
+	next := svcTmpl
+	next.ChartRepo = ""
+	next.ChartName = ""
+	next.ChartVersion = ""
+	next.ChartArchivePath = ""
+	next.DefaultValues = ""
+	next.S3Bucket = "paap-charts"
+	next.S3Key = fmt.Sprintf("charts/%s.tar.gz", chartName)
+	next.PresetValues = ""
+	if manifestJSON := builtInManifestJSON(chartName); manifestJSON != "" {
+		next.PlatformManifestJSON = manifestJSON
+	}
+	return next
 }
 
 // getWorkloadRole returns the RBAC whitelist for a given service type,
@@ -618,7 +979,7 @@ func ListApplicationEnvironments(c *gin.Context) {
 }
 
 // CreateEnvironment creates a new environment for an application.
-// If template is provided, auto-installs tools and infra. If fromEmpty, creates bare namespace.
+// Every environment gets the foundation toolchain. Templates add business infra on top.
 func CreateEnvironment(c *gin.Context) {
 	appID, _ := strconv.Atoi(c.Param("id"))
 	var req CreateEnvRequest
@@ -649,13 +1010,11 @@ func CreateEnvironment(c *gin.Context) {
 		Name:          req.Name,
 		Identifier:    identifier,
 		TemplateID:    req.TemplateID,
-		Status:        "empty",
+		Status:        "creating",
 		Namespace:     app.Identifier + "-" + identifier,
 	}
 
-	if !req.FromEmpty {
-		env.Status = "creating"
-	} else {
+	if req.FromEmpty {
 		env.TemplateID = 0
 	}
 
@@ -676,39 +1035,62 @@ func CreateEnvironment(c *gin.Context) {
 		return
 	}
 
-	// 2) 如果从模板创建，安装工具（创建 ServiceInstance CR）
-	if !req.FromEmpty && req.TemplateID > 0 {
-		go installTemplateServices(&env, &app, identifier, req.TemplateID)
-		env.Status = "creating"
-		database.DB.Model(&env).Update("status", "creating")
-	} else {
-		env.Status = "empty"
-		database.DB.Model(&env).Update("status", "empty")
-	}
+	// 2) 安装环境基座；模板只是在基座之外追加数据库、中间件等。
+	go installEnvironmentServices(&env, &app, identifier, env.TemplateID)
+	env.Status = "creating"
+	database.DB.Model(&env).Update("status", "creating")
 
 	c.JSON(http.StatusCreated, gin.H{"data": env})
 }
 
-// installTemplateServices creates ServiceInstance CRs for template services
-func installTemplateServices(env *model.Environment, app *model.Application, envIdentifier string, templateID uint) {
-	log.Printf("[installTemplateServices] Starting for env=%s templateID=%d", envIdentifier, templateID)
-	ctx := context.Background()
+func foundationServiceTypes() []string {
+	return []string{"git", "registry", "deploy", "monitor", "log"}
+}
 
-	var tmpl model.EnvTemplate
-	if err := database.DB.First(&tmpl, templateID).Error; err != nil {
-		log.Printf("[installTemplateServices] Template %d not found: %v", templateID, err)
-		database.DB.Model(env).Update("status", "error").Update("error_message", "template not found")
-		return
+func installEnvironmentServices(env *model.Environment, app *model.Application, envIdentifier string, templateID uint) {
+	log.Printf("[installEnvironmentServices] Starting for env=%s templateID=%d", envIdentifier, templateID)
+	services := foundationServiceTypes()
+	if templateID > 0 {
+		var tmpl model.EnvTemplate
+		if err := database.DB.First(&tmpl, templateID).Error; err != nil {
+			log.Printf("[installEnvironmentServices] Template %d not found: %v", templateID, err)
+			database.DB.Model(env).Update("status", "error").Update("error_message", "template not found")
+			return
+		}
+		log.Printf("[installEnvironmentServices] Found template: name=%s services=%s infra=%s", tmpl.Name, tmpl.Services, tmpl.Infra)
+		services = appendServiceTypes(services, templateInstallServiceTypes(tmpl)...)
 	}
-	log.Printf("[installTemplateServices] Found template: name=%s services=%s infra=%s", tmpl.Name, tmpl.Services, tmpl.Infra)
+	installServiceTypes(env, app, envIdentifier, services)
+}
 
-	services := templateInstallServiceTypes(tmpl)
-	log.Printf("[installTemplateServices] Will install %d services: %v", len(services), services)
+// installTemplateServices creates ServiceInstance CRs for foundation and template services.
+func installTemplateServices(env *model.Environment, app *model.Application, envIdentifier string, templateID uint) {
+	installEnvironmentServices(env, app, envIdentifier, templateID)
+}
+
+func appendServiceTypes(base []string, extra ...string) []string {
+	seen := map[string]bool{}
+	out := make([]string, 0, len(base)+len(extra))
+	for _, value := range append(base, extra...) {
+		value = strings.TrimSpace(value)
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		out = append(out, value)
+	}
+	return out
+}
+
+func installServiceTypes(env *model.Environment, app *model.Application, envIdentifier string, services []string) {
+	ctx := context.Background()
+	services = appendServiceTypes(nil, services...)
+	log.Printf("[installServiceTypes] Will install %d services: %v", len(services), services)
 	for _, svc := range services {
 		// 查找模板获取安装方式
 		var svcTmpl model.ServiceTemplate
 		if err := database.DB.Where("type = ?", svc).First(&svcTmpl).Error; err != nil {
-			log.Printf("[installTemplateServices] template for service %s not found: %v", svc, err)
+			log.Printf("[installServiceTypes] template for service %s not found: %v", svc, err)
 			continue
 		}
 		toolNS := serviceToolNamespace(*app, *env, &svcTmpl, svc)
@@ -721,7 +1103,7 @@ func installTemplateServices(env *model.Environment, app *model.Application, env
 			ReleaseName:   toolNS,
 		}
 		database.DB.Create(&inst)
-		log.Printf("[installTemplateServices] Service %s: installer=%s s3Bucket=%s s3Key=%s chartRepo=%s",
+		log.Printf("[installServiceTypes] Service %s: installer=%s s3Bucket=%s s3Key=%s chartRepo=%s",
 			svc, svcTmpl.Installer, svcTmpl.S3Bucket, svcTmpl.S3Key, svcTmpl.ChartRepo)
 
 		if svcTmpl.Installer != "helm" {
@@ -1369,6 +1751,7 @@ func componentConfigFromRuntimeConfig(cfg *k8s.RuntimeConfig) model.ComponentCon
 		Command: append([]string{}, cfg.Command...),
 		Args:    append([]string{}, cfg.Args...),
 		Env:     make([]model.ComponentEnvVar, 0, len(cfg.Env)),
+		Files:   make([]model.ComponentConfigFile, 0, len(cfg.Files)),
 	}
 	for _, env := range cfg.Env {
 		out.Env = append(out.Env, model.ComponentEnvVar{
@@ -1378,6 +1761,18 @@ func componentConfigFromRuntimeConfig(cfg *k8s.RuntimeConfig) model.ComponentCon
 			SecretKey:     env.SecretKey,
 			ConfigMapName: env.ConfigMapName,
 			ConfigMapKey:  env.ConfigMapKey,
+		})
+	}
+	for _, file := range cfg.Files {
+		if file.Kind != "configMap" || strings.TrimSpace(file.ObjectName) == "" || strings.TrimSpace(file.Key) == "" || strings.TrimSpace(file.MountPath) == "" {
+			continue
+		}
+		out.Files = append(out.Files, model.ComponentConfigFile{
+			Name:          strings.Trim(strings.TrimSpace(file.ObjectName)+"-"+strings.TrimSpace(file.Key), "-"),
+			ConfigMapName: strings.TrimSpace(file.ObjectName),
+			Key:           strings.TrimSpace(file.Key),
+			MountPath:     strings.TrimSpace(file.MountPath),
+			ReadOnly:      true,
 		})
 	}
 	return out
@@ -1731,6 +2126,9 @@ func UpdateComponent(c *gin.Context) {
 			return
 		}
 		comp.Image = strings.TrimSpace(req.Image)
+		if componentUsesDirectImageReference(comp) {
+			comp.RegistryImage = comp.Image
+		}
 		if tag := imageReferenceTag(comp.Image); tag != "" {
 			comp.Version = tag
 		}
@@ -1741,6 +2139,14 @@ func UpdateComponent(c *gin.Context) {
 			return
 		}
 		comp.Version = strings.TrimSpace(req.Version)
+		if componentUsesDirectImageReference(comp) {
+			if strings.TrimSpace(comp.RegistryImage) != "" {
+				comp.RegistryImage = service.ImageWithTag(comp.RegistryImage, comp.Version)
+				comp.Image = comp.RegistryImage
+			} else if strings.TrimSpace(comp.Image) != "" {
+				comp.Image = service.ImageWithTag(comp.Image, comp.Version)
+			}
+		}
 	}
 	if req.Replicas > 0 {
 		comp.Replicas = req.Replicas
@@ -1765,6 +2171,10 @@ func UpdateComponent(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"data": comp})
+}
+
+func componentUsesDirectImageReference(comp model.Component) bool {
+	return strings.TrimSpace(comp.DeliveryMode) != "source" && strings.TrimSpace(comp.JenkinsJob) == ""
 }
 
 func imageReferenceHasTag(image string) bool {
@@ -2336,6 +2746,168 @@ func GetServiceWorkspace(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"data": buildLiveToolWorkspace(app, env, inst, components)})
+}
+
+func GetServiceRuntimeMetrics(c *gin.Context) {
+	syncClusterStateIfPossible()
+
+	envID, _ := strconv.Atoi(c.Param("id"))
+	serviceID, _ := strconv.Atoi(c.Param("serviceId"))
+
+	_, env, inst, _, err := loadServiceWorkspaceContext(envID, serviceID)
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "service not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if strings.TrimSpace(inst.Namespace) == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "service namespace is not available"})
+		return
+	}
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 8*time.Second)
+	defer cancel()
+	cfg, _ := k8s.DiscoverNamespaceRuntimeConfig(ctx, inst.Namespace)
+	metrics, err := k8s.GetRuntimeMetrics(ctx, inst.Namespace, cfg)
+	if err != nil {
+		c.JSON(http.StatusFailedDependency, gin.H{"error": err.Error()})
+		return
+	}
+	if !metrics.Available {
+		metrics = k8s.EnrichRuntimeMetricsFromPrometheus(ctx, metrics, monitorNamespaceForEnvironment(env.ID))
+	}
+	c.JSON(http.StatusOK, gin.H{"data": metrics})
+}
+
+func GetServiceRuntimeLogs(c *gin.Context) {
+	syncClusterStateIfPossible()
+
+	envID, _ := strconv.Atoi(c.Param("id"))
+	serviceID, _ := strconv.Atoi(c.Param("serviceId"))
+
+	_, _, inst, _, err := loadServiceWorkspaceContext(envID, serviceID)
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "service not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if strings.TrimSpace(inst.Namespace) == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "service namespace is not available"})
+		return
+	}
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 8*time.Second)
+	defer cancel()
+	cfg, _ := k8s.DiscoverNamespaceRuntimeConfig(ctx, inst.Namespace)
+	logs, err := k8s.GetRuntimeLogs(ctx, inst.Namespace, cfg, runtimeLogTailLines(c))
+	if err != nil {
+		c.JSON(http.StatusFailedDependency, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": logs})
+}
+
+func GetComponentRuntimeMetrics(c *gin.Context) {
+	syncClusterStateIfPossible()
+
+	envID, _ := strconv.Atoi(c.Param("id"))
+	componentID, _ := strconv.Atoi(c.Param("componentId"))
+
+	var env model.Environment
+	if err := database.DB.First(&env, envID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "environment not found"})
+		return
+	}
+	var comp model.Component
+	if err := database.DB.Where("id = ? AND environment_id = ?", componentID, envID).First(&comp).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "component not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	identifier := service.ComponentIdentifier(comp.Name, comp.Type, comp.ID)
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 8*time.Second)
+	defer cancel()
+	cfg, _ := k8s.DiscoverComponentRuntimeConfig(ctx, env.Namespace, identifier)
+	if cfg == nil {
+		cfg = &k8s.RuntimeConfig{Namespace: env.Namespace, WorkloadName: identifier}
+	}
+	metrics, err := k8s.GetRuntimeMetrics(ctx, env.Namespace, cfg)
+	if err != nil {
+		c.JSON(http.StatusFailedDependency, gin.H{"error": err.Error()})
+		return
+	}
+	if !metrics.Available {
+		metrics = k8s.EnrichRuntimeMetricsFromPrometheus(ctx, metrics, monitorNamespaceForEnvironment(env.ID))
+	}
+	c.JSON(http.StatusOK, gin.H{"data": metrics})
+}
+
+func GetComponentRuntimeLogs(c *gin.Context) {
+	syncClusterStateIfPossible()
+
+	envID, _ := strconv.Atoi(c.Param("id"))
+	componentID, _ := strconv.Atoi(c.Param("componentId"))
+
+	var env model.Environment
+	if err := database.DB.First(&env, envID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "environment not found"})
+		return
+	}
+	var comp model.Component
+	if err := database.DB.Where("id = ? AND environment_id = ?", componentID, envID).First(&comp).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "component not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	identifier := service.ComponentIdentifier(comp.Name, comp.Type, comp.ID)
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 8*time.Second)
+	defer cancel()
+	cfg, _ := k8s.DiscoverComponentRuntimeConfig(ctx, env.Namespace, identifier)
+	if cfg == nil {
+		cfg = &k8s.RuntimeConfig{Namespace: env.Namespace, WorkloadName: identifier}
+	}
+	logs, err := k8s.GetRuntimeLogs(ctx, env.Namespace, cfg, runtimeLogTailLines(c))
+	if err != nil {
+		c.JSON(http.StatusFailedDependency, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": logs})
+}
+
+func runtimeLogTailLines(c *gin.Context) int64 {
+	raw := strings.TrimSpace(c.Query("tail"))
+	if raw == "" {
+		return 200
+	}
+	value, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || value <= 0 {
+		return 200
+	}
+	if value > 1000 {
+		return 1000
+	}
+	return value
+}
+
+func monitorNamespaceForEnvironment(envID uint) string {
+	var inst model.ServiceInstallation
+	if err := database.DB.
+		Where("environment_id = ? AND service_type = ?", envID, "monitor").
+		Order("id DESC").
+		First(&inst).Error; err != nil {
+		return ""
+	}
+	return strings.TrimSpace(inst.Namespace)
 }
 
 func ProxyServiceInstance(c *gin.Context) {
@@ -3102,6 +3674,28 @@ func RunServiceWorkspaceAction(c *gin.Context) {
 		_ = database.DB.Save(&inst).Error
 		c.JSON(http.StatusOK, gin.H{"data": buildLiveToolWorkspace(app, env, inst, components)})
 		return
+	case "delete_registry_tag":
+		if inst.ServiceType != "registry" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "action is only supported for Docker Registry services"})
+			return
+		}
+		repository := workspaceActionParam(req, "repository")
+		if repository == "" {
+			repository = strings.Trim(strings.TrimSpace(req.Target), "/")
+		}
+		tag := workspaceActionParam(req, "tag")
+		if repository == "" || tag == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "repository and tag are required"})
+			return
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+		defer cancel()
+		if _, err := k8s.NewRegistryClient(inst.Namespace).DeleteTag(ctx, repository, tag); err != nil {
+			c.JSON(http.StatusFailedDependency, gin.H{"error": err.Error(), "data": buildLiveToolWorkspace(app, env, inst, components)})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"data": buildLiveToolWorkspace(app, env, inst, components)})
+		return
 	case "check_database_connection":
 		if !isSQLDatabaseService(inst.ServiceType) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "action is only supported for mysql and postgresql services"})
@@ -3129,6 +3723,43 @@ func RunServiceWorkspaceAction(c *gin.Context) {
 			return
 		}
 		c.JSON(http.StatusOK, gin.H{"data": buildLiveToolWorkspace(app, env, inst, components)})
+		return
+	case "create_database_backup":
+		if !isSQLDatabaseService(inst.ServiceType) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "action is only supported for mysql and postgresql services"})
+			return
+		}
+		databaseName := workspaceActionParam(req, "database")
+		if databaseName == "" {
+			databaseName = strings.TrimSpace(req.Target)
+		}
+		if databaseName == "" {
+			databaseName = defaultDatabaseName(inst.ServiceType)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		info, err := k8s.DiscoverDatabaseConnection(ctx, inst.Namespace, inst.ServiceType)
+		if err != nil {
+			c.JSON(http.StatusFailedDependency, gin.H{"error": err.Error(), "data": buildLiveToolWorkspace(app, env, inst, components)})
+			return
+		}
+		document, summary, err := service.ExportDatabaseBackup(ctx, info, databaseName)
+		if err != nil {
+			c.JSON(http.StatusFailedDependency, gin.H{"error": err.Error(), "data": buildLiveToolWorkspace(app, env, inst, components)})
+			return
+		}
+		if _, err := k8s.StoreDatabaseBackup(ctx, inst.Namespace, inst.ServiceType, document, k8s.DatabaseBackupMetadata{
+			Engine:     summary.Engine,
+			Database:   summary.Database,
+			CreatedAt:  summary.CreatedAt,
+			TableCount: summary.TableCount,
+			RowCount:   summary.RowCount,
+		}); err != nil {
+			c.JSON(http.StatusFailedDependency, gin.H{"error": err.Error(), "data": buildLiveToolWorkspace(app, env, inst, components)})
+			return
+		}
+		workspace := service.BuildToolWorkspace(app, env, inst, components)
+		c.JSON(http.StatusOK, gin.H{"data": enrichDatabaseWorkspace(ctx, workspace, inst)})
 		return
 	case "create_database", "drop_database":
 		if !isSQLDatabaseService(inst.ServiceType) {
@@ -3398,7 +4029,10 @@ func RunServiceWorkspaceAction(c *gin.Context) {
 		}
 		c.JSON(http.StatusOK, gin.H{"data": enrichMongoDBWorkspace(ctx, workspace, inst)})
 		return
-	case "list_rabbitmq_queues", "list_rabbitmq_exchanges", "list_rabbitmq_vhosts", "create_rabbitmq_queue", "delete_rabbitmq_queue":
+	case "list_rabbitmq_queues", "list_rabbitmq_exchanges", "list_rabbitmq_vhosts", "list_rabbitmq_bindings",
+		"create_rabbitmq_queue", "delete_rabbitmq_queue", "purge_rabbitmq_queue", "get_rabbitmq_messages",
+		"create_rabbitmq_exchange", "delete_rabbitmq_exchange", "create_rabbitmq_vhost", "delete_rabbitmq_vhost",
+		"create_rabbitmq_binding", "delete_rabbitmq_binding", "publish_rabbitmq_message":
 		if inst.ServiceType != "rabbitmq" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "action is only supported for rabbitmq services"})
 			return
@@ -3421,6 +4055,93 @@ func RunServiceWorkspaceAction(c *gin.Context) {
 				vhost, queue, _ = parseDatabaseTableTarget(req.Target)
 			}
 			err = service.DeleteRabbitMQQueue(ctx, info, vhost, queue)
+		case "purge_rabbitmq_queue":
+			queue := workspaceActionParam(req, "queue")
+			vhost := workspaceActionParam(req, "vhost")
+			if queue == "" {
+				vhost, queue, _ = parseDatabaseTableTarget(req.Target)
+			}
+			err = service.PurgeRabbitMQQueue(ctx, info, vhost, queue)
+		case "get_rabbitmq_messages":
+			queue := workspaceActionParam(req, "queue")
+			vhost := workspaceActionParam(req, "vhost")
+			if queue == "" {
+				vhost, queue, _ = parseDatabaseTableTarget(req.Target)
+			}
+			workspace = enrichRabbitMQWorkspace(ctx, workspace, inst)
+			c.JSON(http.StatusOK, gin.H{"data": enrichRabbitMQMessagesWorkspace(ctx, workspace, info, vhost, queue, workspaceActionInt(req, "count", 10), workspaceActionBool(req, "requeue", true))})
+			return
+		case "create_rabbitmq_exchange":
+			err = service.CreateRabbitMQExchange(ctx, info, workspaceActionParam(req, "vhost"), workspaceActionParam(req, "exchange"), workspaceActionParam(req, "type"), workspaceActionBool(req, "durable", true))
+		case "delete_rabbitmq_exchange":
+			exchange := workspaceActionParam(req, "exchange")
+			vhost := workspaceActionParam(req, "vhost")
+			if exchange == "" {
+				vhost, exchange, _ = parseDatabaseTableTarget(req.Target)
+			}
+			err = service.DeleteRabbitMQExchange(ctx, info, vhost, exchange)
+		case "create_rabbitmq_vhost":
+			err = service.CreateRabbitMQVHost(ctx, info, workspaceActionParam(req, "vhost"))
+		case "delete_rabbitmq_vhost":
+			vhost := workspaceActionParam(req, "vhost")
+			if vhost == "" {
+				vhost = strings.TrimSpace(req.Target)
+			}
+			err = service.DeleteRabbitMQVHost(ctx, info, vhost)
+		case "create_rabbitmq_binding":
+			arguments, argErr := workspaceActionJSONMap(req, "arguments")
+			if argErr != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": argErr.Error(), "data": enrichRabbitMQWorkspace(ctx, workspace, inst)})
+				return
+			}
+			vhost := workspaceActionParam(req, "vhost")
+			source := workspaceActionParam(req, "source")
+			if source == "" && strings.TrimSpace(req.Target) != "" {
+				targetVHost, targetSource, ok := parseDatabaseTableTarget(req.Target)
+				if ok {
+					vhost = valueOrFallback(vhost, targetVHost)
+					source = targetSource
+				}
+			}
+			err = service.CreateRabbitMQBinding(ctx, info,
+				vhost,
+				source,
+				workspaceActionParam(req, "destinationType"),
+				workspaceActionParam(req, "destination"),
+				workspaceActionParam(req, "routingKey"),
+				arguments,
+			)
+		case "delete_rabbitmq_binding":
+			vhost := workspaceActionParam(req, "vhost")
+			source := workspaceActionParam(req, "source")
+			destinationType := workspaceActionParam(req, "destinationType")
+			destination := workspaceActionParam(req, "destination")
+			propertiesKey := workspaceActionParam(req, "propertiesKey")
+			if propertiesKey == "" {
+				vhost, source, destinationType, destination, propertiesKey, _ = parseRabbitMQBindingTarget(req.Target)
+			}
+			err = service.DeleteRabbitMQBinding(ctx, info, vhost, source, destinationType, destination, propertiesKey)
+		case "publish_rabbitmq_message":
+			vhost := workspaceActionParam(req, "vhost")
+			exchange := workspaceActionParam(req, "exchange")
+			routingKey := workspaceActionParam(req, "routingKey")
+			if exchange == "" && strings.TrimSpace(req.Target) != "" {
+				targetVHost, targetName, ok := parseDatabaseTableTarget(req.Target)
+				if ok {
+					vhost = valueOrFallback(vhost, targetVHost)
+					if routingKey == "" {
+						routingKey = targetName
+					} else {
+						exchange = targetName
+					}
+				}
+			}
+			properties, propErr := workspaceActionJSONMap(req, "properties")
+			if propErr != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": propErr.Error(), "data": enrichRabbitMQWorkspace(ctx, workspace, inst)})
+				return
+			}
+			_, err = service.PublishRabbitMQMessage(ctx, info, vhost, exchange, routingKey, workspaceActionParam(req, "payload"), properties)
 		}
 		if err != nil {
 			c.JSON(http.StatusFailedDependency, gin.H{"error": err.Error(), "data": enrichRabbitMQWorkspace(ctx, workspace, inst)})
@@ -3428,7 +4149,7 @@ func RunServiceWorkspaceAction(c *gin.Context) {
 		}
 		c.JSON(http.StatusOK, gin.H{"data": enrichRabbitMQWorkspace(ctx, workspace, inst)})
 		return
-	case "list_kafka_topics", "create_kafka_topic", "delete_kafka_topic":
+	case "list_kafka_topics", "create_kafka_topic", "delete_kafka_topic", "read_kafka_messages", "produce_kafka_message":
 		if inst.ServiceType != "kafka" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "action is only supported for kafka services"})
 			return
@@ -3450,6 +4171,20 @@ func RunServiceWorkspaceAction(c *gin.Context) {
 				topic = strings.TrimSpace(req.Target)
 			}
 			err = service.DeleteKafkaTopic(ctx, info, topic)
+		case "read_kafka_messages":
+			topic := workspaceActionParam(req, "topic")
+			if topic == "" {
+				topic = strings.TrimSpace(req.Target)
+			}
+			workspace = enrichKafkaWorkspace(ctx, workspace, inst)
+			c.JSON(http.StatusOK, gin.H{"data": enrichKafkaMessagesWorkspace(ctx, workspace, info, topic, workspaceActionInt(req, "partition", -1), workspaceActionParam(req, "offset"), workspaceActionInt(req, "limit", 10))})
+			return
+		case "produce_kafka_message":
+			topic := workspaceActionParam(req, "topic")
+			if topic == "" {
+				topic = strings.TrimSpace(req.Target)
+			}
+			err = service.ProduceKafkaMessage(ctx, info, topic, workspaceActionParam(req, "key"), workspaceActionParam(req, "value"), workspaceActionInt(req, "partition", -1))
 		}
 		if err != nil {
 			c.JSON(http.StatusFailedDependency, gin.H{"error": err.Error(), "data": enrichKafkaWorkspace(ctx, workspace, inst)})
@@ -3605,6 +4340,13 @@ func isSQLDatabaseService(serviceType string) bool {
 	return serviceType == "mysql" || serviceType == "postgresql"
 }
 
+func defaultDatabaseName(serviceType string) string {
+	if serviceType == "mysql" {
+		return "mysql"
+	}
+	return "postgres"
+}
+
 func workspaceActionParam(req WorkspaceActionRequest, key string) string {
 	if req.Params == nil {
 		return ""
@@ -3630,6 +4372,23 @@ func workspaceActionBool(req WorkspaceActionRequest, key string, fallback bool) 
 		return fallback
 	}
 	return value == "true" || value == "1" || value == "yes" || value == "on"
+}
+
+func workspaceActionJSONMap(req WorkspaceActionRequest, key string) (map[string]interface{}, error) {
+	value := workspaceActionParam(req, key)
+	if value == "" {
+		return map[string]interface{}{}, nil
+	}
+	var out map[string]interface{}
+	decoder := json.NewDecoder(strings.NewReader(value))
+	decoder.UseNumber()
+	if err := decoder.Decode(&out); err != nil {
+		return nil, fmt.Errorf("%s must be valid JSON object: %w", key, err)
+	}
+	if out == nil {
+		out = map[string]interface{}{}
+	}
+	return out, nil
 }
 
 func runDatabaseTableAction(ctx context.Context, req WorkspaceActionRequest, info k8s.DatabaseConnectionInfo, databaseName, tableName string) error {
@@ -3698,7 +4457,8 @@ func enrichDatabaseWorkspace(ctx context.Context, workspace service.ToolWorkspac
 		workspace.Resources = []service.ToolWorkspaceResource{databaseConnectionResource("Partial", err.Error())}
 		return workspace
 	}
-	resources := make([]service.ToolWorkspaceResource, 0, len(databases)+1)
+	backups, backupErr := k8s.ListDatabaseBackups(ctx, inst.Namespace, inst.ServiceType)
+	resources := make([]service.ToolWorkspaceResource, 0, len(databases)+len(backups)+1)
 	resources = append(resources, databaseConnectionResource("Ready", "Database connection is healthy."))
 	for _, databaseName := range databases {
 		resources = append(resources, service.ToolWorkspaceResource{
@@ -3712,7 +4472,14 @@ func enrichDatabaseWorkspace(ctx context.Context, workspace service.ToolWorkspac
 			},
 		})
 	}
+	for _, backup := range backups {
+		resources = append(resources, databaseBackupResource(backup))
+	}
 	workspace.Resources = resources
+	workspace.Config = append(workspace.Config, service.ToolWorkspaceConfig{Label: "备份存储", Value: "Kubernetes Secret"})
+	if backupErr != nil {
+		workspace.Config = append(workspace.Config, service.ToolWorkspaceConfig{Label: "备份状态", Value: "查询失败: " + backupErr.Error()})
+	}
 	return workspace
 }
 
@@ -3827,6 +4594,24 @@ func parseDatabaseTableTarget(target string) (string, string, bool) {
 	return strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1]), true
 }
 
+func rabbitMQBindingTarget(vhost, source, destinationType, destination, propertiesKey string) string {
+	return strings.Join([]string{vhost, source, destinationType, destination, propertiesKey}, "\t")
+}
+
+func parseRabbitMQBindingTarget(target string) (string, string, string, string, string, bool) {
+	parts := strings.SplitN(target, "\t", 5)
+	if len(parts) != 5 {
+		return "", "", "", "", "", false
+	}
+	for i := range parts {
+		parts[i] = strings.TrimSpace(parts[i])
+	}
+	if parts[0] == "" || parts[3] == "" || parts[4] == "" {
+		return "", "", "", "", "", false
+	}
+	return parts[0], parts[1], parts[2], parts[3], parts[4], true
+}
+
 func databaseConnectionResource(status, description string) service.ToolWorkspaceResource {
 	return service.ToolWorkspaceResource{
 		Name:        "database-connection",
@@ -3834,6 +4619,37 @@ func databaseConnectionResource(status, description string) service.ToolWorkspac
 		Status:      status,
 		Description: description,
 	}
+}
+
+func databaseBackupResource(backup k8s.DatabaseBackupMetadata) service.ToolWorkspaceResource {
+	return service.ToolWorkspaceResource{
+		Name:        backup.Name,
+		Type:        "Backup",
+		Status:      "Ready",
+		Description: fmt.Sprintf("%s backup for %s, %d tables / %d rows", backup.Engine, backup.Database, backup.TableCount, backup.RowCount),
+		Annotations: map[string]interface{}{
+			"database":            backup.Database,
+			"engine":              backup.Engine,
+			"createdAt":           backup.CreatedAt,
+			"storage":             backup.Storage,
+			"secretName":          backup.SecretName,
+			"originalSizeBytes":   backup.OriginalSizeBytes,
+			"compressedSizeBytes": backup.CompressedSizeBytes,
+			"size":                humanSize(backup.CompressedSizeBytes),
+			"tables":              backup.TableCount,
+			"rows":                backup.RowCount,
+		},
+	}
+}
+
+func humanSize(value int) string {
+	if value >= 1024*1024 {
+		return fmt.Sprintf("%.1f MiB", float64(value)/(1024*1024))
+	}
+	if value >= 1024 {
+		return fmt.Sprintf("%.1f KiB", float64(value)/1024)
+	}
+	return fmt.Sprintf("%d B", value)
 }
 
 func enrichArgoCDWorkspace(ctx context.Context, workspace service.ToolWorkspace, inst model.ServiceInstallation) service.ToolWorkspace {
@@ -4829,7 +5645,7 @@ func isObservabilityMiddlewareService(serviceType string) bool {
 func serviceSelectorForDashboard(inst model.ServiceInstallation) string {
 	switch inst.ServiceType {
 	case "deploy":
-		return strings.TrimSuffix(valueOrFallback(inst.ReleaseName, inst.Namespace), "-deploy") + "-argocd"
+		return valueOrFallback(inst.ReleaseName, inst.Namespace)
 	case "monitor":
 		return "(grafana|prometheus|alertmanager)"
 	case "git", "ci", "registry":
@@ -4963,16 +5779,32 @@ func monitorSubjectKindForNamespace(monitorNamespace, namespace string) string {
 	if namespace == "" || namespace == monitorNamespace {
 		return "tool"
 	}
-	base := strings.TrimSuffix(monitorNamespace, "-monitor")
+	base := environmentBaseNamespace(monitorNamespace)
 	if namespace == base {
 		return "component"
 	}
-	for _, suffix := range []string{"git", "deploy", "ci", "registry", "harbor", "log", "monitor"} {
+	for _, suffix := range []string{"git", "gitea", "deploy", "argocd", "ci", "jenkins", "registry", "docker-registry", "harbor", "log", "loki", "monitor", "kube-prometheus-stack", "prometheus-grafana"} {
 		if namespace == base+"-"+suffix {
 			return "tool"
 		}
 	}
 	return "middleware"
+}
+
+func environmentBaseNamespace(namespace string) string {
+	base := strings.TrimSpace(namespace)
+	for _, suffix := range []string{
+		"-kube-prometheus-stack",
+		"-prometheus-grafana",
+		"-monitor",
+		"-loki",
+		"-log",
+	} {
+		if strings.HasSuffix(base, suffix) {
+			return strings.TrimSuffix(base, suffix)
+		}
+	}
+	return base
 }
 
 func monitorSubjectKindLabel(kind string) string {
@@ -5163,6 +5995,7 @@ func enrichRegistryWorkspace(ctx context.Context, workspace service.ToolWorkspac
 			Status:      status,
 			Description: description,
 			ExternalURL: serviceProxyURL(inst, "/v2/"+strings.Trim(repo, "/")+"/tags/list"),
+			Actions:     registryResourceTagActions(inst.ServiceType, repo),
 			Annotations: annotations,
 		})
 	}
@@ -5174,6 +6007,20 @@ func enrichRegistryWorkspace(ctx context.Context, workspace service.ToolWorkspac
 	}
 	workspace.Resources = resources
 	return workspace
+}
+
+func registryResourceTagActions(serviceType, target string) []service.ToolWorkspaceAction {
+	if serviceType != "registry" {
+		return nil
+	}
+	return []service.ToolWorkspaceAction{{
+		Key:         "delete_registry_tag",
+		Label:       "删除 Tag",
+		Description: "按当前 repository 和指定 tag 查询 manifest digest 并删除；需要 Registry 已启用 deleteEnabled。",
+		Tone:        "danger",
+		Target:      target,
+		Fields:      []service.ToolWorkspaceActionField{{Name: "tag", Label: "Tag", Required: true, Placeholder: "v1.0.0"}},
+	}}
 }
 
 func enrichJenkinsWorkspace(ctx context.Context, workspace service.ToolWorkspace, inst model.ServiceInstallation) service.ToolWorkspace {
@@ -5976,7 +6823,8 @@ func enrichRabbitMQWorkspace(ctx context.Context, workspace service.ToolWorkspac
 	queues, queueErr := service.ListRabbitMQQueues(ctx, info)
 	exchanges, exchangeErr := service.ListRabbitMQExchanges(ctx, info)
 	vhosts, vhostErr := service.ListRabbitMQVHosts(ctx, info)
-	resources := make([]service.ToolWorkspaceResource, 0, len(queues)+len(exchanges)+len(vhosts))
+	bindings, bindingErr := service.ListRabbitMQBindings(ctx, info)
+	resources := make([]service.ToolWorkspaceResource, 0, len(queues)+len(exchanges)+len(vhosts)+len(bindings))
 	if queueErr == nil {
 		for _, queue := range queues {
 			target := databaseTableTarget(queue.VHost, queue.Name)
@@ -5987,6 +6835,15 @@ func enrichRabbitMQWorkspace(ctx context.Context, workspace service.ToolWorkspac
 				Description: fmt.Sprintf("vhost=%s messages=%d", queue.VHost, queue.Messages),
 				Annotations: map[string]interface{}{"vhost": queue.VHost, "messages": queue.Messages},
 				Actions: []service.ToolWorkspaceAction{
+					{Key: "get_rabbitmq_messages", Label: "查看消息", Description: "读取该队列中的消息。", Target: target, Fields: []service.ToolWorkspaceActionField{
+						{Name: "count", Label: "数量", Type: "number", Default: "10", Placeholder: "10"},
+						{Name: "requeue", Label: "读后放回", Type: "checkbox", Default: "true"},
+					}},
+					{Key: "publish_rabbitmq_message", Label: "发布", Description: "通过默认交换机向该队列发布消息。", Target: target, Fields: []service.ToolWorkspaceActionField{
+						{Name: "payload", Label: "消息内容", Type: "textarea", Required: true, Placeholder: `{"id":1}`},
+						{Name: "properties", Label: "Properties JSON", Type: "textarea", Placeholder: `{"content_type":"application/json"}`},
+					}},
+					{Key: "purge_rabbitmq_queue", Label: "清空", Description: "清空该队列中的所有消息。", Tone: "danger", Target: target},
 					{Key: "delete_rabbitmq_queue", Label: "删除", Description: "删除该队列。", Tone: "danger", Target: target},
 				},
 			})
@@ -5999,19 +6856,116 @@ func enrichRabbitMQWorkspace(ctx context.Context, workspace service.ToolWorkspac
 			if strings.HasPrefix(exchange.Name, "amq.") {
 				continue
 			}
-			resources = append(resources, service.ToolWorkspaceResource{Name: exchange.Name, Type: "Exchange", Status: "Ready", Description: "type=" + exchange.Type + " vhost=" + exchange.VHost})
+			if strings.TrimSpace(exchange.Name) == "" {
+				continue
+			}
+			target := databaseTableTarget(exchange.VHost, exchange.Name)
+			resources = append(resources, service.ToolWorkspaceResource{
+				Name:        exchange.Name,
+				Type:        "Exchange",
+				Status:      "Ready",
+				Description: "type=" + exchange.Type + " vhost=" + exchange.VHost,
+				Annotations: map[string]interface{}{"vhost": exchange.VHost, "exchangeType": exchange.Type},
+				Actions: []service.ToolWorkspaceAction{
+					{Key: "publish_rabbitmq_message", Label: "发布", Description: "向该交换机发布消息。", Target: target, Fields: []service.ToolWorkspaceActionField{
+						{Name: "vhost", Label: "VHost", Default: exchange.VHost, Placeholder: "/"},
+						{Name: "exchange", Label: "交换机", Default: exchange.Name, Placeholder: "orders.events"},
+						{Name: "routingKey", Label: "Routing key", Placeholder: "orders.created"},
+						{Name: "payload", Label: "消息内容", Type: "textarea", Required: true, Placeholder: `{"id":1}`},
+						{Name: "properties", Label: "Properties JSON", Type: "textarea", Placeholder: `{"content_type":"application/json"}`},
+					}},
+					{Key: "create_rabbitmq_binding", Label: "绑定", Description: "从该交换机绑定到队列或交换机。", Target: target, Fields: []service.ToolWorkspaceActionField{
+						{Name: "vhost", Label: "VHost", Default: exchange.VHost, Placeholder: "/"},
+						{Name: "source", Label: "源交换机", Default: exchange.Name, Required: true, Placeholder: "orders.events"},
+						{Name: "destinationType", Label: "目标类型", Default: "queue", Placeholder: "queue 或 exchange"},
+						{Name: "destination", Label: "目标", Required: true, Placeholder: "orders.created"},
+						{Name: "routingKey", Label: "Routing key", Placeholder: "orders.#"},
+						{Name: "arguments", Label: "Arguments JSON", Type: "textarea", Placeholder: `{"x-match":"all"}`},
+					}},
+					{Key: "delete_rabbitmq_exchange", Label: "删除", Description: "删除该交换机。", Tone: "danger", Target: target},
+				},
+			})
 		}
 	} else {
 		resources = append(resources, service.ToolWorkspaceResource{Name: "rabbitmq-exchanges", Type: "Exchange", Status: "Partial", Description: exchangeErr.Error()})
 	}
 	if vhostErr == nil {
 		for _, vhost := range vhosts {
-			resources = append(resources, service.ToolWorkspaceResource{Name: vhost.Name, Type: "VHost", Status: "Ready", Description: "RabbitMQ virtual host"})
+			actions := []service.ToolWorkspaceAction{}
+			if vhost.Name != "/" {
+				actions = append(actions, service.ToolWorkspaceAction{Key: "delete_rabbitmq_vhost", Label: "删除", Description: "删除该 VHost。", Tone: "danger", Target: vhost.Name})
+			}
+			resources = append(resources, service.ToolWorkspaceResource{
+				Name:        vhost.Name,
+				Type:        "VHost",
+				Status:      "Ready",
+				Description: "RabbitMQ virtual host",
+				Actions:     actions,
+			})
 		}
 	} else {
 		resources = append(resources, service.ToolWorkspaceResource{Name: "rabbitmq-vhosts", Type: "VHost", Status: "Partial", Description: vhostErr.Error()})
 	}
+	if bindingErr == nil {
+		for _, binding := range bindings {
+			if binding.Source == "" || binding.PropertiesKey == "" {
+				continue
+			}
+			name := fmt.Sprintf("%s -> %s", binding.Source, binding.Destination)
+			target := rabbitMQBindingTarget(binding.VHost, binding.Source, binding.DestinationType, binding.Destination, binding.PropertiesKey)
+			resources = append(resources, service.ToolWorkspaceResource{
+				Name:        name,
+				Type:        "Binding",
+				Status:      "Ready",
+				Description: fmt.Sprintf("vhost=%s routing_key=%s", binding.VHost, binding.RoutingKey),
+				Annotations: map[string]interface{}{
+					"vhost":           binding.VHost,
+					"source":          binding.Source,
+					"destination":     binding.Destination,
+					"destinationType": binding.DestinationType,
+					"routingKey":      binding.RoutingKey,
+					"propertiesKey":   binding.PropertiesKey,
+				},
+				Actions: []service.ToolWorkspaceAction{
+					{Key: "delete_rabbitmq_binding", Label: "删除", Description: "删除该绑定。", Tone: "danger", Target: target},
+				},
+			})
+		}
+	} else {
+		resources = append(resources, service.ToolWorkspaceResource{Name: "rabbitmq-bindings", Type: "Binding", Status: "Partial", Description: bindingErr.Error()})
+	}
 	workspace.Resources = resources
+	return workspace
+}
+
+func enrichRabbitMQMessagesWorkspace(ctx context.Context, workspace service.ToolWorkspace, info k8s.RabbitMQConnectionInfo, vhost, queue string, count int, requeue bool) service.ToolWorkspace {
+	messages, err := service.GetRabbitMQMessages(ctx, info, vhost, queue, count, requeue)
+	if err != nil {
+		workspace.Resources = append(workspace.Resources, service.ToolWorkspaceResource{Name: valueOrFallback(queue, "messages"), Type: "Message", Status: "Partial", Description: err.Error()})
+		return workspace
+	}
+	for idx, message := range messages {
+		name := fmt.Sprintf("%s#%d", valueOrFallback(queue, "message"), idx+1)
+		payload := message.Payload
+		if payload == "" {
+			payload = message.PayloadString
+		}
+		workspace.Resources = append(workspace.Resources, service.ToolWorkspaceResource{
+			Name:        name,
+			Type:        "Message",
+			Status:      "Ready",
+			Description: truncateLogLine(payload, 220),
+			Annotations: map[string]interface{}{
+				"vhost":        valueOrFallback(vhost, "/"),
+				"queue":        queue,
+				"exchange":     message.Exchange,
+				"routingKey":   message.RoutingKey,
+				"payloadBytes": message.PayloadBytes,
+				"remaining":    message.MessageCount,
+				"redelivered":  message.Redelivered,
+			},
+		})
+	}
 	return workspace
 }
 
@@ -6035,6 +6989,16 @@ func enrichKafkaWorkspace(ctx context.Context, workspace service.ToolWorkspace, 
 			Description: fmt.Sprintf("%d partitions", topic.Partitions),
 			Annotations: map[string]interface{}{"partitions": topic.Partitions},
 			Actions: []service.ToolWorkspaceAction{
+				{Key: "read_kafka_messages", Label: "读取消息", Description: "从该 Topic 读取消息。", Target: topic.Name, Fields: []service.ToolWorkspaceActionField{
+					{Name: "partition", Label: "Partition", Type: "number", Placeholder: "留空读取全部"},
+					{Name: "offset", Label: "Offset", Default: "first", Placeholder: "first / latest / 0"},
+					{Name: "limit", Label: "数量", Type: "number", Default: "10"},
+				}},
+				{Key: "produce_kafka_message", Label: "写入消息", Description: "向该 Topic 写入一条消息。", Target: topic.Name, Fields: []service.ToolWorkspaceActionField{
+					{Name: "key", Label: "Key", Placeholder: "order-1"},
+					{Name: "value", Label: "消息内容", Type: "textarea", Required: true, Placeholder: `{"id":1}`},
+					{Name: "partition", Label: "Partition", Type: "number", Placeholder: "留空自动分配"},
+				}},
 				{Key: "delete_kafka_topic", Label: "删除", Description: "删除该 topic。", Tone: "danger", Target: topic.Name},
 			},
 		})
@@ -6043,6 +7007,45 @@ func enrichKafkaWorkspace(ctx context.Context, workspace service.ToolWorkspace, 
 		resources = append(resources, service.ToolWorkspaceResource{Name: "topics", Type: "Topic", Status: "Empty", Description: "No topics"})
 	}
 	workspace.Resources = resources
+	return workspace
+}
+
+func enrichKafkaMessagesWorkspace(ctx context.Context, workspace service.ToolWorkspace, info k8s.KafkaConnectionInfo, topic string, partition int, offset string, limit int) service.ToolWorkspace {
+	messages, err := service.ReadKafkaMessages(ctx, info, topic, partition, offset, limit)
+	if err != nil {
+		workspace.Resources = append(workspace.Resources, service.ToolWorkspaceResource{Name: valueOrFallback(topic, "messages"), Type: "Message", Status: "Partial", Description: err.Error()})
+		return workspace
+	}
+	if len(messages) == 0 {
+		workspace.Resources = append(workspace.Resources, service.ToolWorkspaceResource{
+			Name:        valueOrFallback(topic, "messages"),
+			Type:        "Message",
+			Status:      "Empty",
+			Description: "No messages returned for the selected topic/offset.",
+			Annotations: map[string]interface{}{
+				"topic":     topic,
+				"partition": partition,
+				"offset":    valueOrFallback(offset, "first"),
+			},
+		})
+		return workspace
+	}
+	for _, message := range messages {
+		workspace.Resources = append(workspace.Resources, service.ToolWorkspaceResource{
+			Name:        fmt.Sprintf("%s/%d/%d", valueOrFallback(message.Topic, topic), message.Partition, message.Offset),
+			Type:        "Message",
+			Status:      "Ready",
+			Description: truncateLogLine(message.Value, 220),
+			Annotations: map[string]interface{}{
+				"topic":     message.Topic,
+				"partition": message.Partition,
+				"offset":    message.Offset,
+				"key":       message.Key,
+				"time":      message.Time.Format(time.RFC3339),
+				"value":     message.Value,
+			},
+		})
+	}
 	return workspace
 }
 
@@ -6143,7 +7146,7 @@ func toolHTTPBaseURL(inst model.ServiceInstallation) string {
 	case "monitor":
 		return fmt.Sprintf("http://%s-grafana.%s.svc.cluster.local", inst.Namespace, inst.Namespace)
 	case "log":
-		return fmt.Sprintf("http://%s-loki.%s.svc.cluster.local:3100", inst.Namespace, inst.Namespace)
+		return k8s.NewLokiClient(inst.Namespace).BaseURL
 	case "ci":
 		return fmt.Sprintf("http://%s.%s.svc.cluster.local:8080", inst.Namespace, inst.Namespace)
 	case "registry":
@@ -6375,9 +7378,10 @@ func buildDefaultGrafanaDashboard(app model.Application, env model.Environment, 
 		componentTargets = append(componentTargets, service.ComponentIdentifier(comp.Name, comp.Type, comp.ID))
 	}
 	title := fmt.Sprintf("PAAP %s/%s Overview", app.Identifier, env.Identifier)
-	namespacePattern := fmt.Sprintf("%s-%s.*", app.Identifier, env.Identifier)
-	environmentNamespaceLabels := fmt.Sprintf(`kube_namespace_labels{label_paap_io_app="%s", label_paap_io_env="%s"}`, app.Identifier, env.Identifier)
-	workloadNamespaceLabels := fmt.Sprintf(`kube_namespace_labels{label_paap_io_app="%s", label_paap_io_env="%s", label_paap_io_role="workload"}`, app.Identifier, env.Identifier)
+	baseNamespace := fmt.Sprintf("%s-%s", app.Identifier, env.Identifier)
+	namespacePattern := regexp.QuoteMeta(baseNamespace) + `.*`
+	environmentNamespaceSelector := fmt.Sprintf(`kube_namespace_status_phase{namespace=~"%s", phase="Active"}`, namespacePattern)
+	workloadNamespaceSelector := fmt.Sprintf(`kube_namespace_status_phase{namespace="%s", phase="Active"}`, baseNamespace)
 	dashboard := map[string]interface{}{
 		"title":         title,
 		"uid":           fmt.Sprintf("paap-%s-%s-overview", app.Identifier, env.Identifier),
@@ -6397,8 +7401,8 @@ func buildDefaultGrafanaDashboard(app model.Application, env model.Environment, 
 			},
 		},
 		"panels": []map[string]interface{}{
-			grafanaPanel(1, "Environment Namespaces", "stat", 0, 0, 4, 4, fmt.Sprintf(`count(%s)`, environmentNamespaceLabels)),
-			grafanaPanel(2, "Workload Namespaces", "stat", 4, 0, 4, 4, fmt.Sprintf(`count(%s)`, workloadNamespaceLabels)),
+			grafanaPanel(1, "Environment Namespaces", "stat", 0, 0, 4, 4, fmt.Sprintf(`count(%s)`, environmentNamespaceSelector)),
+			grafanaPanel(2, "Workload Namespaces", "stat", 4, 0, 4, 4, fmt.Sprintf(`count(%s)`, workloadNamespaceSelector)),
 			grafanaPanel(3, "Workloads", "stat", 8, 0, 4, 4, fmt.Sprintf(`count(count by (namespace, owner_kind, owner_name) (%s))`, runningPodMetricExpr(`kube_pod_owner{namespace=~"%s", owner_is_controller="true"}`, namespacePattern))),
 			grafanaPanel(4, "Running Pods", "stat", 12, 0, 4, 4, fmt.Sprintf(`sum(kube_pod_status_phase{namespace=~"%s", phase="Running"})`, namespacePattern)),
 			grafanaPanel(5, "Unready Pods", "stat", 16, 0, 4, 4, fmt.Sprintf(`sum(%s)`, runningPodMetricExpr(`kube_pod_status_ready{namespace=~"%s", condition="false"}`, namespacePattern))),
@@ -6618,8 +7622,9 @@ func InstallService(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{"data": inst})
 }
 
-// UpdateService saves a service's deployable configuration. It intentionally
-// does not reconcile Kubernetes resources; deployment is an explicit action.
+// UpdateService saves a service's deployable configuration. Draft services
+// remain database-only; services that already have runtime state reconcile the
+// ServiceInstance CR so Helm sees the new desired values.
 func UpdateService(c *gin.Context) {
 	syncClusterStateIfPossible()
 
@@ -6661,6 +7666,19 @@ func UpdateService(c *gin.Context) {
 	}
 
 	helmSpec := buildHelmInstallSpec(&app, &env, &svcTmpl, inst.ServiceType, req.Values)
+	applyStoredServiceRuntimeIdentity(&inst, helmSpec)
+	if serviceStatusShouldReconcile(inst.Status) {
+		workloadRole := getWorkloadRole(inst.ServiceType)
+		toolNamespaceRole := getToolNamespaceRole(inst.ServiceType)
+		environmentRole := getEnvironmentRole(inst.ServiceType)
+		clusterRole := getClusterRole(inst.ServiceType)
+		resourceLabels := serviceResourceLabels(app.Identifier, env.Identifier, &svcTmpl, inst.ServiceType)
+		resourceAnnotations := serviceResourceAnnotations(app.Identifier, env.Identifier, &svcTmpl, inst.ServiceType)
+		if err := k8s.UpsertServiceInstanceCR(context.Background(), app.Identifier, env.Identifier, inst.ServiceType, workloadRole, toolNamespaceRole, environmentRole, clusterRole, nil, helmSpec, resourceLabels, resourceAnnotations); err != nil {
+			c.JSON(http.StatusFailedDependency, gin.H{"error": "ServiceInstance CR update failed: " + err.Error()})
+			return
+		}
+	}
 	inst.ServiceName = serviceToolIdentity(&svcTmpl, inst.ServiceType)
 	inst.Namespace = helmSpec.Namespace
 	inst.ReleaseName = helmSpec.ReleaseName
@@ -6677,6 +7695,33 @@ func UpdateService(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"data": inst})
+}
+
+func serviceStatusShouldReconcile(status string) bool {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "running", "installing":
+		return true
+	default:
+		return false
+	}
+}
+
+func applyStoredServiceRuntimeIdentity(inst *model.ServiceInstallation, helmSpec *paapv1.HelmInstallSpec) {
+	if inst == nil || helmSpec == nil {
+		return
+	}
+	if namespace := strings.TrimSpace(inst.Namespace); namespace != "" {
+		helmSpec.Namespace = namespace
+		rewriteServiceTemplateToolNamespaceValues(helmSpec, namespace)
+	}
+	if releaseName := strings.TrimSpace(inst.ReleaseName); releaseName != "" {
+		helmSpec.ReleaseName = releaseName
+		if helmSpec.Values != nil {
+			if _, ok := helmSpec.Values["fullnameOverride"]; ok {
+				helmSpec.Values["fullnameOverride"] = releaseName
+			}
+		}
+	}
 }
 
 // SetServiceExternalAccess toggles external access for the live Kubernetes

@@ -1,0 +1,10 @@
+# PAAP manages the namespace-local ServiceAccount and RBAC for this chart.
+serviceAccount:
+  create: false
+persistence:
+  enabled: false
+metrics:
+  enabled: false
+networkPolicy:
+  enabled: false
+resourcesPreset: "nano"

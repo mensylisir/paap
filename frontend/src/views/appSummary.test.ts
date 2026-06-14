@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildRecentEvents, countServiceIssues, environmentResourceSummary, hasErrorEnvironment, sumApplicationResources } from './appSummary'
+import { buildRecentEvents, countServiceIssues, effectiveEnvironmentStatus, environmentResourceSummary, environmentStatusLabel, hasErrorEnvironment, sumApplicationResources } from './appSummary'
 
 describe('app summary helpers', () => {
   it('detects environments with explicit errors', () => {
@@ -67,5 +67,22 @@ describe('app summary helpers', () => {
 
     expect(environmentResourceSummary(env)).toEqual({ toolCount: 6, middlewareCount: 2, componentCount: 2 })
     expect(sumApplicationResources({ environments: [env] })).toEqual({ toolCount: 6, middlewareCount: 2, componentCount: 2 })
+  })
+
+  it('does not present a populated environment as empty when the stored status is stale', () => {
+    const env = {
+      name: 'dev',
+      status: 'empty',
+      componentCount: 2,
+      services: [
+        { serviceType: 'git', status: 'running' },
+        { serviceType: 'postgresql', status: 'running' },
+        { serviceType: 'redis', status: 'running' },
+      ],
+    }
+
+    expect(effectiveEnvironmentStatus(env)).toBe('running')
+    expect(environmentStatusLabel(effectiveEnvironmentStatus(env))).toBe('运行中')
+    expect(buildRecentEvents([env])[0]).toBe('dev 已运行，1 个工具，2 个中间件，2 个组件')
   })
 })

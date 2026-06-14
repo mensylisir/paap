@@ -68,6 +68,23 @@ describe('componentTopology', () => {
     expect(buildComponentDependencyEdges(nodes)).toEqual([])
   })
 
+  it('keeps installed tools as canvas nodes in the platform tools lane', () => {
+    const lanes = buildComponentTopologyLanes(buildComponentTopologyNodes(
+      [{ id: 1, name: 'api', type: 'backend' }],
+      [
+        { id: 20, serviceName: 'dev-git', serviceType: 'git', status: 'running' } as any,
+        { id: 21, serviceName: 'dev-deploy', serviceType: 'deploy', status: 'running' } as any,
+        { id: 22, serviceName: 'dev-monitor', serviceType: 'monitor', status: 'running' } as any,
+      ],
+    ))
+
+    expect(lanes.find((lane) => lane.key === 'tools')?.nodes.map((node) => node.name)).toEqual([
+      'dev-git',
+      'dev-deploy',
+      'dev-monitor',
+    ])
+  })
+
   it('builds explicit component dependencies from JSON config to installed services', () => {
     const nodes = buildComponentTopologyNodes(
       [
@@ -91,6 +108,103 @@ describe('componentTopology', () => {
         toKey: 'service:10',
       },
     ])
+  })
+
+  it('infers component dependencies from generated environment variables', () => {
+    const nodes = buildComponentTopologyNodes([
+      {
+        id: 1,
+        name: 'web',
+        type: 'frontend',
+        config: JSON.stringify({ env: [{ name: 'BACKEND_URL', value: 'http://backend-1' }] }),
+      },
+      { id: 2, name: 'backend-1', type: 'backend' },
+    ])
+
+    expect(buildComponentDependencyEdges(nodes)).toEqual([
+      {
+        from: 'web',
+        to: 'backend-1',
+        fromId: 1,
+        toId: 2,
+        fromKey: 'component:1',
+        toKey: 'component:2',
+      },
+    ])
+  })
+
+  it('infers middleware dependencies from ConfigMap file content and generated bindings', () => {
+    const nodes = buildComponentTopologyNodes(
+      [
+        {
+          id: 1,
+          name: 'api',
+          type: 'backend',
+          config: JSON.stringify({
+            configMaps: [{
+              name: 'api-config',
+              data: {
+                'application-paap.yml': [
+                  'spring:',
+                  '  datasource:',
+                  '    url: jdbc:postgresql://orders-postgresql.orders-dev-postgresql.svc.cluster.local:5432/postgres',
+                  '  data:',
+                  '    redis:',
+                  '      host: orders-redis-master.orders-dev-redis.svc.cluster.local',
+                ].join('\n'),
+              },
+            }],
+            bindings: [{
+              targetName: 'orders-postgresql',
+              targetType: 'postgresql',
+              role: 'database',
+            }],
+          }),
+        },
+      ],
+      [
+        { id: 10, serviceName: 'orders-postgresql', serviceType: 'postgresql', namespace: 'orders-dev-postgresql', status: 'running' } as any,
+        { id: 11, serviceName: 'orders-redis-master', serviceType: 'redis', namespace: 'orders-dev-redis', status: 'running' } as any,
+      ]
+    )
+
+    expect(buildComponentDependencyEdges(nodes)).toEqual([
+      {
+        from: 'api',
+        to: 'orders-postgresql',
+        fromId: 1,
+        toId: 10,
+        fromKey: 'component:1',
+        toKey: 'service:10',
+      },
+      {
+        from: 'api',
+        to: 'orders-redis-master',
+        fromId: 1,
+        toId: 11,
+        fromKey: 'component:1',
+        toKey: 'service:11',
+      },
+    ])
+  })
+
+  it('does not infer an edge from an ambiguous alias shared by multiple services', () => {
+    const nodes = buildComponentTopologyNodes(
+      [
+        {
+          id: 1,
+          name: 'api',
+          type: 'backend',
+          config: JSON.stringify({ env: [{ name: 'CACHE_TYPE', value: 'redis' }] }),
+        },
+      ],
+      [
+        { id: 10, serviceName: 'redis-a', serviceType: 'redis', status: 'running' } as any,
+        { id: 11, serviceName: 'redis-b', serviceType: 'redis', status: 'running' } as any,
+      ]
+    )
+
+    expect(buildComponentDependencyEdges(nodes)).toEqual([])
   })
 
   it('normalizes installed service installations before resolving dependencies', () => {

@@ -278,8 +278,182 @@ func TestBuildHelmInstallSpecAppliesUserValuesAfterTemplateAndPlatformValues(t *
 	if got := spec.Values["master.persistence.size"]; got != "20Gi" {
 		t.Fatalf("user storage override = %#v, want 20Gi", got)
 	}
-	if got := spec.Values["service.type"]; got != "NodePort" {
-		t.Fatalf("user network override = %#v, want NodePort", got)
+	if got := spec.Values["service.type"]; got != "ClusterIP" {
+		t.Fatalf("runtime network values must not be user Helm overrides, got %#v", got)
+	}
+	if _, ok := spec.Values["master.service.nodePorts.redis"]; ok {
+		t.Fatalf("nodePort value leaked into Helm values: %#v", spec.Values["master.service.nodePorts.redis"])
+	}
+}
+
+func TestBuildHelmInstallSpecUsesAdvancedDatabaseCharts(t *testing.T) {
+	app := model.Application{Identifier: "billing"}
+	env := model.Environment{Identifier: "dev"}
+	mysqlTemplate := model.ServiceTemplate{
+		Type:          "mysql",
+		Category:      "infra",
+		S3Bucket:      "paap-charts",
+		S3Key:         "charts/mysql.tar.gz",
+		DefaultValues: `{"architecture":"standalone","primary.persistence.size":"8Gi"}`,
+	}
+	postgresTemplate := model.ServiceTemplate{
+		Type:          "postgresql",
+		Category:      "infra",
+		S3Bucket:      "paap-charts",
+		S3Key:         "charts/postgresql.tar.gz",
+		DefaultValues: `{"architecture":"standalone","primary.persistence.size":"8Gi"}`,
+	}
+
+	mysql := buildHelmInstallSpec(&app, &env, &mysqlTemplate, "mysql", map[string]string{
+		"architecture":                  "dual-master",
+		"replicaCount":                  "2",
+		"persistence.enabled":           "true",
+		"persistence.size":              "30Gi",
+		"secondary.persistence.enabled": "true",
+		"secondary.persistence.size":    "20Gi",
+		"primary.persistence.size":      "20Gi",
+		"primary.service.type":          "NodePort",
+	})
+	postgres := buildHelmInstallSpec(&app, &env, &postgresTemplate, "postgresql", map[string]string{
+		"architecture":                     "ha-cluster",
+		"readReplicas.replicaCount":        "3",
+		"readReplicas.persistence.enabled": "true",
+		"readReplicas.persistence.size":    "20Gi",
+		"primary.persistence.size":         "20Gi",
+		"postgresql.replicaCount":          "3",
+		"pgpool.replicaCount":              "2",
+		"persistence.enabled":              "true",
+		"persistence.size":                 "40Gi",
+	})
+
+	if mysql.S3Key != "charts/mysql-galera.tar.gz" {
+		t.Fatalf("mysql advanced chart = %q, want charts/mysql-galera.tar.gz", mysql.S3Key)
+	}
+	if postgres.S3Key != "charts/postgresql-ha.tar.gz" {
+		t.Fatalf("postgres advanced chart = %q, want charts/postgresql-ha.tar.gz", postgres.S3Key)
+	}
+	if got := mysql.Values["paap.architecture"]; got != "dual-master" {
+		t.Fatalf("mysql paap.architecture = %#v, want dual-master", got)
+	}
+	if got := postgres.Values["paap.architecture"]; got != "ha-cluster" {
+		t.Fatalf("postgres paap.architecture = %#v, want ha-cluster", got)
+	}
+	if got := mysql.Values["replicaCount"]; got != "2" {
+		t.Fatalf("mysql replicaCount = %#v, want 2", got)
+	}
+	if got := mysql.Values["persistence.size"]; got != "30Gi" {
+		t.Fatalf("mysql galera storage = %#v, want 30Gi", got)
+	}
+	if got := postgres.Values["postgresql.replicaCount"]; got != "3" {
+		t.Fatalf("postgresql replicaCount = %#v, want 3", got)
+	}
+	if got := postgres.Values["pgpool.replicaCount"]; got != "2" {
+		t.Fatalf("pgpool replicaCount = %#v, want 2", got)
+	}
+	if got := postgres.Values["persistence.size"]; got != "40Gi" {
+		t.Fatalf("postgres ha storage = %#v, want 40Gi", got)
+	}
+	for key := range mysql.Values {
+		if key == "architecture" || strings.HasPrefix(key, "secondary.") || strings.HasPrefix(key, "primary.") {
+			t.Fatalf("mysql base-chart value %q leaked into Galera values: %#v", key, mysql.Values[key])
+		}
+	}
+	for key := range postgres.Values {
+		if key == "architecture" || strings.HasPrefix(key, "readReplicas.") || strings.HasPrefix(key, "primary.") {
+			t.Fatalf("postgres base-chart value %q leaked into HA values: %#v", key, postgres.Values[key])
+		}
+	}
+}
+
+func TestBuildHelmInstallSpecUsesProductEvidenceForValueAllowlist(t *testing.T) {
+	app := model.Application{Identifier: "billing"}
+	env := model.Environment{Identifier: "dev"}
+	harborTemplate := model.ServiceTemplate{
+		Type:          "registry",
+		Name:          "Harbor (官方)",
+		Category:      "tool",
+		S3Bucket:      "paap-charts",
+		S3Key:         "charts/harbor.tar.gz",
+		DefaultValues: `{"persistence.enabled":"false"}`,
+	}
+	registryTemplate := model.ServiceTemplate{
+		Type:          "registry",
+		Name:          "Docker Registry v2",
+		Category:      "tool",
+		S3Bucket:      "paap-charts",
+		S3Key:         "charts/registry.tar.gz",
+		DefaultValues: `{"persistence.enabled":"false","deleteEnabled":"false"}`,
+	}
+
+	harbor := buildHelmInstallSpec(&app, &env, &harborTemplate, "registry", map[string]string{
+		"persistence.enabled":                             "true",
+		"persistence.persistentVolumeClaim.registry.size": "50Gi",
+		"deleteEnabled":                                   "true",
+	})
+	registry := buildHelmInstallSpec(&app, &env, &registryTemplate, "registry", map[string]string{
+		"persistence.enabled": "true",
+		"persistence.size":    "10Gi",
+		"deleteEnabled":       "true",
+		"core.replicas":       "2",
+	})
+
+	if got := harbor.Values["persistence.persistentVolumeClaim.registry.size"]; got != "50Gi" {
+		t.Fatalf("harbor registry pvc size = %#v, want 50Gi", got)
+	}
+	if _, ok := harbor.Values["deleteEnabled"]; ok {
+		t.Fatalf("docker-registry-only value leaked into Harbor values: %#v", harbor.Values["deleteEnabled"])
+	}
+	if got := registry.Values["deleteEnabled"]; got != "true" {
+		t.Fatalf("registry deleteEnabled = %#v, want true", got)
+	}
+	if _, ok := registry.Values["core.replicas"]; ok {
+		t.Fatalf("harbor-only value leaked into Docker Registry values: %#v", registry.Values["core.replicas"])
+	}
+}
+
+func TestBuildHelmInstallSpecUsesRedisClusterChartForClusterMode(t *testing.T) {
+	manifest := model.PlatformManifest{
+		Name:    "redis",
+		Version: "v1",
+		VariableMapping: []model.VariableMappingEntry{
+			{PlatformVar: "tool_namespace", HelmVar: "fullnameOverride"},
+			{PlatformVar: "tool_namespace", HelmVar: "serviceAccount.name"},
+		},
+	}
+	manifestJSON, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatalf("marshal manifest: %v", err)
+	}
+	app := model.Application{Identifier: "billing"}
+	env := model.Environment{Identifier: "dev"}
+	tmpl := model.ServiceTemplate{
+		Type:                 "redis",
+		Category:             "infra",
+		S3Bucket:             "paap-charts",
+		S3Key:                "charts/redis.tar.gz",
+		PlatformManifestJSON: string(manifestJSON),
+	}
+
+	spec := buildHelmInstallSpec(&app, &env, &tmpl, "redis", map[string]string{
+		"architecture":     "cluster",
+		"cluster.nodes":    "6",
+		"cluster.replicas": "1",
+	})
+
+	if spec.ReleaseName != "billing-dev-redis" || spec.Namespace != "billing-dev-redis" {
+		t.Fatalf("cluster mode must keep redis identity, got release=%q namespace=%q", spec.ReleaseName, spec.Namespace)
+	}
+	if spec.S3Key != "charts/redis-cluster.tar.gz" {
+		t.Fatalf("cluster mode chart = %q, want charts/redis-cluster.tar.gz", spec.S3Key)
+	}
+	if got := spec.Values["fullnameOverride"]; got != "billing-dev-redis" {
+		t.Fatalf("fullnameOverride = %#v, want billing-dev-redis", got)
+	}
+	if got := spec.Values["serviceAccount.name"]; got != "billing-dev-redis" {
+		t.Fatalf("serviceAccount.name = %#v, want billing-dev-redis", got)
+	}
+	if got := spec.Values["architecture"]; got != "cluster" {
+		t.Fatalf("architecture = %#v, want cluster", got)
 	}
 }
 
@@ -404,6 +578,56 @@ func TestServiceResourceMetadataClassifiesTemplate(t *testing.T) {
 	}
 }
 
+func TestSeedEnvTemplatesRefreshesBuiltInFoundation(t *testing.T) {
+	previousDB := database.DB
+	t.Cleanup(func() { database.DB = previousDB })
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&model.EnvTemplate{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	database.DB = db
+
+	if err := db.Create(&model.EnvTemplate{
+		Name:     "生产环境标准",
+		Services: toJSON([]string{"deploy", "monitor", "log"}),
+		Infra:    toJSON([]string{"postgresql"}),
+	}).Error; err != nil {
+		t.Fatalf("create old built-in template: %v", err)
+	}
+	if err := db.Create(&model.EnvTemplate{
+		Name:     "自定义环境",
+		Services: toJSON([]string{"deploy"}),
+	}).Error; err != nil {
+		t.Fatalf("create custom template: %v", err)
+	}
+
+	SeedEnvTemplates()
+
+	var prod model.EnvTemplate
+	if err := db.Where("name = ?", "生产环境标准").First(&prod).Error; err != nil {
+		t.Fatalf("load production template: %v", err)
+	}
+	var services []string
+	if err := json.Unmarshal([]byte(prod.Services), &services); err != nil {
+		t.Fatalf("decode services: %v", err)
+	}
+	if strings.Join(services, ",") != strings.Join(foundationServiceTypes(), ",") {
+		t.Fatalf("production services = %#v, want %#v", services, foundationServiceTypes())
+	}
+
+	var custom model.EnvTemplate
+	if err := db.Where("name = ?", "自定义环境").First(&custom).Error; err != nil {
+		t.Fatalf("load custom template: %v", err)
+	}
+	if custom.Services != toJSON([]string{"deploy"}) {
+		t.Fatalf("custom template should not be rewritten, got %s", custom.Services)
+	}
+}
+
 func TestInstallTemplateServicesInstallsServicesAndInfra(t *testing.T) {
 	previousDB := database.DB
 	previousClient := k8s.GetClient()
@@ -447,7 +671,11 @@ func TestInstallTemplateServicesInstallsServicesAndInfra(t *testing.T) {
 		t.Fatalf("create env template: %v", err)
 	}
 	for _, item := range []model.ServiceTemplate{
+		{Type: "git", Installer: "helm", Category: "tool", PlatformManifestJSON: `{"name":"gitea","version":"v1"}`},
+		{Type: "registry", Installer: "helm", Category: "tool", PlatformManifestJSON: `{"name":"registry","version":"v1"}`},
 		{Type: "deploy", Installer: "helm", Category: "tool", PlatformManifestJSON: `{"name":"argocd","version":"v1"}`},
+		{Type: "monitor", Installer: "helm", Category: "tool", PlatformManifestJSON: `{"name":"kube-prometheus-stack","version":"v1"}`},
+		{Type: "log", Installer: "helm", Category: "tool", PlatformManifestJSON: `{"name":"loki","version":"v1"}`},
 		{Type: "postgresql", Installer: "helm", Category: "infra", PlatformManifestJSON: `{"name":"postgresql","version":"v1"}`},
 		{Type: "redis", Installer: "helm", Category: "infra", PlatformManifestJSON: `{"name":"redis","version":"v1"}`},
 	} {
@@ -466,13 +694,22 @@ func TestInstallTemplateServicesInstallsServicesAndInfra(t *testing.T) {
 	for _, inst := range installs {
 		gotTypes = append(gotTypes, inst.ServiceType)
 	}
-	if strings.Join(gotTypes, ",") != "deploy,postgresql,redis" {
+	if strings.Join(gotTypes, ",") != "deploy,git,log,monitor,postgresql,redis,registry" {
 		t.Fatalf("installed service types = %#v", gotTypes)
 	}
 
-	for _, serviceType := range []string{"deploy", "postgresql", "redis"} {
+	wantCRNames := map[string]string{
+		"deploy":     "staging-argocd",
+		"git":        "staging-gitea",
+		"log":        "staging-loki",
+		"monitor":    "staging-kube-prometheus-stack",
+		"postgresql": "staging-postgresql",
+		"redis":      "staging-redis",
+		"registry":   "staging-registry",
+	}
+	for _, serviceType := range []string{"deploy", "git", "log", "monitor", "postgresql", "redis", "registry"} {
 		var svc paapv1.ServiceInstance
-		if err := k8s.GetClient().Get(t.Context(), ctrlclient.ObjectKey{Name: "staging-" + serviceType, Namespace: "paap-app-test"}, &svc); err != nil {
+		if err := k8s.GetClient().Get(t.Context(), ctrlclient.ObjectKey{Name: wantCRNames[serviceType], Namespace: "paap-app-test"}, &svc); err != nil {
 			t.Fatalf("service instance %s not created: %v", serviceType, err)
 		}
 		if svc.Labels["paap.io/service-type"] != serviceType {
@@ -722,6 +959,140 @@ func TestUpdateServiceDraftSavesValuesWithoutCreatingCR(t *testing.T) {
 	err = k8s.GetClient().Get(t.Context(), ctrlclient.ObjectKey{Name: "dev-redis", Namespace: "paap-app-billing"}, &svc)
 	if !apierrors.IsNotFound(err) {
 		t.Fatalf("saving draft config must not create ServiceInstance CR, got err=%v svc=%#v", err, svc)
+	}
+}
+
+func TestUpdateRunningServiceReconcilesServiceInstanceCR(t *testing.T) {
+	previousDB := database.DB
+	previousClient := k8s.GetClient()
+	t.Cleanup(func() {
+		database.DB = previousDB
+		k8s.SetClient(previousClient)
+	})
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("sqlite db handle: %v", err)
+	}
+	sqlDB.SetMaxOpenConns(1)
+	if err := db.AutoMigrate(&model.Application{}, &model.Environment{}, &model.ServiceTemplate{}, &model.ServiceInstallation{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	database.DB = db
+
+	app := model.Application{Name: "Billing", Identifier: "billing", OwnerID: 1}
+	if err := db.Create(&app).Error; err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	env := model.Environment{ApplicationID: app.ID, Name: "Dev", Identifier: "dev", Namespace: "billing-dev", Status: "running"}
+	if err := db.Create(&env).Error; err != nil {
+		t.Fatalf("create env: %v", err)
+	}
+	manifest := model.PlatformManifest{
+		Name:    "redis",
+		Version: "v1",
+		VariableMapping: []model.VariableMappingEntry{
+			{PlatformVar: "tool_namespace", HelmVar: "fullnameOverride"},
+			{PlatformVar: "tool_namespace", HelmVar: "serviceAccount.name"},
+		},
+	}
+	manifestJSON, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatalf("marshal manifest: %v", err)
+	}
+	tmpl := model.ServiceTemplate{
+		Type:                 "redis",
+		Name:                 "Redis",
+		Installer:            "helm",
+		Category:             "infra",
+		S3Bucket:             "paap-charts",
+		S3Key:                "charts/redis.tar.gz",
+		PlatformManifestJSON: string(manifestJSON),
+	}
+	if err := db.Create(&tmpl).Error; err != nil {
+		t.Fatalf("create template: %v", err)
+	}
+	inst := model.ServiceInstallation{
+		EnvironmentID: env.ID,
+		ServiceType:   "redis",
+		ServiceName:   "redis",
+		Status:        "running",
+		Namespace:     "billing-dev-redis",
+		ReleaseName:   "billing-dev-redis",
+		Values:        `{"architecture":"standalone"}`,
+	}
+	if err := db.Create(&inst).Error; err != nil {
+		t.Fatalf("create running service: %v", err)
+	}
+
+	testScheme := runtime.NewScheme()
+	if err := clientgoscheme.AddToScheme(testScheme); err != nil {
+		t.Fatalf("add core scheme: %v", err)
+	}
+	if err := paapv1.AddToScheme(testScheme); err != nil {
+		t.Fatalf("add paap scheme: %v", err)
+	}
+	existingCR := &paapv1.ServiceInstance{
+		ObjectMeta: metav1.ObjectMeta{Name: "dev-redis", Namespace: "paap-app-billing"},
+		Spec: paapv1.ServiceInstanceSpec{
+			EnvironmentRef: paapv1.ObjectReference{Name: "dev"},
+			Type:           "redis",
+			ToolNamespace:  "billing-dev-redis",
+			WorkloadRole:   paapv1.RoleSpec{},
+			Helm: &paapv1.HelmInstallSpec{
+				ReleaseName: "billing-dev-redis",
+				Namespace:   "billing-dev-redis",
+				S3Bucket:    "paap-charts",
+				S3Key:       "charts/redis.tar.gz",
+				Values:      map[string]string{"architecture": "standalone"},
+			},
+		},
+	}
+	k8s.SetClient(fake.NewClientBuilder().WithScheme(testScheme).WithObjects(existingCR).Build())
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.PUT("/api/v1/environments/:id/services/:serviceId", UpdateService)
+
+	body := `{"values":{"architecture":"cluster","cluster.nodes":"6","cluster.replicas":"1"}}`
+	req := httptest.NewRequest(http.MethodPut, fmt.Sprintf("/api/v1/environments/1/services/%d", inst.ID), strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var saved model.ServiceInstallation
+	if err := db.First(&saved, inst.ID).Error; err != nil {
+		t.Fatalf("load saved service: %v", err)
+	}
+	if saved.Status != "running" {
+		t.Fatalf("service status = %q, want running", saved.Status)
+	}
+	if !strings.Contains(saved.Values, `"architecture":"cluster"`) || !strings.Contains(saved.Values, `"cluster.nodes":"6"`) {
+		t.Fatalf("service values not saved: %s", saved.Values)
+	}
+
+	var svc paapv1.ServiceInstance
+	if err := k8s.GetClient().Get(t.Context(), ctrlclient.ObjectKey{Name: "dev-redis", Namespace: "paap-app-billing"}, &svc); err != nil {
+		t.Fatalf("service instance CR not updated: %v", err)
+	}
+	if svc.Spec.Helm == nil {
+		t.Fatalf("service instance Helm spec is nil")
+	}
+	if svc.Spec.Helm.S3Key != "charts/redis-cluster.tar.gz" {
+		t.Fatalf("service instance chart = %q, want redis cluster chart", svc.Spec.Helm.S3Key)
+	}
+	if got := svc.Spec.Helm.Values["architecture"]; got != "cluster" {
+		t.Fatalf("service instance architecture = %#v, want cluster", got)
+	}
+	if got := svc.Spec.Helm.Values["cluster.nodes"]; got != "6" {
+		t.Fatalf("service instance cluster.nodes = %#v, want 6", got)
 	}
 }
 
@@ -2070,8 +2441,8 @@ func TestBuiltInGrafanaEnvironmentOverviewContainsFleetPanels(t *testing.T) {
 		"PVCs by Namespace",
 	})
 	assertDashboardExprs(t, dashboardJSON, []string{
-		`kube_namespace_labels{label_paap_io_app=\"billing\", label_paap_io_env=\"prod\"}`,
-		`label_paap_io_role=\"workload\"`,
+		`kube_namespace_status_phase{namespace=~\"billing-prod.*\", phase=\"Active\"}`,
+		`kube_namespace_status_phase{namespace=\"billing-prod\", phase=\"Active\"}`,
 		"kube_pod_owner",
 		"kube_pod_status_ready",
 		"container_cpu_usage_seconds_total",
@@ -2793,6 +3164,29 @@ func TestLokiSubjectIdentityPrefersPodOverApp(t *testing.T) {
 	}
 }
 
+func TestMonitorSubjectKindRecognizesToolNamespacesFromKubePrometheusStack(t *testing.T) {
+	monitorNamespace := "shop-dev-kube-prometheus-stack"
+
+	cases := map[string]string{
+		"shop-dev":                       "component",
+		"shop-dev-git":                   "tool",
+		"shop-dev-gitea":                 "tool",
+		"shop-dev-deploy":                "tool",
+		"shop-dev-argocd":                "tool",
+		"shop-dev-monitor":               "tool",
+		"shop-dev-kube-prometheus-stack": "tool",
+		"shop-dev-postgresql":            "middleware",
+		"shop-dev-redis":                 "middleware",
+		"shop-dev-rabbitmq":              "middleware",
+		"shop-dev-random-tool":           "middleware",
+	}
+	for namespace, want := range cases {
+		if got := monitorSubjectKindForNamespace(monitorNamespace, namespace); got != want {
+			t.Fatalf("namespace %s classified as %s, want %s", namespace, got, want)
+		}
+	}
+}
+
 func TestLogQueryForPodUsesExactPodLabel(t *testing.T) {
 	got := logQueryForSubject("pod", "shop-dev", "api-6f4d7c9c8d-rx2zs")
 	want := `{namespace="shop-dev", pod="api-6f4d7c9c8d-rx2zs"}`
@@ -3045,6 +3439,7 @@ func TestToolHTTPBaseURLUsesInstalledReleaseServiceNames(t *testing.T) {
 		{serviceType: "deploy", namespace: "test-staging-deploy", want: "http://test-staging-deploy-argocd-server.test-staging-deploy.svc.cluster.local"},
 		{serviceType: "monitor", namespace: "test-staging-monitor", want: "http://test-staging-monitor-grafana.test-staging-monitor.svc.cluster.local"},
 		{serviceType: "log", namespace: "test-staging-log", want: "http://test-staging-log-loki.test-staging-log.svc.cluster.local:3100"},
+		{serviceType: "log", namespace: "test-staging-loki", want: "http://test-staging-loki.test-staging-loki.svc.cluster.local:3100"},
 		{serviceType: "ci", namespace: "test-staging-ci", want: "http://test-staging-ci.test-staging-ci.svc.cluster.local:8080"},
 		{serviceType: "registry", namespace: "test-staging-registry", want: "https://test-staging-registry.test-staging-registry.svc.cluster.local:5000"},
 	}
@@ -3053,6 +3448,17 @@ func TestToolHTTPBaseURLUsesInstalledReleaseServiceNames(t *testing.T) {
 		if got != tc.want {
 			t.Fatalf("%s base URL = %q, want %q", tc.serviceType, got, tc.want)
 		}
+	}
+}
+
+func TestServiceSelectorForDashboardUsesReleasePrefixForArgoCD(t *testing.T) {
+	inst := model.ServiceInstallation{
+		ServiceType: "deploy",
+		Namespace:   "shop-dev-argocd",
+		ReleaseName: "shop-dev-argocd",
+	}
+	if got := serviceSelectorForDashboard(inst); got != "shop-dev-argocd" {
+		t.Fatalf("argocd dashboard selector = %q, want release prefix", got)
 	}
 }
 
@@ -3449,6 +3855,65 @@ func TestUpdateComponentPersistsRuntimeConfig(t *testing.T) {
 	}
 }
 
+func TestUpdateComponentKeepsRegistryImageInSyncForImageDelivery(t *testing.T) {
+	previousDB := database.DB
+	t.Cleanup(func() { database.DB = previousDB })
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&model.Application{}, &model.Environment{}, &model.Component{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	database.DB = db
+
+	app := model.Application{Name: "测试应用", Identifier: "test", OwnerID: 1}
+	if err := db.Create(&app).Error; err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	env := model.Environment{ApplicationID: app.ID, Name: "测试环境", Identifier: "staging", Status: "running", Namespace: "test-staging"}
+	if err := db.Create(&env).Error; err != nil {
+		t.Fatalf("create env: %v", err)
+	}
+	comp := model.Component{
+		EnvironmentID:  env.ID,
+		Name:           "orders",
+		Type:           "backend",
+		Image:          "paap-real-backend:v1",
+		RegistryImage:  "paap-real-backend:v1",
+		Version:        "v1",
+		DeliveryMode:   "image",
+		PipelineStatus: "built",
+		Replicas:       1,
+		Status:         "running",
+	}
+	if err := db.Create(&comp).Error; err != nil {
+		t.Fatalf("create component: %v", err)
+	}
+
+	body := []byte(`{"image":"paap-real-backend:v2","version":"v2","replicas":1}`)
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/components/1", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.PUT("/api/v1/components/:id", UpdateComponent)
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var saved model.Component
+	if err := db.First(&saved, comp.ID).Error; err != nil {
+		t.Fatalf("load component: %v", err)
+	}
+	if saved.Image != "paap-real-backend:v2" || saved.RegistryImage != "paap-real-backend:v2" || saved.Version != "v2" {
+		t.Fatalf("image fields not synced: image=%q registry=%q version=%q", saved.Image, saved.RegistryImage, saved.Version)
+	}
+}
+
 func TestUpdateComponentKeepsExistingConfigWhenConfigOmitted(t *testing.T) {
 	previousDB := database.DB
 	t.Cleanup(func() { database.DB = previousDB })
@@ -3817,7 +4282,7 @@ func TestAdoptResourceDiscoversAndCreatesDraftFromRealWorkload(t *testing.T) {
 	}
 
 	k8s.SetClient(fake.NewClientBuilder().WithObjects(
-		&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "api-config", Namespace: "billing-dev"}, Data: map[string]string{"FEATURE_FLAG": "on"}},
+		&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "api-config", Namespace: "billing-dev"}, Data: map[string]string{"FEATURE_FLAG": "on", "application.yml": "server:\n  port: 8080\n"}},
 		&corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "api-secret", Namespace: "billing-dev"}, Data: map[string][]byte{"PASSWORD": []byte("secret")}},
 		&appsv1.Deployment{
 			ObjectMeta: metav1.ObjectMeta{Name: "external-api", Namespace: "billing-dev"},
@@ -3832,7 +4297,23 @@ func TestAdoptResourceDiscoversAndCreatesDraftFromRealWorkload(t *testing.T) {
 						{Name: "FEATURE_FLAG", ValueFrom: &corev1.EnvVarSource{ConfigMapKeyRef: &corev1.ConfigMapKeySelector{LocalObjectReference: corev1.LocalObjectReference{Name: "api-config"}, Key: "FEATURE_FLAG"}}},
 						{Name: "PASSWORD", ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{LocalObjectReference: corev1.LocalObjectReference{Name: "api-secret"}, Key: "PASSWORD"}}},
 					},
-				}}}},
+					VolumeMounts: []corev1.VolumeMount{{
+						Name:      "api-config-file",
+						MountPath: "/etc/app",
+						ReadOnly:  true,
+					}},
+				}},
+					Volumes: []corev1.Volume{{
+						Name: "api-config-file",
+						VolumeSource: corev1.VolumeSource{ConfigMap: &corev1.ConfigMapVolumeSource{
+							LocalObjectReference: corev1.LocalObjectReference{Name: "api-config"},
+							Items: []corev1.KeyToPath{{
+								Key:  "application.yml",
+								Path: "application.yml",
+							}},
+						}},
+					}},
+				}},
 			},
 			Status: appsv1.DeploymentStatus{ReadyReplicas: 2},
 		},
@@ -3895,6 +4376,9 @@ func TestAdoptResourceDiscoversAndCreatesDraftFromRealWorkload(t *testing.T) {
 	}
 	if len(cfg.Env) != 2 || cfg.Env[0].ConfigMapName != "api-config" || cfg.Env[1].SecretName != "api-secret" {
 		t.Fatalf("adopted env refs not preserved: %#v", cfg.Env)
+	}
+	if len(cfg.Files) != 1 || cfg.Files[0].ConfigMapName != "api-config" || cfg.Files[0].Key != "application.yml" || cfg.Files[0].MountPath != "/etc/app/application.yml" {
+		t.Fatalf("adopted config file mounts not preserved: %#v", cfg.Files)
 	}
 	if len(cfg.Command) != 1 || cfg.Command[0] != "/server" || len(cfg.Args) != 1 || cfg.Args[0] != "--listen=:8080" {
 		t.Fatalf("adopted command/args not preserved: %#v", cfg)

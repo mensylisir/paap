@@ -393,12 +393,12 @@ const emptyEnvRow = (): EnvRow => ({
 })
 
 const parseComponentConfig = (raw: any) => {
-  if (!raw) return { env: [], dependencies: [] }
+  if (!raw) return { env: [], dependencies: [], configMaps: [], secrets: [], files: [], bindings: [], framework: '', command: [], args: [] }
   if (typeof raw === 'object') return raw
   try {
     return JSON.parse(String(raw))
   } catch {
-    return { env: [], dependencies: [] }
+    return { env: [], dependencies: [], configMaps: [], secrets: [], files: [], bindings: [], framework: '', command: [], args: [] }
   }
 }
 
@@ -426,22 +426,32 @@ const hydrateConfigForm = () => {
 const addEnvRow = () => envRows.value.push(emptyEnvRow())
 const removeEnvRow = (index: number) => envRows.value.splice(index, 1)
 
-const buildRuntimeConfig = () => ({
-  env: envRows.value
-    .filter(item => item.name.trim())
-    .map(item => ({
-      name: item.name.trim(),
-      value: item.source === 'value' ? item.value.trim() : '',
-      secretName: item.source === 'secret' ? item.secretName.trim() : '',
-      secretKey: item.source === 'secret' ? item.secretKey.trim() : '',
-      configMapName: item.source === 'configmap' ? item.configMapName.trim() : '',
-      configMapKey: item.source === 'configmap' ? item.configMapKey.trim() : '',
-    })),
-  dependencies: dependencyText.value
-    .split(',')
-    .map(item => item.trim())
-    .filter(Boolean),
-})
+const buildRuntimeConfig = () => {
+  const existing = parseComponentConfig(component.value?.config)
+  return {
+    framework: existing.framework || '',
+    env: envRows.value
+      .filter(item => item.name.trim())
+      .map(item => ({
+        name: item.name.trim(),
+        value: item.source === 'value' ? item.value.trim() : '',
+        secretName: item.source === 'secret' ? item.secretName.trim() : '',
+        secretKey: item.source === 'secret' ? item.secretKey.trim() : '',
+        configMapName: item.source === 'configmap' ? item.configMapName.trim() : '',
+        configMapKey: item.source === 'configmap' ? item.configMapKey.trim() : '',
+      })),
+    configMaps: existing.configMaps || [],
+    secrets: existing.secrets || [],
+    files: existing.files || [],
+    bindings: existing.bindings || [],
+    command: existing.command || [],
+    args: existing.args || [],
+    dependencies: dependencyText.value
+      .split(',')
+      .map(item => item.trim())
+      .filter(Boolean),
+  }
+}
 
 const imageTag = (image?: string) => {
   const last = String(image || '').split('/').pop() || ''

@@ -149,6 +149,61 @@ func TestServiceInstanceStatusRequeueAfterRefreshesInstallingToolsSooner(t *test
 	}
 }
 
+func TestReconcileRejectsServiceTypeNamedCRWhenConcreteToolIsDeclared(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := clientgoscheme.AddToScheme(scheme); err != nil {
+		t.Fatalf("add client-go scheme: %v", err)
+	}
+	if err := paapv1.AddToScheme(scheme); err != nil {
+		t.Fatalf("add paap scheme: %v", err)
+	}
+
+	svc := &paapv1.ServiceInstance{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "staging-deploy",
+			Namespace: "paap-app-test",
+			Labels: map[string]string{
+				"paap.io/app":          "test",
+				"paap.io/env":          "staging",
+				"paap.io/service-type": "deploy",
+				"paap.io/tool":         "argocd",
+			},
+		},
+		Spec: paapv1.ServiceInstanceSpec{
+			EnvironmentRef: paapv1.ObjectReference{Name: "staging"},
+			Type:           "deploy",
+			ToolNamespace:  "test-staging-argocd",
+			Helm: &paapv1.HelmInstallSpec{
+				ReleaseName: "test-staging-argocd",
+				Namespace:   "test-staging-argocd",
+			},
+		},
+	}
+	r := &ServiceInstanceReconciler{
+		Client: fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(svc).
+			WithStatusSubresource(&paapv1.ServiceInstance{}).
+			Build(),
+		Scheme: scheme,
+	}
+
+	if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: types.NamespacedName{Name: svc.Name, Namespace: svc.Namespace}}); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+
+	latest := &paapv1.ServiceInstance{}
+	if err := r.Get(context.Background(), types.NamespacedName{Name: svc.Name, Namespace: svc.Namespace}, latest); err != nil {
+		t.Fatalf("get latest serviceinstance: %v", err)
+	}
+	if latest.Status.Phase != "Error" {
+		t.Fatalf("phase = %q, want Error", latest.Status.Phase)
+	}
+	if len(latest.Status.Conditions) != 1 || latest.Status.Conditions[0].Reason != "InvalidServiceInstanceName" {
+		t.Fatalf("unexpected conditions: %#v", latest.Status.Conditions)
+	}
+}
+
 func TestServiceInstancesForNamespaceMapsWorkloadNamespaceToEnvironmentTools(t *testing.T) {
 	scheme := runtime.NewScheme()
 	if err := clientgoscheme.AddToScheme(scheme); err != nil {
@@ -635,7 +690,7 @@ func TestReconcileUpdatesProjectedRBACWhenEnvironmentNamespacesChange(t *testing
 	}
 	svc := &paapv1.ServiceInstance{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:       "staging-monitor",
+			Name:       "staging-kube-prometheus-stack",
 			Namespace:  "paap-app-test",
 			Generation: 2,
 			Finalizers: []string{svcFinalizer},
@@ -764,110 +819,6 @@ func TestReconcileUpdatesProjectedRBACWhenEnvironmentNamespacesChange(t *testing
 	}
 }
 
-func TestReconcileDeletesLegacyServiceTypeWorkloadRBACAfterToolRename(t *testing.T) {
-	scheme := runtime.NewScheme()
-	if err := clientgoscheme.AddToScheme(scheme); err != nil {
-		t.Fatalf("add client-go scheme: %v", err)
-	}
-	if err := paapv1.AddToScheme(scheme); err != nil {
-		t.Fatalf("add paap scheme: %v", err)
-	}
-
-	env := &paapv1.Environment{
-		ObjectMeta: metav1.ObjectMeta{Name: "staging", Namespace: "paap-app-test"},
-		Status:     paapv1.EnvironmentStatus{Phase: "Running"},
-	}
-	svc := &paapv1.ServiceInstance{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:       "staging-monitor",
-			Namespace:  "paap-app-test",
-			Generation: 2,
-			Finalizers: []string{svcFinalizer},
-			Labels: map[string]string{
-				"paap.io/app":          "test",
-				"paap.io/env":          "staging",
-				"paap.io/service-type": "monitor",
-				"paap.io/tool":         "kube-prometheus-stack",
-			},
-		},
-		Spec: paapv1.ServiceInstanceSpec{
-			EnvironmentRef: paapv1.ObjectReference{Name: "staging"},
-			Type:           "monitor",
-			ToolNamespace:  "test-staging-monitor",
-			ServiceAccount: paapv1.ServiceAccountSpec{Name: "test-staging-monitor", Namespace: "test-staging-monitor"},
-			WorkloadRole: paapv1.RoleSpec{Rules: []paapv1.PolicyRule{{
-				APIGroups: []string{"*"},
-				Resources: []string{"*"},
-				Verbs:     []string{"*"},
-			}}},
-			Helm: &paapv1.HelmInstallSpec{
-				ReleaseName: "monitor",
-				Namespace:   "test-staging-monitor",
-				Values:      map[string]string{},
-			},
-		},
-		Status: paapv1.ServiceInstanceStatus{ObservedGeneration: 2},
-	}
-	workloadNS := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{
-		Name: "test-staging",
-		Labels: map[string]string{
-			"paap.io/app":  "test",
-			"paap.io/env":  "staging",
-			"paap.io/role": "workload",
-		},
-	}}
-	legacyRoleName := "test-staging-monitor-workload-manager"
-	currentRoleName := "test-staging-kube-prometheus-stack-workload-manager"
-	legacyRole := &rbacv1.Role{ObjectMeta: metav1.ObjectMeta{
-		Name:      legacyRoleName,
-		Namespace: "test-staging",
-		Annotations: map[string]string{
-			"paap.io/service-namespace": "test-staging-monitor",
-		},
-		Labels: map[string]string{
-			"paap.io/app":          "test",
-			"paap.io/env":          "staging",
-			"paap.io/service-type": "monitor",
-			"paap.io/tool":         "monitor",
-		},
-	}}
-	legacyBinding := &rbacv1.RoleBinding{ObjectMeta: metav1.ObjectMeta{
-		Name:      legacyRoleName,
-		Namespace: "test-staging",
-		Annotations: map[string]string{
-			"paap.io/service-namespace": "test-staging-monitor",
-		},
-		Labels: map[string]string{
-			"paap.io/app":          "test",
-			"paap.io/env":          "staging",
-			"paap.io/service-type": "monitor",
-			"paap.io/tool":         "monitor",
-		},
-	}}
-
-	r := &ServiceInstanceReconciler{
-		Client: fake.NewClientBuilder().
-			WithScheme(scheme).
-			WithObjects(env, svc, workloadNS, legacyRole, legacyBinding).
-			WithStatusSubresource(&paapv1.ServiceInstance{}).
-			Build(),
-		Scheme: scheme,
-	}
-
-	if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: types.NamespacedName{Name: svc.Name, Namespace: svc.Namespace}}); err != nil {
-		t.Fatalf("reconcile: %v", err)
-	}
-	if err := r.Get(context.Background(), types.NamespacedName{Name: legacyRoleName, Namespace: "test-staging"}, &rbacv1.Role{}); err == nil {
-		t.Fatalf("expected legacy service-type role to be deleted")
-	}
-	if err := r.Get(context.Background(), types.NamespacedName{Name: legacyRoleName, Namespace: "test-staging"}, &rbacv1.RoleBinding{}); err == nil {
-		t.Fatalf("expected legacy service-type rolebinding to be deleted")
-	}
-	if err := r.Get(context.Background(), types.NamespacedName{Name: currentRoleName, Namespace: "test-staging"}, &rbacv1.Role{}); err != nil {
-		t.Fatalf("expected current tool role to exist: %v", err)
-	}
-}
-
 func TestReconcileDoesNotProjectWriteWorkloadRBACIntoToolNamespaces(t *testing.T) {
 	scheme := runtime.NewScheme()
 	if err := clientgoscheme.AddToScheme(scheme); err != nil {
@@ -927,7 +878,8 @@ func TestReconcileDoesNotProjectWriteWorkloadRBACIntoToolNamespaces(t *testing.T
 			WithObjects(env, svc, workloadNS, toolNS).
 			WithStatusSubresource(&paapv1.ServiceInstance{}).
 			Build(),
-		Scheme: scheme,
+		Scheme:     scheme,
+		HelmClient: fakeHelmInstaller{},
 	}
 
 	if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: types.NamespacedName{Name: svc.Name, Namespace: svc.Namespace}}); err != nil {
@@ -1250,7 +1202,8 @@ func TestReconcileDoesNotProjectWorkloadRBACForToolOnlyServices(t *testing.T) {
 			WithObjects(env, svc, workloadNS).
 			WithStatusSubresource(&paapv1.ServiceInstance{}).
 			Build(),
-		Scheme: scheme,
+		Scheme:     scheme,
+		HelmClient: fakeHelmInstaller{},
 	}
 
 	if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: types.NamespacedName{Name: svc.Name, Namespace: svc.Namespace}}); err != nil {
@@ -1422,7 +1375,7 @@ func TestReconcileKeepsReadyWorkloadsRunningWhenHelmUpgradeHitsImmutableStateful
 	}
 }
 
-func TestCollectToolComponentStatusReportsReadyWhenNoWorkloadsExist(t *testing.T) {
+func TestCollectToolComponentStatusReportsInstallingWhenNoWorkloadsExist(t *testing.T) {
 	scheme := runtime.NewScheme()
 	if err := clientgoscheme.AddToScheme(scheme); err != nil {
 		t.Fatalf("add client-go scheme: %v", err)
@@ -1444,11 +1397,14 @@ func TestCollectToolComponentStatusReportsReadyWhenNoWorkloadsExist(t *testing.T
 	if err != nil {
 		t.Fatalf("collect tool status: %v", err)
 	}
-	if !ready {
-		t.Fatalf("expected ready when no workloads have been created")
+	if ready {
+		t.Fatalf("expected not ready when no workloads have been created")
 	}
 	if len(components) != 0 {
 		t.Fatalf("expected no components, got %#v", components)
+	}
+	if len(svc.Status.Conditions) == 0 || svc.Status.Conditions[0].Reason != "NoToolWorkloads" {
+		t.Fatalf("expected no workload condition, got %#v", svc.Status.Conditions)
 	}
 }
 

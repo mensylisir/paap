@@ -25,6 +25,28 @@
         <div v-else class="empty-line">暂无 Topic 数据</div>
       </div>
 
+      <div v-if="activeTab === 'messages'" class="tab-panel">
+        <div v-if="messages.length" class="message-list">
+          <div
+            v-for="message in messages"
+            :key="message.name"
+            class="card message-card selectable"
+            :class="{ selected: selectedResource?.name === message.name && selectedResource?.type === message.type }"
+            @click="selectResource(message)"
+          >
+            <div class="message-head">
+              <div>
+                <div class="card-title">{{ message.annotations?.topic || message.name }}</div>
+                <div class="card-sub">partition {{ message.annotations?.partition ?? '-' }} · offset {{ message.annotations?.offset ?? '-' }}</div>
+              </div>
+              <span class="badge" :class="statusBadge(message.status)">{{ message.status }}</span>
+            </div>
+            <pre class="message-body">{{ message.annotations?.value || message.description }}</pre>
+          </div>
+        </div>
+        <div v-else class="empty-line">暂无消息数据</div>
+      </div>
+
       <div v-if="activeTab === 'resources'" class="tab-panel">
         <div v-if="resources.length" class="table-wrap">
           <table class="data-table">
@@ -74,7 +96,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import ToolWorkspaceFrame from './ToolWorkspaceFrame.vue'
 import type { WorkspaceAction, WorkspaceResource } from '../../views/serviceWorkspace'
 
@@ -87,7 +109,9 @@ const emit = defineEmits<{
 }>()
 
 const topics = computed(() => props.resources.filter(r => r.type === 'Topic'))
-const selectedResource = ref<WorkspaceResource | null>(props.resources.find(r => r.type !== 'Connection') || props.resources[0] || null)
+const messages = computed(() => props.resources.filter(r => r.type === 'Message'))
+const firstSelectableResource = () => props.resources.find(r => r.type !== 'Connection') || props.resources[0] || null
+const selectedResource = ref<WorkspaceResource | null>(firstSelectableResource())
 
 const selectResource = (resource: WorkspaceResource) => {
   selectedResource.value = resource
@@ -99,11 +123,24 @@ const annotationItems = (resource: WorkspaceResource) =>
 const availableTabs = computed(() => {
   const tabs: { key: string; label: string; count: number }[] = []
   if (topics.value.length) tabs.push({ key: 'topics', label: 'Topic', count: topics.value.length })
+  if (messages.value.length) tabs.push({ key: 'messages', label: 'Messages', count: messages.value.length })
   tabs.push({ key: 'resources', label: '资源', count: props.resources.length })
   return tabs
 })
 
 const activeTab = ref(topics.value.length ? 'topics' : 'resources')
+
+const resourceKey = (resource?: WorkspaceResource | null) => resource ? `${resource.type}:${resource.name}` : ''
+const syncWorkspaceState = () => {
+  const currentKey = resourceKey(selectedResource.value)
+  const refreshed = currentKey ? props.resources.find((resource) => resourceKey(resource) === currentKey) : null
+  selectedResource.value = refreshed || firstSelectableResource()
+  if (!availableTabs.value.some((tab) => tab.key === activeTab.value)) {
+    activeTab.value = availableTabs.value[0]?.key || 'resources'
+  }
+}
+watch(() => props.resources, syncWorkspaceState, { deep: true })
+watch(availableTabs, syncWorkspaceState)
 
 const statusBadge = (s?: string) => {
   const v = String(s || '').toLowerCase()
@@ -115,6 +152,22 @@ const statusBadge = (s?: string) => {
 
 <style scoped>
 .topic-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: var(--paap-space-3); }
+.message-list { display: grid; gap: var(--paap-space-3); }
+.message-head { display: flex; justify-content: space-between; gap: var(--paap-space-3); align-items: flex-start; }
+.message-body {
+  margin: var(--paap-space-3) 0 0;
+  max-height: 140px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  border: 1px solid var(--paap-border);
+  border-radius: var(--paap-radius-xs);
+  background: var(--paap-panel-subtle);
+  padding: var(--paap-space-3);
+  color: var(--paap-text);
+  font-size: 12px;
+  line-height: 1.45;
+}
 .selectable, .data-table tbody tr { cursor: pointer; }
 .selectable.selected, .data-table tbody tr.selected { background: var(--paap-accent-soft); }
 .object-detail {

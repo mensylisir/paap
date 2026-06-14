@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -33,6 +35,11 @@ type PrometheusRule struct {
 	Name  string
 	Type  string
 	State string
+}
+
+type PrometheusQuerySample struct {
+	Metric map[string]string
+	Value  float64
 }
 
 func NewPrometheusClient(namespace string) *PrometheusClient {
@@ -105,6 +112,37 @@ func (p *PrometheusClient) Rules(ctx context.Context) ([]PrometheusRule, error) 
 		}
 	}
 	return rules, nil
+}
+
+func (p *PrometheusClient) Query(ctx context.Context, query string) ([]PrometheusQuerySample, error) {
+	var payload struct {
+		Status string `json:"status"`
+		Data   struct {
+			Result []struct {
+				Metric map[string]string `json:"metric"`
+				Value  []interface{}     `json:"value"`
+			} `json:"result"`
+		} `json:"data"`
+	}
+	if err := p.getJSON(ctx, "/api/v1/query?query="+url.QueryEscape(query), &payload); err != nil {
+		return nil, err
+	}
+	out := make([]PrometheusQuerySample, 0, len(payload.Data.Result))
+	for _, item := range payload.Data.Result {
+		if len(item.Value) < 2 {
+			continue
+		}
+		valueText, ok := item.Value[1].(string)
+		if !ok {
+			continue
+		}
+		value, err := strconv.ParseFloat(valueText, 64)
+		if err != nil {
+			continue
+		}
+		out = append(out, PrometheusQuerySample{Metric: item.Metric, Value: value})
+	}
+	return out, nil
 }
 
 func (a PrometheusAlert) Name() string {

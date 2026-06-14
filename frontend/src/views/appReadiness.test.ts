@@ -8,7 +8,7 @@ describe('appReadiness', () => {
     expect(serviceIsReady({ serviceType: 'deploy', status: 'failed' })).toBe(false)
   })
 
-  it('builds deploy, ci, and observability readiness from services and components', () => {
+  it('builds deploy, source registry, and observability readiness from services and components', () => {
     const result = buildEnvironmentReadiness(
       { id: 1, name: '测试环境', identifier: 'staging', status: 'running' },
       [
@@ -23,8 +23,8 @@ describe('appReadiness', () => {
     )
 
     expect(result.deploy.ready).toBe(true)
-    expect(result.ci.ready).toBe(false)
-    expect(result.ci.missing).toEqual(['ci'])
+    expect(result.ci.ready).toBe(true)
+    expect(result.ci.missing).toEqual([])
     expect(result.observability.ready).toBe(false)
     expect(result.observability.missing).toEqual(['monitor'])
     expect(result.componentCount).toBe(1)
@@ -40,7 +40,7 @@ describe('appReadiness', () => {
       [],
     )
 
-    expect(result.ci.missing).toContain('ci')
+    expect(result.ci.ready).toBe(true)
     expect(result.ci.missing).not.toContain('registry')
   })
 })

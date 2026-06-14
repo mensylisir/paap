@@ -60,6 +60,17 @@ type grafanaDatasourceRequest struct {
 	JSONData  map[string]interface{} `json:"jsonData,omitempty"`
 }
 
+type grafanaDatasourceResponse struct {
+	ID        int                    `json:"id"`
+	Name      string                 `json:"name"`
+	Type      string                 `json:"type"`
+	UID       string                 `json:"uid"`
+	Access    string                 `json:"access"`
+	URL       string                 `json:"url"`
+	IsDefault bool                   `json:"isDefault"`
+	JSONData  map[string]interface{} `json:"jsonData"`
+}
+
 func (g *GrafanaClient) Dashboards(ctx context.Context) ([]GrafanaDashboard, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(g.BaseURL, "/")+"/api/search?type=dash-db", nil)
 	if err != nil {
@@ -100,12 +111,26 @@ func (g *GrafanaClient) EnsureLokiDatasource(ctx context.Context, lokiURL string
 	body, _ := io.ReadAll(res.Body)
 	res.Body.Close()
 	if res.StatusCode == http.StatusOK {
-		return nil
+		var current grafanaDatasourceResponse
+		if err := json.Unmarshal(body, &current); err != nil {
+			return fmt.Errorf("grafana datasource decode failed: %w", err)
+		}
+		if strings.TrimRight(current.URL, "/") == strings.TrimRight(lokiURL, "/") && current.Type == "loki" && current.Access == "proxy" {
+			return nil
+		}
+		if current.ID == 0 && current.UID == "" {
+			return fmt.Errorf("grafana datasource lookup returned Loki without id or uid")
+		}
+		return g.upsertLokiDatasource(ctx, current.ID, current.UID, lokiURL)
 	}
 	if res.StatusCode != http.StatusNotFound {
 		return fmt.Errorf("grafana datasource lookup returned %d: %s", res.StatusCode, string(body))
 	}
 
+	return g.upsertLokiDatasource(ctx, 0, "", lokiURL)
+}
+
+func (g *GrafanaClient) upsertLokiDatasource(ctx context.Context, id int, uid, lokiURL string) error {
 	payload := grafanaDatasourceRequest{
 		Name:      "Loki",
 		Type:      "loki",
@@ -121,22 +146,36 @@ func (g *GrafanaClient) EnsureLokiDatasource(ctx context.Context, lokiURL string
 	if err != nil {
 		return err
 	}
-	req, err = http.NewRequestWithContext(ctx, http.MethodPost, baseURL+"/api/datasources", bytes.NewReader(payloadBytes))
+	method := http.MethodPost
+	path := "/api/datasources"
+	if id > 0 {
+		method = http.MethodPut
+		path = fmt.Sprintf("/api/datasources/%d", id)
+	} else if strings.TrimSpace(uid) != "" {
+		method = http.MethodPut
+		path = "/api/datasources/uid/" + urlPathEscape(uid)
+	}
+	baseURL := strings.TrimRight(g.BaseURL, "/")
+	req, err := http.NewRequestWithContext(ctx, method, baseURL+path, bytes.NewReader(payloadBytes))
 	if err != nil {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.SetBasicAuth(g.Username, g.Password)
-	res, err = g.HTTPClient.Do(req)
+	res, err := g.HTTPClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("grafana datasource create failed: %w", err)
+		return fmt.Errorf("grafana datasource upsert failed: %w", err)
 	}
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK && res.StatusCode != http.StatusCreated && res.StatusCode != http.StatusConflict {
 		body, _ := io.ReadAll(res.Body)
-		return fmt.Errorf("grafana datasource create returned %d: %s", res.StatusCode, string(body))
+		return fmt.Errorf("grafana datasource upsert returned %d: %s", res.StatusCode, string(body))
 	}
 	return nil
+}
+
+func urlPathEscape(value string) string {
+	return strings.ReplaceAll(strings.TrimSpace(value), "/", "%2F")
 }
 
 // ImportDashboard imports a Grafana dashboard JSON into the Grafana instance.

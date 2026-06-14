@@ -25,6 +25,7 @@ func main() {
 	handler.SeedDefaultUsers()
 	handler.SeedServiceCatalog()
 	handler.SeedEnvTemplates()
+	handler.SeedComponentConfigTemplates()
 
 	// 初始化 K8s client（可选，集群内运行时自动连接）
 	if err := k8s.Init(); err != nil {

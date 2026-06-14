@@ -8,20 +8,39 @@ export type CapabilityTab = {
   rank: number
 }
 
-export const knownCapabilityTabKeys = new Set([
-  'code-repository',
-  'image-registry',
-  'continuous-integration',
-  'continuous-deployment',
-  'monitoring-center',
-  'logging-center',
-  'databases',
-  'cache',
-  'message-queue',
-  'middleware',
-  'object-storage',
-  'platform-tools',
-])
+export const knownCapabilityTabDefinitions: CapabilityTab[] = [
+  { key: 'code-repository', label: '代码仓库', category: 'tool', rank: 10, count: 0 },
+  { key: 'image-registry', label: '镜像仓库', category: 'tool', rank: 20, count: 0 },
+  { key: 'continuous-integration', label: '持续集成', category: 'tool', rank: 30, count: 0 },
+  { key: 'continuous-deployment', label: '持续部署', category: 'tool', rank: 40, count: 0 },
+  { key: 'monitoring-center', label: '监控中心', category: 'tool', rank: 50, count: 0 },
+  { key: 'logging-center', label: '日志中心', category: 'tool', rank: 60, count: 0 },
+  { key: 'databases', label: '数据库', category: 'infra', rank: 70, count: 0 },
+  { key: 'cache', label: '缓存', category: 'infra', rank: 80, count: 0 },
+  { key: 'message-queue', label: '消息队列', category: 'infra', rank: 85, count: 0 },
+  { key: 'object-storage', label: '对象存储', category: 'infra', rank: 90, count: 0 },
+  { key: 'platform-tools', label: '平台工具', category: 'tool', rank: 95, count: 0 },
+  { key: 'middleware', label: '中间件', category: 'infra', rank: 100, count: 0 },
+]
+
+export const knownCapabilityTabByKey = new Map(knownCapabilityTabDefinitions.map((tab) => [tab.key, tab]))
+export const knownCapabilityTabKeys = new Set(knownCapabilityTabDefinitions.map((tab) => tab.key))
+
+export interface RequiredEnvironmentCapability {
+  key: string
+  label: string
+  serviceTypes: string[]
+}
+
+export const requiredEnvironmentCapabilities: RequiredEnvironmentCapability[] = [
+  { key: 'code-repository', label: '代码仓库', serviceTypes: ['git'] },
+  { key: 'image-registry', label: '镜像仓库', serviceTypes: ['registry', 'harbor'] },
+  { key: 'continuous-deployment', label: '部署工具', serviceTypes: ['deploy'] },
+  { key: 'monitoring-center', label: '监控', serviceTypes: ['monitor'] },
+  { key: 'logging-center', label: '日志', serviceTypes: ['log'] },
+]
+
+export const requiredEnvironmentCapabilityKeys = new Set(requiredEnvironmentCapabilities.map((item) => item.key))
 
 export function templateForType(templates: any[], type: string) {
   return templates.find((item: any) => item.type === type)
@@ -86,6 +105,20 @@ export function buildCapabilityTabs(services: any[], templates: any[] = []): Cap
     const cap = serviceCapability(svc, templates)
     const prev = grouped.get(cap.key)
     grouped.set(cap.key, { ...cap, count: (prev?.count || 0) + 1 })
+  }
+  return [...grouped.values()].sort((a, b) => a.rank - b.rank || a.label.localeCompare(b.label))
+}
+
+export function buildEnvironmentCapabilityTabs(services: any[], templates: any[] = []): CapabilityTab[] {
+  const grouped = new Map<string, CapabilityTab>()
+  for (const tab of buildCapabilityTabs(services, templates)) {
+    grouped.set(tab.key, tab)
+  }
+  for (const item of requiredEnvironmentCapabilities) {
+    if (!grouped.has(item.key)) {
+      const definition = knownCapabilityTabByKey.get(item.key)
+      if (definition) grouped.set(item.key, { ...definition })
+    }
   }
   return [...grouped.values()].sort((a, b) => a.rank - b.rank || a.label.localeCompare(b.label))
 }

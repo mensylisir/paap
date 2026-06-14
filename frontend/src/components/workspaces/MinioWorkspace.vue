@@ -91,7 +91,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import ToolWorkspaceFrame from './ToolWorkspaceFrame.vue'
 import type { WorkspaceAction, WorkspaceResource } from '../../views/serviceWorkspace'
 
@@ -105,7 +105,8 @@ const emit = defineEmits<{
 
 const buckets = computed(() => props.resources.filter(r => r.type === 'Bucket'))
 const objects = computed(() => props.resources.filter(r => r.type === 'Object'))
-const selectedResource = ref<WorkspaceResource | null>(props.resources.find(r => r.type !== 'Connection') || props.resources[0] || null)
+const firstSelectableResource = () => props.resources.find(r => r.type !== 'Connection') || props.resources[0] || null
+const selectedResource = ref<WorkspaceResource | null>(firstSelectableResource())
 
 const selectResource = (resource: WorkspaceResource) => {
   selectedResource.value = resource
@@ -123,6 +124,18 @@ const availableTabs = computed(() => {
 })
 
 const activeTab = ref(buckets.value.length ? 'buckets' : (objects.value.length ? 'objects' : 'resources'))
+
+const resourceKey = (resource?: WorkspaceResource | null) => resource ? `${resource.type}:${resource.name}` : ''
+const syncWorkspaceState = () => {
+  const currentKey = resourceKey(selectedResource.value)
+  const refreshed = currentKey ? props.resources.find((resource) => resourceKey(resource) === currentKey) : null
+  selectedResource.value = refreshed || firstSelectableResource()
+  if (!availableTabs.value.some((tab) => tab.key === activeTab.value)) {
+    activeTab.value = availableTabs.value[0]?.key || 'resources'
+  }
+}
+watch(() => props.resources, syncWorkspaceState, { deep: true })
+watch(availableTabs, syncWorkspaceState)
 
 function formatSize(v: any): string {
   if (v == null) return '-'

@@ -56,6 +56,7 @@ func autoMigrate() error {
 		&model.ServiceInstallation{},
 		&model.InfraInstallation{},
 		&model.Component{},
+		&model.ComponentConfigTemplate{},
 		&model.ServiceInstance{},
 	)
 }

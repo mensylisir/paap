@@ -1,0 +1,11 @@
+# PAAP manages the namespace-local ServiceAccount and RBAC for this chart.
+serviceAccount:
+  create: false
+persistence:
+  enabled: false
+metrics:
+  enabled: false
+pgpool:
+  replicaCount: 1
+postgresql:
+  replicaCount: 3

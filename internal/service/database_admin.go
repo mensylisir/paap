@@ -34,6 +34,29 @@ type TableColumnDefinition struct {
 	DataType string
 }
 
+type DatabaseBackupDocument struct {
+	Engine    string                `json:"engine"`
+	Database  string                `json:"database"`
+	CreatedAt string                `json:"createdAt"`
+	Tables    []DatabaseBackupTable `json:"tables"`
+}
+
+type DatabaseBackupTable struct {
+	Name    string              `json:"name"`
+	Type    string              `json:"type"`
+	Columns []DatabaseColumn    `json:"columns"`
+	Rows    []map[string]string `json:"rows"`
+}
+
+type DatabaseBackupSummary struct {
+	Engine     string
+	Database   string
+	CreatedAt  string
+	TableCount int
+	RowCount   int
+	SizeBytes  int
+}
+
 func CheckDatabaseConnection(ctx context.Context, info k8s.DatabaseConnectionInfo) error {
 	db, err := openDatabase(info)
 	if err != nil {
@@ -136,6 +159,57 @@ func PreviewTableRows(ctx context.Context, info k8s.DatabaseConnectionInfo, data
 	if limit <= 0 || limit > 100 {
 		limit = 20
 	}
+	return queryTableRows(ctx, info, database, table, " LIMIT "+strconv.Itoa(limit))
+}
+
+func ExportDatabaseBackup(ctx context.Context, info k8s.DatabaseConnectionInfo, database string) ([]byte, DatabaseBackupSummary, error) {
+	info = databaseInfoForTarget(info, database)
+	if strings.TrimSpace(info.Database) == "" {
+		return nil, DatabaseBackupSummary{}, fmt.Errorf("database is required")
+	}
+	tables, err := ListDatabaseTables(ctx, info, info.Database)
+	if err != nil {
+		return nil, DatabaseBackupSummary{}, err
+	}
+	document := DatabaseBackupDocument{
+		Engine:    databaseEngineName(info),
+		Database:  info.Database,
+		CreatedAt: time.Now().UTC().Format(time.RFC3339),
+		Tables:    make([]DatabaseBackupTable, 0, len(tables)),
+	}
+	rowCount := 0
+	for _, table := range tables {
+		columns, err := ListTableColumns(ctx, info, info.Database, table.Name)
+		if err != nil {
+			return nil, DatabaseBackupSummary{}, fmt.Errorf("list columns for %s: %w", table.Name, err)
+		}
+		rows, err := queryTableRows(ctx, info, info.Database, table.Name, "")
+		if err != nil {
+			return nil, DatabaseBackupSummary{}, fmt.Errorf("read rows for %s: %w", table.Name, err)
+		}
+		rowCount += len(rows)
+		document.Tables = append(document.Tables, DatabaseBackupTable{
+			Name:    table.Name,
+			Type:    table.Type,
+			Columns: columns,
+			Rows:    rows,
+		})
+	}
+	data, err := json.MarshalIndent(document, "", "  ")
+	if err != nil {
+		return nil, DatabaseBackupSummary{}, err
+	}
+	return data, DatabaseBackupSummary{
+		Engine:     document.Engine,
+		Database:   document.Database,
+		CreatedAt:  document.CreatedAt,
+		TableCount: len(document.Tables),
+		RowCount:   rowCount,
+		SizeBytes:  len(data),
+	}, nil
+}
+
+func queryTableRows(ctx context.Context, info k8s.DatabaseConnectionInfo, database, table, suffix string) ([]map[string]string, error) {
 	info = databaseInfoForTarget(info, database)
 	db, err := openDatabase(info)
 	if err != nil {
@@ -143,7 +217,7 @@ func PreviewTableRows(ctx context.Context, info k8s.DatabaseConnectionInfo, data
 	}
 	defer db.Close()
 
-	query := "SELECT * FROM " + quoteTableName(info.Driver, table) + " LIMIT " + strconv.Itoa(limit)
+	query := "SELECT * FROM " + quoteTableName(info.Driver, table) + suffix
 	rows, err := db.QueryContext(ctx, query)
 	if err != nil {
 		return nil, err
@@ -380,6 +454,13 @@ func databaseDSN(info k8s.DatabaseConnectionInfo) string {
 		database = "/"
 	}
 	return fmt.Sprintf("%s:%s@tcp(%s:%d)%s?parseTime=true&timeout=3s&readTimeout=5s&writeTimeout=5s", info.Username, info.Password, info.Host, info.Port, database)
+}
+
+func databaseEngineName(info k8s.DatabaseConnectionInfo) string {
+	if isPostgresDriver(info.Driver) {
+		return "postgresql"
+	}
+	return "mysql"
 }
 
 func splitSchemaTable(table string) (string, string) {

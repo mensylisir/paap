@@ -143,8 +143,8 @@ func TestArgoCDPlatformManifestKeepsApplicationSetNamespaced(t *testing.T) {
 			t.Fatalf("argocd toolNamespace role must include argoproj.io/%s for the namespaced ApplicationSet controller", want)
 		}
 	}
-	if manifestHasWriteRuleForResource(manifest.Permissions.ToolNamespace.Rules, "argoproj.io", "appprojects") {
-		t.Fatalf("argocd runtime service account must not write AppProject; PAAP server owns project destination policy")
+	if !manifestHasWriteRuleForResource(manifest.Permissions.ToolNamespace.Rules, "argoproj.io", "appprojects") {
+		t.Fatalf("argocd toolNamespace role must allow namespaced AppProject writes so argocd-server can bootstrap its default project")
 	}
 }
 
@@ -170,7 +170,12 @@ func TestArgoCDPresetValuesLimitClusterCacheResources(t *testing.T) {
 	if !ok || strings.TrimSpace(inclusions) == "" {
 		t.Fatalf("configs.cm.resource.inclusions must limit ArgoCD cluster cache, got %#v", cm["resource.inclusions"])
 	}
-	for _, forbidden := range []string{"Secret", "ConfigMap", "Environment", "ServiceInstance", "ResourceClaimTemplate", "NetworkPolicy", "ReplicationController", "DaemonSet"} {
+	for _, required := range []string{"ConfigMap", "Secret"} {
+		if !strings.Contains(inclusions, "- "+required) {
+			t.Fatalf("argocd resource.inclusions must include %s so component config resources can sync:\n%s", required, inclusions)
+		}
+	}
+	for _, forbidden := range []string{"Environment", "ServiceInstance", "ResourceClaimTemplate", "NetworkPolicy", "ReplicationController", "DaemonSet"} {
 		if strings.Contains(inclusions, "- "+forbidden) {
 			t.Fatalf("argocd resource.inclusions must not include %s in cluster cache:\n%s", forbidden, inclusions)
 		}
@@ -416,9 +421,24 @@ func TestLokiPresetRaisesPromtailInotifyLimits(t *testing.T) {
 			t.Fatalf("promtail inotify initContainer missing %q:\n%s", want, text)
 		}
 	}
+	config, ok := promtail["config"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("promtail config missing or wrong type: %#v", promtail["config"])
+	}
+	clients, ok := config["clients"].([]interface{})
+	if !ok || len(clients) == 0 {
+		t.Fatalf("promtail clients missing or wrong type: %#v", config["clients"])
+	}
+	firstClient, ok := clients[0].(map[string]interface{})
+	if !ok {
+		t.Fatalf("promtail client missing or wrong type: %#v", clients[0])
+	}
+	if got, want := firstClient["url"], "http://{{ .Release.Name }}:3100/loki/api/v1/push"; got != want {
+		t.Fatalf("promtail must push to the actual Loki service name, got %q want %q", got, want)
+	}
 }
 
-func TestArgoCDChartRolesDoNotLetRuntimeWriteAppProjects(t *testing.T) {
+func TestArgoCDChartRolesLeaveAppProjectWritesToPlatformRole(t *testing.T) {
 	for _, path := range []string{
 		"../../docs/examples/built-in-templates/argocd/chart/templates/argocd-server/role.yaml",
 		"../../docs/examples/built-in-templates/argocd/chart/templates/argocd-application-controller/role.yaml",
@@ -429,7 +449,7 @@ func TestArgoCDChartRolesDoNotLetRuntimeWriteAppProjects(t *testing.T) {
 		}
 		text := string(data)
 		if templateRoleWritesResource(text, "appprojects") {
-			t.Fatalf("%s must not grant write verbs on appprojects; AppProject is platform-owned:\n%s", path, text)
+			t.Fatalf("%s must not grant write verbs on appprojects; PAAP platform manifest owns the scoped AppProject write role:\n%s", path, text)
 		}
 	}
 }
@@ -912,6 +932,28 @@ func TestPAAPServerRBACAllowsExternalAccessDiscovery(t *testing.T) {
 	}
 }
 
+func TestPAAPServerRBACAllowsRuntimeConsole(t *testing.T) {
+	data, err := os.ReadFile("../../deploy/k8s/paap-server.yaml")
+	if err != nil {
+		t.Fatalf("read paap server manifest: %v", err)
+	}
+
+	role := readClusterRoleFromManifest(t, data, "paap-server-cr-manager")
+	for _, want := range []string{"pods", "pods/log", "pods/attach", "pods/exec", "pods/ephemeralcontainers"} {
+		if !manifestHasRuleForResource(role.Rules, "", want) {
+			t.Fatalf("paap-server ClusterRole must allow core/%s for runtime console and diagnostics", want)
+		}
+	}
+	for _, verb := range []string{"update", "patch"} {
+		if !manifestHasVerbForResource(role.Rules, "", "pods/ephemeralcontainers", verb) {
+			t.Fatalf("paap-server ClusterRole must allow %s on core/pods/ephemeralcontainers for debug console fallback", verb)
+		}
+	}
+	if manifestHasVerbForResource(role.Rules, "", "pods", "create") {
+		t.Fatalf("paap-server runtime console must not grant create on core/pods")
+	}
+}
+
 type manifestClusterRole struct {
 	Kind     string `yaml:"kind"`
 	Metadata struct {
@@ -966,6 +1008,18 @@ func manifestHasWriteRuleForResource(rules []PolicyRuleSpec, group, resource str
 			if writeVerbs[verb] {
 				return true
 			}
+		}
+	}
+	return false
+}
+
+func manifestHasVerbForResource(rules []PolicyRuleSpec, group, resource, verb string) bool {
+	for _, rule := range rules {
+		if !containsString(rule.APIGroups, group) || !containsString(rule.Resources, resource) {
+			continue
+		}
+		if containsString(rule.Verbs, verb) || containsString(rule.Verbs, "*") {
+			return true
 		}
 	}
 	return false

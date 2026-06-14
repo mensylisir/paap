@@ -1,0 +1,29 @@
+name: redis-cluster
+version: 13.0.4
+description: "Redis Cluster cache service"
+permissions:
+  toolNamespace:
+    rules:
+      - apiGroups: [""]
+        resources: ["pods", "services", "configmaps", "secrets", "persistentvolumeclaims", "serviceaccounts"]
+        verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+      - apiGroups: ["apps"]
+        resources: ["statefulsets", "replicasets"]
+        verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+      - apiGroups: ["batch"]
+        resources: ["jobs"]
+        verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+      - apiGroups: ["policy"]
+        resources: ["poddisruptionbudgets"]
+        verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+variable_mapping:
+  - platform_var: "tool_namespace"
+    helm_var: "serviceAccount.name"
+  - platform_var: "tool_namespace"
+    helm_var: "fullnameOverride"
+  - platform_var: "tool_namespace"
+    helm_var: "paap.toolNamespace"
+  - platform_var: "primary_namespace"
+    helm_var: "paap.primaryNamespace"
+  - platform_var: "current_env_name"
+    helm_var: "paap.environment"

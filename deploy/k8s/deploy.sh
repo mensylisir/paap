@@ -4,8 +4,8 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 KIND_CLUSTER="${KIND_CLUSTER:-kind}"
-SERVER_IMAGE="${SERVER_IMAGE:-paap-server:v0.1.278}"
-OPERATOR_IMAGE="${OPERATOR_IMAGE:-paap-operator:v0.1.48}"
+SERVER_IMAGE="${SERVER_IMAGE:-paap-server:v0.1.359}"
+OPERATOR_IMAGE="${OPERATOR_IMAGE:-paap-operator:v0.1.52}"
 
 echo "=== PAAP Deploy to Kind ==="
 

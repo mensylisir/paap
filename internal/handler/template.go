@@ -679,6 +679,14 @@ func builtInTemplateArchives() []builtInTemplateArchive {
 	}
 }
 
+func builtInChartArchives() []builtInTemplateArchive {
+	archives := append([]builtInTemplateArchive{}, builtInTemplateArchives()...)
+	archives = append(archives, builtInTemplateArchive{ServiceType: "redis", ChartName: "redis-cluster"})
+	archives = append(archives, builtInTemplateArchive{ServiceType: "mysql", ChartName: "mysql-galera"})
+	archives = append(archives, builtInTemplateArchive{ServiceType: "postgresql", ChartName: "postgresql-ha"})
+	return archives
+}
+
 func builtInServiceTemplateByType(serviceType string) (model.ServiceTemplate, bool) {
 	templates := map[string]model.ServiceTemplate{
 		"deploy": {
@@ -891,7 +899,7 @@ func SeedBuiltinChartsToS3(force bool) {
 	log.Printf("[SeedBuiltinChartsToS3] S3 client created successfully")
 
 	ctx := context.Background()
-	for _, archive := range builtInTemplateArchives() {
+	for _, archive := range builtInChartArchives() {
 		s3Key := fmt.Sprintf("charts/%s.tar.gz", archive.ChartName)
 		if !force && s3.ObjectExists(ctx, s3Key) {
 			log.Printf("[SeedBuiltinChartsToS3] %s already exists in S3, skipping", s3Key)

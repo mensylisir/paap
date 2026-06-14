@@ -1,0 +1,14 @@
+serviceAccount:
+  create: false
+rbac:
+  create: false
+networkPolicy:
+  enabled: false
+persistence:
+  enabled: false
+cluster:
+  init: true
+  nodes: 6
+  replicas: 1
+usePassword: true
+usePasswordFiles: true

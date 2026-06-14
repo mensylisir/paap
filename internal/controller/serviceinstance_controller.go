@@ -100,6 +100,60 @@ func metadataFromServiceInstance(svc *paapv1.ServiceInstance) serviceMetadata {
 	return md
 }
 
+func expectedConcreteServiceInstanceName(svc *paapv1.ServiceInstance, md serviceMetadata) string {
+	toolIdentity := valueFromMaps("paap.io/tool", svc.Labels, svc.Annotations)
+	if toolIdentity == "" {
+		return ""
+	}
+	if strings.EqualFold(toolIdentity, md.ServiceType) && svc.Spec.Helm != nil {
+		toolIdentity = firstNonEmptyString(
+			serviceIdentityFromRuntimeName(md.EnvIdentifier, svc.Spec.Helm.ReleaseName),
+			serviceIdentityFromRuntimeName(md.EnvIdentifier, svc.Spec.Helm.Namespace),
+			toolIdentity,
+		)
+	}
+	if md.EnvIdentifier == "" || toolIdentity == "" {
+		return ""
+	}
+	return dnsLabelPart(md.EnvIdentifier + "-" + toolIdentity)
+}
+
+func serviceIdentityFromRuntimeName(envIdentifier, runtimeName string) string {
+	runtimeName = dnsLabelPart(runtimeName)
+	envIdentifier = dnsLabelPart(envIdentifier)
+	if runtimeName == "" || envIdentifier == "" {
+		return ""
+	}
+	suffix := "-" + envIdentifier + "-"
+	if idx := strings.Index(runtimeName, suffix); idx >= 0 {
+		return strings.Trim(runtimeName[idx+len(suffix):], "-")
+	}
+	if strings.HasPrefix(runtimeName, envIdentifier+"-") {
+		return strings.TrimPrefix(runtimeName, envIdentifier+"-")
+	}
+	return ""
+}
+
+func dnsLabelPart(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	var b strings.Builder
+	b.Grow(len(value))
+	lastDash := false
+	for _, r := range value {
+		valid := (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9')
+		if valid {
+			b.WriteRune(r)
+			lastDash = false
+			continue
+		}
+		if !lastDash {
+			b.WriteByte('-')
+			lastDash = true
+		}
+	}
+	return strings.Trim(b.String(), "-")
+}
+
 func valueFromMaps(key string, maps ...map[string]string) string {
 	for _, values := range maps {
 		if strings.TrimSpace(values[key]) != "" {
@@ -171,6 +225,26 @@ func (r *ServiceInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		}
 	}
 
+	if expectedName := expectedConcreteServiceInstanceName(svc, md); expectedName != "" && svc.Name != expectedName {
+		err := r.updateServiceInstanceStatus(ctx, svc, func(status *paapv1.ServiceInstanceStatus) {
+			status.Phase = "Error"
+			status.ObservedGeneration = svc.Generation
+			status.Conditions = []metav1.Condition{{
+				Type:               "Ready",
+				Status:             metav1.ConditionFalse,
+				Reason:             "InvalidServiceInstanceName",
+				Message:            fmt.Sprintf("service instance name must be %s for concrete tool identity", expectedName),
+				ObservedGeneration: svc.Generation,
+				LastTransitionTime: metav1.Now(),
+			}}
+		})
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		logger.Info("ServiceInstance name does not match concrete tool identity", "name", svc.Name, "expected", expectedName)
+		return ctrl.Result{}, nil
+	}
+
 	// 获取关联的 Environment
 	env := &paapv1.Environment{}
 	envKey := types.NamespacedName{
@@ -201,7 +275,7 @@ func (r *ServiceInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 				Type:               "Ready",
 				Status:             metav1.ConditionFalse,
 				Reason:             "MissingHelmSpec",
-				Message:            "service instances must define spec.helm; legacy non-Helm installs are not supported",
+				Message:            "service instances must define spec.helm",
 				ObservedGeneration: svc.Generation,
 				LastTransitionTime: metav1.Now(),
 			}}
@@ -496,7 +570,7 @@ func helmResourceMetadata(svc *paapv1.ServiceInstance) paaphelm.ResourceMetadata
 }
 
 func shouldEnsureHelmRelease(svc *paapv1.ServiceInstance) bool {
-	return svc.Status.ObservedGeneration != svc.Generation
+	return svc.Status.ObservedGeneration != svc.Generation || len(svc.Status.Components) == 0
 }
 
 func (r *ServiceInstanceReconciler) syncEnvironmentNamespacesInHelmValues(ctx context.Context, svc *paapv1.ServiceInstance, environmentNamespaces []string) bool {
@@ -701,6 +775,17 @@ func (r *ServiceInstanceReconciler) collectToolComponentStatus(ctx context.Conte
 			Status:             metav1.ConditionFalse,
 			Reason:             firstReason,
 			Message:            firstMessage,
+			ObservedGeneration: svc.Generation,
+			LastTransitionTime: metav1.Now(),
+		})
+	}
+	if len(components) == 0 {
+		ready = false
+		setServiceInstanceCondition(&svc.Status, metav1.Condition{
+			Type:               "Ready",
+			Status:             metav1.ConditionFalse,
+			Reason:             "NoToolWorkloads",
+			Message:            fmt.Sprintf("tool namespace %s has no workloads yet", svc.Spec.ToolNamespace),
 			ObservedGeneration: svc.Generation,
 			LastTransitionTime: metav1.Now(),
 		})

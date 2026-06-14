@@ -62,7 +62,7 @@ export function buildEnvironmentReadiness(
   const failedServices = services.filter((svc) => String(svc.status || '').toLowerCase() === 'failed' || !!svc.errorMessage)
   const installingServices = services.filter((svc) => inProgressStatuses.has(String(svc.status || '').toLowerCase()))
   const deployMissing = missingFor(services, ['deploy'])
-  const ciMissing = missingFor(services, ['git', 'registry', 'ci'])
+  const ciMissing = missingFor(services, ['git', 'registry'])
   const observabilityMissing = missingFor(services, ['monitor', 'log'])
 
   return {

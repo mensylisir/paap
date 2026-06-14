@@ -23,7 +23,7 @@
         <div class="kpi-label">运行中</div>
       </div>
       <div class="kpi-card">
-        <div class="kpi-number">{{ totalServices }}</div>
+        <div class="kpi-number">{{ totalTools }}</div>
         <div class="kpi-label">已安装工具</div>
       </div>
       <div class="kpi-card">
@@ -74,9 +74,9 @@
               <span class="env-id">{{ env.identifier }}</span>
             </div>
             <div class="env-card-actions">
-              <span class="status-badge" :class="env.status">
-                <span class="rail-status-dot" :class="`rail-status-dot--${env.status === 'running' ? 'running' : env.status === 'error' ? 'error' : env.status === 'creating' ? 'creating' : 'empty'}`" />
-                {{ statusText(env.status) }}
+              <span class="status-badge" :class="environmentCardStatus(env)">
+                <span class="rail-status-dot" :class="`rail-status-dot--${environmentStatusDotClass(environmentCardStatus(env))}`" />
+                {{ environmentStatusLabel(environmentCardStatus(env)) }}
               </span>
               <button
                 type="button"
@@ -89,9 +89,10 @@
             </div>
           </div>
           <div class="env-meta">
-            <span v-if="(services[env.id] || []).length" class="rail-tag rail-tag--blue">{{ (services[env.id] || []).length }} 工具</span>
+            <span v-if="environmentCardResources(env).toolCount" class="rail-tag rail-tag--blue">{{ environmentCardResources(env).toolCount }} 工具</span>
+            <span v-if="environmentCardResources(env).middlewareCount" class="rail-tag rail-tag--purple">{{ environmentCardResources(env).middlewareCount }} 中间件</span>
             <span v-if="(components[env.id] || []).length" class="rail-tag rail-tag--green">{{ (components[env.id] || []).length }} 组件</span>
-            <span v-if="!(services[env.id] || []).length && !(components[env.id] || []).length" class="rail-tag rail-tag--gray">空环境</span>
+            <span v-if="!environmentCardResources(env).toolCount && !environmentCardResources(env).middlewareCount && !(components[env.id] || []).length" class="rail-tag rail-tag--gray">基座未安装</span>
           </div>
         </div>
       </div>
@@ -130,7 +131,7 @@
                 </label>
                 <label class="radio-item" :class="{ active: envForm.mode === 'empty' }">
                   <input type="radio" value="empty" v-model="envForm.mode" />
-                  <span>创建空环境</span>
+                  <span>创建基础环境</span>
                 </label>
               </div>
             </div>
@@ -185,6 +186,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api } from '../api/client'
 import { toIdentifier } from '../utils/identifier'
+import { effectiveEnvironmentStatus, environmentResourceSummary, environmentStatusDotClass, environmentStatusLabel } from './appSummary'
 
 const route = useRoute()
 const router = useRouter()
@@ -203,10 +205,26 @@ const deleteError = ref('')
 const envForm = ref({ name: '', identifier: '', mode: 'empty' as string, templateId: '1' })
 const pendingDeleteEnv = ref<any | null>(null)
 
-const runningCount = computed(() => environments.value.filter(e => e.status === 'running').length)
-const totalServices = computed(() => environments.value.reduce((s, e) => s + ((services.value[e.id] || []).length), 0))
+const runningCount = computed(() => environments.value.filter(e => environmentCardStatus(e) === 'running').length)
+const totalTools = computed(() => environments.value.reduce((s, e) => s + environmentCardResources(e).toolCount, 0))
 const totalComponents = computed(() => environments.value.reduce((s, e) => s + ((components.value[e.id] || []).length), 0))
 const identifierPreview = computed(() => toIdentifier(envForm.value.identifier || envForm.value.name, 'env'))
+
+function environmentCardSummary(env: any) {
+  return {
+    ...env,
+    services: services.value[env.id] || env.services || [],
+    componentCount: (components.value[env.id] || []).length || Number(env.componentCount || 0),
+  }
+}
+
+function environmentCardResources(env: any) {
+  return environmentResourceSummary(environmentCardSummary(env))
+}
+
+function environmentCardStatus(env: any) {
+  return effectiveEnvironmentStatus(environmentCardSummary(env))
+}
 
 onMounted(async () => {
   await loadEnvs()
@@ -245,8 +263,6 @@ function goToDefaultEnvironment() {
   const first = environments.value[0]
   if (first?.id) router.replace(`/apps/${appId}/environments/${first.id}`)
 }
-
-const statusText = (s: string) => ({ running: '运行中', empty: '空环境', stopped: '已停止', creating: '创建中' }[s] || s)
 
 const submitEnv = async () => {
   if (!envForm.value.name) return

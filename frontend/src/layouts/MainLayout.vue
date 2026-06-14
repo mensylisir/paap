@@ -91,6 +91,7 @@ const logout = () => {
 .layout {
   display: flex;
   min-height: 100vh;
+  min-width: 0;
 }
 
 .sidebar {
@@ -227,7 +228,63 @@ const logout = () => {
 .main {
   flex: 1;
   margin-left: var(--paap-sidebar);
+  width: calc(100% - var(--paap-sidebar));
+  min-width: 0;
   background: var(--paap-bg);
   min-height: 100vh;
+}
+
+@media (max-width: 768px) {
+  .layout {
+    display: block;
+  }
+
+  .sidebar {
+    position: sticky;
+    top: 0;
+    bottom: auto;
+    width: 100%;
+    min-width: 0;
+    height: auto;
+    padding: var(--paap-space-3) var(--paap-space-4);
+    border-right: 0;
+    border-bottom: 1px solid var(--paap-border);
+  }
+
+  .sidebar-top {
+    flex-direction: row;
+    align-items: center;
+    gap: var(--paap-space-4);
+    min-width: 0;
+  }
+
+  .logo {
+    flex-shrink: 0;
+    padding: 0;
+  }
+
+  .nav {
+    flex: 1;
+    flex-direction: row;
+    gap: var(--paap-space-1);
+    min-width: 0;
+    overflow-x: auto;
+    padding: 0;
+  }
+
+  .nav-item {
+    width: auto;
+    height: 36px;
+    white-space: nowrap;
+  }
+
+  .sidebar-bottom {
+    display: none;
+  }
+
+  .main {
+    width: 100%;
+    margin-left: 0;
+  }
 }
 </style>

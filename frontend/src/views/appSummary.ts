@@ -67,13 +67,61 @@ export function sumApplicationResources(app: { environments?: AppEnvironmentSumm
   }, { toolCount: 0, middlewareCount: 0, componentCount: 0 })
 }
 
+const errorStatuses = new Set(['error', 'failed'])
+const progressStatuses = new Set(['creating', 'installing', 'pending', 'deleting'])
+const runningStatuses = new Set(['running', 'ready', 'healthy', 'success'])
+
+export function effectiveEnvironmentStatus(env: AppEnvironmentSummary | undefined | null) {
+  if (!env) return 'empty'
+  const status = String(env.status || '').trim().toLowerCase()
+  const services = Array.isArray(env.services) ? env.services : []
+  if (env.errorMessage || errorStatuses.has(status) || services.some((svc) => svc.errorMessage || errorStatuses.has(String(svc.status || '').toLowerCase()))) {
+    return 'error'
+  }
+  if (progressStatuses.has(status) || services.some((svc) => progressStatuses.has(String(svc.status || '').toLowerCase()))) {
+    return 'creating'
+  }
+  if (runningStatuses.has(status)) return 'running'
+  if (status === 'stopped') return 'stopped'
+
+  const resources = environmentResourceSummary(env)
+  if (services.length > 0 || resources.toolCount > 0 || resources.middlewareCount > 0 || resources.componentCount > 0) {
+    return 'running'
+  }
+  return status || 'empty'
+}
+
+export function environmentStatusLabel(status?: string) {
+  return ({
+    running: '运行中',
+    ready: '运行中',
+    empty: '待初始化',
+    stopped: '已停止',
+    creating: '创建中',
+    installing: '安装中',
+    pending: '等待中',
+    deleting: '删除中',
+    failed: '失败',
+    error: '异常',
+  } as Record<string, string>)[String(status || '').toLowerCase()] || '未知状态'
+}
+
+export function environmentStatusDotClass(status?: string) {
+  const normalized = String(status || '').toLowerCase()
+  if (normalized === 'running' || normalized === 'ready') return 'running'
+  if (normalized === 'error' || normalized === 'failed') return 'error'
+  if (normalized === 'creating' || normalized === 'installing' || normalized === 'pending' || normalized === 'deleting') return 'creating'
+  return 'empty'
+}
+
 export function hasErrorEnvironment(environments: AppEnvironmentSummary[]) {
-  return environments.some((env) => env.status === 'error' || Boolean(env.errorMessage))
+  return environments.some((env) => effectiveEnvironmentStatus(env) === 'error')
 }
 
 export function buildRecentEvents(environments: AppEnvironmentSummary[]) {
   const events: string[] = []
   for (const env of environments) {
+    const status = effectiveEnvironmentStatus(env)
     if (env.errorMessage) {
       events.push(`${env.name}：${env.errorMessage}`)
     } else if (env.services?.some((svc) => svc.errorMessage || svc.status === 'failed')) {
@@ -82,11 +130,11 @@ export function buildRecentEvents(environments: AppEnvironmentSummary[]) {
     } else if (env.services?.some((svc) => svc.status === 'installing' || svc.status === 'pending')) {
       const svc = env.services.find((svc) => svc.status === 'installing' || svc.status === 'pending')
       events.push(`${env.name} ${svc?.serviceType || '工具'} ${svc?.status === 'pending' ? '等待安装' : '安装中'}`)
-    } else if (env.status === 'running') {
+    } else if (status === 'running') {
       const { toolCount: tools, middlewareCount: middleware, componentCount: comps } = environmentResourceSummary(env)
       const middlewareText = middleware > 0 ? `，${middleware} 个中间件` : ''
       events.push(`${env.name} 已运行，${tools} 个工具${middlewareText}，${comps} 个组件`)
-    } else if (env.status === 'creating') {
+    } else if (status === 'creating') {
       events.push(`${env.name} 正在创建中`)
     }
   }

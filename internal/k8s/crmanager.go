@@ -382,7 +382,6 @@ func upsertServiceInstanceCROnce(ctx context.Context, appIdentifier, envIdentifi
 	if helmSpec != nil && strings.TrimSpace(helmSpec.Namespace) != "" {
 		toolNS = strings.TrimSpace(helmSpec.Namespace)
 	}
-	name := fmt.Sprintf("%s-%s", envIdentifier, svcType)
 	namespace := fmt.Sprintf("paap-app-%s", appIdentifier)
 	baseLabels := map[string]string{
 		"paap.io/app":           appIdentifier,
@@ -395,6 +394,7 @@ func upsertServiceInstanceCROnce(ctx context.Context, appIdentifier, envIdentifi
 		"paap.io/managed-by":    "paap-server",
 	}
 	mergeStringMap(baseLabels, labels)
+	name := serviceInstanceCRName(envIdentifier, svcType, helmSpec, baseLabels)
 	baseAnnotations := serviceInstanceAnnotations(toolNS, appIdentifier, envIdentifier, svcType, baseLabels)
 	mergeStringMap(baseAnnotations, annotations)
 
@@ -408,18 +408,9 @@ func upsertServiceInstanceCROnce(ctx context.Context, appIdentifier, envIdentifi
 		exists = false
 		svc = nil
 	}
-
-	if exists {
-		toolNS = preserveExistingToolNamespace(svc, toolNS)
-		if helmSpec != nil {
-			helmSpec = helmSpec.DeepCopy()
-			helmSpec.Namespace = preserveExistingHelmNamespace(svc, toolNS)
-			helmSpec.ReleaseName = preserveExistingHelmReleaseName(svc, helmSpec.ReleaseName)
-			toolNS = helmSpec.Namespace
-			rewriteToolNamespaceValues(helmSpec, toolNS)
-		}
-		baseAnnotations = serviceInstanceAnnotations(toolNS, appIdentifier, envIdentifier, svcType, baseLabels)
-		mergeStringMap(baseAnnotations, annotations)
+	if helmSpec != nil {
+		helmSpec = helmSpec.DeepCopy()
+		rewriteToolNamespaceValues(helmSpec, toolNS)
 	}
 
 	saName := serviceInstanceServiceAccountName(helmSpec, toolNS)
@@ -497,6 +488,45 @@ func mergeStringMap(dst, src map[string]string) {
 	}
 }
 
+func serviceInstanceCRName(envIdentifier, svcType string, helmSpec *paapv1.HelmInstallSpec, labels map[string]string) string {
+	identity := ""
+	if labels != nil {
+		identity = strings.TrimSpace(labels["paap.io/tool"])
+	}
+	derived := ""
+	if helmSpec != nil {
+		derived = serviceIdentityFromRuntimeName(envIdentifier, helmSpec.ReleaseName)
+		if derived == "" {
+			derived = serviceIdentityFromRuntimeName(envIdentifier, helmSpec.Namespace)
+		}
+	}
+	if identity == "" || strings.EqualFold(identity, svcType) {
+		if derived != "" {
+			identity = derived
+		}
+	}
+	if identity == "" {
+		identity = svcType
+	}
+	return dnsLabelPart(envIdentifier + "-" + identity)
+}
+
+func serviceIdentityFromRuntimeName(envIdentifier, runtimeName string) string {
+	runtimeName = dnsLabelPart(runtimeName)
+	envIdentifier = dnsLabelPart(envIdentifier)
+	if runtimeName == "" || envIdentifier == "" {
+		return ""
+	}
+	suffix := "-" + envIdentifier + "-"
+	if idx := strings.Index(runtimeName, suffix); idx >= 0 {
+		return strings.Trim(runtimeName[idx+len(suffix):], "-")
+	}
+	if strings.HasPrefix(runtimeName, envIdentifier+"-") {
+		return strings.TrimPrefix(runtimeName, envIdentifier+"-")
+	}
+	return ""
+}
+
 func serviceInstanceServiceAccountName(helmSpec *paapv1.HelmInstallSpec, toolNS string) string {
 	if helmSpec != nil {
 		for _, key := range toolNamespaceServiceAccountValueKeys(helmSpec) {
@@ -529,36 +559,6 @@ func toolNamespaceServiceAccountValueKeys(helmSpec *paapv1.HelmInstallSpec) []st
 func isServiceAccountValueKey(key string) bool {
 	key = strings.ToLower(strings.TrimSpace(key))
 	return strings.Contains(key, "serviceaccount")
-}
-
-func preserveExistingToolNamespace(svc *paapv1.ServiceInstance, fallback string) string {
-	if svc == nil {
-		return fallback
-	}
-	if strings.TrimSpace(svc.Spec.ToolNamespace) != "" {
-		return strings.TrimSpace(svc.Spec.ToolNamespace)
-	}
-	if svc.Spec.Helm != nil && strings.TrimSpace(svc.Spec.Helm.Namespace) != "" {
-		return strings.TrimSpace(svc.Spec.Helm.Namespace)
-	}
-	if strings.TrimSpace(svc.Annotations["paap.io/tool-namespace"]) != "" {
-		return strings.TrimSpace(svc.Annotations["paap.io/tool-namespace"])
-	}
-	return fallback
-}
-
-func preserveExistingHelmNamespace(svc *paapv1.ServiceInstance, fallback string) string {
-	if svc != nil && svc.Spec.Helm != nil && strings.TrimSpace(svc.Spec.Helm.Namespace) != "" {
-		return strings.TrimSpace(svc.Spec.Helm.Namespace)
-	}
-	return fallback
-}
-
-func preserveExistingHelmReleaseName(svc *paapv1.ServiceInstance, fallback string) string {
-	if svc != nil && svc.Spec.Helm != nil && strings.TrimSpace(svc.Spec.Helm.ReleaseName) != "" {
-		return strings.TrimSpace(svc.Spec.Helm.ReleaseName)
-	}
-	return fallback
 }
 
 func rewriteToolNamespaceValues(helmSpec *paapv1.HelmInstallSpec, toolNS string) {
@@ -631,13 +631,12 @@ func DeleteServiceInstanceCR(ctx context.Context, appIdentifier, envIdentifier, 
 	if err != nil {
 		return err
 	}
-	svc := &paapv1.ServiceInstance{}
-	key := types.NamespacedName{
-		Name:      fmt.Sprintf("%s-%s", envIdentifier, svcType),
-		Namespace: fmt.Sprintf("paap-app-%s", appIdentifier),
-	}
-	if err := cl.Get(ctx, key, svc); err != nil {
+	svc, err := findServiceInstanceCR(ctx, cl, appIdentifier, envIdentifier, svcType)
+	if err != nil {
 		return client.IgnoreNotFound(err)
+	}
+	if svc == nil {
+		return nil
 	}
 	return cl.Delete(ctx, svc)
 }
@@ -648,18 +647,35 @@ func GetServiceInstanceCRStatus(ctx context.Context, appIdentifier, envIdentifie
 	if err != nil {
 		return nil, err
 	}
-	svc := &paapv1.ServiceInstance{}
-	key := types.NamespacedName{
-		Name:      fmt.Sprintf("%s-%s", envIdentifier, svcType),
-		Namespace: fmt.Sprintf("paap-app-%s", appIdentifier),
-	}
-	if err := cl.Get(ctx, key, svc); err != nil {
-		if apierrors.IsNotFound(err) {
-			return nil, nil
-		}
+	svc, err := findServiceInstanceCR(ctx, cl, appIdentifier, envIdentifier, svcType)
+	if err != nil {
 		return nil, err
 	}
+	if svc == nil {
+		return nil, nil
+	}
 	return &svc.Status, nil
+}
+
+func findServiceInstanceCR(ctx context.Context, cl client.Client, appIdentifier, envIdentifier, svcType string) (*paapv1.ServiceInstance, error) {
+	namespace := fmt.Sprintf("paap-app-%s", appIdentifier)
+	items := &paapv1.ServiceInstanceList{}
+	if err := cl.List(ctx, items,
+		client.InNamespace(namespace),
+		client.MatchingLabels{
+			"paap.io/env":          envIdentifier,
+			"paap.io/service-type": svcType,
+		},
+	); err != nil {
+		return nil, err
+	}
+	for i := range items.Items {
+		item := &items.Items[i]
+		if item.Name == serviceInstanceCRName(envIdentifier, svcType, item.Spec.Helm, item.Labels) {
+			return item, nil
+		}
+	}
+	return nil, nil
 }
 
 // CreateComponentCR creates a Component CR

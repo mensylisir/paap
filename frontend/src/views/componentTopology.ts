@@ -4,6 +4,7 @@ export type ComponentTopologyComponent = {
   type?: string
   serviceName?: string
   serviceType?: string
+  namespace?: string
   status?: string
   config?: unknown
   dependencies?: unknown
@@ -157,6 +158,12 @@ export const buildComponentTopologyLanes = (components: ComponentTopologyCompone
 
 export const explicitComponentDependencies = (comp: ComponentTopologyComponent) => {
   const config = parseComponentConfig(comp?.config)
+  const bindingTargets = Array.isArray(config?.bindings)
+    ? config.bindings
+      .flatMap((item: any) => [item?.targetKey, item?.targetName])
+      .map((item: any) => String(item || '').trim())
+      .filter(Boolean)
+    : []
   const raw = comp?.dependencies
     ?? comp?.dependsOn
     ?? comp?.dependencyNames
@@ -166,13 +173,13 @@ export const explicitComponentDependencies = (comp: ComponentTopologyComponent) 
     ?? config?.dependencyNames
     ?? config?.dependencyComponents
   if (Array.isArray(raw)) {
-    return raw
+    return [...bindingTargets, ...raw
       .map((item) => String(typeof item === 'object' && item ? (item as any).name || (item as any).service || (item as any).component || (item as any).id : item))
       .map((item) => item.trim())
-      .filter(Boolean)
+      .filter(Boolean)]
   }
-  if (typeof raw === 'string') return raw.split(',').map((item) => item.trim()).filter(Boolean)
-  return []
+  if (typeof raw === 'string') return [...bindingTargets, ...raw.split(',').map((item) => item.trim()).filter(Boolean)]
+  return bindingTargets
 }
 
 const parseComponentConfig = (config: unknown): any => {
@@ -192,6 +199,7 @@ export const buildComponentDependencyEdges = (components: ComponentTopologyCompo
   const byName = new Map<string, ComponentTopologyComponent>()
   const byId = new Map<string, ComponentTopologyComponent>()
   const byTopologyId = new Map<string, ComponentTopologyComponent>()
+  const aliasTargets = new Map<string, ComponentTopologyComponent[]>()
   for (const comp of components) {
     const name = String(comp.name || '').trim()
     const id = String(comp.id || '').trim()
@@ -199,6 +207,11 @@ export const buildComponentDependencyEdges = (components: ComponentTopologyCompo
     if (name) byName.set(name.toLowerCase(), comp)
     if (id) byId.set(id, comp)
     if (topologyId) byTopologyId.set(topologyId.toLowerCase(), comp)
+    for (const alias of dependencyAliases(comp)) {
+      const list = aliasTargets.get(alias) || []
+      list.push(comp)
+      aliasTargets.set(alias, list)
+    }
   }
 
   const edges: ComponentTopologyEdge[] = []
@@ -231,9 +244,80 @@ export const buildComponentDependencyEdges = (components: ComponentTopologyCompo
       const target = byTopologyId.get(dependency.toLowerCase()) || byName.get(dependency.toLowerCase()) || byId.get(dependency)
       if (target) addEdge(comp, target)
     }
+    for (const target of inferredConfigDependencies(comp, aliasTargets)) {
+      addEdge(comp, target)
+    }
   }
 
   return edges
+}
+
+const dependencyAliases = (node: ComponentTopologyComponent): string[] => {
+  const values = new Set<string>()
+  const add = (value: unknown) => {
+    const text = String(value || '').trim().toLowerCase()
+    if (text.length >= 3) values.add(text)
+  }
+  add(node.topologyId)
+  add(node.name)
+  add(node.serviceName)
+  add(node.serviceType)
+  const serviceName = String(node.serviceName || node.name || node.serviceType || '').trim()
+  const namespace = String(node.namespace || '').trim()
+  if (serviceName && namespace) {
+    add(`${serviceName}.${namespace}`)
+    add(`${serviceName}.${namespace}.svc`)
+    add(`${serviceName}.${namespace}.svc.cluster.local`)
+  }
+  return Array.from(values)
+}
+
+const inferredConfigDependencies = (
+  comp: ComponentTopologyComponent,
+  aliasTargets: Map<string, ComponentTopologyComponent[]>
+): ComponentTopologyComponent[] => {
+  const haystack = componentConfigSearchText(comp)
+  if (!haystack) return []
+  const matched = new Map<string, ComponentTopologyComponent>()
+  for (const [alias, targets] of aliasTargets.entries()) {
+    if (!haystack.includes(alias)) continue
+    const uniqueTargets = targets.filter((target) => String(target.topologyId || target.id) !== String(comp.topologyId || comp.id))
+    if (uniqueTargets.length !== 1) continue
+    const target = uniqueTargets[0]
+    matched.set(String(target.topologyId || target.id), target)
+  }
+  return Array.from(matched.values())
+}
+
+const componentConfigSearchText = (comp: ComponentTopologyComponent): string => {
+  const cfg = parseComponentConfig(comp?.config)
+  if (!cfg) return ''
+  const values: string[] = []
+  const add = (value: unknown) => {
+    if (value === undefined || value === null) return
+    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+      values.push(String(value))
+      return
+    }
+    if (Array.isArray(value)) {
+      value.forEach(add)
+      return
+    }
+    if (typeof value === 'object') {
+      Object.entries(value as Record<string, unknown>).forEach(([key, item]) => {
+        values.push(key)
+        add(item)
+      })
+    }
+  }
+  add(cfg.env)
+  add(cfg.command)
+  add(cfg.args)
+  add(cfg.configMaps)
+  add(cfg.secrets)
+  add(cfg.files)
+  add(cfg.bindings)
+  return values.join('\n').toLowerCase()
 }
 
 export const parseComponentTopologyPositions = (raw: string | null | undefined): ComponentTopologyPositions => {

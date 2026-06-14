@@ -444,10 +444,14 @@ const syncBadge = (s?: string) => {
   justify-content: space-between;
   align-items: flex-start;
   gap: var(--paap-space-4);
+  min-width: 0;
   background: var(--paap-panel);
   border: 1px solid var(--paap-border);
   border-radius: var(--paap-radius);
   padding: var(--paap-space-5);
+}
+.argocd-app-header-left {
+  min-width: 0;
 }
 .argocd-app-title {
   font-size: 18px;
@@ -461,10 +465,12 @@ const syncBadge = (s?: string) => {
   align-items: center;
   gap: var(--paap-space-2);
   flex-wrap: wrap;
+  min-width: 0;
   font-size: 12px;
   color: var(--paap-muted);
 }
 .argocd-app-repo {
+  max-width: 100%;
   color: var(--paap-accent);
   font-family: var(--paap-mono);
   font-size: 11px;
@@ -485,6 +491,9 @@ const syncBadge = (s?: string) => {
   display: flex;
   align-items: center;
   gap: var(--paap-space-2);
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  min-width: 0;
   flex-shrink: 0;
 }
 .argocd-open-link {
@@ -791,6 +800,13 @@ const syncBadge = (s?: string) => {
 @media (max-width: 960px) {
   .argocd-shell { grid-template-columns: 1fr; }
   .argocd-sidebar { position: static; }
+  .argocd-app-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .argocd-app-status {
+    justify-content: flex-start;
+  }
   .topology-lanes { grid-template-columns: 1fr; }
   .topology-lane:not(:last-child)::after { display: none; }
   .argocd-tree-node {
@@ -798,5 +814,19 @@ const syncBadge = (s?: string) => {
   }
   .argocd-tree-sync,
   .argocd-tree-health { display: none; }
+}
+
+@media (max-width: 640px) {
+  .argocd-app-header {
+    padding: var(--paap-space-4);
+  }
+  .argocd-app-title {
+    font-size: 16px;
+  }
+  .argocd-open-link {
+    max-width: 100%;
+    white-space: normal;
+    text-align: center;
+  }
 }
 </style>

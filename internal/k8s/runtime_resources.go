@@ -3,6 +3,7 @@ package k8s
 import (
 	"context"
 	"fmt"
+	"path"
 	"sort"
 	"strings"
 
@@ -42,6 +43,7 @@ type RuntimeConfig struct {
 	Env          []RuntimeEnvVar         `json:"env,omitempty"`
 	EnvFrom      []RuntimeEnvFrom        `json:"envFrom,omitempty"`
 	Resources    RuntimeResourceRequests `json:"resources,omitempty"`
+	Files        []RuntimeConfigFile     `json:"files,omitempty"`
 	ConfigMaps   []RuntimeConfigObject   `json:"configMaps,omitempty"`
 	Secrets      []RuntimeConfigObject   `json:"secrets,omitempty"`
 }
@@ -63,6 +65,16 @@ type RuntimeEnvFrom struct {
 type RuntimeResourceRequests struct {
 	Requests map[string]string `json:"requests,omitempty"`
 	Limits   map[string]string `json:"limits,omitempty"`
+}
+
+type RuntimeConfigFile struct {
+	Name       string `json:"name,omitempty"`
+	Kind       string `json:"kind,omitempty"`
+	ObjectName string `json:"objectName,omitempty"`
+	Key        string `json:"key,omitempty"`
+	Path       string `json:"path,omitempty"`
+	MountPath  string `json:"mountPath,omitempty"`
+	ReadOnly   bool   `json:"readOnly,omitempty"`
 }
 
 type RuntimeConfigObject struct {
@@ -148,7 +160,7 @@ func ListNamespaceAdoptableResources(ctx context.Context, namespace string) ([]A
 		if len(deploy.Spec.Template.Spec.Containers) == 0 {
 			continue
 		}
-		cfg := runtimeConfigFromPodTemplate(deploy.Namespace, "Deployment", deploy.Name, deploy.Spec.Replicas, deploy.Spec.Template.Spec.Containers[0])
+		cfg := runtimeConfigFromPodTemplate(deploy.Namespace, "Deployment", deploy.Name, deploy.Spec.Replicas, deploy.Spec.Template.Spec, deploy.Spec.Template.Spec.Containers[0])
 		enrichRuntimeConfigObjects(ctx, cfg)
 		add(AdoptableResource{
 			Name:          deploy.Name,
@@ -169,7 +181,7 @@ func ListNamespaceAdoptableResources(ctx context.Context, namespace string) ([]A
 		if len(sts.Spec.Template.Spec.Containers) == 0 {
 			continue
 		}
-		cfg := runtimeConfigFromPodTemplate(sts.Namespace, "StatefulSet", sts.Name, sts.Spec.Replicas, sts.Spec.Template.Spec.Containers[0])
+		cfg := runtimeConfigFromPodTemplate(sts.Namespace, "StatefulSet", sts.Name, sts.Spec.Replicas, sts.Spec.Template.Spec, sts.Spec.Template.Spec.Containers[0])
 		enrichRuntimeConfigObjects(ctx, cfg)
 		add(AdoptableResource{
 			Name:          sts.Name,
@@ -191,7 +203,7 @@ func ListNamespaceAdoptableResources(ctx context.Context, namespace string) ([]A
 		if len(ds.Spec.Template.Spec.Containers) == 0 {
 			continue
 		}
-		cfg := runtimeConfigFromPodTemplate(ds.Namespace, "DaemonSet", ds.Name, nil, ds.Spec.Template.Spec.Containers[0])
+		cfg := runtimeConfigFromPodTemplate(ds.Namespace, "DaemonSet", ds.Name, nil, ds.Spec.Template.Spec, ds.Spec.Template.Spec.Containers[0])
 		enrichRuntimeConfigObjects(ctx, cfg)
 		add(AdoptableResource{
 			Name:          ds.Name,
@@ -317,7 +329,7 @@ func discoverDeploymentRuntimeConfig(ctx context.Context, opts ...client.ListOpt
 		if len(deploy.Spec.Template.Spec.Containers) == 0 {
 			continue
 		}
-		cfg := runtimeConfigFromPodTemplate(deploy.Namespace, "Deployment", deploy.Name, deploy.Spec.Replicas, deploy.Spec.Template.Spec.Containers[0])
+		cfg := runtimeConfigFromPodTemplate(deploy.Namespace, "Deployment", deploy.Name, deploy.Spec.Replicas, deploy.Spec.Template.Spec, deploy.Spec.Template.Spec.Containers[0])
 		enrichRuntimeConfigObjects(ctx, cfg)
 		return cfg, nil
 	}
@@ -338,7 +350,7 @@ func discoverStatefulSetRuntimeConfig(ctx context.Context, opts ...client.ListOp
 		if len(sts.Spec.Template.Spec.Containers) == 0 {
 			continue
 		}
-		cfg := runtimeConfigFromPodTemplate(sts.Namespace, "StatefulSet", sts.Name, sts.Spec.Replicas, sts.Spec.Template.Spec.Containers[0])
+		cfg := runtimeConfigFromPodTemplate(sts.Namespace, "StatefulSet", sts.Name, sts.Spec.Replicas, sts.Spec.Template.Spec, sts.Spec.Template.Spec.Containers[0])
 		enrichRuntimeConfigObjects(ctx, cfg)
 		return cfg, nil
 	}
@@ -359,14 +371,14 @@ func discoverDaemonSetRuntimeConfig(ctx context.Context, opts ...client.ListOpti
 		if len(ds.Spec.Template.Spec.Containers) == 0 {
 			continue
 		}
-		cfg := runtimeConfigFromPodTemplate(ds.Namespace, "DaemonSet", ds.Name, nil, ds.Spec.Template.Spec.Containers[0])
+		cfg := runtimeConfigFromPodTemplate(ds.Namespace, "DaemonSet", ds.Name, nil, ds.Spec.Template.Spec, ds.Spec.Template.Spec.Containers[0])
 		enrichRuntimeConfigObjects(ctx, cfg)
 		return cfg, nil
 	}
 	return nil, nil
 }
 
-func runtimeConfigFromPodTemplate(namespace, kind, workloadName string, replicas *int32, container corev1.Container) *RuntimeConfig {
+func runtimeConfigFromPodTemplate(namespace, kind, workloadName string, replicas *int32, podSpec corev1.PodSpec, container corev1.Container) *RuntimeConfig {
 	cfg := &RuntimeConfig{
 		Namespace:    namespace,
 		WorkloadName: workloadName,
@@ -378,12 +390,93 @@ func runtimeConfigFromPodTemplate(namespace, kind, workloadName string, replicas
 		Args:         trimStringSlice(container.Args),
 		Env:          runtimeEnvVars(container.Env),
 		EnvFrom:      runtimeEnvFrom(container.EnvFrom),
+		Files:        runtimeConfigFiles(podSpec, container),
 		Resources: RuntimeResourceRequests{
 			Requests: resourceListToStrings(container.Resources.Requests),
 			Limits:   resourceListToStrings(container.Resources.Limits),
 		},
 	}
 	return cfg
+}
+
+func runtimeConfigFiles(podSpec corev1.PodSpec, container corev1.Container) []RuntimeConfigFile {
+	if len(container.VolumeMounts) == 0 || len(podSpec.Volumes) == 0 {
+		return nil
+	}
+	volumes := map[string]corev1.Volume{}
+	for _, volume := range podSpec.Volumes {
+		if volume.Name != "" {
+			volumes[volume.Name] = volume
+		}
+	}
+	out := make([]RuntimeConfigFile, 0)
+	add := func(mount corev1.VolumeMount, kind, objectName string, items []corev1.KeyToPath) {
+		objectName = strings.TrimSpace(objectName)
+		if objectName == "" || strings.TrimSpace(mount.MountPath) == "" {
+			return
+		}
+		if len(items) == 0 {
+			item := RuntimeConfigFile{
+				Name:       mount.Name,
+				Kind:       kind,
+				ObjectName: objectName,
+				MountPath:  strings.TrimSpace(mount.MountPath),
+				ReadOnly:   mount.ReadOnly,
+			}
+			if mount.SubPath != "" {
+				item.Key = strings.TrimSpace(mount.SubPath)
+				item.Path = strings.TrimSpace(mount.SubPath)
+			}
+			out = append(out, item)
+			return
+		}
+		for _, volumeItem := range items {
+			key := strings.TrimSpace(volumeItem.Key)
+			relPath := strings.TrimSpace(volumeItem.Path)
+			mountPath := strings.TrimSpace(mount.MountPath)
+			if mount.SubPath == "" && relPath != "" {
+				mountPath = path.Join(mountPath, relPath)
+			}
+			out = append(out, RuntimeConfigFile{
+				Name:       mount.Name,
+				Kind:       kind,
+				ObjectName: objectName,
+				Key:        key,
+				Path:       relPath,
+				MountPath:  mountPath,
+				ReadOnly:   mount.ReadOnly,
+			})
+		}
+	}
+
+	for _, mount := range container.VolumeMounts {
+		volume, ok := volumes[mount.Name]
+		if !ok {
+			continue
+		}
+		if volume.ConfigMap != nil {
+			add(mount, "configMap", volume.ConfigMap.Name, volume.ConfigMap.Items)
+		}
+		if volume.Secret != nil {
+			add(mount, "secret", volume.Secret.SecretName, volume.Secret.Items)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].MountPath != out[j].MountPath {
+			return out[i].MountPath < out[j].MountPath
+		}
+		if out[i].Kind != out[j].Kind {
+			return out[i].Kind < out[j].Kind
+		}
+		if out[i].ObjectName != out[j].ObjectName {
+			return out[i].ObjectName < out[j].ObjectName
+		}
+		return out[i].Key < out[j].Key
+	})
+	return out
 }
 
 func runtimeEnvVars(items []corev1.EnvVar) []RuntimeEnvVar {

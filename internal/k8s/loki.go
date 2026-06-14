@@ -23,7 +23,7 @@ type LokiLogEntry struct {
 }
 
 func NewLokiClient(namespace string) *LokiClient {
-	fallback := fmt.Sprintf("http://%s-loki.%s.svc.cluster.local:3100", namespace, namespace)
+	fallback := fmt.Sprintf("http://%s.%s.svc.cluster.local:3100", defaultLokiServiceName(namespace), namespace)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	baseURL := discoverService(ctx, namespace, "loki", fallback)
@@ -33,6 +33,14 @@ func NewLokiClient(namespace string) *LokiClient {
 			Timeout: 10 * time.Second,
 		},
 	}
+}
+
+func defaultLokiServiceName(namespace string) string {
+	namespace = strings.TrimSpace(namespace)
+	if strings.HasSuffix(namespace, "-loki") {
+		return namespace
+	}
+	return namespace + "-loki"
 }
 
 func (l *LokiClient) HealthCheck(ctx context.Context) error {

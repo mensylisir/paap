@@ -56,6 +56,11 @@ func SetupRouter(r *gin.Engine) {
 		api.POST("/service-templates", CreateServiceTemplate)
 		api.PUT("/service-templates/:id", UpdateServiceTemplate)
 		api.DELETE("/service-templates/:id", DeleteServiceTemplate)
+		api.GET("/component-config-templates", ListComponentConfigTemplates)
+		api.POST("/component-config-templates", CreateComponentConfigTemplate)
+		api.POST("/component-config-templates/sync", SyncBuiltinComponentConfigTemplates)
+		api.PUT("/component-config-templates/:id", UpdateComponentConfigTemplate)
+		api.DELETE("/component-config-templates/:id", DeleteComponentConfigTemplate)
 
 		// Applications
 		api.GET("/applications", ListApplications)
@@ -77,6 +82,9 @@ func SetupRouter(r *gin.Engine) {
 		api.GET("/environments/:id/services/:serviceId", GetServiceInstance)
 		api.GET("/environments/:id/services/:serviceId/credentials", GetServiceCredentials)
 		api.GET("/environments/:id/services/:serviceId/workspace", GetServiceWorkspace)
+		api.GET("/environments/:id/services/:serviceId/runtime-metrics", GetServiceRuntimeMetrics)
+		api.GET("/environments/:id/services/:serviceId/runtime-logs", GetServiceRuntimeLogs)
+		api.GET("/environments/:id/services/:serviceId/console", HandleServiceConsole)
 		api.Any("/environments/:id/services/:serviceId/proxy/*path", ProxyServiceInstance)
 		api.GET("/environments/:id/services/:serviceId/registry-ca.crt", DownloadRegistryCACertificate)
 		api.POST("/environments/:id/services/:serviceId/workspace/actions", RunServiceWorkspaceAction)
@@ -89,6 +97,9 @@ func SetupRouter(r *gin.Engine) {
 		// Environment Components
 		api.GET("/environments/:id/components", ListEnvironmentComponents)
 		api.POST("/environments/:id/components", CreateComponent)
+		api.GET("/environments/:id/components/:componentId/runtime-metrics", GetComponentRuntimeMetrics)
+		api.GET("/environments/:id/components/:componentId/runtime-logs", GetComponentRuntimeLogs)
+		api.GET("/environments/:id/components/:componentId/console", HandleComponentConsole)
 		api.Any("/environments/:id/components/:componentId/proxy/*path", ProxyComponent)
 		api.GET("/environments/:id/adoptable-resources", ListAdoptableResources)
 		api.POST("/environments/:id/adoptable-resources", AdoptResource)

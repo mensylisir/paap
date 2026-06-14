@@ -13,6 +13,8 @@ configs:
         kinds:
         - Pod
         - Service
+        - ConfigMap
+        - Secret
         - PersistentVolumeClaim
         - ServiceAccount
         - Endpoints

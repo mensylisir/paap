@@ -91,7 +91,13 @@ func ComponentIdentifier(name, componentType string, id uint) string {
 }
 
 func BuildComponentManifest(app model.Application, env model.Environment, comp model.Component, identifier, namespace string) string {
-	return BuildComponentDeploymentManifest(app, env, comp, identifier, namespace) + "---\n" + BuildComponentServiceManifest(app, env, comp, identifier, namespace)
+	parts := make([]string, 0, 3)
+	if config := BuildComponentConfigResourceManifest(app, env, comp, identifier, namespace); strings.TrimSpace(config) != "" {
+		parts = append(parts, config)
+	}
+	parts = append(parts, BuildComponentDeploymentManifest(app, env, comp, identifier, namespace))
+	parts = append(parts, BuildComponentServiceManifest(app, env, comp, identifier, namespace))
+	return strings.Join(parts, "---\n")
 }
 
 func BuildComponentDeploymentManifest(app model.Application, env model.Environment, comp model.Component, identifier, namespace string) string {
@@ -119,6 +125,7 @@ func BuildComponentDeploymentManifest(app model.Application, env model.Environme
 	if err != nil {
 		cfg = model.ComponentConfig{}
 	}
+	volumes, volumeMounts := componentConfigVolumes(cfg)
 	labels := map[string]string{
 		"app":                identifier,
 		"paap.io/app":        app.Identifier,
@@ -140,12 +147,14 @@ func BuildComponentDeploymentManifest(app model.Application, env model.Environme
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{Labels: labels},
 				Spec: corev1.PodSpec{
+					Volumes: volumes,
 					Containers: []corev1.Container{{
-						Name:    identifier,
-						Image:   image,
-						Command: cfg.Command,
-						Args:    cfg.Args,
-						Ports:   []corev1.ContainerPort{{ContainerPort: componentDefaultContainerPort(comp.Type)}},
+						Name:         identifier,
+						Image:        image,
+						Command:      cfg.Command,
+						Args:         cfg.Args,
+						Ports:        []corev1.ContainerPort{{ContainerPort: componentDefaultContainerPort(comp.Type)}},
+						VolumeMounts: volumeMounts,
 						Resources: corev1.ResourceRequirements{
 							Requests: componentResourceList(comp),
 							Limits:   componentResourceList(comp),
@@ -158,6 +167,52 @@ func BuildComponentDeploymentManifest(app model.Application, env model.Environme
 	}
 	deployYAML, _ := yaml.Marshal(deploy)
 	return string(deployYAML)
+}
+
+func BuildComponentConfigResourceManifest(app model.Application, env model.Environment, comp model.Component, identifier, namespace string) string {
+	cfg, err := model.ParseComponentConfig(comp.Config)
+	if err != nil {
+		return ""
+	}
+	labels := map[string]string{
+		"app":                identifier,
+		"paap.io/app":        app.Identifier,
+		"paap.io/env":        env.Identifier,
+		"paap.io/component":  identifier,
+		"paap.io/managed-by": "argocd",
+	}
+	parts := make([]string, 0, len(cfg.ConfigMaps)+len(cfg.Secrets))
+	for _, item := range cfg.ConfigMaps {
+		cm := corev1.ConfigMap{
+			TypeMeta: metav1.TypeMeta{APIVersion: "v1", Kind: "ConfigMap"},
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      item.Name,
+				Namespace: namespace,
+				Labels:    labels,
+			},
+			Data: item.Data,
+		}
+		cmYAML, _ := yaml.Marshal(cm)
+		parts = append(parts, string(cmYAML))
+	}
+	for _, item := range cfg.Secrets {
+		secret := corev1.Secret{
+			TypeMeta: metav1.TypeMeta{APIVersion: "v1", Kind: "Secret"},
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      item.Name,
+				Namespace: namespace,
+				Labels:    labels,
+			},
+			Type:       corev1.SecretTypeOpaque,
+			StringData: item.Data,
+		}
+		secretYAML, _ := yaml.Marshal(secret)
+		parts = append(parts, string(secretYAML))
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return strings.Join(parts, "---\n") + "---\n"
 }
 
 func BuildComponentServiceManifest(app model.Application, env model.Environment, comp model.Component, identifier, namespace string) string {
@@ -194,6 +249,52 @@ func componentDefaultContainerPort(componentType string) int32 {
 		return 80
 	}
 	return 8080
+}
+
+func componentConfigVolumes(cfg model.ComponentConfig) ([]corev1.Volume, []corev1.VolumeMount) {
+	if len(cfg.Files) == 0 {
+		return nil, nil
+	}
+	volumes := make([]corev1.Volume, 0, len(cfg.Files))
+	mounts := make([]corev1.VolumeMount, 0, len(cfg.Files))
+	seenVolumes := map[string]struct{}{}
+	for i, item := range cfg.Files {
+		name := volumeNameForConfigFile(item, i)
+		if _, exists := seenVolumes[name]; !exists {
+			seenVolumes[name] = struct{}{}
+			volumes = append(volumes, corev1.Volume{
+				Name: name,
+				VolumeSource: corev1.VolumeSource{
+					ConfigMap: &corev1.ConfigMapVolumeSource{
+						LocalObjectReference: corev1.LocalObjectReference{Name: item.ConfigMapName},
+					},
+				},
+			})
+		}
+		mounts = append(mounts, corev1.VolumeMount{
+			Name:      name,
+			MountPath: item.MountPath,
+			SubPath:   item.Key,
+			ReadOnly:  true,
+		})
+	}
+	return volumes, mounts
+}
+
+func volumeNameForConfigFile(item model.ComponentConfigFile, index int) string {
+	name := dnsLabelInvalidChars.ReplaceAllString(strings.ToLower(strings.TrimSpace(item.Name)), "-")
+	name = strings.Trim(name, "-")
+	if name == "" {
+		name = dnsLabelInvalidChars.ReplaceAllString(strings.ToLower(strings.TrimSpace(item.ConfigMapName)), "-")
+		name = strings.Trim(name, "-")
+	}
+	if name == "" {
+		name = fmt.Sprintf("config-file-%d", index+1)
+	}
+	if len(name) > 50 {
+		name = strings.Trim(name[:50], "-")
+	}
+	return name
 }
 
 func componentDefaultServiceType(componentType string) corev1.ServiceType {
@@ -325,6 +426,7 @@ func EnsureComponentGitOps(ctx context.Context, k8sClient client.Client, app mod
 
 	manifest := BuildComponentDeploymentManifest(app, env, comp, identifier, namespace)
 	serviceManifest := BuildComponentServiceManifest(app, env, comp, identifier, namespace)
+	configManifest := BuildComponentConfigResourceManifest(app, env, comp, identifier, namespace)
 	if err := ensureGiteaRepository(ctx, baseURL, repoName); err != nil {
 		return ComponentGitOpsResult{}, err
 	}
@@ -340,6 +442,11 @@ func EnsureComponentGitOps(ctx context.Context, k8sClient client.Client, app mod
 	}
 	if err := putGiteaFile(ctx, baseURL, repoName, manifestPath, manifest, fmt.Sprintf("deploy %s", identifier)); err != nil {
 		return ComponentGitOpsResult{}, err
+	}
+	if strings.TrimSpace(configManifest) != "" {
+		if err := putGiteaFile(ctx, baseURL, repoName, repoPath+"/config.yaml", configManifest, fmt.Sprintf("sync config for %s", identifier)); err != nil {
+			return ComponentGitOpsResult{}, err
+		}
 	}
 	if err := putGiteaFile(ctx, baseURL, repoName, repoPath+"/service.yaml", serviceManifest, fmt.Sprintf("sync service for %s", identifier)); err != nil {
 		return ComponentGitOpsResult{}, err

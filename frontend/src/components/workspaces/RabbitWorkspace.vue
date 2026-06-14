@@ -41,6 +41,56 @@
         <div v-else class="empty-line">暂无交换机数据</div>
       </div>
 
+      <div v-if="activeTab === 'bindings'" class="tab-panel">
+        <div v-if="bindings.length" class="table-wrap">
+          <table class="data-table">
+            <thead><tr><th>源</th><th>目标</th><th>Routing key</th><th>VHost</th></tr></thead>
+            <tbody>
+              <tr v-for="b in bindings" :key="bindingKey(b)" :class="{ selected: selectedResource?.name === b.name && selectedResource?.type === b.type }" @click="selectResource(b)">
+                <td class="cell-name">{{ b.annotations?.source || '-' }}</td>
+                <td>{{ b.annotations?.destination || b.name }}</td>
+                <td>{{ b.annotations?.routingKey || '-' }}</td>
+                <td>{{ b.annotations?.vhost || '/' }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div v-else class="empty-line">暂无绑定数据</div>
+      </div>
+
+      <div v-if="activeTab === 'vhosts'" class="tab-panel">
+        <div v-if="vhosts.length" class="table-wrap">
+          <table class="data-table">
+            <thead><tr><th>VHost</th><th>状态</th><th>说明</th></tr></thead>
+            <tbody>
+              <tr v-for="v in vhosts" :key="v.name" :class="{ selected: selectedResource?.name === v.name && selectedResource?.type === v.type }" @click="selectResource(v)">
+                <td class="cell-name">{{ v.name }}</td>
+                <td><span class="badge" :class="statusBadge(v.status)">{{ v.status }}</span></td>
+                <td class="cell-desc">{{ v.description }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div v-else class="empty-line">暂无 VHost 数据</div>
+      </div>
+
+      <div v-if="activeTab === 'messages'" class="tab-panel">
+        <div v-if="messages.length" class="table-wrap">
+          <table class="data-table">
+            <thead><tr><th>消息</th><th>Routing key</th><th>剩余</th><th>内容</th></tr></thead>
+            <tbody>
+              <tr v-for="m in messages" :key="m.name" :class="{ selected: selectedResource?.name === m.name && selectedResource?.type === m.type }" @click="selectResource(m)">
+                <td class="cell-name">{{ m.name }}</td>
+                <td>{{ m.annotations?.routingKey || '-' }}</td>
+                <td>{{ m.annotations?.remaining ?? '-' }}</td>
+                <td class="cell-desc">{{ m.description }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div v-else class="empty-line">暂无消息数据</div>
+      </div>
+
       <div v-if="activeTab === 'resources'" class="tab-panel">
         <div v-if="resources.length" class="table-wrap">
           <table class="data-table">
@@ -90,7 +140,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import ToolWorkspaceFrame from './ToolWorkspaceFrame.vue'
 import type { WorkspaceAction, WorkspaceResource } from '../../views/serviceWorkspace'
 
@@ -104,7 +154,11 @@ const emit = defineEmits<{
 
 const queues = computed(() => props.resources.filter(r => r.type === 'Queue'))
 const exchanges = computed(() => props.resources.filter(r => r.type === 'Exchange'))
-const selectedResource = ref<WorkspaceResource | null>(props.resources.find(r => r.type !== 'Connection') || props.resources[0] || null)
+const bindings = computed(() => props.resources.filter(r => r.type === 'Binding'))
+const vhosts = computed(() => props.resources.filter(r => r.type === 'VHost'))
+const messages = computed(() => props.resources.filter(r => r.type === 'Message'))
+const firstSelectableResource = () => props.resources.find(r => r.type !== 'Connection') || props.resources[0] || null
+const selectedResource = ref<WorkspaceResource | null>(firstSelectableResource())
 
 const selectResource = (resource: WorkspaceResource) => {
   selectedResource.value = resource
@@ -113,15 +167,33 @@ const selectResource = (resource: WorkspaceResource) => {
 const annotationItems = (resource: WorkspaceResource) =>
   Object.entries(resource.annotations || {}).map(([key, value]) => ({ key, value: Array.isArray(value) ? value.join(', ') : String(value) }))
 
+const bindingKey = (resource: WorkspaceResource) =>
+  `${resource.annotations?.vhost || '/'}:${resource.annotations?.source || ''}:${resource.annotations?.destination || resource.name}:${resource.annotations?.propertiesKey || ''}`
+
 const availableTabs = computed(() => {
   const tabs: { key: string; label: string; count: number }[] = []
   if (queues.value.length) tabs.push({ key: 'queues', label: '队列', count: queues.value.length })
   if (exchanges.value.length) tabs.push({ key: 'exchanges', label: '交换机', count: exchanges.value.length })
+  if (bindings.value.length) tabs.push({ key: 'bindings', label: '绑定', count: bindings.value.length })
+  if (vhosts.value.length) tabs.push({ key: 'vhosts', label: 'VHost', count: vhosts.value.length })
+  if (messages.value.length) tabs.push({ key: 'messages', label: '消息', count: messages.value.length })
   tabs.push({ key: 'resources', label: '资源', count: props.resources.length })
   return tabs
 })
 
 const activeTab = ref(queues.value.length ? 'queues' : (exchanges.value.length ? 'exchanges' : 'resources'))
+
+const resourceKey = (resource?: WorkspaceResource | null) => resource ? `${resource.type}:${resource.name}` : ''
+const syncWorkspaceState = () => {
+  const currentKey = resourceKey(selectedResource.value)
+  const refreshed = currentKey ? props.resources.find((resource) => resourceKey(resource) === currentKey) : null
+  selectedResource.value = refreshed || firstSelectableResource()
+  if (!availableTabs.value.some((tab) => tab.key === activeTab.value)) {
+    activeTab.value = availableTabs.value[0]?.key || 'resources'
+  }
+}
+watch(() => props.resources, syncWorkspaceState, { deep: true })
+watch(availableTabs, syncWorkspaceState)
 
 const statusBadge = (s?: string) => {
   const v = String(s || '').toLowerCase()

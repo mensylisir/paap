@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildCapabilityTabs, capabilityServiceInstanceLabel, serviceCapability } from './envCapabilities'
+import { buildCapabilityTabs, buildEnvironmentCapabilityTabs, capabilityServiceInstanceLabel, requiredEnvironmentCapabilities, serviceCapability } from './envCapabilities'
 
 describe('environment capabilities', () => {
   it('names infrastructure capability tabs by concrete middleware category', () => {
@@ -39,5 +39,29 @@ describe('environment capabilities', () => {
       serviceName: 'mysql',
       status: 'installing',
     }, templates)).toBe('MySQL · mysql · 安装中')
+  })
+
+  it('keeps the five required environment foundation capabilities visible when missing', () => {
+    expect(requiredEnvironmentCapabilities.map((item) => item.key)).toEqual([
+      'code-repository',
+      'image-registry',
+      'continuous-deployment',
+      'monitoring-center',
+      'logging-center',
+    ])
+
+    const tabs = buildEnvironmentCapabilityTabs([
+      { serviceType: 'git' },
+      { serviceType: 'postgresql' },
+    ])
+
+    expect(tabs.map((tab) => `${tab.key}:${tab.count}`)).toEqual([
+      'code-repository:1',
+      'image-registry:0',
+      'continuous-deployment:0',
+      'monitoring-center:0',
+      'logging-center:0',
+      'databases:1',
+    ])
   })
 })

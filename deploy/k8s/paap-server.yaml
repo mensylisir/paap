@@ -24,9 +24,20 @@ rules:
   - apiGroups: [""]
     resources: ["nodes"]
     verbs: ["get", "list", "watch"]
+  # Runtime diagnostics can read pods and open an interactive exec session
+  # without granting create on the pod resource itself.
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch", "delete"]
+  - apiGroups: [""]
+    resources: ["pods/log", "pods/attach", "pods/exec"]
+    verbs: ["get", "list", "watch", "create"]
+  - apiGroups: [""]
+    resources: ["pods/ephemeralcontainers"]
+    verbs: ["get", "update", "patch"]
   # Helm 安装需要的核心资源权限
   - apiGroups: [""]
-    resources: ["pods", "services", "configmaps", "secrets", "serviceaccounts", "persistentvolumeclaims", "endpoints", "events"]
+    resources: ["services", "configmaps", "secrets", "serviceaccounts", "persistentvolumeclaims", "endpoints", "events"]
     verbs: ["*"]
   # Apps 资源（deployments, statefulsets 等）
   - apiGroups: ["apps"]
@@ -115,6 +126,7 @@ data:
   PORT: "9090"
   DATABASE_URL: "postgres://paap:paap@paap-postgres.paap-system.svc.cluster.local:5432/paap?sslmode=disable"
   PAAP_REGISTRY_HOST_TEMPLATE: "registry.{app}-{env}.paap.local:5000"
+  PAAP_CONSOLE_DEBUG_IMAGE: "busybox:1.36"
 ---
 apiVersion: v1
 kind: Secret
@@ -143,7 +155,7 @@ spec:
       serviceAccountName: paap-server
       containers:
         - name: paap-server
-          image: paap-server:v0.1.278
+          image: paap-server:v0.1.359
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 9090

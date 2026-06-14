@@ -314,6 +314,58 @@ func TestBuildToolWorkspaceExposesDatabaseManagementActions(t *testing.T) {
 	}
 }
 
+func TestBuildToolWorkspaceExposesRabbitMQManagementActions(t *testing.T) {
+	workspace := BuildToolWorkspace(model.Application{}, model.Environment{}, model.ServiceInstallation{ServiceType: "rabbitmq", Namespace: "ns"}, nil)
+
+	want := []string{
+		"list_rabbitmq_queues",
+		"list_rabbitmq_exchanges",
+		"list_rabbitmq_vhosts",
+		"list_rabbitmq_bindings",
+		"create_rabbitmq_queue",
+		"create_rabbitmq_exchange",
+		"create_rabbitmq_vhost",
+		"create_rabbitmq_binding",
+		"publish_rabbitmq_message",
+	}
+	for _, action := range want {
+		found := false
+		for _, item := range workspace.Actions {
+			if item.Key == action {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("rabbitmq workspace missing action %s: %#v", action, workspace.Actions)
+		}
+	}
+}
+
+func TestBuildToolWorkspaceExposesKafkaManagementActions(t *testing.T) {
+	workspace := BuildToolWorkspace(model.Application{}, model.Environment{}, model.ServiceInstallation{ServiceType: "kafka", Namespace: "ns"}, nil)
+
+	want := []string{
+		"list_kafka_topics",
+		"create_kafka_topic",
+		"read_kafka_messages",
+		"produce_kafka_message",
+		"delete_kafka_topic",
+	}
+	for _, action := range want {
+		found := false
+		for _, item := range workspace.Actions {
+			if item.Key == action {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("kafka workspace missing action %s: %#v", action, workspace.Actions)
+		}
+	}
+}
+
 func TestBuildToolWorkspaceDoesNotExposeDemoPlaceholders(t *testing.T) {
 	serviceTypes := []string{"mysql", "postgresql", "mongodb"}
 
@@ -484,6 +536,20 @@ func TestBuildToolWorkspaceReturnsRegistryImageReferenceWithoutFakeArtifactMetad
 
 	repo := workspace.Resources[0]
 	assertAnnotation(t, repo, "project", "billing-prod")
+	if !workspaceHasAction(workspace, "delete_registry_tag") {
+		t.Fatalf("registry workspace should expose real tag deletion action, got %#v", workspace.Actions)
+	}
+	if !resourceHasAction(repo, "delete_registry_tag") {
+		t.Fatalf("registry repository should expose resource-level tag deletion action, got %#v", repo.Actions)
+	}
+	for _, action := range repo.Actions {
+		if action.Key == "delete_registry_tag" {
+			if action.Target != "billing-prod/api" {
+				t.Fatalf("resource delete action target = %q, want billing-prod/api", action.Target)
+			}
+			assertActionFields(t, action, "tag")
+		}
+	}
 	tags, ok := repo.Annotations["tags"].([]string)
 	if !ok || len(tags) != 1 || tags[0] != "v1.2.3" {
 		t.Fatalf("expected tags annotation with v1.2.3, got %#v", repo.Annotations)
@@ -514,6 +580,24 @@ func TestBuildToolWorkspaceReturnsRegistryImageReferenceWithoutFakeArtifactMetad
 	if !foundTrust {
 		t.Fatalf("expected Runtime Trust resource, got %#v", workspace.Resources)
 	}
+}
+
+func workspaceHasAction(workspace ToolWorkspace, key string) bool {
+	for _, action := range workspace.Actions {
+		if action.Key == key {
+			return true
+		}
+	}
+	return false
+}
+
+func resourceHasAction(resource ToolWorkspaceResource, key string) bool {
+	for _, action := range resource.Actions {
+		if action.Key == key {
+			return true
+		}
+	}
+	return false
 }
 
 func TestBuildToolWorkspaceReturnsJenkinsJobMetadataFallback(t *testing.T) {

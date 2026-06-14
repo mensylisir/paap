@@ -46,11 +46,11 @@ func TestListNamespaceAdoptableResourcesDiscoversRealWorkloads(t *testing.T) {
 	SetClient(fake.NewClientBuilder().WithObjects(
 		&corev1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{Name: "api-config", Namespace: "billing-dev"},
-			Data:       map[string]string{"FEATURE_FLAG": "on"},
+			Data:       map[string]string{"FEATURE_FLAG": "on", "application.yml": "server:\n  port: 8080\n"},
 		},
 		&corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{Name: "api-secret", Namespace: "billing-dev"},
-			Data:       map[string][]byte{"PASSWORD": []byte("secret")},
+			Data:       map[string][]byte{"PASSWORD": []byte("secret"), "tls.key": []byte("secret-key")},
 		},
 		&appsv1.Deployment{
 			ObjectMeta: metav1.ObjectMeta{Name: "api", Namespace: "billing-dev"},
@@ -66,7 +66,32 @@ func TestListNamespaceAdoptableResourcesDiscoversRealWorkloads(t *testing.T) {
 						{Name: "FEATURE_FLAG", ValueFrom: &corev1.EnvVarSource{ConfigMapKeyRef: &corev1.ConfigMapKeySelector{LocalObjectReference: corev1.LocalObjectReference{Name: "api-config"}, Key: "FEATURE_FLAG"}}},
 						{Name: "PASSWORD", ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{LocalObjectReference: corev1.LocalObjectReference{Name: "api-secret"}, Key: "PASSWORD"}}},
 					},
-				}}}},
+					EnvFrom: []corev1.EnvFromSource{
+						{ConfigMapRef: &corev1.ConfigMapEnvSource{LocalObjectReference: corev1.LocalObjectReference{Name: "api-config"}}},
+						{SecretRef: &corev1.SecretEnvSource{LocalObjectReference: corev1.LocalObjectReference{Name: "api-secret"}}},
+					},
+					VolumeMounts: []corev1.VolumeMount{
+						{Name: "api-config-file", MountPath: "/etc/app", ReadOnly: true},
+						{Name: "api-secret-file", MountPath: "/etc/tls", ReadOnly: true},
+					},
+				}},
+					Volumes: []corev1.Volume{
+						{Name: "api-config-file", VolumeSource: corev1.VolumeSource{ConfigMap: &corev1.ConfigMapVolumeSource{
+							LocalObjectReference: corev1.LocalObjectReference{Name: "api-config"},
+							Items: []corev1.KeyToPath{{
+								Key:  "application.yml",
+								Path: "application.yml",
+							}},
+						}}},
+						{Name: "api-secret-file", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{
+							SecretName: "api-secret",
+							Items: []corev1.KeyToPath{{
+								Key:  "tls.key",
+								Path: "tls.key",
+							}},
+						}}},
+					},
+				}},
 			},
 			Status: appsv1.DeploymentStatus{ReadyReplicas: 2},
 		},
@@ -96,6 +121,18 @@ func TestListNamespaceAdoptableResourcesDiscoversRealWorkloads(t *testing.T) {
 	}
 	if len(got.RuntimeConfig.Env) != 3 || len(got.RuntimeConfig.ConfigMaps) != 1 || len(got.RuntimeConfig.Secrets) != 1 {
 		t.Fatalf("runtime env/config refs not discovered: %#v", got.RuntimeConfig)
+	}
+	if len(got.RuntimeConfig.EnvFrom) != 2 {
+		t.Fatalf("runtime envFrom refs not discovered: %#v", got.RuntimeConfig.EnvFrom)
+	}
+	if len(got.RuntimeConfig.Files) != 2 {
+		t.Fatalf("runtime mounted config files not discovered: %#v", got.RuntimeConfig.Files)
+	}
+	if got.RuntimeConfig.Files[0].Kind != "configMap" || got.RuntimeConfig.Files[0].ObjectName != "api-config" || got.RuntimeConfig.Files[0].Key != "application.yml" || got.RuntimeConfig.Files[0].MountPath != "/etc/app/application.yml" {
+		t.Fatalf("unexpected configmap file mount: %#v", got.RuntimeConfig.Files[0])
+	}
+	if got.RuntimeConfig.Files[1].Kind != "secret" || got.RuntimeConfig.Files[1].ObjectName != "api-secret" || got.RuntimeConfig.Files[1].Key != "tls.key" || got.RuntimeConfig.Files[1].MountPath != "/etc/tls/tls.key" {
+		t.Fatalf("unexpected secret file mount: %#v", got.RuntimeConfig.Files[1])
 	}
 	if got.RuntimeConfig.Command[0] != "/app/server" || got.RuntimeConfig.Args[0] != "--port=8080" {
 		t.Fatalf("command/args not discovered: %#v", got.RuntimeConfig)

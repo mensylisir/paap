@@ -42,6 +42,7 @@ logs/
 # Local build/debug outputs
 server
 tmp/
+.cache/
 
 # Local agent configuration
 .claude/

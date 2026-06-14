@@ -44,10 +44,15 @@ type Component struct {
 }
 
 type ComponentConfig struct {
-	Command      []string          `json:"command,omitempty"`
-	Args         []string          `json:"args,omitempty"`
-	Env          []ComponentEnvVar `json:"env,omitempty"`
-	Dependencies []string          `json:"dependencies,omitempty"`
+	Framework    string                `json:"framework,omitempty"`
+	Command      []string              `json:"command,omitempty"`
+	Args         []string              `json:"args,omitempty"`
+	Env          []ComponentEnvVar     `json:"env,omitempty"`
+	ConfigMaps   []ComponentConfigMap  `json:"configMaps,omitempty"`
+	Secrets      []ComponentSecret     `json:"secrets,omitempty"`
+	Files        []ComponentConfigFile `json:"files,omitempty"`
+	Bindings     []ComponentBinding    `json:"bindings,omitempty"`
+	Dependencies []string              `json:"dependencies,omitempty"`
 }
 
 type ComponentEnvVar struct {
@@ -57,6 +62,36 @@ type ComponentEnvVar struct {
 	SecretKey     string `json:"secretKey,omitempty"`
 	ConfigMapName string `json:"configMapName,omitempty"`
 	ConfigMapKey  string `json:"configMapKey,omitempty"`
+}
+
+type ComponentConfigMap struct {
+	Name string            `json:"name"`
+	Data map[string]string `json:"data"`
+}
+
+type ComponentSecret struct {
+	Name string            `json:"name"`
+	Data map[string]string `json:"data"`
+}
+
+type ComponentConfigFile struct {
+	Name          string `json:"name"`
+	ConfigMapName string `json:"configMapName"`
+	Key           string `json:"key"`
+	MountPath     string `json:"mountPath"`
+	ReadOnly      bool   `json:"readOnly,omitempty"`
+}
+
+type ComponentBinding struct {
+	TargetKey  string            `json:"targetKey,omitempty"`
+	TargetKind string            `json:"targetKind,omitempty"`
+	TargetName string            `json:"targetName"`
+	TargetType string            `json:"targetType,omitempty"`
+	Role       string            `json:"role,omitempty"`
+	Mode       string            `json:"mode,omitempty"`
+	Confidence string            `json:"confidence,omitempty"`
+	Source     string            `json:"source,omitempty"`
+	Generated  map[string]string `json:"generated,omitempty"`
 }
 
 func (cfg ComponentConfig) JSON() (string, error) {
@@ -85,9 +120,14 @@ func ParseComponentConfig(raw string) (ComponentConfig, error) {
 
 func NormalizeComponentConfig(cfg ComponentConfig) (ComponentConfig, error) {
 	out := ComponentConfig{
+		Framework:    strings.TrimSpace(cfg.Framework),
 		Command:      make([]string, 0, len(cfg.Command)),
 		Args:         make([]string, 0, len(cfg.Args)),
 		Env:          make([]ComponentEnvVar, 0, len(cfg.Env)),
+		ConfigMaps:   make([]ComponentConfigMap, 0, len(cfg.ConfigMaps)),
+		Secrets:      make([]ComponentSecret, 0, len(cfg.Secrets)),
+		Files:        make([]ComponentConfigFile, 0, len(cfg.Files)),
+		Bindings:     make([]ComponentBinding, 0, len(cfg.Bindings)),
 		Dependencies: make([]string, 0, len(cfg.Dependencies)),
 	}
 	for _, item := range cfg.Command {
@@ -130,6 +170,62 @@ func NormalizeComponentConfig(cfg ComponentConfig) (ComponentConfig, error) {
 		}
 		out.Env = append(out.Env, item)
 	}
+	if err := normalizeComponentConfigMaps(cfg.ConfigMaps, &out); err != nil {
+		return ComponentConfig{}, err
+	}
+	if err := normalizeComponentSecrets(cfg.Secrets, &out); err != nil {
+		return ComponentConfig{}, err
+	}
+	seenFiles := map[string]struct{}{}
+	for _, item := range cfg.Files {
+		item.Name = strings.TrimSpace(item.Name)
+		item.ConfigMapName = strings.TrimSpace(item.ConfigMapName)
+		item.Key = strings.TrimSpace(item.Key)
+		item.MountPath = strings.TrimSpace(item.MountPath)
+		if item.Name == "" {
+			item.Name = item.ConfigMapName + "-" + item.Key
+		}
+		if item.Name == "" && item.MountPath == "" {
+			continue
+		}
+		if item.ConfigMapName == "" || item.Key == "" || item.MountPath == "" {
+			return ComponentConfig{}, fmt.Errorf("config file %s configMapName, key and mountPath are required", valueOrDash(item.Name))
+		}
+		if _, exists := seenFiles[item.MountPath]; exists {
+			return ComponentConfig{}, fmt.Errorf("duplicate config file mountPath %s", item.MountPath)
+		}
+		seenFiles[item.MountPath] = struct{}{}
+		out.Files = append(out.Files, item)
+	}
+	seenBindings := map[string]struct{}{}
+	for _, item := range cfg.Bindings {
+		item.TargetKey = strings.TrimSpace(item.TargetKey)
+		item.TargetKind = strings.TrimSpace(item.TargetKind)
+		item.TargetName = strings.TrimSpace(item.TargetName)
+		item.TargetType = strings.TrimSpace(item.TargetType)
+		item.Role = strings.TrimSpace(item.Role)
+		item.Mode = strings.TrimSpace(item.Mode)
+		item.Confidence = strings.TrimSpace(item.Confidence)
+		item.Source = strings.TrimSpace(item.Source)
+		if item.TargetName == "" && item.TargetKey == "" {
+			continue
+		}
+		generated := map[string]string{}
+		for key, value := range item.Generated {
+			key = strings.TrimSpace(key)
+			if key == "" {
+				continue
+			}
+			generated[key] = strings.TrimSpace(value)
+		}
+		item.Generated = generated
+		bindingKey := item.TargetKey + "|" + item.TargetName + "|" + item.Role
+		if _, exists := seenBindings[bindingKey]; exists {
+			continue
+		}
+		seenBindings[bindingKey] = struct{}{}
+		out.Bindings = append(out.Bindings, item)
+	}
 	seenDeps := map[string]struct{}{}
 	for _, dep := range cfg.Dependencies {
 		dep = strings.TrimSpace(dep)
@@ -143,6 +239,70 @@ func NormalizeComponentConfig(cfg ComponentConfig) (ComponentConfig, error) {
 		out.Dependencies = append(out.Dependencies, dep)
 	}
 	return out, nil
+}
+
+func normalizeComponentConfigMaps(items []ComponentConfigMap, out *ComponentConfig) error {
+	seen := map[string]struct{}{}
+	for _, item := range items {
+		item.Name = strings.TrimSpace(item.Name)
+		if item.Name == "" {
+			continue
+		}
+		if _, exists := seen[item.Name]; exists {
+			return fmt.Errorf("duplicate configMap %s", item.Name)
+		}
+		seen[item.Name] = struct{}{}
+		data := map[string]string{}
+		for key, value := range item.Data {
+			key = strings.TrimSpace(key)
+			if key == "" {
+				continue
+			}
+			data[key] = value
+		}
+		if len(data) == 0 {
+			return fmt.Errorf("configMap %s must contain data", item.Name)
+		}
+		item.Data = data
+		out.ConfigMaps = append(out.ConfigMaps, item)
+	}
+	return nil
+}
+
+func normalizeComponentSecrets(items []ComponentSecret, out *ComponentConfig) error {
+	seen := map[string]struct{}{}
+	for _, item := range items {
+		item.Name = strings.TrimSpace(item.Name)
+		if item.Name == "" {
+			continue
+		}
+		if _, exists := seen[item.Name]; exists {
+			return fmt.Errorf("duplicate secret %s", item.Name)
+		}
+		seen[item.Name] = struct{}{}
+		data := map[string]string{}
+		for key, value := range item.Data {
+			key = strings.TrimSpace(key)
+			if key == "" {
+				continue
+			}
+			data[key] = value
+		}
+		if len(data) == 0 {
+			return fmt.Errorf("secret %s must contain data", item.Name)
+		}
+		item.Data = data
+		out.Secrets = append(out.Secrets, item)
+	}
+	return nil
+}
+
+func valueOrDash(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "-"
+	}
+	return value
 }
 
 func ComponentConfigFromEnvVars(envVars []paapv1.EnvVar) ComponentConfig {

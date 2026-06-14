@@ -55,6 +55,11 @@ export const api = {
   listServiceTemplates: () => request('/service-templates'),
   uploadServiceTemplate: (data: FormData) => request('/service-templates/upload', { method: 'POST', body: data }),
   syncBuiltinServiceTemplates: () => request('/service-templates/sync', { method: 'POST' }),
+  listComponentConfigTemplates: () => request('/component-config-templates'),
+  createComponentConfigTemplate: (data: any) => request('/component-config-templates', { method: 'POST', body: JSON.stringify(data) }),
+  updateComponentConfigTemplate: (id: number | string, data: any) => request(`/component-config-templates/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteComponentConfigTemplate: (id: number | string) => request(`/component-config-templates/${id}`, { method: 'DELETE' }),
+  syncBuiltinComponentConfigTemplates: () => request('/component-config-templates/sync', { method: 'POST' }),
 
   // Applications
   listApps: () => request('/applications'),
@@ -74,6 +79,8 @@ export const api = {
   // Components
   listComponents: (envId: number) => request(`/environments/${envId}/components`),
   createComponent: (envId: number, data: any) => request(`/environments/${envId}/components`, { method: 'POST', body: JSON.stringify(data) }),
+  getComponentRuntimeMetrics: (envId: number, componentId: number) => request(`/environments/${envId}/components/${componentId}/runtime-metrics`),
+  getComponentRuntimeLogs: (envId: number, componentId: number, tail = 200) => request(`/environments/${envId}/components/${componentId}/runtime-logs?tail=${tail}`),
   listAdoptableResources: (envId: number) => request(`/environments/${envId}/adoptable-resources`),
   adoptResource: (envId: number, data: any) => request(`/environments/${envId}/adoptable-resources`, { method: 'POST', body: JSON.stringify(data) }),
   updateComponent: (id: number, data: any) => request(`/components/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
@@ -83,6 +90,9 @@ export const api = {
   // Services
   listServices: (envId: number) => request(`/environments/${envId}/services`),
   getServiceWorkspace: (envId: number, serviceId: number) => request(`/environments/${envId}/services/${serviceId}/workspace`),
+  getServiceRuntimeMetrics: (envId: number, serviceId: number) => request(`/environments/${envId}/services/${serviceId}/runtime-metrics`),
+  getServiceRuntimeLogs: (envId: number, serviceId: number, tail = 200) => request(`/environments/${envId}/services/${serviceId}/runtime-logs?tail=${tail}`),
+  getServiceCredentials: (envId: number, serviceId: number) => request(`/environments/${envId}/services/${serviceId}/credentials`),
   runServiceWorkspaceAction: (envId: number, serviceId: number, action: string, target?: string, params?: Record<string, string>) =>
     request(`/environments/${envId}/services/${serviceId}/workspace/actions`, { method: 'POST', body: JSON.stringify({ action, target, params }) }),
   createServiceDraft: (envId: number, data: any) => request(`/environments/${envId}/services/drafts`, { method: 'POST', body: JSON.stringify(data) }),

@@ -45,72 +45,6 @@
             <span>{{ item.label }}</span>
             <span v-if="item.count > 0" class="nav-count">{{ item.count }}</span>
           </router-link>
-          <div v-if="toolEnvMenuItems.length" class="env-menu-section">
-            <button
-              type="button"
-              class="nav-item env-menu-group-toggle"
-              :class="{ active: activeEnvMenuGroup === 'tool' }"
-              :aria-expanded="openEnvMenuGroups.tool"
-              @click="toggleEnvMenuGroup('tool')"
-            >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                <path :d="envMenuIconPath('tools')" />
-              </svg>
-              <span>工具</span>
-              <span class="nav-count">{{ toolEnvMenuCount }}</span>
-              <svg class="env-menu-chevron" :class="{ open: openEnvMenuGroups.tool }" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M6 9l6 6 6-6"/>
-              </svg>
-            </button>
-            <div v-show="openEnvMenuGroups.tool" class="env-menu-children">
-              <router-link
-                v-for="item in toolEnvMenuItems"
-                :key="item.key"
-                :to="envMenuLink(item.key)"
-                class="nav-item env-sub-item"
-                :class="{ active: activeEnvMenuKey === item.key }"
-              >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                  <path :d="envMenuIconPath(item.key)" />
-                </svg>
-                <span>{{ item.label }}</span>
-                <span v-if="item.count > 0" class="nav-count">{{ item.count }}</span>
-              </router-link>
-            </div>
-          </div>
-          <div v-if="infraEnvMenuItems.length" class="env-menu-section">
-            <button
-              type="button"
-              class="nav-item env-menu-group-toggle"
-              :class="{ active: activeEnvMenuGroup === 'infra' }"
-              :aria-expanded="openEnvMenuGroups.infra"
-              @click="toggleEnvMenuGroup('infra')"
-            >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                <path :d="envMenuIconPath('middleware')" />
-              </svg>
-              <span>中间件</span>
-              <span class="nav-count">{{ infraEnvMenuCount }}</span>
-              <svg class="env-menu-chevron" :class="{ open: openEnvMenuGroups.infra }" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M6 9l6 6 6-6"/>
-              </svg>
-            </button>
-            <div v-show="openEnvMenuGroups.infra" class="env-menu-children">
-              <router-link
-                v-for="item in infraEnvMenuItems"
-                :key="item.key"
-                :to="envMenuLink(item.key)"
-                class="nav-item env-sub-item"
-                :class="{ active: activeEnvMenuKey === item.key }"
-              >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                  <path :d="envMenuIconPath(item.key)" />
-                </svg>
-                <span>{{ item.label }}</span>
-                <span v-if="item.count > 0" class="nav-count">{{ item.count }}</span>
-              </router-link>
-            </div>
-          </div>
         </nav>
       </div>
       <div class="sidebar-bottom">
@@ -189,10 +123,10 @@
               :class="{ active: Number(item.id) === envId }"
               @click="goToSelectedEnv(Number(item.id))"
             >
-              <span class="env-status-dot" :class="item.status"></span>
+              <span class="env-status-dot" :class="effectiveEnvironmentStatus(item)"></span>
               <span class="context-option-copy">
                 <strong>{{ item.name }}</strong>
-                <small>{{ item.identifier || '未设置标识' }} · {{ envStatusText(item.status) }}</small>
+                <small>{{ item.identifier || '未设置标识' }} · {{ envStatusText(effectiveEnvironmentStatus(item)) }}</small>
               </span>
             </button>
             <router-link :to="`/apps/${appId}/environments`" class="context-option muted" @click="closeSwitchers">
@@ -213,7 +147,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api } from '../api/client'
-import { buildCapabilityTabs } from '../views/envCapabilities'
+import { effectiveEnvironmentStatus, environmentStatusLabel } from '../views/appSummary'
 
 const route = useRoute()
 const router = useRouter()
@@ -224,8 +158,6 @@ const env = ref<any>(null)
 const apps = ref<any[]>([])
 const environments = ref<any[]>([])
 const components = ref<any[]>([])
-const services = ref<any[]>([])
-const templates = ref<any[]>([])
 
 const envId = computed(() => Number(route.params.envId || 0))
 const isEnvContext = computed(() => envId.value > 0)
@@ -233,46 +165,23 @@ const envName = computed(() => env.value?.name || env.value?.identifier || '')
 const showAppSwitcher = ref(false)
 const showEnvSwitcher = ref(false)
 const currentApp = computed(() => apps.value.find((item:any) => Number(item.id) === appId.value) || null)
-const currentEnv = computed(() => environments.value.find((item:any) => Number(item.id) === envId.value) || env.value || null)
+const currentEnv = computed(() => {
+  const listed = environments.value.find((item:any) => Number(item.id) === envId.value)
+  if (listed || env.value) return { ...(listed || {}), ...(env.value || {}) }
+  return environments.value[0] || null
+})
 const currentAppName = computed(() => currentApp.value?.name || appName.value || '应用')
 const currentEnvName = computed(() => currentEnv.value?.name || envName.value || '环境')
-const currentEnvStatus = computed(() => currentEnv.value?.status || env.value?.status || 'empty')
-const capabilityTabs = computed(() => buildCapabilityTabs(services.value, templates.value))
+const currentEnvStatus = computed(() => effectiveEnvironmentStatus(currentEnv.value))
 const primaryEnvMenuItems = computed(() => [
   { key: 'overview', label: '概览', count: 0 },
   { key: 'components', label: '组件', count: components.value.length },
 ])
-const toolEnvMenuItems = computed(() => capabilityTabs.value
-  .filter(tab => tab.category === 'tool')
-  .map(tab => ({ key: tab.key, label: tab.label, count: tab.count })))
-const infraEnvMenuItems = computed(() => capabilityTabs.value
-  .filter(tab => tab.category === 'infra')
-  .map(tab => ({ key: tab.key, label: tab.label, count: tab.count })))
-const toolEnvMenuCount = computed(() => toolEnvMenuItems.value.reduce((sum, item) => sum + Number(item.count || 0), 0))
-const infraEnvMenuCount = computed(() => infraEnvMenuItems.value.reduce((sum, item) => sum + Number(item.count || 0), 0))
-const envMenuItems = computed(() => [
-  ...primaryEnvMenuItems.value,
-  ...toolEnvMenuItems.value,
-  ...infraEnvMenuItems.value,
-])
-const openEnvMenuGroups = ref({ tool: true, infra: true })
-const activeEnvMenuGroup = computed(() => {
-  if (toolEnvMenuItems.value.some(item => item.key === activeEnvMenuKey.value)) return 'tool'
-  if (infraEnvMenuItems.value.some(item => item.key === activeEnvMenuKey.value)) return 'infra'
-  return ''
-})
 
 const contextInitial = (value: string) => String(value || 'P').trim().slice(0, 1).toUpperCase()
 const appEnvironmentCount = (app:any) => Number(app?.environmentCount ?? app?.environments?.length ?? 0)
 const normalizeListPayload = (payload: any) => Array.isArray(payload) ? payload : Array.isArray(payload?.data) ? payload.data : []
-const envStatusText = (status?: string) => ({
-  running: '运行中',
-  empty: '空环境',
-  stopped: '已停止',
-  creating: '创建中',
-  failed: '失败',
-  error: '异常',
-}[String(status || '')] || '未知状态')
+const envStatusText = (status?: string) => environmentStatusLabel(status)
 const closeSwitchers = () => {
   showAppSwitcher.value = false
   showEnvSwitcher.value = false
@@ -296,9 +205,11 @@ watch(() => route.params.id, async (id) => {
         api.listEnvs(appId.value),
       ])
       const appPayload = appRes.data?.application || appRes.data
+      const appEnvironments = appRes.data?.environments || appRes.environments || appPayload?.environments
       appName.value = appPayload?.name || '应用'
       apps.value = Array.isArray(appsRes.data) ? appsRes.data : appsRes.data?.applications || []
-      environments.value = normalizeListPayload(envsRes.data)
+      const fallbackEnvironments = normalizeListPayload(envsRes.data)
+      environments.value = Array.isArray(appEnvironments) && appEnvironments.length ? appEnvironments : fallbackEnvironments
     }
     catch (e) {}
   }
@@ -308,19 +219,19 @@ const loadEnvContext = async () => {
   if (!envId.value) {
     env.value = null
     components.value = []
-    services.value = []
     return
   }
   try {
-    const [envRes, tmplRes] = await Promise.all([
-      api.getEnv(envId.value),
-      templates.value.length ? Promise.resolve({ data: templates.value }) : api.listServiceTemplates(),
-    ])
-    env.value = envRes.data?.environment || envRes.data
+    const envRes = await api.getEnv(envId.value)
+    const envPayload = envRes.data?.environment || envRes.data
     components.value = envRes.data?.components || []
-    services.value = envRes.data?.services || []
-    const rawTemplates = Array.isArray(tmplRes?.data) ? tmplRes.data : tmplRes?.data?.data
-    if (Array.isArray(rawTemplates)) templates.value = rawTemplates
+    const serviceList = envRes.data?.services || []
+    env.value = {
+      ...envPayload,
+      componentCount: components.value.length,
+      services: serviceList,
+      toolCount: serviceList.length,
+    }
   } catch (e) {
     console.warn('environment menu fallback:', e)
   }
@@ -336,8 +247,12 @@ const handleEnvUpdated = (event: Event) => {
     void loadEnvContext()
   }
   if (appId.value) {
-    api.listEnvs(appId.value)
-      .then((res:any) => { environments.value = normalizeListPayload(res.data) })
+    api.getApp(appId.value)
+      .then((res:any) => {
+        const appPayload = res.data?.application || res.data
+        const appEnvironments = res.data?.environments || res.environments || appPayload?.environments
+        environments.value = Array.isArray(appEnvironments) ? appEnvironments : []
+      })
       .catch(() => {})
   }
 }
@@ -367,18 +282,9 @@ const goToSelectedEnv = (nextEnvId: number) => {
   if (nextEnvId) router.push(`/apps/${appId.value}/environments/${nextEnvId}`)
 }
 
-const toggleEnvMenuGroup = (group: 'tool' | 'infra') => {
-  openEnvMenuGroups.value = {
-    ...openEnvMenuGroups.value,
-    [group]: !openEnvMenuGroups.value[group],
-  }
-}
-
 const normalizeEnvMenuKey = (key: string) => {
   if (key === 'overview' || key === 'components') return key
-  if (key === 'tools') return capabilityTabs.value.find(tab => tab.category === 'tool')?.key || 'overview'
-  if (key === 'infra') return capabilityTabs.value.find(tab => tab.category === 'infra')?.key || 'overview'
-  return envMenuItems.value.some(item => item.key === key) ? key : 'overview'
+  return ''
 }
 
 const activeEnvMenuKey = computed(() => {
@@ -411,6 +317,7 @@ const envMenuIconPath = (key: string) => {
 .layout {
   display: flex;
   min-height: 100vh;
+  min-width: 0;
   background: var(--paap-bg);
 }
 
@@ -693,37 +600,6 @@ const envMenuIconPath = (key: string) => {
   gap: var(--paap-space-2);
 }
 
-.env-menu-section {
-  display: grid;
-  gap: 2px;
-  padding-top: var(--paap-space-2);
-  border-top: 1px solid var(--paap-border);
-}
-
-.env-menu-group-toggle {
-  color: var(--paap-text);
-  font-weight: 650;
-}
-
-.env-menu-group-toggle .nav-count {
-  margin-left: auto;
-}
-
-.env-menu-chevron {
-  flex-shrink: 0;
-  color: var(--paap-muted-2);
-  transition: transform 0.15s ease;
-}
-
-.env-menu-chevron.open {
-  transform: rotate(180deg);
-}
-
-.env-menu-children {
-  display: grid;
-  gap: 2px;
-}
-
 .nav-item {
   display: flex;
   align-items: center;
@@ -778,12 +654,6 @@ const envMenuIconPath = (key: string) => {
   font-weight: 600;
 }
 
-.env-sub-item {
-  height: 36px;
-  padding-left: var(--paap-space-4);
-  font-size: 13px;
-}
-
 .sidebar-bottom {
   padding: 0 var(--paap-space-3);
 }
@@ -799,6 +669,8 @@ const envMenuIconPath = (key: string) => {
 .main {
   flex: 1;
   margin-left: var(--paap-sidebar);
+  width: calc(100% - var(--paap-sidebar));
+  min-width: 0;
   background: transparent;
   min-height: 100vh;
 }
@@ -830,14 +702,10 @@ const envMenuIconPath = (key: string) => {
     overflow-x: auto;
     gap: var(--paap-space-1);
   }
-  .env-menu-section {
-    display: flex;
-    padding-top: 0;
-    border-top: 0;
-  }
-  .env-menu-children { display: contents; }
-  .env-menu-chevron { display: none; }
   .nav-item { width: auto; white-space: nowrap; height: 36px; }
-  .main { margin-left: 0; }
+  .main {
+    width: 100%;
+    margin-left: 0;
+  }
 }
 </style>

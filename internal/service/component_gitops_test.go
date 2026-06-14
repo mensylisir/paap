@@ -101,6 +101,55 @@ func TestBuildComponentServiceManifestExposesFrontendAsNodePort(t *testing.T) {
 	}
 }
 
+func TestBuildComponentManifestMountsNginxApiProxyConfig(t *testing.T) {
+	app := model.Application{Name: "测试应用", Identifier: "myapp"}
+	env := model.Environment{Name: "开发", Identifier: "dev"}
+	cfg := model.ComponentConfig{
+		Framework: "nginx",
+		ConfigMaps: []model.ComponentConfigMap{{
+			Name: "frontend-1-config",
+			Data: map[string]string{
+				"default.conf": "server {\n  listen 80;\n  location /api/ {\n    proxy_pass http://backend-1;\n  }\n}\n",
+			},
+		}},
+		Files: []model.ComponentConfigFile{{
+			Name:          "nginx-api-proxy",
+			ConfigMapName: "frontend-1-config",
+			Key:           "default.conf",
+			MountPath:     "/etc/nginx/conf.d/default.conf",
+		}},
+		Bindings: []model.ComponentBinding{{
+			TargetName: "backend-1",
+			TargetType: "backend",
+			Role:       "backend",
+			Mode:       "env",
+			Generated:  map[string]string{"BACKEND_URL": "http://backend-1"},
+		}},
+		Dependencies: []string{"backend-1"},
+	}
+	configJSON, err := cfg.JSON()
+	if err != nil {
+		t.Fatalf("encode config: %v", err)
+	}
+	comp := model.Component{Name: "前端", Type: "frontend", Image: "nginx", Version: "alpine", Replicas: 1, Config: configJSON}
+
+	manifest := BuildComponentManifest(app, env, comp, "frontend-1", "myapp-dev")
+
+	expected := []string{
+		"kind: ConfigMap",
+		"name: frontend-1-config",
+		"default.conf: |",
+		"proxy_pass http://backend-1;",
+		"mountPath: /etc/nginx/conf.d/default.conf",
+		"subPath: default.conf",
+	}
+	for _, want := range expected {
+		if !strings.Contains(manifest, want) {
+			t.Fatalf("manifest missing %q:\n%s", want, manifest)
+		}
+	}
+}
+
 func TestBuildComponentManifestKeepsExplicitImageTag(t *testing.T) {
 	app := model.Application{Name: "测试应用", Identifier: "myapp"}
 	env := model.Environment{Name: "开发", Identifier: "dev"}
@@ -190,6 +239,76 @@ func TestBuildComponentManifestIncludesConfiguredEnvVars(t *testing.T) {
 		"configMapKeyRef:",
 		"name: redis-config",
 		"key: host",
+	}
+	for _, want := range expected {
+		if !strings.Contains(manifest, want) {
+			t.Fatalf("manifest missing %q:\n%s", want, manifest)
+		}
+	}
+}
+
+func TestBuildComponentManifestIncludesGeneratedConfigObjectsAndFileMounts(t *testing.T) {
+	app := model.Application{Name: "测试应用", Identifier: "myapp"}
+	env := model.Environment{Name: "开发", Identifier: "dev"}
+	cfg := model.ComponentConfig{
+		Framework: "springboot",
+		ConfigMaps: []model.ComponentConfigMap{{
+			Name: "orders-api-config",
+			Data: map[string]string{
+				"application-paap.yml": "spring:\n  datasource:\n    url: jdbc:postgresql://postgresql:5432/postgres\n",
+			},
+		}},
+		Secrets: []model.ComponentSecret{{
+			Name: "orders-api-secret",
+			Data: map[string]string{
+				"POSTGRES_PASSWORD": "secret",
+			},
+		}},
+		Files: []model.ComponentConfigFile{{
+			Name:          "spring-config",
+			ConfigMapName: "orders-api-config",
+			Key:           "application-paap.yml",
+			MountPath:     "/etc/paap/application-paap.yml",
+		}},
+		Env: []model.ComponentEnvVar{
+			{Name: "SPRING_CONFIG_ADDITIONAL_LOCATION", Value: "file:/etc/paap/"},
+			{Name: "POSTGRES_PASSWORD", SecretName: "orders-api-secret", SecretKey: "POSTGRES_PASSWORD"},
+		},
+		Bindings: []model.ComponentBinding{{
+			TargetName: "postgresql",
+			TargetType: "postgresql",
+			Role:       "database",
+			Mode:       "springboot-file",
+		}},
+		Dependencies: []string{"postgresql"},
+	}
+	configJSON, err := cfg.JSON()
+	if err != nil {
+		t.Fatalf("encode config: %v", err)
+	}
+	comp := model.Component{
+		Name:     "订单服务",
+		Type:     "backend",
+		Image:    "registry.local/orders",
+		Version:  "v1",
+		Replicas: 1,
+		Config:   configJSON,
+	}
+
+	manifest := BuildComponentManifest(app, env, comp, "orders-api", "myapp-dev")
+
+	expected := []string{
+		"kind: ConfigMap",
+		"name: orders-api-config",
+		"application-paap.yml",
+		"kind: Secret",
+		"name: orders-api-secret",
+		"stringData:",
+		"POSTGRES_PASSWORD: secret",
+		"mountPath: /etc/paap/application-paap.yml",
+		"subPath: application-paap.yml",
+		"name: SPRING_CONFIG_ADDITIONAL_LOCATION",
+		"value: file:/etc/paap/",
 	}
 	for _, want := range expected {
 		if !strings.Contains(manifest, want) {

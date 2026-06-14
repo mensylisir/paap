@@ -53,9 +53,9 @@
               <span class="env-id">{{ env.identifier }}</span>
             </div>
             <div class="env-card-actions">
-              <span class="status-badge" :class="env.status">
-                <span class="rail-status-dot" :class="`rail-status-dot--${env.status === 'running' ? 'running' : env.status === 'error' || env.errorMessage ? 'error' : env.status === 'creating' ? 'creating' : 'empty'}`" />
-                {{ statusText(env.status) }}
+              <span class="status-badge" :class="effectiveEnvironmentStatus(env)">
+                <span class="rail-status-dot" :class="`rail-status-dot--${environmentStatusDotClass(effectiveEnvironmentStatus(env))}`" />
+                {{ environmentStatusLabel(effectiveEnvironmentStatus(env)) }}
               </span>
               <button
                 type="button"
@@ -71,7 +71,7 @@
             <span v-if="environmentResourceSummary(env).toolCount" class="rail-tag rail-tag--blue">{{ environmentResourceSummary(env).toolCount }} 工具</span>
             <span v-if="environmentResourceSummary(env).middlewareCount" class="rail-tag rail-tag--purple">{{ environmentResourceSummary(env).middlewareCount }} 中间件</span>
             <span v-if="environmentResourceSummary(env).componentCount" class="rail-tag rail-tag--green">{{ environmentResourceSummary(env).componentCount }} 组件</span>
-            <span v-if="!environmentResourceSummary(env).toolCount && !environmentResourceSummary(env).middlewareCount && !environmentResourceSummary(env).componentCount" class="rail-tag rail-tag--gray">空环境</span>
+            <span v-if="!environmentResourceSummary(env).toolCount && !environmentResourceSummary(env).middlewareCount && !environmentResourceSummary(env).componentCount" class="rail-tag rail-tag--gray">基座未安装</span>
           </div>
         </div>
       </div>
@@ -124,7 +124,7 @@
               <div class="radio-group">
                 <label class="radio-item" :class="{ active: envForm.mode === 'empty' }">
                   <input type="radio" value="empty" v-model="envForm.mode" />
-                  <span>创建空环境</span>
+                  <span>创建基础环境</span>
                 </label>
                 <label class="radio-item" :class="{ active: envForm.mode === 'template' }">
                   <input type="radio" value="template" v-model="envForm.mode" />
@@ -183,7 +183,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api } from '../api/client'
 import { toIdentifier } from '../utils/identifier'
-import { buildRecentEvents, countServiceIssues, environmentResourceSummary, sumApplicationResources } from './appSummary'
+import { buildRecentEvents, countServiceIssues, effectiveEnvironmentStatus, environmentResourceSummary, environmentStatusDotClass, environmentStatusLabel, sumApplicationResources } from './appSummary'
 
 const route = useRoute()
 const router = useRouter()
@@ -199,7 +199,7 @@ const deleteError = ref('')
 const envForm = ref({ name: '', identifier: '', mode: 'empty' as string, templateId: '1' })
 const pendingDeleteEnv = ref<any | null>(null)
 
-const runningCount = computed(() => environments.value.filter(e => e.status === 'running').length)
+const runningCount = computed(() => environments.value.filter(e => effectiveEnvironmentStatus(e) === 'running').length)
 const resourceTotals = computed(() => sumApplicationResources(environments.value))
 const totalTools = computed(() => resourceTotals.value.toolCount)
 const totalMiddleware = computed(() => resourceTotals.value.middlewareCount)
@@ -219,10 +219,28 @@ const kpis = computed(() => [
 async function loadAppOverview() {
   try {
     const res = await api.getApp(appId)
-    environments.value = res.data?.environments || res.environments || []
+    const appPayload = res.data?.application || res.data
+    const appEnvironments = res.data?.environments || res.environments || appPayload?.environments || []
+    environments.value = await hydrateEnvironmentSummaries(appEnvironments)
     recentEvents.value = buildRecentEvents(environments.value)
     templates.value = (await api.templates()).data || []
   } catch (e) { console.error(e) }
+}
+
+async function hydrateEnvironmentSummaries(items: any[]) {
+  return Promise.all((Array.isArray(items) ? items : []).map(async (env: any) => {
+    const [componentsRes, servicesRes] = await Promise.allSettled([
+      api.listComponents(env.id),
+      api.listServices(env.id),
+    ])
+    const envComponents = componentsRes.status === 'fulfilled' ? (componentsRes.value.data || []) : []
+    const envServices = servicesRes.status === 'fulfilled' ? (servicesRes.value.data || []) : []
+    return {
+      ...env,
+      services: envServices.length ? envServices : (env.services || []),
+      componentCount: envComponents.length || Number(env.componentCount || 0),
+    }
+  }))
 }
 
 onMounted(async () => {
@@ -230,7 +248,6 @@ onMounted(async () => {
   if (route.query.createEnvironment === 'true') openCreateEnvironmentModal()
 })
 
-const statusText = (s: string) => ({ running: '运行中', empty: '空环境', stopped: '已停止', creating: '创建中' }[s] || s)
 const goToEnv = (envId: number) => router.push(`/apps/${appId}/environments/${envId}`)
 const openCreateEnvironmentModal = () => {
   envForm.value = { name: '', identifier: '', mode: 'empty', templateId: String(templates.value[0]?.id || 1) }

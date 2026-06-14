@@ -170,7 +170,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import ToolWorkspaceFrame from './ToolWorkspaceFrame.vue'
 import type { WorkspaceAction, WorkspaceResource } from '../../views/serviceWorkspace'
 
@@ -202,7 +202,8 @@ const dbEngine = computed(() => {
 })
 
 const expandedDb = ref<string | null>(dbs.value[0]?.name || null)
-const selectedResource = ref<WorkspaceResource | null>(props.resources.find(r => r.type !== 'Connection') || props.resources[0] || null)
+const firstSelectableResource = () => props.resources.find(r => r.type !== 'Connection') || props.resources[0] || null
+const selectedResource = ref<WorkspaceResource | null>(firstSelectableResource())
 
 const toggleDb = (db: WorkspaceResource) => {
   expandedDb.value = expandedDb.value === db.name ? null : db.name
@@ -229,6 +230,23 @@ const availableTabs = computed(() => {
 })
 
 const activeTab = ref(rows.value.length ? 'data' : (columns.value.length ? 'columns' : 'resources'))
+
+const resourceKey = (resource?: WorkspaceResource | null) => resource ? `${resource.type}:${resource.name}` : ''
+const syncWorkspaceState = () => {
+  const currentKey = resourceKey(selectedResource.value)
+  const refreshed = currentKey ? props.resources.find((resource) => resourceKey(resource) === currentKey) : null
+  selectedResource.value = refreshed || firstSelectableResource()
+  if (expandedDb.value && !dbs.value.some((db) => db.name === expandedDb.value)) {
+    expandedDb.value = dbs.value[0]?.name || null
+  } else if (!expandedDb.value && dbs.value.length) {
+    expandedDb.value = dbs.value[0].name
+  }
+  if (!availableTabs.value.some((tab) => tab.key === activeTab.value)) {
+    activeTab.value = availableTabs.value[0]?.key || 'resources'
+  }
+}
+watch(() => props.resources, syncWorkspaceState, { deep: true })
+watch(availableTabs, syncWorkspaceState)
 
 const statusBadge = (s?: string) => {
   const v = String(s || '').toLowerCase()

@@ -29,7 +29,7 @@ func TestUpsertServiceInstanceCRUpdatesExistingSpec(t *testing.T) {
 
 	existing := &paapv1.ServiceInstance{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "staging-log",
+			Name:      "staging-loki",
 			Namespace: "paap-app-test",
 			Labels:    map[string]string{"paap.io/app": "test"},
 		},
@@ -51,11 +51,11 @@ func TestUpsertServiceInstanceCRUpdatesExistingSpec(t *testing.T) {
 		Verbs:     []string{"get", "list", "watch"},
 	}}}
 	helmSpec := &paapv1.HelmInstallSpec{
-		ReleaseName: "test-staging-log",
-		Namespace:   "test-staging-log",
+		ReleaseName: "test-staging-loki",
+		Namespace:   "test-staging-loki",
 		Values: map[string]string{
 			"paap.envNamespaces": "test-staging,test-staging-app",
-			"tool_namespace":     "test-staging-log",
+			"tool_namespace":     "test-staging-loki",
 		},
 	}
 	labels := map[string]string{
@@ -70,17 +70,17 @@ func TestUpsertServiceInstanceCRUpdatesExistingSpec(t *testing.T) {
 	}
 
 	var got paapv1.ServiceInstance
-	if err := k8sClient.Get(context.Background(), types.NamespacedName{Name: "staging-log", Namespace: "paap-app-test"}, &got); err != nil {
+	if err := k8sClient.Get(context.Background(), types.NamespacedName{Name: "staging-loki", Namespace: "paap-app-test"}, &got); err != nil {
 		t.Fatalf("get updated serviceinstance: %v", err)
 	}
-	if got.Spec.ToolNamespace != "old-tool-ns" {
+	if got.Spec.ToolNamespace != "test-staging-loki" {
 		t.Fatalf("tool namespace = %q", got.Spec.ToolNamespace)
 	}
 	if got.Spec.Helm == nil || got.Spec.Helm.Values["paap.envNamespaces"] != "test-staging,test-staging-app" {
 		t.Fatalf("helm values not refreshed: %#v", got.Spec.Helm)
 	}
-	if got.Spec.Helm.Namespace != "old-tool-ns" || got.Spec.Helm.ReleaseName != "old-release" || got.Spec.Helm.Values["tool_namespace"] != "old-tool-ns" {
-		t.Fatalf("existing install namespace/release must be preserved: %#v", got.Spec.Helm)
+	if got.Spec.Helm.Namespace != "test-staging-loki" || got.Spec.Helm.ReleaseName != "test-staging-loki" || got.Spec.Helm.Values["tool_namespace"] != "test-staging-loki" {
+		t.Fatalf("serviceinstance should use current desired runtime identity: %#v", got.Spec.Helm)
 	}
 	if got.Spec.WorkloadRole.Rules[0].Resources[1] != "pods/log" {
 		t.Fatalf("workload role not refreshed: %#v", got.Spec.WorkloadRole)
@@ -90,6 +90,63 @@ func TestUpsertServiceInstanceCRUpdatesExistingSpec(t *testing.T) {
 	}
 	if got.Annotations["paap.io/template-synced-at"] == "" {
 		t.Fatalf("expected template sync annotation: %#v", got.Annotations)
+	}
+}
+
+func TestUpsertServiceInstanceCRDoesNotAdoptLegacyServiceTypeName(t *testing.T) {
+	previousClient := k8sClient
+	t.Cleanup(func() { k8sClient = previousClient })
+
+	testScheme := runtime.NewScheme()
+	if err := clientgoscheme.AddToScheme(testScheme); err != nil {
+		t.Fatalf("add client-go scheme: %v", err)
+	}
+	if err := paapv1.AddToScheme(testScheme); err != nil {
+		t.Fatalf("add paap scheme: %v", err)
+	}
+
+	legacy := &paapv1.ServiceInstance{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "staging-deploy",
+			Namespace: "paap-app-test",
+			Labels: map[string]string{
+				"paap.io/app":          "test",
+				"paap.io/env":          "staging",
+				"paap.io/service-type": "deploy",
+				"paap.io/tool":         "argocd",
+			},
+		},
+		Spec: paapv1.ServiceInstanceSpec{
+			Type:          "deploy",
+			ToolNamespace: "test-staging-argocd",
+			Helm: &paapv1.HelmInstallSpec{
+				ReleaseName: "test-staging-argocd",
+				Namespace:   "test-staging-argocd",
+			},
+		},
+	}
+	k8sClient = fake.NewClientBuilder().WithScheme(testScheme).WithObjects(legacy).Build()
+
+	helmSpec := &paapv1.HelmInstallSpec{
+		ReleaseName: "test-staging-argocd",
+		Namespace:   "test-staging-argocd",
+	}
+	labels := map[string]string{
+		"paap.io/service-type": "deploy",
+		"paap.io/tool":         "argocd",
+		"paap.io/category":     "tool",
+	}
+	if err := UpsertServiceInstanceCR(context.Background(), "test", "staging", "deploy", paapv1.RoleSpec{}, paapv1.RoleSpec{}, nil, nil, nil, helmSpec, labels, nil); err != nil {
+		t.Fatalf("upsert serviceinstance: %v", err)
+	}
+
+	var current paapv1.ServiceInstance
+	if err := k8sClient.Get(context.Background(), types.NamespacedName{Name: "staging-argocd", Namespace: "paap-app-test"}, &current); err != nil {
+		t.Fatalf("expected concrete serviceinstance to be created: %v", err)
+	}
+	var stillLegacy paapv1.ServiceInstance
+	if err := k8sClient.Get(context.Background(), types.NamespacedName{Name: "staging-deploy", Namespace: "paap-app-test"}, &stillLegacy); err != nil {
+		t.Fatalf("legacy serviceinstance should not be adopted or deleted by upsert: %v", err)
 	}
 }
 
@@ -143,6 +200,42 @@ func TestCreateServiceInstanceCRUsesManifestMappedServiceAccount(t *testing.T) {
 	}
 	if got.Spec.Helm.Values["serviceAccount.name"] != "test-staging-redis" {
 		t.Fatalf("helm serviceAccount.name changed unexpectedly: %#v", got.Spec.Helm.Values)
+	}
+}
+
+func TestCreateServiceInstanceCRUsesConcreteToolIdentityForName(t *testing.T) {
+	previousClient := k8sClient
+	t.Cleanup(func() { k8sClient = previousClient })
+
+	testScheme := runtime.NewScheme()
+	if err := clientgoscheme.AddToScheme(testScheme); err != nil {
+		t.Fatalf("add client-go scheme: %v", err)
+	}
+	if err := paapv1.AddToScheme(testScheme); err != nil {
+		t.Fatalf("add paap scheme: %v", err)
+	}
+	k8sClient = fake.NewClientBuilder().WithScheme(testScheme).Build()
+
+	helmSpec := &paapv1.HelmInstallSpec{
+		ReleaseName: "test-staging-argocd",
+		Namespace:   "test-staging-argocd",
+	}
+	labels := map[string]string{
+		"paap.io/service-type": "deploy",
+		"paap.io/tool":         "argocd",
+		"paap.io/category":     "tool",
+	}
+
+	if err := CreateServiceInstanceCR(context.Background(), "test", "staging", "deploy", paapv1.RoleSpec{}, paapv1.RoleSpec{}, nil, nil, nil, helmSpec, labels, nil); err != nil {
+		t.Fatalf("create serviceinstance: %v", err)
+	}
+
+	var got paapv1.ServiceInstance
+	if err := k8sClient.Get(context.Background(), types.NamespacedName{Name: "staging-argocd", Namespace: "paap-app-test"}, &got); err != nil {
+		t.Fatalf("get serviceinstance by concrete tool identity: %v", err)
+	}
+	if got.Spec.Type != "deploy" || got.Labels["paap.io/tool"] != "argocd" {
+		t.Fatalf("service instance metadata = type %q labels %#v", got.Spec.Type, got.Labels)
 	}
 }
 

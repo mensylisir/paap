@@ -377,6 +377,7 @@ func buildRegistryWorkspace(app model.Application, env model.Environment, inst m
 	prefix := fmt.Sprintf("%s-%s", app.Identifier, env.Identifier)
 	runtimeHost := RuntimeRegistryHost(app, env, inst.ServiceType)
 	resources := make([]ToolWorkspaceResource, 0, len(components)+1)
+	registryTagActions := registryWorkspaceTagActions(inst.ServiceType, "")
 	for _, comp := range components {
 		identifier := componentIdentifierForWorkspace(comp)
 		tag := componentImageTag(comp)
@@ -396,12 +397,17 @@ func buildRegistryWorkspace(app model.Application, env model.Environment, inst m
 			description = fmt.Sprintf("组件 %s 使用外部镜像，不在当前环境 Registry 中。", comp.Name)
 			externalURL = ""
 		}
+		var resourceActions []ToolWorkspaceAction
+		if resourceType == "Image Repository" {
+			resourceActions = registryWorkspaceTagActions(inst.ServiceType, repoName)
+		}
 		resources = append(resources, ToolWorkspaceResource{
 			Name:        repoName,
 			Type:        resourceType,
 			Status:      status,
 			Description: description,
 			ExternalURL: externalURL,
+			Actions:     resourceActions,
 			Annotations: map[string]interface{}{
 				"project": prefix,
 				"tags":    []string{tag},
@@ -416,17 +422,41 @@ func buildRegistryWorkspace(app model.Application, env model.Environment, inst m
 		healthLabel = "检查 Harbor"
 		healthDescription = "调用 Harbor health API 检查服务是否可用。"
 	}
+	actions := []ToolWorkspaceAction{
+		{Key: "check_registry_health", Label: healthLabel, Description: healthDescription, Tone: "primary"},
+		{Key: "refresh", Label: "刷新资源", Description: "重新读取镜像仓库资源。"},
+	}
+	if len(registryTagActions) > 0 {
+		actions = append([]ToolWorkspaceAction{actions[0]}, append(registryTagActions, actions[1])...)
+	}
 	return ToolWorkspace{
 		Kind:        "registry",
 		Title:       "镜像仓库",
 		Description: "查看组件镜像仓库、标签和推送目标。",
-		Actions: []ToolWorkspaceAction{
-			{Key: "check_registry_health", Label: healthLabel, Description: healthDescription, Tone: "primary"},
-			{Key: "refresh", Label: "刷新资源", Description: "重新读取镜像仓库资源。"},
-		},
-		Resources: resources,
-		Config:    append(baseWorkspaceConfig(inst), ToolWorkspaceConfig{Label: "镜像命名", Value: prefix + "/{component}:{version}"}),
+		Actions:     actions,
+		Resources:   resources,
+		Config:      append(baseWorkspaceConfig(inst), ToolWorkspaceConfig{Label: "镜像命名", Value: prefix + "/{component}:{version}"}),
 	}
+}
+
+func registryWorkspaceTagActions(serviceType, target string) []ToolWorkspaceAction {
+	if serviceType != "registry" {
+		return nil
+	}
+	fields := []ToolWorkspaceActionField{
+		{Name: "tag", Label: "Tag", Required: true, Placeholder: "v1.0.0"},
+	}
+	if strings.TrimSpace(target) == "" {
+		fields = append([]ToolWorkspaceActionField{{Name: "repository", Label: "Repository", Required: true, Placeholder: "app/frontend"}}, fields...)
+	}
+	return []ToolWorkspaceAction{{
+		Key:         "delete_registry_tag",
+		Label:       "删除 Tag",
+		Description: "按 repository 和 tag 查询 manifest digest 并从 Docker Registry 删除；需要 Registry 已启用 deleteEnabled。",
+		Tone:        "danger",
+		Target:      target,
+		Fields:      fields,
+	}}
 }
 
 func buildDataWorkspace(inst model.ServiceInstallation) ToolWorkspace {
@@ -437,6 +467,7 @@ func buildDataWorkspace(inst model.ServiceInstallation) ToolWorkspace {
 			{Key: "list_databases", Label: "查看数据库", Description: "读取数据库列表。"},
 			{Key: "create_database", Label: "创建数据库", Description: "创建一个数据库。", Fields: []ToolWorkspaceActionField{{Name: "database", Label: "数据库名", Required: true, Placeholder: "appdb"}}},
 			{Key: "drop_database", Label: "删除数据库", Description: "删除一个数据库。", Tone: "danger", Fields: []ToolWorkspaceActionField{{Name: "database", Label: "数据库名", Required: true, Placeholder: "appdb"}}},
+			{Key: "create_database_backup", Label: "创建备份", Description: "导出指定数据库的表结构和数据，并保存为集群内备份 Secret。", Tone: "primary", Fields: []ToolWorkspaceActionField{{Name: "database", Label: "数据库名", Required: true, Placeholder: "postgres"}}},
 			{Key: "create_table", Label: "创建表", Description: "在指定数据库中创建表。", Fields: sqlTableFields(true)},
 			{Key: "drop_table", Label: "删除表", Description: "删除指定数据库中的表。", Tone: "danger", Fields: sqlTableFields(false)},
 			{Key: "insert_table_row", Label: "新增行", Description: "向表插入一行 JSON 数据。", Fields: sqlRowFields("values", `{"column":"value"}`)},
@@ -520,10 +551,35 @@ func buildDataWorkspace(inst model.ServiceInstallation) ToolWorkspace {
 			{Key: "list_rabbitmq_queues", Label: "查看队列", Description: "列出 RabbitMQ queues。", Tone: "primary"},
 			{Key: "list_rabbitmq_exchanges", Label: "查看交换机", Description: "列出 RabbitMQ exchanges。"},
 			{Key: "list_rabbitmq_vhosts", Label: "查看 VHost", Description: "列出 RabbitMQ virtual hosts。"},
+			{Key: "list_rabbitmq_bindings", Label: "查看绑定", Description: "列出 RabbitMQ bindings。"},
 			{Key: "create_rabbitmq_queue", Label: "创建队列", Description: "创建 RabbitMQ queue。", Fields: []ToolWorkspaceActionField{
 				{Name: "vhost", Label: "VHost", Default: "/", Placeholder: "/"},
 				{Name: "queue", Label: "队列", Required: true, Placeholder: "jobs"},
 				{Name: "durable", Label: "持久化", Type: "checkbox", Default: "true"},
+			}},
+			{Key: "create_rabbitmq_exchange", Label: "创建交换机", Description: "创建 RabbitMQ exchange。", Fields: []ToolWorkspaceActionField{
+				{Name: "vhost", Label: "VHost", Default: "/", Placeholder: "/"},
+				{Name: "exchange", Label: "交换机", Required: true, Placeholder: "orders.events"},
+				{Name: "type", Label: "类型", Default: "topic", Placeholder: "direct/topic/fanout/headers"},
+				{Name: "durable", Label: "持久化", Type: "checkbox", Default: "true"},
+			}},
+			{Key: "create_rabbitmq_vhost", Label: "创建 VHost", Description: "创建 RabbitMQ virtual host。", Fields: []ToolWorkspaceActionField{
+				{Name: "vhost", Label: "VHost", Required: true, Placeholder: "tenant-a"},
+			}},
+			{Key: "create_rabbitmq_binding", Label: "创建绑定", Description: "把交换机绑定到队列或另一个交换机。", Fields: []ToolWorkspaceActionField{
+				{Name: "vhost", Label: "VHost", Default: "/", Placeholder: "/"},
+				{Name: "source", Label: "源交换机", Required: true, Placeholder: "orders.events"},
+				{Name: "destinationType", Label: "目标类型", Default: "queue", Placeholder: "queue 或 exchange"},
+				{Name: "destination", Label: "目标", Required: true, Placeholder: "orders.created"},
+				{Name: "routingKey", Label: "Routing key", Placeholder: "orders.#"},
+				{Name: "arguments", Label: "Arguments JSON", Type: "textarea", Placeholder: `{"x-match":"all"}`},
+			}},
+			{Key: "publish_rabbitmq_message", Label: "发布消息", Description: "向指定 exchange 发布一条消息。", Fields: []ToolWorkspaceActionField{
+				{Name: "vhost", Label: "VHost", Default: "/", Placeholder: "/"},
+				{Name: "exchange", Label: "交换机", Placeholder: "orders.events"},
+				{Name: "routingKey", Label: "Routing key", Placeholder: "orders.created"},
+				{Name: "payload", Label: "消息内容", Type: "textarea", Required: true, Placeholder: `{"id":1}`},
+				{Name: "properties", Label: "Properties JSON", Type: "textarea", Placeholder: `{"content_type":"application/json"}`},
 			}},
 			{Key: "delete_rabbitmq_queue", Label: "删除队列", Description: "删除 RabbitMQ queue。", Tone: "danger", Fields: []ToolWorkspaceActionField{
 				{Name: "vhost", Label: "VHost", Default: "/", Placeholder: "/"},
@@ -538,6 +594,18 @@ func buildDataWorkspace(inst model.ServiceInstallation) ToolWorkspace {
 			{Key: "create_kafka_topic", Label: "创建 Topic", Description: "创建 Kafka topic。", Fields: []ToolWorkspaceActionField{
 				{Name: "topic", Label: "Topic", Required: true, Placeholder: "events"},
 				{Name: "partitions", Label: "分区数", Type: "number", Default: "1"},
+			}},
+			{Key: "read_kafka_messages", Label: "读取消息", Description: "从指定 Topic 读取消息，不提交消费位点。", Fields: []ToolWorkspaceActionField{
+				{Name: "topic", Label: "Topic", Required: true, Placeholder: "events"},
+				{Name: "partition", Label: "Partition", Type: "number", Placeholder: "留空读取全部"},
+				{Name: "offset", Label: "Offset", Default: "first", Placeholder: "first / latest / 0"},
+				{Name: "limit", Label: "数量", Type: "number", Default: "10"},
+			}},
+			{Key: "produce_kafka_message", Label: "写入消息", Description: "向指定 Topic 写入一条消息。", Fields: []ToolWorkspaceActionField{
+				{Name: "topic", Label: "Topic", Required: true, Placeholder: "events"},
+				{Name: "key", Label: "Key", Placeholder: "order-1"},
+				{Name: "value", Label: "消息内容", Type: "textarea", Required: true, Placeholder: `{"id":1}`},
+				{Name: "partition", Label: "Partition", Type: "number", Placeholder: "留空自动分配"},
 			}},
 			{Key: "delete_kafka_topic", Label: "删除 Topic", Description: "删除 Kafka topic。", Tone: "danger", Fields: []ToolWorkspaceActionField{{Name: "topic", Label: "Topic", Required: true, Placeholder: "events"}}},
 			{Key: "refresh", Label: "刷新资源", Description: "重新读取 Kafka 信息。"},

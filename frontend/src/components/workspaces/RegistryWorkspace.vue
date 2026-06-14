@@ -87,6 +87,19 @@
             <div v-if="repo.externalUrl" class="repo-footer">
               <a :href="repo.externalUrl" target="_blank" class="link external">{{ repoLinkLabel(repo) }}</a>
             </div>
+            <div v-if="repo.actions?.length" class="repo-actions">
+              <button
+                v-for="action in repo.actions"
+                :key="action.key || action.label"
+                type="button"
+                class="act-btn"
+                :class="{ danger: action.tone === 'danger', primary: action.tone === 'primary' }"
+                :title="action.description"
+                @click="emit('action', action, action.target || repo.name)"
+              >
+                {{ action.label }}
+              </button>
+            </div>
           </div>
         </div>
         <div v-else class="empty-line">暂无镜像仓库数据</div>
@@ -120,10 +133,13 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import ToolWorkspaceFrame from './ToolWorkspaceFrame.vue'
-import type { WorkspaceResource } from '../../views/serviceWorkspace'
+import type { WorkspaceAction, WorkspaceResource } from '../../views/serviceWorkspace'
 
 const props = defineProps<{
   resources: WorkspaceResource[]
+}>()
+const emit = defineEmits<{
+  (event: 'action', action: WorkspaceAction, target?: string): void
 }>()
 
 const repos = computed(() =>
@@ -164,6 +180,7 @@ const statusBadge = (s?: string) => {
 .repo-tags { margin-top: 2px; }
 .repo-digest { color: var(--paap-muted-2); font-size: 11px; font-family: var(--paap-mono); }
 .repo-footer { margin-top: var(--paap-space-1); }
+.repo-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: var(--paap-space-1); }
 .runtime-trust {
   border: 1px solid #fed7aa;
   background: var(--paap-warning-soft);

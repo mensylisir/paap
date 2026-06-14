@@ -135,6 +135,9 @@ func syncServiceInstances(ctx context.Context, db *gorm.DB, k8sClient client.Cli
 		if appIdentifier == "" || envIdentifier == "" || serviceType == "" {
 			continue
 		}
+		if !isCurrentServiceInstanceCR(svcCR, envIdentifier, serviceType) {
+			continue
+		}
 		if serviceType == "docker-registry" {
 			if err := k8sClient.Delete(ctx, &svcCR); err != nil && !apierrors.IsNotFound(err) {
 				return nil, fmt.Errorf("delete obsolete docker-registry serviceinstance %s/%s: %w", svcCR.Namespace, svcCR.Name, err)
@@ -179,6 +182,59 @@ func syncServiceInstances(ctx context.Context, db *gorm.DB, k8sClient client.Cli
 	}
 
 	return serviceKeys, nil
+}
+
+func isCurrentServiceInstanceCR(svcCR paapv1.ServiceInstance, envIdentifier, serviceType string) bool {
+	identity := strings.TrimSpace(svcCR.Labels["paap.io/tool"])
+	if identity == "" || strings.EqualFold(identity, serviceType) {
+		if svcCR.Spec.Helm != nil {
+			identity = firstNonEmpty(
+				serviceIdentityFromRuntimeName(envIdentifier, svcCR.Spec.Helm.ReleaseName),
+				serviceIdentityFromRuntimeName(envIdentifier, svcCR.Spec.Helm.Namespace),
+				identity,
+			)
+		}
+	}
+	if identity == "" {
+		identity = serviceType
+	}
+	return svcCR.Name == dnsLabelPart(envIdentifier+"-"+identity)
+}
+
+func serviceIdentityFromRuntimeName(envIdentifier, runtimeName string) string {
+	runtimeName = dnsLabelPart(runtimeName)
+	envIdentifier = dnsLabelPart(envIdentifier)
+	if runtimeName == "" || envIdentifier == "" {
+		return ""
+	}
+	suffix := "-" + envIdentifier + "-"
+	if idx := strings.Index(runtimeName, suffix); idx >= 0 {
+		return strings.Trim(runtimeName[idx+len(suffix):], "-")
+	}
+	if strings.HasPrefix(runtimeName, envIdentifier+"-") {
+		return strings.TrimPrefix(runtimeName, envIdentifier+"-")
+	}
+	return ""
+}
+
+func dnsLabelPart(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	var b strings.Builder
+	b.Grow(len(value))
+	lastDash := false
+	for _, r := range value {
+		valid := (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9')
+		if valid {
+			b.WriteRune(r)
+			lastDash = false
+			continue
+		}
+		if !lastDash {
+			b.WriteByte('-')
+			lastDash = true
+		}
+	}
+	return strings.Trim(b.String(), "-")
 }
 
 func serviceInstanceStoredValues(svcCR paapv1.ServiceInstance) map[string]string {
@@ -379,12 +435,21 @@ func upsertComponent(db *gorm.DB, comp *model.Component) error {
 		return fmt.Errorf("find component %d/%s: %w", comp.EnvironmentID, comp.Name, err)
 	}
 	existing.Type = comp.Type
-	existing.Image = comp.Image
-	existing.RegistryImage = comp.Image
-	existing.Version = comp.Version
+	if syncShouldAdoptRuntimeImage(existing) {
+		existing.Image = comp.Image
+		existing.RegistryImage = comp.Image
+		existing.Version = comp.Version
+	} else {
+		if strings.TrimSpace(existing.Image) == "" {
+			existing.Image = comp.Image
+		}
+		if strings.TrimSpace(existing.Version) == "" {
+			existing.Version = comp.Version
+		}
+	}
 	existing.Replicas = comp.Replicas
 	existing.Status = comp.Status
-	existing.Config = firstNonEmpty(comp.Config, existing.Config)
+	existing.Config = mergeComponentRuntimeConfig(existing.Config, comp.Config)
 	existing.GitPath = firstNonEmpty(existing.GitPath, comp.GitPath)
 	existing.ArgoCDApp = firstNonEmpty(existing.ArgoCDApp, comp.ArgoCDApp)
 	existing.DeletedAt = gorm.DeletedAt{}
@@ -400,12 +465,44 @@ func upsertComponent(db *gorm.DB, comp *model.Component) error {
 	return nil
 }
 
+func syncShouldAdoptRuntimeImage(existing model.Component) bool {
+	return strings.EqualFold(strings.TrimSpace(existing.DeliveryMode), "source") || strings.TrimSpace(existing.JenkinsJob) != ""
+}
+
+func mergeComponentRuntimeConfig(existingRaw, runtimeRaw string) string {
+	if strings.TrimSpace(existingRaw) == "" {
+		return runtimeRaw
+	}
+	if strings.TrimSpace(runtimeRaw) == "" {
+		return existingRaw
+	}
+	existing, err := model.ParseComponentConfig(existingRaw)
+	if err != nil {
+		return runtimeRaw
+	}
+	runtime, err := model.ParseComponentConfig(runtimeRaw)
+	if err != nil {
+		return existingRaw
+	}
+	existing.Env = runtime.Env
+	merged, err := existing.JSON()
+	if err != nil {
+		return existingRaw
+	}
+	return merged
+}
+
 func reconcileEnvironmentStatuses(db *gorm.DB, envsByKey map[string]model.Environment, serviceKeys map[string]struct{}, componentKeys map[string]struct{}) error {
 	for _, env := range envsByKey {
 		if strings.EqualFold(env.Status, "error") || strings.EqualFold(env.Status, "creating") {
 			continue
 		}
 		if environmentHasSyncedResources(env.ID, serviceKeys, componentKeys) {
+			if err := db.Model(&model.Environment{}).
+				Where("id = ?", env.ID).
+				Update("status", "running").Error; err != nil {
+				return fmt.Errorf("mark populated environment %d running: %w", env.ID, err)
+			}
 			continue
 		}
 		if err := db.Model(&model.Environment{}).

@@ -259,11 +259,27 @@ func TestComponentDeletionRemovesArgoCDManagedDeploymentName(t *testing.T) {
 		Spec:       corev1.PodSpec{Containers: []corev1.Container{{Name: "backend-3", Image: "registry:2.8.3"}}},
 	}
 	orphanSvc := &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: "historical-backend-3", Namespace: "test-staging", Labels: map[string]string{"paap.io/component": "backend-3"}}}
+	orphanConfig := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{Name: "backend-3-config", Namespace: "test-staging", Labels: map[string]string{"paap.io/component": "backend-3"}},
+		Data:       map[string]string{"application.yaml": "server.port: 8080"},
+	}
+	orphanSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "backend-3-secret", Namespace: "test-staging", Labels: map[string]string{"paap.io/component": "backend-3"}},
+		StringData: map[string]string{"DB_PASSWORD": "secret"},
+	}
+	sharedConfig := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{Name: "shared-config", Namespace: "test-staging", Labels: map[string]string{"paap.io/component": "other"}},
+		Data:       map[string]string{"key": "value"},
+	}
+	sharedSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "shared-secret", Namespace: "test-staging", Labels: map[string]string{"paap.io/component": "other"}},
+		StringData: map[string]string{"key": "value"},
+	}
 
 	r := &ComponentReconciler{
 		Client: fake.NewClientBuilder().
 			WithScheme(scheme).
-			WithObjects(comp, deploy, svc, orphanDeploy, orphanRS, orphanPod, orphanSvc).
+			WithObjects(comp, deploy, svc, orphanDeploy, orphanRS, orphanPod, orphanSvc, orphanConfig, orphanSecret, sharedConfig, sharedSecret).
 			Build(),
 		Scheme: scheme,
 	}
@@ -280,10 +296,84 @@ func TestComponentDeletionRemovesArgoCDManagedDeploymentName(t *testing.T) {
 	if err := r.Get(context.Background(), client.ObjectKey{Name: "backend-3", Namespace: "test-staging"}, gotSvc); !apierrors.IsNotFound(err) {
 		t.Fatalf("expected service to be deleted, got %v", err)
 	}
-	for _, item := range []client.Object{orphanDeploy, orphanRS, orphanPod, orphanSvc} {
+	for _, item := range []client.Object{orphanDeploy, orphanRS, orphanPod, orphanSvc, orphanConfig, orphanSecret} {
 		err := r.Get(context.Background(), client.ObjectKeyFromObject(item), item)
 		if !apierrors.IsNotFound(err) {
 			t.Fatalf("expected labeled orphan %T/%s to be deleted, got %v", item, item.GetName(), err)
+		}
+	}
+	for _, item := range []client.Object{sharedConfig, sharedSecret} {
+		err := r.Get(context.Background(), client.ObjectKeyFromObject(item), item)
+		if err != nil {
+			t.Fatalf("expected unrelated %T/%s to remain, got %v", item, item.GetName(), err)
+		}
+	}
+}
+
+func TestComponentDeletionKeepsUnownedGeneratedConfigNames(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := clientgoscheme.AddToScheme(scheme); err != nil {
+		t.Fatalf("add client-go scheme: %v", err)
+	}
+	if err := paapv1.AddToScheme(scheme); err != nil {
+		t.Fatalf("add paap scheme: %v", err)
+	}
+
+	now := metav1.Now()
+	comp := &paapv1.Component{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:              "staging-backend-3",
+			Namespace:         "paap-app-test",
+			Finalizers:        []string{compFinalizer},
+			DeletionTimestamp: &now,
+		},
+		Spec: paapv1.ComponentSpec{
+			Identifier: "backend-3",
+			ManagedBy:  "argocd",
+			Deployment: paapv1.DeploymentSpec{
+				Namespace: "test-staging",
+				Env: []paapv1.EnvVar{
+					{
+						Name: "SPRING_CONFIG_IMPORT",
+						ValueFrom: &paapv1.EnvVarSource{
+							ConfigMapKeyRef: &paapv1.ConfigMapKeySelector{Name: "backend-3-config", Key: "application.yaml"},
+						},
+					},
+					{
+						Name: "DB_PASSWORD",
+						ValueFrom: &paapv1.EnvVarSource{
+							SecretKeyRef: &paapv1.SecretKeySelector{Name: "backend-3-secret", Key: "password"},
+						},
+					},
+				},
+			},
+		},
+	}
+	config := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{Name: "backend-3-config", Namespace: "test-staging"},
+		Data:       map[string]string{"application.yaml": "server.port: 8080"},
+	}
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "backend-3-secret", Namespace: "test-staging"},
+		StringData: map[string]string{"password": "secret"},
+	}
+
+	r := &ComponentReconciler{
+		Client: fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(comp, config, secret).
+			Build(),
+		Scheme: scheme,
+	}
+
+	if _, err := r.handleDeletion(context.Background(), comp); err != nil {
+		t.Fatalf("handle deletion: %v", err)
+	}
+
+	for _, item := range []client.Object{config, secret} {
+		err := r.Get(context.Background(), client.ObjectKeyFromObject(item), item)
+		if err != nil {
+			t.Fatalf("expected unowned %T/%s to remain, got %v", item, item.GetName(), err)
 		}
 	}
 }
