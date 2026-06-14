@@ -899,6 +899,45 @@
               </div>
             </section>
 
+            <section v-if="configDrawerTab === 'deploy' && configDrawer.kind === 'service' && serviceDrawerVolumeFields.length" class="config-section">
+              <div class="config-section-title">
+                <span>存储卷</span>
+                <small>保存后写入当前服务部署参数；运行中的服务会触发更新。</small>
+              </div>
+              <div class="service-volume-grid">
+                <article
+                  v-for="volume in serviceDrawerVolumeFields"
+                  :key="volume.sizeKey"
+                  class="service-volume-card"
+                  :class="{ disabled: volume.enabledKey && !serviceConfigForm[volume.enabledKey] }"
+                >
+                  <div class="service-volume-card__head">
+                    <div>
+                      <strong>{{ volume.label }}</strong>
+                      <small>{{ volume.description }}</small>
+                    </div>
+                    <label v-if="volume.enabledKey" class="service-volume-toggle">
+                      <input
+                        type="checkbox"
+                        :checked="Boolean(serviceConfigForm[volume.enabledKey])"
+                        @change="setServiceVolumeEnabled(volume, $event)"
+                      />
+                      <span>{{ serviceConfigForm[volume.enabledKey] ? '持久化' : '临时' }}</span>
+                    </label>
+                  </div>
+                  <label class="service-volume-size">
+                    <span>容量</span>
+                    <input
+                      v-model.trim="serviceConfigForm[volume.sizeKey]"
+                      class="bx--text-input"
+                      :disabled="Boolean(volume.enabledKey) && !serviceConfigForm[volume.enabledKey]"
+                      :placeholder="volume.placeholder"
+                    />
+                  </label>
+                </article>
+              </div>
+            </section>
+
             <section v-if="serviceDrawerWorkspaceActive" class="config-section config-section--workspace">
               <div class="drawer-workspace-head">
                 <div>
@@ -1317,6 +1356,8 @@
                     id="drawer-repo"
                     v-model.trim="configForm.repository"
                     class="cds-text-input"
+                    readonly
+                    :title="configForm.repository || '等待环境镜像仓库地址'"
                     placeholder="等待环境镜像仓库地址"
                   />
                 </div>
@@ -1960,6 +2001,7 @@ import {
   serviceConfigValues,
   serviceConfigValuesFromForm,
   serviceRuntimeDetailRows,
+  type ServiceConfigField,
   type ServiceConfigForm,
 } from './serviceAssetConfig'
 import { numericRouteParam, routeEnvironmentKey } from './envDetailRouteState'
@@ -2110,6 +2152,13 @@ type ComponentConfigEnvRow = {
 type ComponentConfigObjectRow = { name: string; data: Record<string, string> }
 type ComponentConfigFileRow = { name: string; configMapName: string; key: string; mountPath: string; readOnly?: boolean }
 type NginxRouteRow = { path: string; targetKey: string; targetUrl: string }
+type ServiceVolumeField = {
+  label: string
+  description: string
+  enabledKey: string
+  sizeKey: string
+  placeholder: string
+}
 type UserComponentConfigTemplate = {
   id: string | number
   key?: string
@@ -4142,7 +4191,24 @@ const serviceDrawerWorkspaceEmptyText = computed(() => {
   return '服务工作台暂未返回资源，点击刷新重新读取运行态。'
 })
 const serviceDrawerConfigFields = computed(() => serviceDrawerProfile.value.fields)
-const serviceDrawerVisibleConfigFields = computed(() => serviceDrawerConfigFields.value.filter((field) => serviceConfigFieldVisible(field, serviceConfigForm.value)))
+const serviceDrawerVisibleConfigFields = computed(() => serviceDrawerConfigFields.value.filter((field) =>
+  serviceConfigFieldVisible(field, serviceConfigForm.value) && !isServiceStorageConfigField(field),
+))
+const serviceDrawerVolumeFields = computed<ServiceVolumeField[]>(() => {
+  const fields = serviceDrawerConfigFields.value
+  return fields
+    .filter((field) => isServiceStorageSizeField(field) && serviceConfigFieldVisible(field, serviceConfigForm.value))
+    .map((field) => {
+      const enabledField = serviceVolumeEnabledFieldForSize(field, fields)
+      return {
+        label: serviceVolumeLabel(field),
+        description: serviceVolumeDescription(field, enabledField),
+        enabledKey: enabledField?.key || '',
+        sizeKey: field.key,
+        placeholder: field.placeholder || String(field.defaultValue || '8Gi'),
+      }
+    })
+})
 const serviceDrawerPreviewValues = computed(() => {
   const svc = drawerService.value
   if (!svc) return {}
@@ -4175,6 +4241,36 @@ const serviceDrawerDeployLabel = computed(() => {
   if (serviceStatusIsDraft(drawerService.value)) return '部署'
   return '部署'
 })
+const isServiceStorageConfigField = (field: ServiceConfigField) => {
+  const key = String(field.key || '').toLowerCase()
+  return key.includes('persistence') && (key.endsWith('.enabled') || key === 'persistence.enabled' || key.endsWith('.size') || key === 'persistence.size')
+}
+const isServiceStorageSizeField = (field: ServiceConfigField) => {
+  const key = String(field.key || '').toLowerCase()
+  return key.includes('persistence') && (key.endsWith('.size') || key === 'persistence.size')
+}
+const serviceVolumeEnabledFieldForSize = (sizeField: ServiceConfigField, fields: ServiceConfigField[]) => {
+  const directKey = sizeField.key.replace(/size$/, 'enabled')
+  const direct = fields.find((field) => field.key === directKey)
+  if (direct) return direct
+  return fields.find((field) => field.key === 'persistence.enabled')
+}
+const serviceVolumeLabel = (field: ServiceConfigField) => {
+  const label = String(field.label || '数据卷').replace(/容量$/, '').replace(/存储$/, '数据卷').trim()
+  return label || '数据卷'
+}
+const serviceVolumeDescription = (sizeField: ServiceConfigField, enabledField?: ServiceConfigField) => {
+  if (!enabledField) return '当前服务的持久化数据容量'
+  return `${enabledField.label} · ${sizeField.key}`
+}
+const setServiceVolumeEnabled = (volume: ServiceVolumeField, event: Event) => {
+  if (!volume.enabledKey) return
+  const checked = Boolean((event.target as HTMLInputElement | null)?.checked)
+  serviceConfigForm.value[volume.enabledKey] = checked
+  if (checked && !String(serviceConfigForm.value[volume.sizeKey] || '').trim()) {
+    serviceConfigForm.value[volume.sizeKey] = volume.placeholder || '8Gi'
+  }
+}
 const configDrawerTitle = computed(() => configDrawer.value.component?.name || configDrawer.value.service?.serviceName || configDrawer.value.service?.name || configDrawer.value.service?.serviceType || '-')
 const configDrawerSubtitle = computed(() => {
   if (configDrawer.value.kind === 'service') return `${serviceProductLabel(configDrawer.value.service)} · ${serviceStatusText(configDrawer.value.service?.status)}`
@@ -7536,6 +7632,13 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   font-weight: 700;
   text-transform: uppercase;
 }
+.config-section-title small {
+  min-width: 0;
+  color: var(--paap-muted-2);
+  font-size: 12px;
+  font-weight: 400;
+  text-align: right;
+}
 .config-section-title a {
   color: var(--paap-accent);
   font-size: 12px;
@@ -7734,7 +7837,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 }
 .cds-image-fields {
   display: grid;
-  grid-template-columns: minmax(150px, 0.8fr) minmax(220px, 1.2fr);
+  grid-template-columns: minmax(160px, 0.7fr) minmax(300px, 1.5fr);
   gap: var(--cds-spacing-03, 8px);
   align-items: start;
 }
@@ -7770,6 +7873,11 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 .cds-text-input:focus {
   border-color: var(--cds-border-interactive, #0f62fe);
   box-shadow: inset 0 0 0 1px var(--cds-border-interactive, #0f62fe);
+}
+.cds-text-input[readonly] {
+  background: var(--paap-panel-subtle);
+  color: var(--paap-muted);
+  cursor: default;
 }
 .cds-text-input::placeholder {
   color: var(--cds-text-placeholder, rgba(22,22,22,0.4));
@@ -7825,6 +7933,73 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   margin-top: var(--paap-space-3);
   padding-top: var(--paap-space-3);
   border-top: 1px solid var(--paap-border);
+}
+.service-volume-grid {
+  display: grid;
+  gap: var(--paap-space-3);
+}
+.service-volume-card {
+  display: grid;
+  gap: var(--paap-space-3);
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--paap-border);
+  border-radius: 7px;
+  background: var(--paap-panel);
+}
+.service-volume-card.disabled {
+  background: var(--paap-panel-subtle);
+}
+.service-volume-card__head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--paap-space-3);
+  align-items: center;
+}
+.service-volume-card__head > div {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+.service-volume-card strong,
+.service-volume-card small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.service-volume-card strong {
+  color: var(--paap-text);
+  font-size: 13px;
+  font-weight: 650;
+}
+.service-volume-card small,
+.service-volume-size span {
+  color: var(--paap-muted-2);
+  font-size: 12px;
+}
+.service-volume-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--paap-text);
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.service-volume-toggle input {
+  width: 16px;
+  height: 16px;
+}
+.service-volume-size {
+  display: grid;
+  grid-template-columns: 80px minmax(160px, 240px);
+  align-items: center;
+  gap: var(--paap-space-2);
+}
+.service-volume-size .bx--text-input:disabled {
+  color: var(--paap-muted-2);
+  background: var(--paap-panel-subtle);
 }
 .service-topology-list {
   display: grid;
