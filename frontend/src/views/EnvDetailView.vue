@@ -985,7 +985,7 @@
                   {{ action.label }}
                 </button>
               </div>
-              <div v-if="activeCapabilityAction && activeWorkspaceActionBelongsToDrawer" class="workspace-action-inline workspace-action-inline--drawer" role="region" aria-label="当前卡片操作参数">
+              <div v-if="activeCapabilityAction && activeWorkspaceActionBelongsToDrawer && !serviceDrawerWorkspaceEmbedsActions" class="workspace-action-inline workspace-action-inline--drawer" role="region" aria-label="当前卡片操作参数">
                 <header>
                   <div>
                     <span>执行操作</span>
@@ -1035,6 +1035,7 @@
                 :is="serviceDrawerWorkspaceComponent"
                 :resources="serviceDrawerWorkspaceData.resources"
                 :initial-subject-key="capabilityInitialSubjectKey"
+                v-bind="serviceDrawerWorkspaceEmbeddedActionProps"
                 @action="(a: any, t?: string) => beginDrawerWorkspaceAction(a, t)"
               />
               <div v-else-if="serviceDrawerWorkspaceComponent" class="empty-state compact-empty-state">
@@ -3548,6 +3549,12 @@ const closeWorkspaceActionInline = () => {
 const setWorkspaceActionCheckboxParam = (name: string, event: Event) => {
   activeCapabilityActionParams.value[name] = (event.target as HTMLInputElement).checked ? 'true' : 'false'
 }
+const setWorkspaceActionParam = ({ name, value }: { name: string; value: string }) => {
+  activeCapabilityActionParams.value = {
+    ...activeCapabilityActionParams.value,
+    [name]: value,
+  }
+}
 const submitWorkspaceActionInline = async () => {
   const action = activeCapabilityAction.value
   if (!action) return
@@ -3565,6 +3572,23 @@ const submitWorkspaceActionInline = async () => {
     activeWorkspaceActionServiceId.value = null
   }
 }
+const serviceDrawerWorkspaceEmbedsActions = computed(() => {
+  const type = serviceDrawerType.value
+  return ['postgresql', 'mysql', 'redis', 'rabbitmq'].includes(type)
+})
+const serviceDrawerWorkspaceEmbeddedActionProps = computed(() => {
+  if (!serviceDrawerWorkspaceEmbedsActions.value || !activeWorkspaceActionBelongsToDrawer.value) return {}
+  return {
+    activeAction: activeCapabilityAction.value,
+    activeActionTarget: activeCapabilityActionTarget.value,
+    actionParams: activeCapabilityActionParams.value,
+    actionRunning: serviceDrawerWorkspaceLoading.value || capabilityWorkspaceLoading.value,
+    actionError: configDrawer.value.error || capabilityWorkspaceError.value,
+    onUpdateActionParam: setWorkspaceActionParam,
+    onSubmitAction: submitWorkspaceActionInline,
+    onCancelAction: closeWorkspaceActionInline,
+  }
+})
 const activeWorkspaceActionService = computed(() => {
   const id = activeWorkspaceActionServiceId.value
   if (!id) return activeCapabilityService.value
@@ -4103,6 +4127,13 @@ const serviceDrawerWorkspaceTabLabel = computed(() => {
     'prometheus-grafana': '大盘',
     log: '日志查询',
     loki: '日志查询',
+    postgresql: '数据库',
+    mysql: '数据库',
+    mongodb: '文档',
+    redis: '缓存',
+    rabbitmq: '队列',
+    kafka: 'Topic',
+    minio: '对象',
   }
   return labels[type] || serviceDrawerProfile.value.workspaceTitle || '工作台'
 })

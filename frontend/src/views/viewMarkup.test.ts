@@ -816,6 +816,24 @@ describe('Vue view markup', () => {
     }
   })
 
+  it('embeds database cache and queue action forms inside the drawer workspace', async () => {
+    const envDetail = await import('./EnvDetailView.vue?raw')
+    const databaseWorkspace = await import('../components/workspaces/DatabaseWorkspace.vue?raw')
+    const redisWorkspace = await import('../components/workspaces/RedisWorkspace.vue?raw')
+    const rabbitWorkspace = await import('../components/workspaces/RabbitWorkspace.vue?raw')
+    const actionForm = await import('../components/workspaces/WorkspaceActionForm.vue?raw')
+
+    expect(envDetail.default).toContain('serviceDrawerWorkspaceEmbedsActions')
+    expect(envDetail.default).toContain('serviceDrawerWorkspaceEmbeddedActionProps')
+    expect(envDetail.default).toContain('!serviceDrawerWorkspaceEmbedsActions')
+    expect(envDetail.default).toContain('onUpdateActionParam: setWorkspaceActionParam')
+    expect(databaseWorkspace.default).toContain('WorkspaceActionForm')
+    expect(redisWorkspace.default).toContain('WorkspaceActionForm')
+    expect(redisWorkspace.default).toContain("r.type === 'Redis Key'")
+    expect(rabbitWorkspace.default).toContain('WorkspaceActionForm')
+    expect(actionForm.default).toContain('workspace-action-form')
+  })
+
   it('exposes real workspace-level management actions inside service drawers', async () => {
     const envDetail = await import('./EnvDetailView.vue?raw')
     const toolWorkspace = await import('../../../internal/service/tool_workspace.go?raw')
