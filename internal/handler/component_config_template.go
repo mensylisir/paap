@@ -428,7 +428,7 @@ func builtinComponentConfigTemplates() []model.ComponentConfigTemplate {
 		template(
 			"springboot-postgres-redis",
 			"Spring Boot + PostgreSQL + Redis",
-			"生成 Spring Boot 外部 application-paap.yml，并把数据库和 Redis 密码作为 Secret 注入。",
+			"生成 Spring Boot 外部 application-paap.yml，并把数据库和 Redis 密码作为敏感配置注入。",
 			"springboot",
 			[]string{"backend"},
 			20,
@@ -473,14 +473,14 @@ func builtinComponentConfigTemplates() []model.ComponentConfigTemplate {
 		template(
 			"node-express-api",
 			"Node.js / Express API",
-			"Node、Express、NestJS 常用运行变量，包含数据库、Redis 和 JWT Secret。",
+			"Node、Express、NestJS 常用运行变量，包含数据库、Redis 和 JWT 密钥。",
 			"node",
 			[]string{"backend"},
 			30,
 			[]map[string]interface{}{
 				field("database.url", "DATABASE_URL", "serviceRef", "postgresql|mysql|mongodb", "secret", "", false),
 				field("redis.url", "REDIS_URL", "serviceRef", "redis", "secret", "", false),
-				field("jwt.secret", "JWT Secret", "password", "", "secret", "", true),
+				field("jwt.secret", "JWT 密钥", "password", "", "secret", "", true),
 			},
 			[]map[string]interface{}{
 				env("NODE_ENV", "value", "production", "", ""),
@@ -504,14 +504,14 @@ func builtinComponentConfigTemplates() []model.ComponentConfigTemplate {
 		template(
 			"go-gin-api",
 			"Go Gin API",
-			"Gin/Fiber/标准 Go API 常用运行变量，包含数据库、Redis 和 JWT Secret。",
+			"Gin/Fiber/标准 Go API 常用运行变量，包含数据库、Redis 和 JWT 密钥。",
 			"go",
 			[]string{"backend"},
 			40,
 			[]map[string]interface{}{
 				field("database.url", "数据库连接串", "serviceRef", "postgresql|mysql", "secret", "", false),
 				field("redis.addr", "Redis 地址", "serviceRef", "redis", "configMap", "redis-master:6379", false),
-				field("jwt.secret", "JWT Secret", "password", "", "secret", "", false),
+				field("jwt.secret", "JWT 密钥", "password", "", "secret", "", false),
 			},
 			[]map[string]interface{}{
 				env("APP_ENV", "value", "production", "", ""),
@@ -541,7 +541,7 @@ func builtinComponentConfigTemplates() []model.ComponentConfigTemplate {
 			[]map[string]interface{}{
 				field("database.url", "DATABASE_URL", "serviceRef", "postgresql|mysql", "secret", "", false),
 				field("redis.url", "REDIS_URL", "serviceRef", "redis", "secret", "", false),
-				field("app.secret", "应用 Secret", "password", "", "secret", "", true),
+				field("app.secret", "应用密钥", "password", "", "secret", "", true),
 			},
 			[]map[string]interface{}{
 				env("APP_ENV", "value", "production", "", ""),

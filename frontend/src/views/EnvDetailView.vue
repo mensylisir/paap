@@ -1406,25 +1406,27 @@
             <section v-if="configDrawerTab === 'variables' && configDrawer.kind === 'component'" class="config-section">
               <div class="config-section-title"><span>配置</span></div>
               <div class="component-config-flow component-config-flow--guided">
-                <label class="component-template-select">
-                  <span>配置模板</span>
-                  <select v-model="selectedComponentConfigTemplateId" class="bx--select-input">
-                    <option value="">{{ componentConfigTemplatesLoading ? '配置模板加载中...' : '请选择配置模板' }}</option>
-                    <option
-                      v-for="template in componentSelectableConfigTemplates"
-                      :key="componentTemplateOptionValue(template)"
-                      :value="componentTemplateOptionValue(template)"
-                    >
-                      {{ template.name }}
-                    </option>
-                  </select>
-                </label>
-
-                <div v-if="selectedComponentConfigTemplate" class="component-template-summary">
-                  <strong>{{ selectedComponentConfigTemplate.name }}</strong>
-                  <span>{{ selectedComponentConfigTemplate.description || componentUserTemplateSummary(selectedComponentConfigTemplate) }}</span>
+                <div class="component-template-picker">
+                  <label class="component-template-select">
+                    <span>配置模板</span>
+                    <select v-model="selectedComponentConfigTemplateId" class="bx--select-input">
+                      <option value="">{{ componentConfigTemplatesLoading ? '配置模板加载中...' : '请选择配置模板' }}</option>
+                      <option
+                        v-for="template in componentSelectableConfigTemplates"
+                        :key="componentTemplateOptionValue(template)"
+                        :value="componentTemplateOptionValue(template)"
+                      >
+                        {{ template.name }}
+                      </option>
+                    </select>
+                  </label>
+                  <p v-if="selectedComponentConfigTemplate" class="component-template-helper">
+                    {{ componentTemplateDisplayDescription(selectedComponentConfigTemplate) }}
+                  </p>
+                  <p v-else class="component-template-helper">
+                    选择模板后，下方只显示这个模板需要填写的业务配置。
+                  </p>
                 </div>
-                <div v-else class="config-empty">选择一个配置模板后，下面只会出现需要填写的业务配置。</div>
 
                 <div v-if="componentTemplateFields.length" class="component-template-field-list">
                   <label
@@ -1432,33 +1434,37 @@
                     :key="componentTemplateFieldKey(field)"
                     class="component-template-field"
                   >
-                    <span>
-                      {{ componentTemplateFieldLabel(field) }}
-                      <em v-if="componentTemplateFieldRequiredForUser(field)">必填</em>
+                    <span class="component-template-field-label">
+                      <span>
+                        {{ componentTemplateFieldLabel(field) }}
+                        <em v-if="componentTemplateFieldRequiredForUser(field)">必填</em>
+                      </span>
+                      <small v-if="componentTemplateFieldHint(field)">{{ componentTemplateFieldHint(field) }}</small>
                     </span>
-                    <select
-                      v-if="componentTemplateFieldUsesTargetSelect(field)"
-                      v-model="componentTemplateFieldValues[componentTemplateFieldKey(field)]"
-                      class="bx--select-input"
-                    >
-                      <option value="">{{ componentTemplateFieldPlaceholder(field) }}</option>
-                      <option v-for="option in componentTemplateFieldOptions(field)" :key="option.value" :value="option.value">
-                        {{ option.label }}
-                      </option>
-                    </select>
-                    <input
-                      v-else
-                      v-model.trim="componentTemplateFieldValues[componentTemplateFieldKey(field)]"
-                      class="bx--text-input"
-                      :type="componentTemplateFieldInputType(field)"
-                      :placeholder="componentTemplateFieldPlaceholder(field)"
-                    />
-                    <small v-if="componentTemplateFieldHint(field)">{{ componentTemplateFieldHint(field) }}</small>
+                    <span class="component-template-control">
+                      <select
+                        v-if="componentTemplateFieldUsesTargetSelect(field)"
+                        v-model="componentTemplateFieldValues[componentTemplateFieldKey(field)]"
+                        class="bx--select-input"
+                      >
+                        <option value="">{{ componentTemplateFieldPlaceholder(field) }}</option>
+                        <option v-for="option in componentTemplateFieldOptions(field)" :key="option.value" :value="option.value">
+                          {{ option.label }}
+                        </option>
+                      </select>
+                      <input
+                        v-else
+                        v-model.trim="componentTemplateFieldValues[componentTemplateFieldKey(field)]"
+                        class="bx--text-input"
+                        :type="componentTemplateFieldInputType(field)"
+                        :placeholder="componentTemplateFieldPlaceholder(field)"
+                      />
+                    </span>
                   </label>
                 </div>
                 <div v-else-if="selectedComponentConfigTemplate" class="config-empty">这个模板不需要额外填写，直接应用即可。</div>
 
-                <div class="component-config-actions">
+                <div class="component-config-actions component-config-actions--primary">
                   <button
                     type="button"
                     class="bx--btn bx--btn--primary bx--btn--sm"
@@ -1470,17 +1476,17 @@
                   <span v-if="selectedComponentConfigTemplate && !componentTemplateRequiredFieldsComplete" class="component-config-warning">请先补全必填项。</span>
                 </div>
 
-                <div v-if="configForm.bindings.length" class="component-connected-list">
-                  <span>已连接服务</span>
-                  <div v-for="(binding, idx) in configForm.bindings" :key="`${binding.targetKey || binding.targetName}-${idx}`" class="component-connected-row">
-                    <strong>{{ binding.targetName }}</strong>
-                    <small>{{ typeLabel(binding.targetType) || compTypeText(binding.targetType) || binding.targetType }} · {{ componentBindingGeneratedSummary(binding) }}</small>
-                    <button type="button" class="text-btn danger" @click="removeConfigBinding(idx)">移除</button>
-                  </div>
-                </div>
-
                 <details class="component-template-advanced">
-                  <summary>高级预览</summary>
+                  <summary>查看生成结果</summary>
+                  <div v-if="configForm.bindings.length" class="component-connected-list">
+                    <span>自动连接</span>
+                    <div v-for="(binding, idx) in configForm.bindings" :key="`${binding.targetKey || binding.targetName}-${idx}`" class="component-connected-row">
+                      <strong>{{ binding.targetName }}</strong>
+                      <small>{{ typeLabel(binding.targetType) || compTypeText(binding.targetType) || binding.targetType }} · {{ componentBindingGeneratedSummary(binding) }}</small>
+                      <button type="button" class="text-btn danger" @click="removeConfigBinding(idx)">移除</button>
+                    </div>
+                  </div>
+                  <div v-else class="config-empty">应用模板后，自动生成的连接会显示在这里。</div>
                   <div class="config-ref-grid">
                     <div>
                       <span>运行参数</span>
@@ -4941,6 +4947,11 @@ const componentUserTemplateSummary = (template:UserComponentConfigTemplate) => {
   if (template.files.length) parts.push(`${template.files.length} 个配置文件`)
   return parts.join(' / ') || '框架模板'
 }
+const componentTemplateDisplayDescription = (template:UserComponentConfigTemplate) =>
+  String(template?.description || componentUserTemplateSummary(template) || '')
+    .replace(/ConfigMap/g, '普通配置')
+    .replace(/Secret keys/gi, '敏感配置项')
+    .replace(/Secret/g, '敏感配置')
 const componentTemplateOptionValue = (template:UserComponentConfigTemplate) => String(template?.key || template?.id || '')
 const componentTemplateMatchesCurrentComponent = (template:UserComponentConfigTemplate) => {
   const types = Array.isArray(template.componentTypes) ? template.componentTypes.map((item) => String(item).toLowerCase()) : []
@@ -8337,64 +8348,78 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 .component-config-flow--guided {
   gap: var(--paap-space-3);
 }
+.component-template-picker {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
 .component-template-select {
   display: grid;
   gap: 6px;
   min-width: 0;
 }
 .component-template-select > span,
-.component-template-field > span,
+.component-template-field-label,
 .component-connected-list > span {
   color: var(--paap-muted);
   font-size: 12px;
   font-weight: 650;
 }
-.component-template-summary {
-  display: grid;
-  gap: 4px;
-  min-width: 0;
-  padding: 10px 0;
-  border-bottom: 1px solid var(--paap-border);
-}
-.component-template-summary strong {
-  min-width: 0;
-  color: var(--paap-text);
-  font-size: 13px;
-  font-weight: 700;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.component-template-summary span {
+.component-template-helper {
+  margin: 0;
   color: var(--paap-muted);
   font-size: 12px;
   line-height: 1.45;
 }
 .component-template-field-list {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--paap-space-3);
+  gap: 0;
   min-width: 0;
+  border-top: 1px solid var(--paap-border);
+  border-bottom: 1px solid var(--paap-border);
 }
 .component-template-field {
   display: grid;
-  gap: 6px;
+  grid-template-columns: minmax(150px, 0.42fr) minmax(0, 0.58fr);
+  align-items: start;
+  gap: var(--paap-space-3);
   min-width: 0;
+  padding: 12px 0;
 }
-.component-template-field > span {
+.component-template-field + .component-template-field {
+  border-top: 1px solid var(--paap-border);
+}
+.component-template-field-label {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  line-height: 1.35;
+}
+.component-template-field-label > span {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  min-width: 0;
 }
 .component-template-field em {
   color: var(--paap-danger);
   font-size: 11px;
   font-style: normal;
 }
-.component-template-field small {
+.component-template-field-label small {
   color: var(--paap-muted-2);
   font-size: 11px;
   line-height: 1.35;
+  font-weight: 500;
+}
+.component-template-control {
+  display: block;
+  min-width: 0;
+}
+.component-template-control .bx--text-input,
+.component-template-control .bx--select-input {
+  width: 100%;
+  min-width: 0;
 }
 .component-config-actions,
 .component-advanced-tools {
@@ -8411,8 +8436,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   display: grid;
   gap: var(--paap-space-2);
   min-width: 0;
-  padding-top: var(--paap-space-2);
-  border-top: 1px solid var(--paap-border);
+  margin-bottom: var(--paap-space-3);
 }
 .component-connected-row {
   display: grid;
@@ -9451,6 +9475,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   .config-deployment-meta,
   .cds-image-fields,
   .config-variable-row,
+  .component-template-field,
   .component-config-step__head,
   .runtime-metric-chart-grid {
     grid-template-columns: 1fr;
@@ -9478,7 +9503,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   .form-row { grid-template-columns: 1fr; }
   .config-binding-form,
   .config-binding-row,
-  .component-template-field-list,
+  .component-template-field,
   .nginx-route-row,
   .component-preset-grid,
   .component-discovered-row {
