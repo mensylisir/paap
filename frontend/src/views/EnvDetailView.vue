@@ -1477,17 +1477,10 @@
                 </div>
                 <div v-else-if="selectedComponentConfigTemplate" class="config-empty">这个模板不需要额外填写，直接应用即可。</div>
 
-                <div class="component-config-actions component-config-actions--primary">
-                  <button
-                    type="button"
-                    class="bx--btn bx--btn--primary bx--btn--sm"
-                    :disabled="configDrawer.saving || !selectedComponentConfigTemplate || !componentTemplateRequiredFieldsComplete"
-                    @click="applySelectedComponentConfigTemplate"
-                  >
-                    应用配置模板
-                  </button>
-                  <span v-if="selectedComponentConfigTemplate && !componentTemplateRequiredFieldsComplete" class="component-config-warning">请先补全必填项。</span>
-                </div>
+                <p v-if="selectedComponentConfigTemplate && componentTemplateRequiredFieldsComplete" class="component-template-save-note">
+                  保存配置时会按当前字段生成运行参数、配置文件和依赖连接。
+                </p>
+                <p v-else-if="selectedComponentConfigTemplate" class="component-config-warning">请先补全必填项。</p>
 
                 <details class="component-template-advanced">
                   <summary>高级选项</summary>
@@ -4096,21 +4089,21 @@ const serviceDrawerWorkspaceKey = computed(() =>
 const serviceDrawerWorkspaceTabLabel = computed(() => {
   const type = serviceDrawerType.value
   const labels: Record<string, string> = {
-    git: 'Repositories',
-    gitea: 'Repositories',
-    deploy: 'Resources',
-    argocd: 'Resources',
-    ci: 'Pipelines',
-    jenkins: 'Pipelines',
-    registry: 'Images',
-    'docker-registry': 'Images',
-    harbor: 'Images',
-    monitor: 'Dashboards',
-    'prometheus-grafana': 'Dashboards',
-    log: 'Explore',
-    loki: 'Explore',
+    git: '代码仓库',
+    gitea: '代码仓库',
+    deploy: '资源',
+    argocd: '资源',
+    ci: '流水线',
+    jenkins: '流水线',
+    registry: '镜像',
+    'docker-registry': '镜像',
+    harbor: '镜像',
+    monitor: '大盘',
+    'prometheus-grafana': '大盘',
+    log: '日志查询',
+    loki: '日志查询',
   }
-  return labels[type] || 'Workspace'
+  return labels[type] || serviceDrawerProfile.value.workspaceTitle || '工作台'
 })
 const serviceDrawerWorkspaceTitle = computed(() => {
   const type = serviceDrawerType.value
@@ -5112,9 +5105,9 @@ const componentTemplateRequiredFieldsComplete = computed(() =>
     return String(componentTemplateFieldValues.value[key] || '').trim().length > 0
   })
 )
-const applySelectedComponentConfigTemplate = () => {
+const applySelectedComponentConfigTemplate = (options: { silent?: boolean } = {}) => {
   if (!selectedComponentConfigTemplate.value) return
-  return applyUserComponentConfigTemplate(selectedComponentConfigTemplate.value)
+  return applyUserComponentConfigTemplate(selectedComponentConfigTemplate.value, options)
 }
 watch(() => selectedComponentConfigTemplate.value ? componentTemplateOptionValue(selectedComponentConfigTemplate.value) : '', () => {
   initializeComponentTemplateFieldValues(true)
@@ -5508,11 +5501,14 @@ const applyComponentTemplateServiceRefs = async () => {
     else await applyServiceTargetBinding(target)
   }
 }
-const applyUserComponentConfigTemplate = async (template: UserComponentConfigTemplate) => {
+const applyUserComponentConfigTemplate = async (template: UserComponentConfigTemplate, options: { silent?: boolean } = {}) => {
   if (!template) return
+  const silent = Boolean(options.silent)
   const context = componentTemplateTokenContext()
-  configDrawer.value.saving = true
-  configDrawer.value.error = ''
+  if (!silent) {
+    configDrawer.value.saving = true
+    configDrawer.value.error = ''
+  }
   try {
     if (template.framework && template.framework !== 'auto') configForm.value.framework = template.framework
     if (template.bindingMode) configForm.value.bindingMode = template.bindingMode
@@ -5589,12 +5585,23 @@ const applyUserComponentConfigTemplate = async (template: UserComponentConfigTem
     if (template.args?.length) configForm.value.argsText = template.args.map((item) => render(item)).join('\n')
     syncGeneratedSpringConfig()
     if (configForm.value.framework === 'nginx') nginxRouteRows.value = nginxRoutesFromCurrentConfig()
-    configDrawer.value.message = `已应用组件模板 ${template.name}。`
+    if (!silent) configDrawer.value.message = `已应用组件模板 ${template.name}。`
   } catch (e:any) {
-    configDrawer.value.error = '应用配置模板失败：' + (e?.message || '未知错误')
+    const message = '配置模板处理失败：' + (e?.message || '未知错误')
+    if (!silent) configDrawer.value.error = message
+    if (silent) throw new Error(message)
   } finally {
-    configDrawer.value.saving = false
+    if (!silent) configDrawer.value.saving = false
   }
+}
+const prepareSelectedComponentConfigTemplateForSave = async () => {
+  if (!selectedComponentConfigTemplate.value) return true
+  if (!componentTemplateRequiredFieldsComplete.value) {
+    configDrawer.value.error = '请先补全配置模板必填项。'
+    return false
+  }
+  await applySelectedComponentConfigTemplate({ silent: true })
+  return true
 }
 const componentNginxRouteEditorVisible = computed(() =>
   configDrawer.value.kind === 'component'
@@ -5862,6 +5869,8 @@ const saveConfigDrawer = async (options: { refresh?: boolean } = {}) => {
       configDrawer.value.error = '镜像 Tag 不能使用 latest。'
       return
     }
+    const templateReady = await prepareSelectedComponentConfigTemplateForSave()
+    if (!templateReady) return
     const image = registryImageFromConfig.value || String(configForm.value.image || '').trim()
     const res = await api.updateComponent(Number(comp.id), {
       type: componentDrawerRole.value,
@@ -8481,6 +8490,12 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 .component-config-warning {
   color: var(--paap-danger);
   font-size: 12px;
+}
+.component-template-save-note {
+  margin: 0;
+  color: var(--paap-muted);
+  font-size: 12px;
+  line-height: 1.45;
 }
 .component-connected-list {
   display: grid;
