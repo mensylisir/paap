@@ -47,7 +47,7 @@ describe('serviceAssetConfig', () => {
     expect(rows.map((row) => row.label)).toEqual([
       'Redis 架构',
       'Redis 副本',
-      'Master 存储',
+      '主节点存储',
     ])
     expect(rows.map((row) => row.label).join(',')).not.toMatch(/Namespace|StatefulSet|Container|命名空间|容器/)
     expect(rows.map((row) => row.label).join(',')).not.toMatch(/访问|NodePort|连接地址/)
@@ -155,9 +155,9 @@ describe('serviceAssetConfig', () => {
       'persistence.size': '16Gi',
     })).toEqual([
       { label: 'Redis 架构', value: 'Redis Cluster' },
-      { label: 'Cluster 节点数', value: '6' },
+      { label: '集群节点数', value: '6' },
       { label: '每主节点副本', value: '1' },
-      { label: 'Cluster 存储', value: '16Gi' },
+      { label: '集群节点存储', value: '16Gi' },
     ])
   })
 
@@ -224,7 +224,7 @@ describe('serviceAssetConfig', () => {
       'Redis Cluster',
     ])
     expect(serviceConfigFields({ serviceType: 'redis' }).find((field) => field.key === 'sentinel.masterSet')).toMatchObject({
-      label: 'Sentinel master set',
+      label: '哨兵监控名称',
       showWhen: { key: 'architecture', equals: 'sentinel' },
     })
     expect(values).toMatchObject({

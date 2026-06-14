@@ -922,7 +922,7 @@
                         :checked="Boolean(serviceConfigForm[volume.enabledKey])"
                         @change="setServiceVolumeEnabled(volume, $event)"
                       />
-                      <span>{{ serviceConfigForm[volume.enabledKey] ? '持久化' : '临时' }}</span>
+                      <span>{{ serviceConfigForm[volume.enabledKey] ? '已启用持久化' : '启用持久化' }}</span>
                     </label>
                   </div>
                   <label class="service-volume-size">
@@ -1479,41 +1479,41 @@
                 <div v-else-if="selectedComponentConfigTemplate" class="config-empty">这个模板不需要额外填写，直接应用即可。</div>
 
                 <p v-if="selectedComponentConfigTemplate && componentTemplateRequiredFieldsComplete" class="component-template-save-note">
-                  保存配置时会按当前字段生成运行参数、配置文件和依赖连接。
+                  保存配置时会按当前字段生成运行配置并建立服务连接。
                 </p>
                 <p v-else-if="selectedComponentConfigTemplate" class="component-config-warning">请先补全必填项。</p>
 
                 <details class="component-template-advanced">
-                  <summary>高级选项</summary>
+                  <summary>查看生成内容</summary>
                   <div v-if="configForm.bindings.length" class="component-connected-list">
-                    <span>自动连接</span>
+                    <span>服务连接</span>
                     <div v-for="(binding, idx) in configForm.bindings" :key="`${binding.targetKey || binding.targetName}-${idx}`" class="component-connected-row">
                       <strong>{{ binding.targetName }}</strong>
                       <small>{{ typeLabel(binding.targetType) || compTypeText(binding.targetType) || binding.targetType }} · {{ componentBindingGeneratedSummary(binding) }}</small>
                       <button type="button" class="text-btn danger" @click="removeConfigBinding(idx)">移除</button>
                     </div>
                   </div>
-                  <div v-else class="config-empty">应用模板后，自动生成的连接会显示在这里。</div>
+                  <div v-else class="config-empty">保存模板后，平台建立的服务连接会显示在这里。</div>
                   <div class="config-ref-grid">
                     <div>
-                      <span>运行参数</span>
+                      <span>启动配置</span>
                       <strong>{{ componentRuntimeParamSummary(configForm.env) }}</strong>
                     </div>
                     <div>
-                      <span>应用配置</span>
+                      <span>配置对象</span>
                       <strong>{{ componentConfigObjectSummary(configForm.configMaps) }}</strong>
                     </div>
                     <div>
-                      <span>敏感项</span>
+                      <span>敏感配置</span>
                       <strong>{{ componentSecretSummary(configForm.secrets) }}</strong>
                     </div>
                     <div>
-                      <span>配置文件</span>
+                      <span>生成文件</span>
                       <strong>{{ componentConfigFileSummary(configForm.files) }}</strong>
                     </div>
                   </div>
                   <div class="component-advanced-tools">
-                    <button type="button" class="text-btn" @click="addConfigEnv">添加自定义运行参数</button>
+                    <button type="button" class="text-btn" @click="addConfigEnv">添加自定义配置</button>
                     <button v-if="componentNginxRouteEditorVisible" type="button" class="text-btn" @click="addNginxRoute">添加前端代理路由</button>
                   </div>
                   <div v-if="componentNginxRouteEditorVisible && nginxRouteRows.length" class="nginx-route-list">
@@ -4235,7 +4235,16 @@ const serviceVolumeEnabledFieldForSize = (sizeField: ServiceConfigField, fields:
   return fields.find((field) => field.key === 'persistence.enabled')
 }
 const serviceVolumeLabel = (field: ServiceConfigField) => {
-  const label = String(field.label || '数据卷').replace(/容量$/, '').replace(/存储$/, '数据卷').trim()
+  const label = String(field.label || '数据卷')
+    .replace(/Read Replica/gi, '只读副本')
+    .replace(/Primary/gi, '主库')
+    .replace(/Secondary/gi, '从库')
+    .replace(/Master/gi, '主节点')
+    .replace(/Replica/gi, '副本节点')
+    .replace(/Cluster/gi, '集群节点')
+    .replace(/容量$/, '')
+    .replace(/存储$/, '数据卷')
+    .trim()
   return label || '数据卷'
 }
 const serviceVolumeDescription = (sizeField: ServiceConfigField, enabledField?: ServiceConfigField) => {
@@ -4246,8 +4255,8 @@ const serviceVolumeDescription = (sizeField: ServiceConfigField, enabledField?: 
   if (label.includes('jenkins')) return '保存流水线配置、任务历史和工作目录。'
   if (label.includes('harbor')) return '保存 Harbor 组件的运行数据。'
   if (label.includes('redis')) return '保存缓存快照、AOF 或集群节点数据。'
-  if (label.includes('replica') || label.includes('secondary') || label.includes('read replica')) return '保存副本实例的数据。'
-  if (label.includes('primary') || label.includes('master')) return '保存主实例的数据。'
+  if (label.includes('只读') || label.includes('replica') || label.includes('secondary') || label.includes('副本') || label.includes('从库')) return '保存副本实例的数据。'
+  if (label.includes('主库') || label.includes('主节点') || label.includes('primary') || label.includes('master')) return '保存主实例的数据。'
   if (label.includes('queue') || label.includes('broker') || label.includes('controller')) return '保存消息队列和控制面数据。'
   if (label.includes('对象') || label.includes('bucket')) return '保存对象和 Bucket 元数据。'
   return '保存当前服务的持久化数据。'
@@ -7796,12 +7805,16 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   gap: var(--paap-space-3);
 }
 .config-section-title span,
-.config-stack-field span,
-.config-form-grid label span {
+.config-stack-field span {
   color: var(--paap-muted-2);
   font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
+}
+.config-form-grid label span {
+  color: var(--paap-muted-2);
+  font-size: 12px;
+  font-weight: 650;
 }
 .config-section-title small {
   min-width: 0;
