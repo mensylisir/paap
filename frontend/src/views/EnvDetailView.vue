@@ -339,7 +339,7 @@
 
           <div v-if="capabilityWorkspaceError" class="page-error" role="alert">{{ capabilityWorkspaceError }}</div>
           <div v-else-if="capabilityWorkspaceMessage" class="workspace-message" role="status">{{ capabilityWorkspaceMessage }}</div>
-          <div v-if="activeCapabilityWorkspaceActions.length" class="workspace-action-strip" aria-label="工作台操作">
+          <div v-if="activeCapabilityWorkspaceActions.length && !activeCapabilityWorkspaceUsesInternalActions" class="workspace-action-strip" aria-label="工作台操作">
             <button
               v-for="action in activeCapabilityWorkspaceActions"
               :key="action.key"
@@ -402,6 +402,7 @@
             :key="capabilityWorkspaceKey"
             :is="workspaceComponentForService(activeCapabilityService)"
             :resources="activeCapabilityWorkspace.resources"
+            :workspace-actions="activeCapabilityWorkspaceActions"
             :initial-subject-key="capabilityInitialSubjectKey"
             @action="(a: any, t?: string) => beginCapabilityWorkspaceAction(a, t)"
           />
@@ -961,7 +962,7 @@
                   </a>
                 </div>
               </div>
-              <div v-if="serviceDrawerWorkspaceActions.length" class="workspace-action-strip workspace-action-strip--drawer" aria-label="当前卡片操作">
+              <div v-if="serviceDrawerWorkspaceActions.length && !serviceDrawerWorkspaceUsesInternalActions" class="workspace-action-strip workspace-action-strip--drawer" aria-label="当前卡片操作">
                 <button
                   v-for="action in serviceDrawerWorkspaceActions"
                   :key="action.key"
@@ -1023,6 +1024,7 @@
                 :key="serviceDrawerWorkspaceKey"
                 :is="serviceDrawerWorkspaceComponent"
                 :resources="serviceDrawerWorkspaceData.resources"
+                :workspace-actions="serviceDrawerWorkspaceActions"
                 :initial-subject-key="capabilityInitialSubjectKey"
                 v-bind="serviceDrawerWorkspaceEmbeddedActionProps"
                 @action="(a: any, t?: string) => beginDrawerWorkspaceAction(a, t)"
@@ -3447,6 +3449,10 @@ const workspaceActionVisible = (action: WorkspaceAction) => Boolean(action?.key 
 const activeCapabilityWorkspaceActions = computed<WorkspaceAction[]>(() =>
   (activeCapabilityWorkspace.value.actions || []).filter(workspaceActionVisible)
 )
+const workspaceUsesInternalActions = (type?: string) => ['mysql', 'postgresql'].includes(String(type || ''))
+const activeCapabilityWorkspaceUsesInternalActions = computed(() =>
+  workspaceUsesInternalActions(activeCapabilityService.value?.serviceType)
+)
 const capabilityWorkspaceKey = computed(() =>
   `${envRouteKey.value}:${activeCapabilityTab.value?.key || 'none'}:${activeCapabilityService.value?.id || 'none'}`
 )
@@ -4170,6 +4176,9 @@ const serviceDrawerWorkspaceActive = computed(() =>
 const serviceDrawerWorkspaceData = computed<ServiceWorkspace>(() => serviceDrawerWorkspace.value || emptyCapabilityWorkspace)
 const serviceDrawerWorkspaceActions = computed<WorkspaceAction[]>(() =>
   (serviceDrawerWorkspaceData.value.actions || []).filter(workspaceActionVisible)
+)
+const serviceDrawerWorkspaceUsesInternalActions = computed(() =>
+  workspaceUsesInternalActions(serviceDrawerType.value)
 )
 const serviceDrawerWorkspaceReady = computed(() => Boolean(drawerService.value?.id && serviceDrawerWorkspace.value))
 const serviceDrawerWorkspaceComponent = computed(() => drawerService.value ? workspaceComponentForService(drawerService.value) : null)

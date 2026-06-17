@@ -49,6 +49,28 @@
 
         <!-- Main content area -->
         <main class="db-main">
+          <section class="db-context-bar" aria-label="数据库快捷操作">
+            <div class="db-context-summary">
+              <span class="ws-section-label">当前对象</span>
+              <strong>{{ selectedResource?.name || '未选择' }}</strong>
+              <span v-if="selectedResource" class="badge blue">{{ selectedResource.type }}</span>
+            </div>
+            <div class="db-context-actions">
+              <button
+                v-for="action in visibleContextActions"
+                :key="action.key + ':' + contextActionTarget(action)"
+                type="button"
+                class="act-btn db-context-action"
+                :class="action.tone"
+                :title="action.description"
+                :disabled="actionRunning"
+                @click="emit('action', action, contextActionTarget(action))"
+              >
+                {{ action.label }}
+              </button>
+            </div>
+          </section>
+
           <!-- Tabs for data exploration -->
           <div class="ws-tabs">
             <button v-for="tab in availableTabs" :key="tab.key" class="ws-tab" :class="{ active: activeTab === tab.key }" @click="activeTab = tab.key">
@@ -199,6 +221,7 @@ import type { WorkspaceAction, WorkspaceResource } from '../../views/serviceWork
 
 const props = defineProps<{
   resources: WorkspaceResource[]
+  workspaceActions?: WorkspaceAction[]
   activeAction?: WorkspaceAction | null
   activeActionTarget?: string
   actionParams?: Record<string, string>
@@ -232,13 +255,9 @@ const dbEngine = computed(() => {
   return conn?.annotations?.engine || conn?.description || 'Database'
 })
 
-const expandedDb = ref<string | null>(dbs.value[0]?.name || null)
+const expandedDb = ref<string | null>(null)
 const firstSelectableResource = () => props.resources.find(r => r.type !== 'Connection') || props.resources[0] || null
 const selectedResource = ref<WorkspaceResource | null>(firstSelectableResource())
-
-const toggleDb = (db: WorkspaceResource) => {
-  expandedDb.value = expandedDb.value === db.name ? null : db.name
-}
 
 const tablesForDb = (dbName: string) =>
   tables.value.filter(t => t.annotations?.database === dbName || !t.annotations?.database)
@@ -258,8 +277,12 @@ const runResourceAction = (resource: WorkspaceResource, key: string, fallbackTar
 }
 
 const inspectDatabase = (db: WorkspaceResource) => {
-  toggleDb(db)
   selectResource(db)
+  if (expandedDb.value === db.name) {
+    expandedDb.value = null
+    return
+  }
+  expandedDb.value = db.name
   runResourceAction(db, 'list_database_tables', db.name)
 }
 
@@ -284,6 +307,60 @@ const workspaceActiveAction = computed(() =>
   props.activeAction && !selectedResourceActiveAction.value ? props.activeAction : null
 )
 
+const workspaceActions = computed(() => props.workspaceActions || [])
+const findWorkspaceAction = (key: string) => workspaceActions.value.find((action) => action.key === key)
+const actionWithFieldDefaults = (action: WorkspaceAction, defaults: Record<string, string>) => ({
+  ...action,
+  fields: (action.fields || []).map((field) => ({
+    ...field,
+    default: field.default || defaults[field.name] || '',
+  })),
+})
+const databaseTableTarget = (databaseName: string, tableName: string) => `${databaseName}\t${tableName}`
+const selectedTableDatabase = () => {
+  const resource = selectedResource.value
+  if (!resource || resource.type !== 'Table') return ''
+  return String(resource.annotations?.database || expandedDb.value || '')
+}
+const selectedObjectDefaults = (): Record<string, string> => {
+  const resource = selectedResource.value
+  if (!resource) return {}
+  if (resource.type === 'Database') return { database: resource.name }
+  if (resource.type === 'Table') return { database: selectedTableDatabase(), table: resource.name }
+  return {}
+}
+const contextActionTarget = (action: WorkspaceAction) => {
+  if (action.target) return action.target
+  const resource = selectedResource.value
+  if (resource?.type === 'Database') return resource.name
+  if (resource?.type === 'Table') return databaseTableTarget(selectedTableDatabase(), resource.name)
+  return undefined
+}
+const visibleContextActions = computed(() => {
+  const resource = selectedResource.value
+  const actions: WorkspaceAction[] = []
+  for (const key of ['check_database_connection', 'list_databases', 'create_database', 'create_database_backup']) {
+    const action = findWorkspaceAction(key)
+    if (action) actions.push(action)
+  }
+  if (resource?.type === 'Database') {
+    const createTable = findWorkspaceAction('create_table')
+    if (createTable) actions.push(actionWithFieldDefaults(createTable, selectedObjectDefaults()))
+    actions.push(...(resource.actions || []))
+  }
+  if (resource?.type === 'Table') {
+    const resourceActions = resource.actions || []
+    actions.push(...resourceActions.map((action) => action.fields?.length ? actionWithFieldDefaults(action, selectedObjectDefaults()) : action))
+  }
+  const seen = new Set<string>()
+  return actions.filter((action) => {
+    const key = `${action.key || action.label}:${action.target || ''}`
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+})
+
 const annotationItems = (resource: WorkspaceResource) =>
   Object.entries(resource.annotations || {})
     .filter(([key]) => !['database', 'columnType'].includes(key))
@@ -300,14 +377,20 @@ const availableTabs = computed(() => {
 const activeTab = ref(rows.value.length ? 'data' : (columns.value.length ? 'columns' : 'resources'))
 
 const resourceKey = (resource?: WorkspaceResource | null) => resource ? `${resource.type}:${resource.name}` : ''
+const firstDatabaseWithTables = () => {
+  const table = tables.value.find(t => t.annotations?.database)
+  return table ? String(table.annotations?.database || '') : ''
+}
 const syncWorkspaceState = () => {
   const currentKey = resourceKey(selectedResource.value)
   const refreshed = currentKey ? props.resources.find((resource) => resourceKey(resource) === currentKey) : null
   selectedResource.value = refreshed || firstSelectableResource()
-  if (expandedDb.value && !dbs.value.some((db) => db.name === expandedDb.value)) {
-    expandedDb.value = dbs.value[0]?.name || null
-  } else if (!expandedDb.value && dbs.value.length) {
-    expandedDb.value = dbs.value[0].name
+  if (!tables.value.length) {
+    expandedDb.value = null
+  } else if (expandedDb.value && !dbs.value.some((db) => db.name === expandedDb.value)) {
+    expandedDb.value = firstDatabaseWithTables() || null
+  } else if (!expandedDb.value) {
+    expandedDb.value = firstDatabaseWithTables() || null
   }
   if (rows.value.length) {
     activeTab.value = 'data'
@@ -425,6 +508,43 @@ const statusBadge = (s?: string) => {
 .db-main {
   min-width: 0;
 }
+.db-context-bar {
+  display: grid;
+  grid-template-columns: minmax(140px, 220px) minmax(0, 1fr);
+  gap: var(--paap-space-4);
+  align-items: center;
+  margin-bottom: var(--paap-space-3);
+  padding: var(--paap-space-3);
+  border: 1px solid var(--cds-border-subtle-01, var(--paap-border));
+  background: var(--cds-layer-01, var(--paap-panel));
+}
+.db-context-summary {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.db-context-summary .ws-section-label {
+  margin-bottom: 0;
+}
+.db-context-summary strong {
+  min-width: 0;
+  color: var(--cds-text-primary, var(--paap-text));
+  font-size: 14px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.db-context-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--paap-space-2);
+  min-width: 0;
+  flex-wrap: wrap;
+}
+.db-context-action {
+  min-width: 64px;
+}
 
 /* Data panel */
 .db-data-panel {
@@ -505,6 +625,12 @@ const statusBadge = (s?: string) => {
 @media (max-width: 768px) {
   .db-shell {
     grid-template-columns: 1fr;
+  }
+  .db-context-bar {
+    grid-template-columns: 1fr;
+  }
+  .db-context-actions {
+    justify-content: flex-start;
   }
   .db-sidebar {
     position: static;
