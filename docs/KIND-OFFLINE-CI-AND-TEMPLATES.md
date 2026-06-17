@@ -56,7 +56,7 @@ PULL_IMAGES=false make preload-kind-images
 `<registry-host>` 来自 `PAAP_REGISTRY_HOST_TEMPLATE`，默认值是：
 
 ```text
-registry.{app}-{env}.paap.local:5000
+registry.{app}-{env}.paap.local
 ```
 
 支持的占位符包括 `{app}`、`{env}`、`{primaryNamespace}`、`{toolNamespace}`、`{service}`。生产集群必须把它改成节点运行时可解析、可访问、证书可信任的真实地址，例如：

@@ -32,6 +32,7 @@ func TestDiscoverMiddlewareConnections(t *testing.T) {
 				"mongodb-root-password": []byte("mongo-pass"),
 				"rabbitmq-username":     []byte("ops"),
 				"rabbitmq-password":     []byte("rabbit-pass"),
+				"client-passwords":      []byte("kafka-pass,unused-pass"),
 			},
 		},
 	).Build())
@@ -56,7 +57,10 @@ func TestDiscoverMiddlewareConnections(t *testing.T) {
 	if err != nil {
 		t.Fatalf("kafka discovery: %v", err)
 	}
-	if kafka.Broker != "kafka.tools.svc.cluster.local:9092" {
+	if kafka.Broker != "kafka.tools.svc.cluster.local:9092" ||
+		kafka.Username != "user1" ||
+		kafka.Password != "kafka-pass" ||
+		kafka.SASLMechanism != "PLAIN" {
 		t.Fatalf("unexpected kafka info %#v", kafka)
 	}
 }

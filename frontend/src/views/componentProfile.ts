@@ -257,9 +257,9 @@ export function componentConfigPresets(profile: ComponentProfile): ComponentConf
   if (profile.webEntry && (profile.framework === 'nginx' || profile.framework === 'unknown' || profile.framework === 'custom')) {
     add({
       key: 'nginx-api-proxy',
-      label: 'Nginx API 代理',
-      description: '生成 default.conf，通过 /api 代理到画布上的后端服务。',
-      keys: ['default.conf', 'BACKEND_URL'],
+      label: 'Nginx 代理路由',
+      description: '生成 default.conf，由用户填写匹配路径并选择或输入转发地址。',
+      keys: ['default.conf', 'LOCATION_LIST'],
       framework: 'nginx',
     })
   }
@@ -356,7 +356,7 @@ export function componentDrawerBlueprint(profile: ComponentProfile): ComponentDr
     return {
       mode: 'web-entry',
       label: 'Web 入口组件',
-      configStrategyLabel: '后端/API 入口 + 静态运行变量',
+      configStrategyLabel: '代理路由 + 静态运行变量',
       tabs,
     }
   }

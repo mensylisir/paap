@@ -80,7 +80,7 @@ func TestRabbitMQAdminQueueOperationsUseManagementAPI(t *testing.T) {
 		paths = append(paths, r.Method+" "+r.URL.EscapedPath())
 		switch r.URL.EscapedPath() {
 		case "/api/queues/%2F/jobs/get":
-			_, _ = w.Write([]byte(`[{"payload":"hello","routing_key":"jobs","message_count":0}]`))
+			_, _ = w.Write([]byte(`[{"payload":"hello","routing_key":"jobs","message_count":0,"properties":[]}]`))
 		default:
 			w.WriteHeader(http.StatusNoContent)
 		}

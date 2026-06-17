@@ -536,7 +536,7 @@ func buildDataWorkspace(inst model.ServiceInstallation) ToolWorkspace {
 				{Name: "database", Label: "数据库", Required: true, Placeholder: "appdb"},
 				{Name: "collection", Label: "集合", Required: true, Placeholder: "users"},
 				{Name: "filter", Label: "Filter JSON", Type: "textarea", Required: true, Placeholder: `{"field":"value"}`},
-				{Name: "update", Label: "Update JSON", Type: "textarea", Required: true, Placeholder: `{"status":"active"}`},
+				{Name: "update", Label: "设置字段 JSON", Type: "textarea", Required: true, Placeholder: `{"status":"active"}`},
 			}},
 			{Key: "delete_mongodb_documents", Label: "删除文档", Description: "按 filter 删除文档。", Tone: "danger", Fields: []ToolWorkspaceActionField{
 				{Name: "database", Label: "数据库", Required: true, Placeholder: "appdb"},

@@ -22,6 +22,7 @@ func NewRegistryClient(namespace string) *RegistryClient {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	baseURL := discoverService(ctx, namespace, "registry", fallback)
+	baseURL = "https://" + strings.TrimPrefix(strings.TrimPrefix(baseURL, "https://"), "http://")
 	return &RegistryClient{
 		BaseURL: baseURL,
 		HTTPClient: &http.Client{

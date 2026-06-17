@@ -48,6 +48,17 @@ func handlerStringSliceContains(values []string, target string) bool {
 	return false
 }
 
+func handlerAssertAnnotation(t *testing.T, resource svcservice.ToolWorkspaceResource, key string, want interface{}) {
+	t.Helper()
+	got, ok := resource.Annotations[key]
+	if !ok {
+		t.Fatalf("missing annotation %s in %#v", key, resource.Annotations)
+	}
+	if got != want {
+		t.Fatalf("annotation %s = %#v, want %#v", key, got, want)
+	}
+}
+
 type fakeHarborProjectEnsurer struct {
 	projects *[]string
 }
@@ -114,6 +125,19 @@ func (fakeGiteaWorkspaceClient) RepositoryCommits(_ context.Context, repo, branc
 	commit.Commit.Author.Name = "PAAP"
 	commit.Commit.Author.Date = "2026-06-04T10:00:00Z"
 	return []k8s.GiteaCommit{commit}, nil
+}
+
+type fakeJenkinsWorkspaceClient struct {
+	jobs       []k8s.JenkinsJob
+	consoleLog map[string]string
+}
+
+func (f fakeJenkinsWorkspaceClient) Jobs(context.Context) ([]k8s.JenkinsJob, error) {
+	return f.jobs, nil
+}
+
+func (f fakeJenkinsWorkspaceClient) ConsoleText(_ context.Context, jobName string) (string, error) {
+	return f.consoleLog[jobName], nil
 }
 
 type countingGiteaWorkspaceClient struct {
@@ -2707,6 +2731,79 @@ func TestJenkinsBuildTargetUsesRequestedJob(t *testing.T) {
 	}
 }
 
+func TestEnrichJenkinsWorkspaceDoesNotKeepFallbackJobsWhenJenkinsIsEmpty(t *testing.T) {
+	previous := newJenkinsWorkspaceClient
+	t.Cleanup(func() { newJenkinsWorkspaceClient = previous })
+	newJenkinsWorkspaceClient = func(namespace string) jenkinsWorkspaceClient {
+		if namespace != "billing-dev-ci" {
+			t.Fatalf("namespace = %q, want billing-dev-ci", namespace)
+		}
+		return fakeJenkinsWorkspaceClient{}
+	}
+
+	workspace := svcservice.BuildToolWorkspace(
+		model.Application{Identifier: "billing"},
+		model.Environment{Identifier: "dev"},
+		model.ServiceInstallation{ID: 10, EnvironmentID: 1, ServiceType: "ci", Namespace: "billing-dev-ci", Status: "running"},
+		[]model.Component{{Name: "api", JenkinsJob: "billing-dev-api-build", PipelineStatus: "built"}},
+	)
+	if len(workspace.Resources) != 1 {
+		t.Fatalf("test setup expected fallback job resource, got %#v", workspace.Resources)
+	}
+
+	enriched := enrichJenkinsWorkspace(t.Context(), workspace, model.ServiceInstallation{ID: 10, EnvironmentID: 1, ServiceType: "ci", Namespace: "billing-dev-ci"})
+	if len(enriched.Resources) != 1 {
+		t.Fatalf("live Jenkins workspace must expose one real empty catalog resource, got %#v", enriched.Resources)
+	}
+	resource := enriched.Resources[0]
+	if resource.Name != "jenkins-jobs" || resource.Type != "流水线目录" || resource.Status != "Empty" {
+		t.Fatalf("unexpected empty catalog resource: %#v", resource)
+	}
+}
+
+func TestEnrichJenkinsWorkspaceMergesRealJobWithComponentContext(t *testing.T) {
+	previous := newJenkinsWorkspaceClient
+	t.Cleanup(func() { newJenkinsWorkspaceClient = previous })
+	newJenkinsWorkspaceClient = func(namespace string) jenkinsWorkspaceClient {
+		if namespace != "billing-dev-ci" {
+			t.Fatalf("namespace = %q, want billing-dev-ci", namespace)
+		}
+		return fakeJenkinsWorkspaceClient{
+			jobs: []k8s.JenkinsJob{{
+				Name:      "billing-dev-api-build",
+				URL:       "http://jenkins/job/billing-dev-api-build/",
+				Color:     "blue",
+				Status:    "success",
+				LastBuild: &k8s.JenkinsBuild{Number: 42, URL: "http://jenkins/job/billing-dev-api-build/42/", Result: "SUCCESS"},
+			}},
+			consoleLog: map[string]string{"billing-dev-api-build": "Started by PAAP\nFinished: SUCCESS\n"},
+		}
+	}
+
+	workspace := svcservice.BuildToolWorkspace(
+		model.Application{Identifier: "billing"},
+		model.Environment{Identifier: "dev"},
+		model.ServiceInstallation{ID: 10, EnvironmentID: 1, ServiceType: "ci", Namespace: "billing-dev-ci", Status: "running"},
+		[]model.Component{{
+			Name:          "api",
+			JenkinsJob:    "billing-dev-api-build",
+			RegistryImage: "registry.example.test/billing-dev/api:v1",
+			SourceBranch:  "release",
+		}},
+	)
+
+	enriched := enrichJenkinsWorkspace(t.Context(), workspace, model.ServiceInstallation{ID: 10, EnvironmentID: 1, ServiceType: "ci", Namespace: "billing-dev-ci"})
+	if len(enriched.Resources) != 1 {
+		t.Fatalf("resources = %#v", enriched.Resources)
+	}
+	job := enriched.Resources[0]
+	handlerAssertAnnotation(t, job, "component", "api")
+	handlerAssertAnnotation(t, job, "branch", "release")
+	handlerAssertAnnotation(t, job, "image", "registry.example.test/billing-dev/api:v1")
+	handlerAssertAnnotation(t, job, "lastBuildNumber", 42)
+	handlerAssertAnnotation(t, job, "consoleLog", "Started by PAAP\nFinished: SUCCESS\n")
+}
+
 func TestEnrichGiteaWorkspaceKeepsCloneURLAndRepoActionsWithoutEagerTree(t *testing.T) {
 	previous := newGiteaWorkspaceClient
 	t.Cleanup(func() {
@@ -3914,6 +4011,80 @@ func TestUpdateComponentKeepsRegistryImageInSyncForImageDelivery(t *testing.T) {
 	}
 }
 
+func TestUpdateComponentCanSwitchDraftToSourceDelivery(t *testing.T) {
+	previousDB := database.DB
+	t.Cleanup(func() { database.DB = previousDB })
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&model.Application{}, &model.Environment{}, &model.Component{}, &model.ServiceInstallation{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	database.DB = db
+
+	app := model.Application{Name: "Shop", Identifier: "shop", OwnerID: 1}
+	if err := db.Create(&app).Error; err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	env := model.Environment{ApplicationID: app.ID, Name: "Dev", Identifier: "dev", Status: "running", Namespace: "shop-dev"}
+	if err := db.Create(&env).Error; err != nil {
+		t.Fatalf("create env: %v", err)
+	}
+	comp := model.Component{
+		EnvironmentID: env.ID,
+		Name:          "orders-api",
+		Type:          "backend",
+		Image:         "registry.local/orders:v1",
+		RegistryImage: "registry.local/orders:v1",
+		Version:       "v1",
+		DeliveryMode:  "image",
+		Replicas:      1,
+		Status:        "draft",
+	}
+	if err := db.Create(&comp).Error; err != nil {
+		t.Fatalf("create component: %v", err)
+	}
+
+	body := []byte(`{
+		"deliveryMode": "source",
+		"sourceRepoUrl": "https://git.example.com/shop/orders.git",
+		"sourceBranch": "main",
+		"buildContext": "services/orders",
+		"version": "v2",
+		"replicas": 1
+	}`)
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/components/1", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.PUT("/api/v1/components/:id", UpdateComponent)
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var saved model.Component
+	if err := db.First(&saved, comp.ID).Error; err != nil {
+		t.Fatalf("load component: %v", err)
+	}
+	if saved.DeliveryMode != "source" || saved.SourceRepoURL != "https://git.example.com/shop/orders.git" || saved.SourceBranch != "main" || saved.BuildContext != "services/orders" {
+		t.Fatalf("source delivery fields not persisted: %#v", saved)
+	}
+	if saved.Image != "" || saved.RegistryImage != "" {
+		t.Fatalf("source delivery draft must clear image fields before deployment, image=%q registry=%q", saved.Image, saved.RegistryImage)
+	}
+	if saved.JenkinsJob != "shop-dev-orders-api-build" || saved.PipelineStatus != "planned" {
+		t.Fatalf("source delivery pipeline fields not planned: job=%q status=%q", saved.JenkinsJob, saved.PipelineStatus)
+	}
+	if saved.Version != "v2" {
+		t.Fatalf("version = %q, want v2", saved.Version)
+	}
+}
+
 func TestUpdateComponentKeepsExistingConfigWhenConfigOmitted(t *testing.T) {
 	previousDB := database.DB
 	t.Cleanup(func() { database.DB = previousDB })
@@ -4023,7 +4194,7 @@ func TestPlanComponentDeliveryBuildsSourceToGitOpsFlow(t *testing.T) {
 	if planned.JenkinsJob != "shop-dev-orders-api-build" {
 		t.Fatalf("jenkins job = %q, want shop-dev-orders-api-build", planned.JenkinsJob)
 	}
-	if planned.RegistryImage != "registry.shop-dev.paap.local:5000/shop-dev/orders-api:v1.2.3" {
+	if planned.RegistryImage != "registry.shop-dev.paap.local/shop-dev/orders-api:v1.2.3" {
 		t.Fatalf("registry image = %q", planned.RegistryImage)
 	}
 	if planned.Image != planned.RegistryImage {
@@ -4067,7 +4238,7 @@ func TestSourceDeliveryAllowsOmittedVersionForJenkinsBuildNumber(t *testing.T) {
 	if planned.Version != "manual" {
 		t.Fatalf("version = %q, want manual fallback for first Jenkins build", planned.Version)
 	}
-	if planned.RegistryImage != "registry.shop-dev.paap.local:5000/shop-dev/orders-api:manual" {
+	if planned.RegistryImage != "registry.shop-dev.paap.local/shop-dev/orders-api:manual" {
 		t.Fatalf("registry image = %q", planned.RegistryImage)
 	}
 	if planned.PipelineStatus != "planned" {
@@ -4382,5 +4553,25 @@ func TestAdoptResourceDiscoversAndCreatesDraftFromRealWorkload(t *testing.T) {
 	}
 	if len(cfg.Command) != 1 || cfg.Command[0] != "/server" || len(cfg.Args) != 1 || cfg.Args[0] != "--listen=:8080" {
 		t.Fatalf("adopted command/args not preserved: %#v", cfg)
+	}
+}
+
+func TestDatabaseTableContextResourcesPreserveTreeContext(t *testing.T) {
+	resources := databaseTableContextResources("postgres", "public.orders", "Preview first 20 rows")
+	if len(resources) != 2 {
+		t.Fatalf("expected database and table context resources, got %#v", resources)
+	}
+	if resources[0].Type != "Database" || resources[0].Name != "postgres" {
+		t.Fatalf("first resource must keep selected database, got %#v", resources[0])
+	}
+	table := resources[1]
+	if table.Type != "Table" || table.Name != "public.orders" {
+		t.Fatalf("second resource must keep selected table, got %#v", table)
+	}
+	if table.Annotations["database"] != "postgres" {
+		t.Fatalf("table must keep database annotation, got %#v", table.Annotations)
+	}
+	if len(table.Actions) == 0 {
+		t.Fatalf("table context must keep preview/columns actions, got %#v", table.Actions)
 	}
 }

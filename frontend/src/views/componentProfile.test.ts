@@ -289,7 +289,7 @@ describe('componentProfile', () => {
     expect(componentDrawerBlueprint(middleware).tabs.map((item) => item.key)).toEqual(['deploy', 'variables', 'runtime', 'logs', 'console', 'settings'])
   })
 
-  it('offers a real Nginx API proxy preset for web entry components', () => {
+  it('offers a neutral Nginx proxy route preset for web entry components', () => {
     const profile = buildComponentProfile({
       component: {
         name: 'web',
@@ -303,9 +303,9 @@ describe('componentProfile', () => {
 
     const preset = componentConfigPresets(profile).find((item) => item.key === 'nginx-api-proxy')
     expect(preset).toMatchObject({
-      label: 'Nginx API 代理',
+      label: 'Nginx 代理路由',
       framework: 'nginx',
-      keys: ['default.conf', 'BACKEND_URL'],
+      keys: ['default.conf', 'LOCATION_LIST'],
     })
   })
 })

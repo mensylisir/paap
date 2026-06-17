@@ -3,6 +3,7 @@ package k8s
 import (
 	"context"
 	"fmt"
+	"strings"
 )
 
 type MongoDBConnectionInfo struct {
@@ -20,7 +21,10 @@ type RabbitMQConnectionInfo struct {
 }
 
 type KafkaConnectionInfo struct {
-	Broker string
+	Broker        string
+	Username      string
+	Password      string
+	SASLMechanism string
 }
 
 func DiscoverMongoDBConnection(ctx context.Context, namespace string) (MongoDBConnectionInfo, error) {
@@ -75,5 +79,22 @@ func DiscoverKafkaConnection(ctx context.Context, namespace string) (KafkaConnec
 	if err != nil {
 		return KafkaConnectionInfo{}, err
 	}
-	return KafkaConnectionInfo{Broker: fmt.Sprintf("%s:%d", host, 9092)}, nil
+	password, _ := discoverOptionalSecretValue(ctx, cl, namespace, []string{"client-passwords", "kafka-password", "password"})
+	password = firstSecretListValue(password)
+	info := KafkaConnectionInfo{Broker: fmt.Sprintf("%s:%d", host, 9092)}
+	if password != "" {
+		info.Username = "user1"
+		info.Password = password
+		info.SASLMechanism = "PLAIN"
+	}
+	return info, nil
+}
+
+func firstSecretListValue(value string) string {
+	for _, part := range strings.Split(value, ",") {
+		if trimmed := strings.TrimSpace(part); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
 }

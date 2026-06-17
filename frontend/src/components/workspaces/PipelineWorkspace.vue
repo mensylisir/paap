@@ -262,7 +262,7 @@ const buildNumber = (job: WorkspaceResource) =>
   job.annotations?.lastBuildNumber ? `#${job.annotations.lastBuildNumber}` : '-'
 
 const imageArtifact = (job: WorkspaceResource) =>
-  job.annotations?.image || `${job.annotations?.component || job.name}:pending`
+  job.annotations?.image || 'Jenkins 未返回镜像产物'
 
 const realBuildLogLines = (job: WorkspaceResource) => {
   const value = job.annotations?.consoleLog || job.annotations?.buildLog || job.annotations?.logs

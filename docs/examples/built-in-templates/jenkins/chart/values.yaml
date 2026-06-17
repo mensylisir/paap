@@ -250,6 +250,15 @@ controller:
     - configuration-as-code:1670.v564dc8b_982d0
     - script-security:1265.va_fb_290b_4b_d34
     - workflow-scm-step:415.v434365564324
+    # Keep these aligned with the Jenkins 2.414.3 image-bundled
+    # pipeline-model-extensions plugin; otherwise Pipeline health fails.
+    - pipeline-model-definition:2.2144.v077a_d1928a_40
+    - pipeline-model-api:2.2144.v077a_d1928a_40
+    - pipeline-stage-tags-metadata:2.2144.v077a_d1928a_40
+    - workflow-job:1308.v58d48a_763b_31
+    - pipeline-stage-step:305.ve96d0205c1c6
+    # git-server 1.9 is incompatible with the MINA SSHD API pulled by git 5.1.0.
+    - git-server:99.va_0826a_b_cdfa_d
 
   # Set to false to download the minimum required version of all dependencies.
   installLatestPlugins: false

@@ -385,6 +385,24 @@ func TestBuildToolWorkspaceDoesNotExposeDemoPlaceholders(t *testing.T) {
 	}
 }
 
+func TestBuildToolWorkspaceMongoDBUpdateFieldExplainsSetSemantics(t *testing.T) {
+	workspace := BuildToolWorkspace(model.Application{}, model.Environment{}, model.ServiceInstallation{ServiceType: "mongodb", Namespace: "ns"}, nil)
+	action := findWorkspaceAction(workspace.Actions, "update_mongodb_documents")
+	if action == nil {
+		t.Fatalf("mongodb workspace missing update action: %#v", workspace.Actions)
+	}
+	field := findWorkspaceActionField(action.Fields, "update")
+	if field == nil {
+		t.Fatalf("mongodb update action missing update field: %#v", action.Fields)
+	}
+	if !strings.Contains(field.Label, "设置字段") {
+		t.Fatalf("mongodb update field must explain $set semantics, got label %q", field.Label)
+	}
+	if strings.Contains(field.Label, "Update JSON") {
+		t.Fatalf("mongodb update field label is too ambiguous: %q", field.Label)
+	}
+}
+
 func TestBuildToolWorkspaceDoesNotInventDataResourcesBeforeLiveDataReturns(t *testing.T) {
 	serviceTypes := []string{"mysql", "postgresql", "redis", "mongodb", "rabbitmq", "kafka", "minio"}
 
@@ -652,7 +670,7 @@ func TestBuildToolWorkspaceRecomputesLegacySourceRegistryImageForDisplay(t *test
 
 	workspace := BuildToolWorkspace(app, env, inst, components)
 
-	assertAnnotation(t, workspace.Resources[0], "image", "registry.test-staging.paap.local:5000/test-staging/source-smoke:14")
+	assertAnnotation(t, workspace.Resources[0], "image", "registry.test-staging.paap.local/test-staging/source-smoke:14")
 }
 
 func TestBuildToolWorkspaceDoesNotLinkExternalImagesToEnvironmentRegistry(t *testing.T) {
@@ -687,7 +705,7 @@ func TestBuildToolWorkspaceDoesNotExposeDraftLatestAsRegistryRepository(t *testi
 		Type:          "frontend",
 		Status:        "draft",
 		Version:       "latest",
-		RegistryImage: "registry.test-staging.paap.local:5000/test-staging/frontend-1:latest",
+		RegistryImage: "registry.test-staging.paap.local/test-staging/frontend-1:latest",
 	}}
 
 	workspace := BuildToolWorkspace(app, env, inst, components)
@@ -723,6 +741,24 @@ func assertActionFields(t *testing.T, action ToolWorkspaceAction, wantNames ...s
 			t.Fatalf("action %s missing field %s: %#v", action.Key, want, action.Fields)
 		}
 	}
+}
+
+func findWorkspaceAction(actions []ToolWorkspaceAction, key string) *ToolWorkspaceAction {
+	for i := range actions {
+		if actions[i].Key == key {
+			return &actions[i]
+		}
+	}
+	return nil
+}
+
+func findWorkspaceActionField(fields []ToolWorkspaceActionField, name string) *ToolWorkspaceActionField {
+	for i := range fields {
+		if fields[i].Name == name {
+			return &fields[i]
+		}
+	}
+	return nil
 }
 
 func assertActionFieldsDoNotContain(t *testing.T, action ToolWorkspaceAction, forbidden string) {

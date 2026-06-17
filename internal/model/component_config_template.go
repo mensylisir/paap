@@ -26,6 +26,7 @@ type ComponentConfigTemplate struct {
 	// user-facing inputs generated from the template, while the remaining JSON
 	// columns map directly to the component drawer's config model.
 	Syntax      string `gorm:"type:text" json:"syntax"`
+	NativeJSON  string `gorm:"type:text" json:"nativeJson"`
 	FieldsJSON  string `gorm:"type:text" json:"fieldsJson"`
 	EnvJSON     string `gorm:"type:text" json:"envJson"`
 	ConfigJSON  string `gorm:"type:text" json:"configJson"`

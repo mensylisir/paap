@@ -13,7 +13,7 @@ func TestRuntimeRegistryHostDefaultsToEnvironmentScopedHost(t *testing.T) {
 		"registry",
 	)
 
-	if host != "registry.shop-dev.paap.local:5000" {
+	if host != "registry.shop-dev.paap.local" {
 		t.Fatalf("host = %q", host)
 	}
 }

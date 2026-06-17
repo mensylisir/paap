@@ -63,6 +63,15 @@ var newArgoCDWorkspaceClient = func(namespace string) argoCDWorkspaceClient {
 	return k8s.NewArgoCDClient(namespace)
 }
 
+type jenkinsWorkspaceClient interface {
+	Jobs(ctx context.Context) ([]k8s.JenkinsJob, error)
+	ConsoleText(ctx context.Context, jobName string) (string, error)
+}
+
+var newJenkinsWorkspaceClient = func(namespace string) jenkinsWorkspaceClient {
+	return k8s.NewJenkinsClient(namespace)
+}
+
 type cachedGiteaWorkspace struct {
 	repositories []k8s.GiteaRepository
 	expiresAt    time.Time
@@ -128,14 +137,19 @@ type CreateComponentRequest struct {
 }
 
 type UpdateComponentRequest struct {
-	Name     string                 `json:"name"`
-	Type     string                 `json:"type"`
-	Image    string                 `json:"image"`
-	Version  string                 `json:"version"`
-	Replicas int                    `json:"replicas"`
-	CPU      string                 `json:"cpu"`
-	Memory   string                 `json:"memory"`
-	Config   *model.ComponentConfig `json:"config"`
+	Name           string                 `json:"name"`
+	Type           string                 `json:"type"`
+	Image          string                 `json:"image"`
+	Version        string                 `json:"version"`
+	Replicas       int                    `json:"replicas"`
+	CPU            string                 `json:"cpu"`
+	Memory         string                 `json:"memory"`
+	DeliveryMode   string                 `json:"deliveryMode"`
+	SourceRepoURL  string                 `json:"sourceRepoUrl"`
+	SourceBranch   string                 `json:"sourceBranch"`
+	BuildContext   string                 `json:"buildContext"`
+	DockerfilePath string                 `json:"dockerfilePath"`
+	Config         *model.ComponentConfig `json:"config"`
 }
 
 type CanvasNodePosition struct {
@@ -2119,6 +2133,52 @@ func UpdateComponent(c *gin.Context) {
 	}
 	if strings.TrimSpace(req.Type) != "" {
 		comp.Type = strings.TrimSpace(req.Type)
+	}
+	if strings.TrimSpace(req.DeliveryMode) != "" {
+		mode := strings.ToLower(strings.TrimSpace(req.DeliveryMode))
+		switch mode {
+		case "source":
+			if strings.TrimSpace(req.SourceRepoURL) == "" && strings.TrimSpace(comp.SourceRepoURL) == "" {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "source repository URL is required"})
+				return
+			}
+			comp.DeliveryMode = "source"
+			if strings.TrimSpace(req.SourceRepoURL) != "" {
+				comp.SourceRepoURL = strings.TrimSpace(req.SourceRepoURL)
+			}
+			comp.SourceBranch = valueOrDefaultString(req.SourceBranch, valueOrDefaultString(comp.SourceBranch, "main"))
+			comp.BuildContext = valueOrDefaultString(req.BuildContext, valueOrDefaultString(comp.BuildContext, "."))
+			comp.DockerfilePath = strings.TrimSpace(req.DockerfilePath)
+			var env model.Environment
+			if err := database.DB.First(&env, comp.EnvironmentID).Error; err != nil {
+				c.JSON(http.StatusNotFound, gin.H{"error": "environment not found"})
+				return
+			}
+			var app model.Application
+			if err := database.DB.First(&app, env.ApplicationID).Error; err != nil {
+				c.JSON(http.StatusNotFound, gin.H{"error": "application not found"})
+				return
+			}
+			identifier := service.ComponentIdentifier(comp.Name, comp.Type, comp.ID)
+			comp.JenkinsJob = fmt.Sprintf("%s-%s-%s-build", app.Identifier, env.Identifier, identifier)
+			comp.Image = ""
+			comp.RegistryImage = ""
+			comp.PipelineStatus = "planned"
+		case "image":
+			comp.DeliveryMode = "image"
+			comp.SourceRepoURL = ""
+			comp.SourceMirrorRepoURL = ""
+			comp.SourceBranch = ""
+			comp.BuildContext = ""
+			comp.DockerfilePath = ""
+			comp.JenkinsJob = ""
+			if comp.PipelineStatus == "planned" || comp.PipelineStatus == "pending" {
+				comp.PipelineStatus = ""
+			}
+		default:
+			c.JSON(http.StatusBadRequest, gin.H{"error": "deliveryMode must be image or source"})
+			return
+		}
 	}
 	if strings.TrimSpace(req.Image) != "" {
 		if strings.HasSuffix(strings.ToLower(strings.TrimSpace(req.Image)), ":latest") {
@@ -4508,6 +4568,7 @@ func enrichDatabaseTablesWorkspace(ctx context.Context, workspace service.ToolWo
 			Type:        "Table",
 			Status:      "Ready",
 			Description: table.Type,
+			Annotations: map[string]interface{}{"database": databaseName},
 			Actions: []service.ToolWorkspaceAction{
 				{Key: "list_table_columns", Label: "字段", Description: "查看该表字段。", Target: target},
 				{Key: "preview_table_rows", Label: "预览", Description: "预览该表前 20 行。", Target: target},
@@ -4536,8 +4597,7 @@ func enrichTableColumnsWorkspace(ctx context.Context, workspace service.ToolWork
 		workspace.Resources = []service.ToolWorkspaceResource{databaseConnectionResource("Partial", err.Error())}
 		return workspace
 	}
-	resources := make([]service.ToolWorkspaceResource, 0, len(columns)+1)
-	resources = append(resources, service.ToolWorkspaceResource{Name: tableName, Type: "Table", Status: "Ready", Description: "Selected table"})
+	resources := databaseTableContextResources(databaseName, tableName, "Selected table")
 	for _, column := range columns {
 		description := column.DataType
 		if column.Nullable != "" {
@@ -4568,8 +4628,7 @@ func enrichTablePreviewWorkspace(ctx context.Context, workspace service.ToolWork
 		workspace.Resources = []service.ToolWorkspaceResource{databaseConnectionResource("Partial", err.Error())}
 		return workspace
 	}
-	resources := make([]service.ToolWorkspaceResource, 0, len(rows)+1)
-	resources = append(resources, service.ToolWorkspaceResource{Name: tableName, Type: "Table", Status: "Ready", Description: "Preview first 20 rows"})
+	resources := databaseTableContextResources(databaseName, tableName, "Preview first 20 rows")
 	for i, row := range rows {
 		resources = append(resources, service.ToolWorkspaceResource{
 			Name:        fmt.Sprintf("row-%d", i+1),
@@ -4580,6 +4639,32 @@ func enrichTablePreviewWorkspace(ctx context.Context, workspace service.ToolWork
 	}
 	workspace.Resources = resources
 	return workspace
+}
+
+func databaseTableContextResources(databaseName, tableName, tableDescription string) []service.ToolWorkspaceResource {
+	target := databaseTableTarget(databaseName, tableName)
+	return []service.ToolWorkspaceResource{
+		{
+			Name:        databaseName,
+			Type:        "Database",
+			Status:      "Ready",
+			Description: "Selected database",
+			Actions: []service.ToolWorkspaceAction{
+				{Key: "list_database_tables", Label: "表", Description: "查看该数据库的表。", Target: databaseName},
+			},
+		},
+		{
+			Name:        tableName,
+			Type:        "Table",
+			Status:      "Ready",
+			Description: tableDescription,
+			Annotations: map[string]interface{}{"database": databaseName},
+			Actions: []service.ToolWorkspaceAction{
+				{Key: "list_table_columns", Label: "字段", Description: "查看该表字段。", Target: target},
+				{Key: "preview_table_rows", Label: "预览", Description: "预览该表前 20 行。", Target: target},
+			},
+		},
+	}
 }
 
 func databaseTableTarget(databaseName, tableName string) string {
@@ -6031,14 +6116,43 @@ func registryResourceTagActions(serviceType, target string) []service.ToolWorksp
 }
 
 func enrichJenkinsWorkspace(ctx context.Context, workspace service.ToolWorkspace, inst model.ServiceInstallation) service.ToolWorkspace {
-	jenkins := k8s.NewJenkinsClient(inst.Namespace)
+	jenkins := newJenkinsWorkspaceClient(inst.Namespace)
 	jobs, err := jenkins.Jobs(ctx)
-	if err != nil || len(jobs) == 0 {
+	if err != nil {
+		workspace.Resources = []service.ToolWorkspaceResource{{
+			Name:        "jenkins-connection",
+			Type:        "Connection",
+			Status:      "Partial",
+			Description: err.Error(),
+		}}
 		return workspace
+	}
+	if len(jobs) == 0 {
+		workspace.Resources = []service.ToolWorkspaceResource{{
+			Name:        "jenkins-jobs",
+			Type:        "流水线目录",
+			Status:      "Empty",
+			Description: "Jenkins 当前没有返回任何流水线任务。",
+			ExternalURL: serviceProxyURL(inst, "/"),
+		}}
+		return workspace
+	}
+	componentContext := map[string]service.ToolWorkspaceResource{}
+	for _, resource := range workspace.Resources {
+		if resource.Type == "Job" {
+			componentContext[resource.Name] = resource
+		}
 	}
 	resources := make([]service.ToolWorkspaceResource, 0, len(jobs))
 	for _, job := range jobs {
 		annotations := map[string]interface{}{"color": job.Color, "url": job.URL}
+		if existing, ok := componentContext[job.Name]; ok {
+			for key, value := range existing.Annotations {
+				annotations[key] = value
+			}
+		}
+		annotations["color"] = job.Color
+		annotations["url"] = job.URL
 		if job.LastBuild != nil {
 			annotations["lastBuildNumber"] = job.LastBuild.Number
 			annotations["lastBuildURL"] = job.LastBuild.URL

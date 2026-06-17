@@ -125,7 +125,7 @@ metadata:
 data:
   PORT: "9090"
   DATABASE_URL: "postgres://paap:paap@paap-postgres.paap-system.svc.cluster.local:5432/paap?sslmode=disable"
-  PAAP_REGISTRY_HOST_TEMPLATE: "registry.{app}-{env}.paap.local:5000"
+  PAAP_REGISTRY_HOST_TEMPLATE: "registry.{app}-{env}.paap.local"
   PAAP_CONSOLE_DEBUG_IMAGE: "busybox:1.36"
 ---
 apiVersion: v1

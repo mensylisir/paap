@@ -3,6 +3,23 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
+const cssRule = (source: string, selector: string) => {
+  const selectorIndex = source.indexOf(`${selector} {`)
+  expect(selectorIndex).toBeGreaterThan(-1)
+  const start = source.indexOf('{', selectorIndex)
+  let depth = 0
+  for (let i = start; i < source.length; i += 1) {
+    if (source[i] === '{') depth += 1
+    if (source[i] === '}') {
+      depth -= 1
+      if (depth === 0) {
+        return source.slice(start + 1, i)
+      }
+    }
+  }
+  return ''
+}
+
 describe('Vue view markup', () => {
   it('does not contain nested style tags inside a style block', () => {
     const viewSources = import.meta.glob('./*.vue', { query: '?raw', import: 'default', eager: true }) as Record<string, string>
@@ -81,16 +98,25 @@ describe('Vue view markup', () => {
     expect(templatesView.default).toContain('配置模板')
     expect(templatesView.default).toContain('api.listComponentConfigTemplates')
     expect(templatesView.default).toContain('syncBuiltinComponentConfigTemplates')
-    expect(templatesView.default).toContain('configTemplateEnvSummary')
-    expect(templatesView.default).toContain('configTemplateSecretSummary')
-    expect(templatesView.default).toContain('configTemplateFieldSummary')
+    expect(templatesView.default).toContain('configTemplateComponentTypeSummary')
+    expect(templatesView.default).toContain('configTemplateEditableFieldCount')
     expect(templatesView.default).toContain('导入配置模板')
     expect(templatesView.default).toContain('查看模板')
     expect(templatesView.default).toContain('configTemplateRawJSON')
-    expect(templatesView.default).toContain('平台自动生成${kind}')
-    expect(templatesView.default).toContain('普通配置模板')
-    expect(templatesView.default).toContain('敏感配置项')
-    expect(templatesView.default).toContain("syntax: String(raw?.syntax || '使用 [[paap:<field>]] 占位符描述用户填写字段；底层配置对象由平台按组件自动生成。')")
+    expect(templatesView.default).toContain('configImportMode')
+    expect(templatesView.default).toContain('config-template-component-type-select')
+    expect(templatesView.default).not.toContain('placeholder="frontend, backend"')
+    expect(templatesView.default).toContain('从原生配置创建模板')
+    expect(templatesView.default).toContain('高级模板 JSON')
+    expect(templatesView.default).toContain('__TEMPLATE__KEY__显示名__')
+    expect(templatesView.default).toContain('高级 JSON / schema 模式')
+    expect(templatesView.default).toContain('原生配置预览')
+    expect(templatesView.default).toContain('schema.json')
+    expect(templatesView.default).toContain('configTemplateReadableNativeContent')
+    expect(templatesView.default).toContain('parseNativeConfigTemplate')
+    expect(templatesView.default).toContain('configTemplateNativePreviewBlocks')
+    expect(templatesView.default).toContain('config-template-plain-summary')
+    expect(templatesView.default).toContain("syntax: String(raw?.syntax || nativeConfigTemplateSyntax)")
     expect(envDetail.default).toContain('uniqueGeneratedConfigName')
     expect(envDetail.default).toContain('resolveTemplateObjectName')
   })
@@ -194,7 +220,7 @@ describe('Vue view markup', () => {
     expect(envDetail.default).toContain('buildEnvironmentCapabilityTabs')
     expect(envDetail.default).toContain('environmentFoundationItems')
     expect(envDetail.default).toContain('missingRequiredEnvironmentCapabilities')
-    expect(envDetail.default).toContain('environment-foundation-strip')
+    expect(envDetail.default).not.toContain('environment-foundation-strip')
     expect(envDetail.default).toContain('serviceCapability')
     expect(envDetail.default).toContain('environment-shell')
     expect(envDetail.default).not.toContain('env-side-nav')
@@ -512,6 +538,7 @@ describe('Vue view markup', () => {
     expect(pipelineWorkspace.default).toContain('max-height: 520px')
     expect(pipelineWorkspace.default).not.toContain('const buildLogLines = (job: WorkspaceResource) => [')
     expect(pipelineWorkspace.default).not.toContain('const buildNumber = (job: WorkspaceResource) => {')
+    expect(pipelineWorkspace.default).not.toContain(':pending')
   })
 
   it('shows environment components as components with a dependency map for dense environments', async () => {
@@ -531,6 +558,8 @@ describe('Vue view markup', () => {
     expect(envDetail.default).toContain('应用拓扑</h2>')
     expect(envDetail.default).toContain('component-dependency-map')
     expect(envDetail.default).toContain('componentTopologyAllNodes')
+    expect(envDetail.default).toContain('isApplicationTopologyService')
+    expect(envDetail.default).not.toContain('const appCanvasServices = computed(() => services.value)')
     expect(envDetail.default).toContain('environmentTopologyAllNodes')
     expect(envDetail.default).toContain('component-topology-canvas')
     expect(envDetail.default).toContain('component-canvas-links')
@@ -540,6 +569,9 @@ describe('Vue view markup', () => {
     expect(envDetail.default).toContain('componentCanvasViewBox')
     expect(envDetail.default).toContain('componentNodeStyle')
     expect(envDetail.default).toContain('componentEdgePath')
+    expect(envDetail.default).toContain('.component-topology-canvas--main')
+    expect(envDetail.default).toContain('min-height: 800px;')
+    expect(envDetail.default).toContain('max-height: none;')
     expect(envDetail.default).toContain('component-filter-bar')
     expect(envDetail.default).toContain('component-table-panel')
     expect(envDetail.default).toContain('component-detail-panel')
@@ -551,8 +583,8 @@ describe('Vue view markup', () => {
     expect(envDetail.default).toContain('selectedComponent')
     expect(envDetail.default).toContain('filteredComponents')
     expect(envDetail.default).toContain('componentCanvasEdges')
-    expect(envDetail.default).toContain('min-height: 720px')
     expect(envDetail.default).toContain('min-height: 800px')
+    expect(envDetail.default).toContain('max-height: none;')
     expect(envDetail.default).not.toContain('component-focus-grid')
     expect(envDetail.default).not.toContain('component-focus-card')
     expect(envDetail.default).not.toContain('环境组件</h2>')
@@ -646,6 +678,21 @@ describe('Vue view markup', () => {
     expect(envDetail.default).toContain('源码交付可留空')
     expect(envDetail.default).toContain("deliveryMode === 'image' && (!version || version.toLowerCase() === 'latest')")
     expect(envDetail.default).toContain("deliveryMode === 'source' && version && version.toLowerCase() === 'latest'")
+  })
+
+  it('lets the component drawer edit image or source delivery without hiding the delivery mode', async () => {
+    const envDetail = await import('./EnvDetailView.vue?raw')
+
+    expect(envDetail.default).toContain('configForm.deliveryMode')
+    expect(envDetail.default).toContain('v-model="configForm.deliveryMode"')
+    expect(envDetail.default).toContain('componentDrawerUsesSourceDelivery')
+    expect(envDetail.default).toContain('v-if="!componentDrawerUsesSourceDelivery"')
+    expect(envDetail.default).toContain('v-model.trim="configForm.sourceRepoUrl"')
+    expect(envDetail.default).toContain('v-model.trim="configForm.sourceBranch"')
+    expect(envDetail.default).toContain('v-model.trim="configForm.buildContext"')
+    expect(envDetail.default).toContain('Buildpacks/kpack')
+    expect(envDetail.default).toContain('deliveryMode: configForm.value.deliveryMode')
+    expect(envDetail.default).toContain('sourceRepoUrl: configForm.value.sourceRepoUrl')
   })
 
   it('creates components as drafts and exposes explicit canvas deploy actions', async () => {
@@ -816,6 +863,18 @@ describe('Vue view markup', () => {
     }
   })
 
+  it('lets database workspaces drill into tables and preview rows by clicking objects', async () => {
+    const databaseWorkspace = await import('../components/workspaces/DatabaseWorkspace.vue?raw')
+
+    expect(databaseWorkspace.default).toContain('inspectDatabase(db)')
+    expect(databaseWorkspace.default).toContain('inspectTable(t)')
+    expect(databaseWorkspace.default).toContain("emit('action', action, target)")
+    expect(databaseWorkspace.default).toContain("runResourceAction(db, 'list_database_tables', db.name)")
+    expect(databaseWorkspace.default).toContain("runResourceAction(table, 'preview_table_rows', table.name)")
+    expect(databaseWorkspace.default).toContain("activeTab.value = 'data'")
+    expect(databaseWorkspace.default).toContain("activeTab.value = 'columns'")
+  })
+
   it('embeds data middleware action forms inside the drawer workspace', async () => {
     const envDetail = await import('./EnvDetailView.vue?raw')
     const databaseWorkspace = await import('../components/workspaces/DatabaseWorkspace.vue?raw')
@@ -911,6 +970,7 @@ describe('Vue view markup', () => {
   it('keeps component drawers adaptive for unknown workloads', async () => {
     const envDetail = await import('./EnvDetailView.vue?raw')
     const componentProfile = await import('./componentProfile.ts?raw')
+    const templateFields = await import('../components/ComponentConfigTemplateFields.vue?raw')
 
     expect(envDetail.default).toContain('componentDrawerProfile')
     expect(envDetail.default).toContain('buildComponentProfile')
@@ -927,30 +987,45 @@ describe('Vue view markup', () => {
     expect(envDetail.default).toContain('selectedComponentConfigTemplateId')
     expect(envDetail.default).toContain('componentTemplateFieldValues')
     expect(envDetail.default).toContain('componentTemplateFieldOptions')
+    expect(envDetail.default).toContain('ComponentConfigTemplateFields')
+    expect(templateFields.default).toContain('componentTemplateListRows')
+    expect(templateFields.default).toContain('addComponentTemplateListRow')
+    expect(templateFields.default).toContain('removeComponentTemplateListRow')
     expect(envDetail.default).toContain('componentTemplateRequiredFieldsComplete')
     expect(envDetail.default).toContain('componentTemplateInlineHelp')
-    expect(envDetail.default).toContain('componentBindingGeneratedSummary')
     expect(envDetail.default).toContain('api.listComponentConfigTemplates')
     expect(envDetail.default).toContain('配置模板')
     expect(envDetail.default).toContain('component-template-select')
     expect(envDetail.default).toContain('component-template-picker')
     expect(envDetail.default).toContain('component-template-helper')
-    expect(envDetail.default).toContain('component-template-field-list')
-    expect(envDetail.default).toContain('component-template-field-label')
+    expect(templateFields.default).toContain('component-template-field-list')
+    expect(templateFields.default).toContain('component-template-field-label')
+    expect(templateFields.default).toContain('component-template-list-actions')
+    expect(templateFields.default).toContain('aria-label="添加一组"')
+    expect(templateFields.default).toContain('componentTemplateFieldDatalistId')
+    expect(templateFields.default).toContain('updateComponentTemplateFieldFromDisplay')
+    expect(templateFields.default).toContain('fieldUsesTargetSelect(itemField)')
+    expect(templateFields.default).toContain('updateComponentTemplateListCellFromDisplay')
     expect(envDetail.default).toContain('保存配置时会按当前字段生成运行配置并建立服务连接')
-    expect(envDetail.default).toContain('查看生成内容')
-    expect(envDetail.default).toContain('服务连接')
+    expect(envDetail.default).not.toContain('查看生成内容')
+    expect(envDetail.default).not.toContain('添加自定义配置')
+    expect(envDetail.default).toContain('component-template-advanced-config')
     expect(envDetail.default).toContain('prepareSelectedComponentConfigTemplateForSave')
     expect(envDetail.default).toContain('applySelectedComponentConfigTemplate')
     expect(envDetail.default).toContain('applyUserComponentConfigTemplate')
     expect(envDetail.default).toContain('renderComponentTemplateValue')
+    expect(envDetail.default).toContain('renderPaapTemplateValue')
     expect(envDetail.default).toContain('buildComponentTemplateFieldRenderValues')
     expect(envDetail.default).toContain('applyComponentTemplateServiceRefs')
     expect(envDetail.default).toContain('buildNginxApiProxyConfigFromRoutes')
     expect(envDetail.default).toContain('nginxRouteRows')
     expect(envDetail.default).toContain('applyNginxRoutes')
-    expect(envDetail.default).toContain('前端代理路由')
-    expect(envDetail.default).toContain('添加前端代理路由')
+    expect(envDetail.default).toContain('代理路由')
+    expect(envDetail.default).toContain('aria-label="添加代理路由"')
+    expect(envDetail.default).toContain('aria-label="删除代理路由"')
+    expect(envDetail.default).not.toContain('placeholder="/api/"')
+    expect(envDetail.default).not.toContain("|| '/api/'")
+    expect(envDetail.default).not.toContain("path: index === 0 ? '/api/'")
     expect(envDetail.default).toContain('/etc/nginx/conf.d/default.conf')
     expect(envDetail.default).toContain('proxy_pass ${target};')
     expect(envDetail.default).not.toContain('Backend/API Binding')
@@ -977,7 +1052,6 @@ describe('Vue view markup', () => {
     expect(componentProfile.default).toContain('api-service')
     expect(componentProfile.default).toContain('componentConfigPresets')
     expect(componentProfile.default).toContain('discoveredConfigKeys')
-    expect(componentProfile.default).toContain('BACKEND_URL')
     expect(componentProfile.default).toContain('nginx-api-proxy')
     expect(componentProfile.default).toContain('default.conf')
     expect(componentProfile.default).toContain('SPRING_PROFILES_ACTIVE')
@@ -987,11 +1061,12 @@ describe('Vue view markup', () => {
 
   it('keeps right drawer configuration compact for templates and storage', async () => {
     const envDetail = await import('./EnvDetailView.vue?raw')
+    const templateFields = await import('../components/ComponentConfigTemplateFields.vue?raw')
 
     expect(envDetail.default).toContain('<select v-model="selectedComponentConfigTemplateId"')
     expect(envDetail.default).toContain('选择模板后，下方只显示这个模板需要填写的业务配置。')
     expect(envDetail.default).toContain('componentTemplateInlineHelp')
-    expect(envDetail.default).toContain('component-template-field-list')
+    expect(templateFields.default).toContain('component-template-field-list')
     expect(envDetail.default).toContain('serviceVolumeSizePresets')
     expect(envDetail.default).toContain('service-volume-presets')
     expect(envDetail.default).toContain('setServiceVolumeSize')
@@ -1087,5 +1162,101 @@ describe('Vue view markup', () => {
     expect(envDetail.default).not.toContain('value="cluster">分片集群</option>')
     expect(envDetail.default).not.toContain('暂无可访问地址')
     expect(envDetail.default).not.toContain('<span>工作负载</span>')
+  })
+
+  it('keeps tool and middleware drawer edits in deploy while marking runtime and access tabs as read-only', async () => {
+    const envDetail = await import('./EnvDetailView.vue?raw')
+
+    expect(envDetail.default).toContain('service-config-form-grid')
+    expect(envDetail.default).toContain('service-config-field')
+    expect(envDetail.default).toContain('部署参数可编辑')
+    expect(envDetail.default).toContain('接入变量只读')
+    expect(envDetail.default).toContain('运行态只读')
+    expect(envDetail.default).toContain('保存后写入服务部署参数')
+    expect(envDetail.default).toContain('服务接入变量由模板、Secret 和运行态发现生成')
+    expect(envDetail.default).not.toContain('showServiceNewVariableHint')
+    expect(envDetail.default).not.toContain('新增参数')
+  })
+
+  it('keeps service and component password fields masked with explicit reveal controls', async () => {
+    const envDetail = await import('./EnvDetailView.vue?raw')
+    const templateFields = await import('../components/ComponentConfigTemplateFields.vue?raw')
+
+    expect(templateFields.default).toContain('password-visible-toggle')
+    expect(templateFields.default).toContain('componentTemplatePasswordVisible')
+    expect(templateFields.default).toContain('显示密码')
+    expect(templateFields.default).toContain('隐藏密码')
+    expect(envDetail.default).toContain('toggleServiceDrawerSecret')
+    expect(envDetail.default).toContain('serviceDrawerSecretDisplayValue')
+    expect(envDetail.default).toContain('service-secret-reveal-btn')
+    expect(envDetail.default).toContain('componentTemplateServicePasswordFieldKeys')
+    expect(envDetail.default).toContain('autofillComponentTemplateServicePasswords')
+  })
+
+  it('keeps canvas menus drawers and modal dialogs mutually exclusive', async () => {
+    const envDetail = await import('./EnvDetailView.vue?raw')
+
+    expect(envDetail.default).toContain('closeCanvasMenus')
+    expect(envDetail.default).toContain('closeCanvasDialogs')
+    expect(envDetail.default).toContain('enterDrawerContext')
+    expect(envDetail.default).toContain('enterCanvasContextMenu')
+    expect(envDetail.default).toContain('enterModalContext')
+    expect(envDetail.default).toContain('@pointerdown.stop="enterDrawerContext"')
+    expect(envDetail.default).toContain('enterCanvasContextMenu(event,')
+    expect(envDetail.default).toContain('enterModalContext()')
+    expect(envDetail.default).toContain('openDeleteDialog')
+    expect(envDetail.default).toContain('openServiceInstallModal')
+    expect(envDetail.default).toContain('closeComponentDraftModal')
+    expect(envDetail.default).toContain('openAdoptResourceModal')
+    expect(envDetail.default).not.toContain('@click="showServiceModal=false"')
+    expect(envDetail.default).not.toContain('@click="showComponentModal=false"')
+  })
+
+  it('keeps right drawers and config template previews aligned with Carbon styling', async () => {
+    const envDetail = await import('./EnvDetailView.vue?raw')
+    const templatesView = await import('./TemplatesView.vue?raw')
+    const templateFields = await import('../components/ComponentConfigTemplateFields.vue?raw')
+
+    expect(cssRule(envDetail.default, '.config-drawer')).toContain('box-shadow: none')
+    expect(cssRule(envDetail.default, '.config-drawer')).toContain('var(--cds-border-subtle-01')
+    expect(cssRule(envDetail.default, '.config-drawer-avatar')).toContain('var(--cds-border-radius-md')
+    expect(cssRule(envDetail.default, '.config-deployment-card')).toContain('border-radius: 0')
+    expect(cssRule(envDetail.default, '.service-config-field')).toContain('border-radius: 0')
+    expect(cssRule(envDetail.default, '.service-config-field')).toContain('border: 0')
+    expect(cssRule(envDetail.default, '.service-config-field')).toContain('var(--cds-layer-01')
+    expect(cssRule(envDetail.default, '.service-config-field:focus-within')).not.toContain('background: var(--cds-layer-accent-01')
+    expect(cssRule(envDetail.default, '.service-config-field:focus-within')).not.toContain('box-shadow')
+    expect(cssRule(envDetail.default, '.component-template-picker')).toContain('border-radius: 0')
+    expect(cssRule(envDetail.default, '.component-template-picker')).toContain('border: 0')
+    expect(cssRule(envDetail.default, '.component-template-picker')).toContain('var(--cds-layer-01')
+    expect(cssRule(envDetail.default, '.component-template-advanced-config')).toContain('border-radius: 0')
+    expect(cssRule(envDetail.default, '.component-template-advanced-config')).toContain('var(--cds-layer-01')
+
+    expect(cssRule(templateFields.default, '.component-template-field-list')).toContain('var(--cds-layer-01')
+    expect(cssRule(templateFields.default, '.component-template-field-list')).toContain('border-radius: 0')
+    expect(cssRule(templateFields.default, '.component-template-field-list')).toContain('border: 0')
+    expect(cssRule(templateFields.default, '.component-template-list-row')).toContain('var(--cds-layer-01')
+    expect(cssRule(templateFields.default, '.component-template-list-row')).toContain('border: 0')
+    expect(cssRule(templateFields.default, '.component-template-control .bx--text-input')).toContain('var(--cds-border-strong-01')
+    expect(cssRule(templateFields.default, '.component-template-control .bx--text-input:focus')).toContain('var(--cds-border-interactive')
+    expect(cssRule(templateFields.default, '.component-template-field em')).toContain('var(--cds-red-60')
+    expect(cssRule(templateFields.default, '.component-template-list-actions button')).toContain('border-radius: 0')
+    expect(templateFields.default).not.toContain('border-radius: 8px')
+    expect(templateFields.default).not.toContain('border-radius: 999px')
+
+    expect(cssRule(templatesView.default, '.modal-container')).toContain('border-radius: 0')
+    expect(cssRule(templatesView.default, '.modal-container')).toContain('box-shadow: none')
+    expect(cssRule(templatesView.default, '.template-preview-tabs')).toContain('var(--cds-layer-01')
+    expect(cssRule(templatesView.default, '.template-preview-tabs button.active')).toContain('var(--cds-blue-60')
+    expect(cssRule(templatesView.default, '.rail-input')).toContain('var(--cds-field-01')
+    expect(cssRule(templatesView.default, '.rail-input:focus')).toContain('inset 0 0 0 1px')
+    expect(cssRule(templatesView.default, '.preview-block')).toContain('border-radius: 0')
+    expect(cssRule(templatesView.default, '.preview-block-title')).toContain('var(--cds-layer-01')
+    expect(cssRule(templatesView.default, '.preview-block pre')).toContain('var(--cds-field-01')
+    expect(cssRule(templatesView.default, '.preview-block code')).toContain('var(--cds-font-family-mono')
+    expect(templatesView.default).not.toContain('#3b82f6')
+    expect(templatesView.default).not.toContain('#0f172a')
+    expect(templatesView.default).not.toContain('%23687076')
+    expect(templatesView.default).not.toContain('0 20px 40px')
   })
 })

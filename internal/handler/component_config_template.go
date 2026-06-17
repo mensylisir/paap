@@ -25,6 +25,7 @@ type componentConfigTemplateRequest struct {
 	BindingMode    string                   `json:"bindingMode"`
 	ComponentTypes []string                 `json:"componentTypes"`
 	Syntax         string                   `json:"syntax"`
+	NativeConfigs  []map[string]interface{} `json:"nativeConfigs"`
 	Fields         []map[string]interface{} `json:"fields"`
 	Env            []map[string]interface{} `json:"env"`
 	ConfigMaps     []map[string]interface{} `json:"configMaps"`
@@ -44,6 +45,7 @@ type componentConfigTemplateResponse struct {
 	BindingMode    string                   `json:"bindingMode"`
 	ComponentTypes []string                 `json:"componentTypes"`
 	Syntax         string                   `json:"syntax"`
+	NativeConfigs  []map[string]interface{} `json:"nativeConfigs"`
 	Fields         []map[string]interface{} `json:"fields"`
 	Env            []map[string]interface{} `json:"env"`
 	ConfigMaps     []map[string]interface{} `json:"configMaps"`
@@ -216,6 +218,7 @@ func componentConfigTemplateFromRequest(req componentConfigTemplateRequest, buil
 		BindingMode:    firstNonEmpty(strings.TrimSpace(req.BindingMode), "recommended"),
 		ComponentTypes: mustJSON(req.ComponentTypes),
 		Syntax:         syntax,
+		NativeJSON:     mustJSON(req.NativeConfigs),
 		FieldsJSON:     mustJSON(req.Fields),
 		EnvJSON:        mustJSON(req.Env),
 		ConfigJSON:     mustJSON(req.ConfigMaps),
@@ -238,6 +241,7 @@ func componentConfigTemplateUpdateMap(tmpl model.ComponentConfigTemplate) map[st
 		"binding_mode":    tmpl.BindingMode,
 		"component_types": tmpl.ComponentTypes,
 		"syntax":          tmpl.Syntax,
+		"native_json":     tmpl.NativeJSON,
 		"fields_json":     tmpl.FieldsJSON,
 		"env_json":        tmpl.EnvJSON,
 		"config_json":     tmpl.ConfigJSON,
@@ -259,6 +263,7 @@ func componentConfigTemplateToResponse(tmpl model.ComponentConfigTemplate) compo
 		BindingMode:    firstNonEmpty(tmpl.BindingMode, "recommended"),
 		ComponentTypes: decodeStringArray(tmpl.ComponentTypes),
 		Syntax:         firstNonEmpty(tmpl.Syntax, componentConfigTemplateSyntax),
+		NativeConfigs:  decodeObjectArray(tmpl.NativeJSON),
 		Fields:         decodeObjectArray(tmpl.FieldsJSON),
 		Env:            decodeObjectArray(tmpl.EnvJSON),
 		ConfigMaps:     decodeObjectArray(tmpl.ConfigJSON),
@@ -324,7 +329,7 @@ func decodeStringArray(raw string) []string {
 }
 
 func builtinComponentConfigTemplates() []model.ComponentConfigTemplate {
-	template := func(key, name, description, framework string, componentTypes []string, sortOrder int, fields, env, configMaps, secrets, files []map[string]interface{}, command, args []string) model.ComponentConfigTemplate {
+	template := func(key, name, description, framework string, componentTypes []string, sortOrder int, nativeConfigs, fields, env, configMaps, secrets, files []map[string]interface{}, command, args []string) model.ComponentConfigTemplate {
 		return model.ComponentConfigTemplate{
 			Key:            key,
 			Name:           name,
@@ -332,7 +337,8 @@ func builtinComponentConfigTemplates() []model.ComponentConfigTemplate {
 			Framework:      framework,
 			BindingMode:    "recommended",
 			ComponentTypes: mustJSON(componentTypes),
-			Syntax:         componentConfigTemplateSyntax,
+			Syntax:         nativeComponentConfigTemplateSyntax,
+			NativeJSON:     mustJSON(nativeConfigs),
 			FieldsJSON:     mustJSON(fields),
 			EnvJSON:        mustJSON(env),
 			ConfigJSON:     mustJSON(configMaps),
@@ -344,6 +350,14 @@ func builtinComponentConfigTemplates() []model.ComponentConfigTemplate {
 			SortOrder:      sortOrder,
 			Enabled:        true,
 		}
+	}
+	nativeTemplate := func(key, name, description, framework string, componentTypes []string, sortOrder int, fileName, source string, extraFields, extraEnv, secrets []map[string]interface{}) model.ComponentConfigTemplate {
+		parsed := parseNativeComponentConfigTemplate(source, nativeComponentConfigTemplateOptions{Framework: framework, FileName: fileName})
+		fields := append([]map[string]interface{}{}, parsed.fields...)
+		fields = append(fields, extraFields...)
+		envItems := append([]map[string]interface{}{}, parsed.env...)
+		envItems = append(envItems, extraEnv...)
+		return template(key, name, description, framework, componentTypes, sortOrder, parsed.nativeConfigs, fields, envItems, parsed.configMaps, secrets, parsed.files, nil, nil)
 	}
 	field := func(key, label, typ, target, output, def string, required bool) map[string]interface{} {
 		item := map[string]interface{}{"key": key, "label": label, "type": typ}
@@ -377,98 +391,79 @@ func builtinComponentConfigTemplates() []model.ComponentConfigTemplate {
 	configMap := func(name string, data map[string]string) map[string]interface{} {
 		return map[string]interface{}{"name": name, "data": data}
 	}
-	file := func(name, configMapName, key, mountPath string) map[string]interface{} {
-		return map[string]interface{}{"name": name, "configMapName": configMapName, "key": key, "mountPath": mountPath, "readOnly": true}
-	}
-
 	return []model.ComponentConfigTemplate{
-		template(
+		nativeTemplate(
 			"nginx-spa-api-proxy",
-			"Nginx 静态前端 + API 代理",
-			"为 Vue/React/Vite 静态前端生成 nginx default.conf，并把 /api 代理到后端组件。",
+			"Nginx 静态前端 + 代理路由",
+			"为 Vue/React/Vite 静态前端生成 nginx default.conf，代理路径和目标地址由用户按实际业务填写。",
 			"nginx",
 			[]string{"frontend"},
 			10,
-			[]map[string]interface{}{
-				field("backend.url", "后端地址", "serviceRef", "backend", "configMap", "http://backend", true),
-				field("listen.port", "监听端口", "number", "", "configMap", "80", false),
-			},
-			[]map[string]interface{}{
-				env("BACKEND_URL", "value", "[[paap:backend.url default=http://backend]]", "", ""),
-			},
-			[]map[string]interface{}{
-				configMap("{{configMapName}}", map[string]string{"default.conf": strings.Join([]string{
-					"server {",
-					"  listen [[paap:listen.port default=80]];",
-					"  server_name _;",
-					"  root /usr/share/nginx/html;",
-					"  index index.html;",
-					"",
-					"  location / {",
-					"    try_files $uri $uri/ /index.html;",
-					"  }",
-					"",
-					"  location /api/ {",
-					"    proxy_pass [[paap:backend.url default=http://backend]];",
-					"    proxy_http_version 1.1;",
-					"    proxy_set_header Host $host;",
-					"    proxy_set_header X-Real-IP $remote_addr;",
-					"    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;",
-					"    proxy_set_header X-Forwarded-Proto $scheme;",
-					"  }",
-					"}",
-					"",
-				}, "\n")}),
-			},
+			"default.conf",
+			strings.Join([]string{
+				"server {",
+				"  listen __TEMPLATE__LISTEN_PORT__监听端口__DEFAULT__80__;",
+				"  server_name _;",
+				"  root /usr/share/nginx/html;",
+				"  index index.html;",
+				"",
+				"  location / {",
+				"    try_files $uri $uri/ /index.html;",
+				"  }",
+				"",
+				"  __TEMPLATE__FOR__LOCATION_LIST__代理路由__",
+				"  location __TEMPLATE__ITEM_PATH__匹配路径__ {",
+				"    proxy_pass __TEMPLATE__ITEM_PROXY_PASS__转发地址__;",
+				"    proxy_http_version 1.1;",
+				"    proxy_set_header Host $host;",
+				"    proxy_set_header X-Real-IP $remote_addr;",
+				"    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;",
+				"    proxy_set_header X-Forwarded-Proto $scheme;",
+				"  }",
+				"  __TEMPLATE__END__LOCATION_LIST__",
+				"}",
+				"",
+			}, "\n"),
 			nil,
-			[]map[string]interface{}{file("nginx-default-conf", "{{configMapName}}", "default.conf", "/etc/nginx/conf.d/default.conf")},
 			nil,
 			nil,
 		),
-		template(
+		nativeTemplate(
 			"springboot-postgres-redis",
 			"Spring Boot + PostgreSQL + Redis",
 			"生成 Spring Boot 外部 application-paap.yml，并把数据库和 Redis 密码作为敏感配置注入。",
 			"springboot",
 			[]string{"backend"},
 			20,
+			"application-paap.yml",
+			strings.Join([]string{
+				"spring:",
+				"  datasource:",
+				"    url: __TEMPLATE__JDBC_URL__数据库地址__DEFAULT__jdbc:postgresql://postgresql:5432/postgres__",
+				"    username: __TEMPLATE__JDBC_USER__数据库用户__DEFAULT__postgres__",
+				"    password: ${SPRING_DATASOURCE_PASSWORD}",
+				"  data:",
+				"    redis:",
+				"      host: __TEMPLATE__REDIS_HOST__Redis地址__DEFAULT__redis-master__",
+				"      port: __TEMPLATE__REDIS_PORT__Redis端口__DEFAULT__6379__",
+				"      password: ${REDIS_PASSWORD}",
+				"",
+			}, "\n"),
 			[]map[string]interface{}{
-				field("database.jdbcUrl", "数据库 JDBC URL", "serviceRef", "postgresql|mysql", "configMap", "jdbc:postgresql://postgresql:5432/postgres", true),
-				field("database.username", "数据库用户名", "text", "", "configMap", "postgres", true),
-				field("database.password", "数据库密码", "password", "", "secret", "", true),
-				field("redis.host", "Redis 地址", "serviceRef", "redis", "configMap", "redis-master", false),
-				field("redis.password", "Redis 密码", "password", "", "secret", "", false),
+				field("DATABASE_PASSWORD", "数据库密码", "password", "", "secret", "", true),
+				field("REDIS_PASSWORD", "Redis 密码", "password", "", "secret", "", false),
 			},
 			[]map[string]interface{}{
 				env("SPRING_PROFILES_ACTIVE", "value", "prod", "", ""),
-				env("SPRING_CONFIG_ADDITIONAL_LOCATION", "value", "file:/etc/paap/", "", ""),
 				env("SPRING_DATASOURCE_PASSWORD", "secret", "", "{{secretName}}", "SPRING_DATASOURCE_PASSWORD"),
 				env("REDIS_PASSWORD", "secret", "", "{{secretName}}", "REDIS_PASSWORD"),
 			},
 			[]map[string]interface{}{
-				configMap("{{configMapName}}", map[string]string{"application-paap.yml": strings.Join([]string{
-					"spring:",
-					"  datasource:",
-					"    url: [[paap:database.jdbcUrl default=jdbc:postgresql://postgresql:5432/postgres]]",
-					"    username: [[paap:database.username default=postgres]]",
-					"    password: ${SPRING_DATASOURCE_PASSWORD}",
-					"  data:",
-					"    redis:",
-					"      host: [[paap:redis.host default=redis-master]]",
-					"      port: [[paap:redis.port default=6379]]",
-					"      password: ${REDIS_PASSWORD}",
-					"",
-				}, "\n")}),
-			},
-			[]map[string]interface{}{
 				configMap("{{secretName}}", map[string]string{
-					"SPRING_DATASOURCE_PASSWORD": "[[paap:database.password]]",
-					"REDIS_PASSWORD":             "[[paap:redis.password]]",
+					"SPRING_DATASOURCE_PASSWORD": "[[paap:DATABASE_PASSWORD]]",
+					"REDIS_PASSWORD":             "[[paap:REDIS_PASSWORD]]",
 				}),
 			},
-			[]map[string]interface{}{file("spring-application-paap", "{{configMapName}}", "application-paap.yml", "/etc/paap/application-paap.yml")},
-			nil,
-			nil,
 		),
 		template(
 			"node-express-api",
@@ -477,6 +472,13 @@ func builtinComponentConfigTemplates() []model.ComponentConfigTemplate {
 			"node",
 			[]string{"backend"},
 			30,
+			[]map[string]interface{}{{"name": ".env", "content": strings.Join([]string{
+				"NODE_ENV=production",
+				"PORT=3000",
+				"DATABASE_URL=__TEMPLATE__DATABASE_URL__数据库连接串__",
+				"REDIS_URL=__TEMPLATE__REDIS_URL__Redis连接串__",
+				"JWT_SECRET=__TEMPLATE__JWT_SECRET__JWT密钥__",
+			}, "\n")}},
 			[]map[string]interface{}{
 				field("database.url", "DATABASE_URL", "serviceRef", "postgresql|mysql|mongodb", "secret", "", false),
 				field("redis.url", "REDIS_URL", "serviceRef", "redis", "secret", "", false),
@@ -508,6 +510,13 @@ func builtinComponentConfigTemplates() []model.ComponentConfigTemplate {
 			"go",
 			[]string{"backend"},
 			40,
+			[]map[string]interface{}{{"name": ".env", "content": strings.Join([]string{
+				"APP_ENV=production",
+				"PORT=8080",
+				"DATABASE_URL=__TEMPLATE__DATABASE_URL__数据库连接串__",
+				"REDIS_ADDR=__TEMPLATE__REDIS_ADDR__Redis地址__DEFAULT__redis-master:6379__",
+				"JWT_SECRET=__TEMPLATE__JWT_SECRET__JWT密钥__",
+			}, "\n")}},
 			[]map[string]interface{}{
 				field("database.url", "数据库连接串", "serviceRef", "postgresql|mysql", "secret", "", false),
 				field("redis.addr", "Redis 地址", "serviceRef", "redis", "configMap", "redis-master:6379", false),
@@ -538,6 +547,13 @@ func builtinComponentConfigTemplates() []model.ComponentConfigTemplate {
 			"python",
 			[]string{"backend"},
 			50,
+			[]map[string]interface{}{{"name": ".env", "content": strings.Join([]string{
+				"APP_ENV=production",
+				"PORT=8000",
+				"DATABASE_URL=__TEMPLATE__DATABASE_URL__数据库连接串__",
+				"REDIS_URL=__TEMPLATE__REDIS_URL__Redis连接串__",
+				"SECRET_KEY=__TEMPLATE__APP_SECRET__应用密钥__",
+			}, "\n")}},
 			[]map[string]interface{}{
 				field("database.url", "DATABASE_URL", "serviceRef", "postgresql|mysql", "secret", "", false),
 				field("redis.url", "REDIS_URL", "serviceRef", "redis", "secret", "", false),
@@ -571,6 +587,12 @@ func builtinComponentConfigTemplates() []model.ComponentConfigTemplate {
 			"node",
 			[]string{"frontend"},
 			60,
+			[]map[string]interface{}{{"name": ".env", "content": strings.Join([]string{
+				"BACKEND_URL=__TEMPLATE__BACKEND_URL__后端地址__DEFAULT__http://backend__",
+				"API_BASE_URL=__TEMPLATE__BACKEND_URL__后端地址__DEFAULT__http://backend__",
+				"VITE_API_BASE_URL=__TEMPLATE__BACKEND_URL__后端地址__DEFAULT__http://backend__",
+				"NEXT_PUBLIC_API_URL=__TEMPLATE__BACKEND_URL__后端地址__DEFAULT__http://backend__",
+			}, "\n")}},
 			[]map[string]interface{}{
 				field("backend.url", "后端地址", "serviceRef", "backend", "configMap", "http://backend", true),
 			},

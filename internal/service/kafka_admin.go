@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/segmentio/kafka-go"
+	"github.com/segmentio/kafka-go/sasl"
+	"github.com/segmentio/kafka-go/sasl/plain"
 
 	"paap/internal/k8s"
 )
@@ -30,7 +32,7 @@ type KafkaMessage struct {
 }
 
 func ListKafkaTopics(ctx context.Context, info k8s.KafkaConnectionInfo) ([]KafkaTopic, error) {
-	conn, err := kafka.DialContext(ctx, "tcp", info.Broker)
+	conn, err := kafkaDialer(info).DialContext(ctx, "tcp", info.Broker)
 	if err != nil {
 		return nil, err
 	}
@@ -89,6 +91,7 @@ func ReadKafkaMessages(ctx context.Context, info k8s.KafkaConnectionInfo, topic 
 			Brokers:   []string{info.Broker},
 			Topic:     topic,
 			Partition: partitionID,
+			Dialer:    kafkaDialer(info),
 			MinBytes:  1,
 			MaxBytes:  10e6,
 			MaxWait:   500 * time.Millisecond,
@@ -146,6 +149,7 @@ func ProduceKafkaMessage(ctx context.Context, info k8s.KafkaConnectionInfo, topi
 		Balancer:     &kafka.LeastBytes{},
 		WriteTimeout: 10 * time.Second,
 		ReadTimeout:  10 * time.Second,
+		Transport:    kafkaTransport(info),
 	}
 	defer writer.Close()
 	message := kafka.Message{
@@ -167,8 +171,9 @@ func CreateKafkaTopic(ctx context.Context, info k8s.KafkaConnectionInfo, topic s
 		partitions = 1
 	}
 	client := &kafka.Client{
-		Addr:    kafka.TCP(info.Broker),
-		Timeout: 10 * time.Second,
+		Addr:      kafka.TCP(info.Broker),
+		Timeout:   10 * time.Second,
+		Transport: kafkaTransport(info),
 	}
 	_, err := client.CreateTopics(ctx, &kafka.CreateTopicsRequest{
 		Topics: []kafka.TopicConfig{{
@@ -185,15 +190,16 @@ func DeleteKafkaTopic(ctx context.Context, info k8s.KafkaConnectionInfo, topic s
 		return fmt.Errorf("topic is required")
 	}
 	client := &kafka.Client{
-		Addr:    kafka.TCP(info.Broker),
-		Timeout: 10 * time.Second,
+		Addr:      kafka.TCP(info.Broker),
+		Timeout:   10 * time.Second,
+		Transport: kafkaTransport(info),
 	}
 	_, err := client.DeleteTopics(ctx, &kafka.DeleteTopicsRequest{Topics: []string{topic}})
 	return err
 }
 
 func kafkaTopicPartitions(ctx context.Context, info k8s.KafkaConnectionInfo, topic string) ([]int, error) {
-	conn, err := kafka.DialContext(ctx, "tcp", info.Broker)
+	conn, err := kafkaDialer(info).DialContext(ctx, "tcp", info.Broker)
 	if err != nil {
 		return nil, err
 	}
@@ -216,6 +222,35 @@ func kafkaTopicPartitions(ctx context.Context, info k8s.KafkaConnectionInfo, top
 	}
 	sort.Ints(ids)
 	return ids, nil
+}
+
+func kafkaDialer(info k8s.KafkaConnectionInfo) *kafka.Dialer {
+	return &kafka.Dialer{
+		Timeout:       10 * time.Second,
+		SASLMechanism: kafkaSASLMechanism(info),
+	}
+}
+
+func kafkaTransport(info k8s.KafkaConnectionInfo) *kafka.Transport {
+	mechanism := kafkaSASLMechanism(info)
+	if mechanism == nil {
+		return nil
+	}
+	return &kafka.Transport{
+		DialTimeout: 10 * time.Second,
+		SASL:        mechanism,
+	}
+}
+
+func kafkaSASLMechanism(info k8s.KafkaConnectionInfo) sasl.Mechanism {
+	if strings.TrimSpace(info.Username) == "" || strings.TrimSpace(info.Password) == "" {
+		return nil
+	}
+	mechanism := strings.TrimSpace(strings.ToUpper(info.SASLMechanism))
+	if mechanism == "" || mechanism == "PLAIN" {
+		return plain.Mechanism{Username: info.Username, Password: info.Password}
+	}
+	return nil
 }
 
 func parseKafkaOffset(value string) (int64, bool, error) {

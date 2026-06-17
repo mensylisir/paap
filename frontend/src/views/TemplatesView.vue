@@ -116,39 +116,10 @@
               <span class="policy">{{ configTemplateBindingLabel(tmpl.bindingMode) }}</span>
             </div>
             <p class="template-desc">{{ configTemplateDisplayText(tmpl.description) || '无描述' }}</p>
-            <div class="config-template-details">
-              <div>
-                <span>用户填写</span>
-                <code>{{ configTemplateFieldSummary(tmpl.fields) }}</code>
-              </div>
-              <div>
-                <span>环境变量</span>
-                <code>{{ configTemplateEnvSummary(tmpl) }}</code>
-              </div>
-              <div>
-                <span>普通配置模板</span>
-                <code>{{ configTemplateObjectSummary(tmpl.configMaps) }}</code>
-              </div>
-              <div>
-                <span>敏感配置项</span>
-                <code>{{ configTemplateSecretSummary(tmpl.secrets) }}</code>
-              </div>
-              <div>
-                <span>配置文件</span>
-                <code>{{ configTemplateFileSummary(tmpl.files) }}</code>
-              </div>
-              <div v-if="(tmpl.command || []).length">
-                <span>启动命令</span>
-                <code>{{ tmpl.command.join(' ') }}</code>
-              </div>
-              <div v-if="(tmpl.args || []).length">
-                <span>启动参数</span>
-                <code>{{ tmpl.args.join(' ') }}</code>
-              </div>
-              <div>
-                <span>占位规则</span>
-                <code>{{ configTemplateSyntaxSummary(tmpl.syntax) }}</code>
-              </div>
+            <div class="config-template-plain-summary">
+              <span>{{ configTemplateComponentTypeSummary(tmpl.componentTypes) }}</span>
+              <span>{{ configTemplateNativeBlockCount(tmpl) }}</span>
+              <span>{{ configTemplateEditableFieldCount(tmpl.fields) }}</span>
             </div>
             <div class="template-row-actions">
               <button type="button" class="rail-btn rail-btn--ghost rail-btn--sm" @click="openConfigTemplateDetail(tmpl)">
@@ -220,7 +191,7 @@
           <div class="modal-header">
             <div>
               <p class="modal-label">导入配置模板</p>
-              <p class="modal-heading">上传或粘贴组件运行配置模板 JSON</p>
+              <p class="modal-heading">{{ configImportMode === 'native' ? '从原生配置创建模板' : '导入高级模板 JSON' }}</p>
             </div>
             <button class="modal-close" @click="showConfigTemplateImportModal = false">
               <svg width="20" height="20" viewBox="0 0 32 32" fill="currentColor"><path d="M24 9.4L22.6 8 16 14.6 9.4 8 8 9.4l6.6 6.6L8 22.6 9.4 24l6.6-6.6 6.6 6.6 1.4-1.4-6.6-6.6L24 9.4z"/></svg>
@@ -228,6 +199,13 @@
           </div>
           <div class="modal-body">
             <div class="config-import-grid">
+              <div class="form-item config-import-mode">
+                <label class="form-label">导入模式</label>
+                <div class="template-mode-switch" role="group" aria-label="导入模式">
+                  <button type="button" :class="{ active: configImportMode === 'native' }" @click="configImportMode = 'native'">普通配置</button>
+                  <button type="button" :class="{ active: configImportMode === 'advanced' }" @click="configImportMode = 'advanced'">高级模板 JSON</button>
+                </div>
+              </div>
               <div class="form-item">
                 <label class="form-label">模板名称</label>
                 <input v-model.trim="configImportForm.name" class="rail-input" placeholder="例如：Spring Boot + PostgreSQL + Redis" />
@@ -250,7 +228,9 @@
               </div>
               <div class="form-item">
                 <label class="form-label">适用组件</label>
-                <input v-model.trim="configImportForm.componentTypes" class="rail-input" placeholder="backend, frontend" />
+                <select id="config-template-component-type-select" v-model="configImportForm.componentTypes" class="rail-select">
+                  <option v-for="option in configTemplateComponentTypeOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
+                </select>
               </div>
             </div>
             <div class="form-item">
@@ -258,16 +238,17 @@
               <textarea v-model.trim="configImportForm.description" class="rail-textarea" rows="2" placeholder="说明模板会生成哪些环境变量、配置文件和挂载"></textarea>
             </div>
             <div class="form-item">
-              <label class="form-label">模板 JSON 文件</label>
-              <input class="rail-input" type="file" accept=".json,application/json" @change="onConfigTemplateFileChange" />
-              <div class="form-helper">模板只需要描述用户可填写字段、环境变量、普通配置内容、敏感配置项、文件 key 和应用内路径；底层配置对象由平台自动生成。</div>
+              <label class="form-label">{{ configImportMode === 'native' ? '原生配置文件' : '高级模板 JSON 文件' }}</label>
+              <input class="rail-input" type="file" :accept="configImportMode === 'native' ? '.yml,.yaml,.json,.toml,.conf,.ini,.properties,.env,.txt,application/json,text/*' : '.json,application/json'" @change="onConfigTemplateFileChange" />
+              <div class="form-helper">{{ configImportMode === 'native' ? '普通模式直接使用 __TEMPLATE__KEY__显示名__ 标记变量；挂载路径作为推荐值，具体组件可在右侧栏调整。' : '高级模式可上传完整 PAAP template.json，或包含 template/schema 的 JSON。' }}</div>
             </div>
             <div class="form-item">
               <div class="form-label-row">
-                <label class="form-label">模板 JSON</label>
-                <button type="button" class="text-btn" @click="fillConfigTemplateSample">填入示例</button>
+                <label class="form-label">{{ configImportMode === 'native' ? '原生配置内容' : '高级模板 JSON' }}</label>
+                <button type="button" class="text-btn" @click="fillConfigTemplateSample">{{ configImportMode === 'native' ? '填入示例' : '填入高级示例' }}</button>
               </div>
-              <textarea v-model.trim="configTemplateImportText" class="rail-textarea code-textarea" rows="14" spellcheck="false" placeholder='{"fields":[],"env":[],"files":[]}'></textarea>
+              <textarea v-model.trim="configTemplateImportText" class="rail-textarea code-textarea" rows="14" spellcheck="false" :placeholder="configTemplateImportPlaceholder"></textarea>
+              <div class="form-helper">{{ configImportMode === 'native' ? '普通用户只需要在原生配置中写 __TEMPLATE__KEY__显示名__；FOR/IF 会自动解析成字段。' : '高级 JSON / schema 模式适合平台工程师，可直接定义字段、环境变量、普通配置、敏感配置和文件。' }}</div>
             </div>
             <div v-if="configUploadError" class="form-error" role="alert">{{ configUploadError }}</div>
           </div>
@@ -300,87 +281,55 @@
               <span>{{ configTemplateBindingLabel(selectedConfigTemplate.bindingMode) }}</span>
               <span>{{ selectedConfigTemplate.isBuiltin ? '内置模板' : '自定义模板' }}</span>
             </div>
+            <div class="template-preview-tabs">
+              <button type="button" :class="{ active: configTemplatePreviewTab === 'native' }" @click="configTemplatePreviewTab = 'native'">原生配置预览</button>
+              <button type="button" :class="{ active: configTemplatePreviewTab === 'advanced' }" @click="configTemplatePreviewTab = 'advanced'">高级 JSON / schema</button>
+            </div>
 
-            <section class="template-preview-section">
-              <h3>用户填写字段</h3>
-              <div v-if="selectedConfigTemplate.fields.length" class="preview-table">
-                <div class="preview-row preview-row--head">
-                  <span>字段</span><span>类型</span><span>默认值</span><span>用途</span>
-                </div>
-                <div v-for="field in selectedConfigTemplate.fields" :key="field.key || field.label" class="preview-row">
-                  <span><strong>{{ configTemplateDisplayText(field.label || field.key) }}</strong><small>{{ field.key }}</small></span>
-                  <span>{{ field.type || 'text' }}</span>
-                  <span>{{ field.default || '-' }}</span>
-                  <span>{{ configTemplateFieldUsage(field) }}</span>
+            <section v-if="configTemplatePreviewTab === 'native'" class="template-preview-section">
+              <div v-if="configTemplateNativePreviewBlocks(selectedConfigTemplate).length" class="preview-block-list">
+                <div v-for="block in configTemplateNativePreviewBlocks(selectedConfigTemplate)" :key="block.name" class="preview-block">
+                  <div class="preview-block-title">{{ block.name }}</div>
+                  <pre><code>{{ block.content }}</code></pre>
                 </div>
               </div>
-              <div v-else class="preview-empty">这个模板不需要用户填写字段。</div>
+              <div v-else class="preview-empty">这个模板没有原生配置文件内容，只会生成运行变量。</div>
             </section>
 
-            <section class="template-preview-section">
-              <h3>环境变量</h3>
-              <div v-if="selectedConfigTemplate.env.length" class="preview-table">
-                <div class="preview-row preview-row--head">
-                  <span>变量名</span><span>来源</span><span>值 / Key</span><span>管理方式</span>
-                </div>
-                <div v-for="item in selectedConfigTemplate.env" :key="`${item.name}:${item.refKey}:${item.source}`" class="preview-row">
-                  <span><strong>{{ item.name }}</strong></span>
-                  <span>{{ configTemplateEnvSourceLabel(item.source) }}</span>
-                  <span>{{ configTemplateEnvValueLabel(item) }}</span>
-                  <span>{{ configTemplateGeneratedObjectLabel(item.source) }}</span>
-                </div>
+            <section v-else class="template-preview-section template-preview-advanced">
+              <div class="preview-block">
+                <div class="preview-block-title">schema.json</div>
+                <pre><code>{{ configTemplateSchemaJSON(selectedConfigTemplate) }}</code></pre>
               </div>
-              <div v-else class="preview-empty">不会生成环境变量。</div>
-            </section>
-
-            <section class="template-preview-section">
-              <h3>普通配置模板</h3>
-              <div v-if="selectedConfigTemplate.configMaps.length" class="preview-block-list">
-                <div v-for="(item, idx) in selectedConfigTemplate.configMaps" :key="`${item.name || 'config'}:${idx}`" class="preview-block">
-                  <div class="preview-block-title">{{ configTemplatePlatformObjectName(item.name, '普通配置') }}</div>
-                  <pre v-for="(value, key) in item.data" :key="key"><code>{{ key }}:
-{{ value }}</code></pre>
-                </div>
+              <div class="preview-block">
+                <div class="preview-block-title">template.json</div>
+                <pre><code>{{ configTemplateRawJSON(selectedConfigTemplate) }}</code></pre>
               </div>
-              <div v-else class="preview-empty">不会生成普通配置。</div>
             </section>
+          </div>
+        </div>
+      </div>
+    </Teleport>
 
-            <section class="template-preview-section">
-              <h3>敏感配置项</h3>
-              <div v-if="selectedConfigTemplate.secrets.length" class="preview-chip-list">
-                <span v-for="key in configTemplateSecretKeys(selectedConfigTemplate.secrets)" :key="key" class="preview-chip">{{ key }}</span>
-              </div>
-              <div v-else class="preview-empty">不会生成敏感配置。</div>
-            </section>
-
-            <section class="template-preview-section">
-              <h3>配置文件</h3>
-              <div v-if="selectedConfigTemplate.files.length" class="preview-table">
-                <div class="preview-row preview-row--head">
-                  <span>应用内路径</span><span>配置文件 Key</span><span>来源</span><span>权限</span>
-                </div>
-                <div v-for="item in selectedConfigTemplate.files" :key="`${item.mountPath}:${item.key}`" class="preview-row">
-                  <span><strong>{{ item.mountPath }}</strong></span>
-                  <span>{{ item.key }}</span>
-                  <span>平台自动生成</span>
-                  <span>{{ item.readOnly === false ? '可写' : '只读' }}</span>
-                </div>
-              </div>
-              <div v-else class="preview-empty">不会挂载配置文件。</div>
-            </section>
-
-            <section v-if="selectedConfigTemplate.command.length || selectedConfigTemplate.args.length" class="template-preview-section">
-              <h3>启动命令</h3>
-              <pre v-if="selectedConfigTemplate.command.length"><code>command:
-{{ selectedConfigTemplate.command.join('\n') }}</code></pre>
-              <pre v-if="selectedConfigTemplate.args.length"><code>args:
-{{ selectedConfigTemplate.args.join('\n') }}</code></pre>
-            </section>
-
-            <details class="template-preview-section template-preview-advanced">
-              <summary>模板源码 JSON（面向模板作者）</summary>
-              <pre><code>{{ configTemplateRawJSON(selectedConfigTemplate) }}</code></pre>
-            </details>
+    <Teleport to="body">
+      <div v-if="pendingConfigTemplateDelete" class="modal-overlay" role="dialog" aria-modal="true" @click.self="pendingConfigTemplateDelete = null">
+        <div class="modal-container">
+          <div class="modal-header">
+            <div>
+              <p class="modal-label">删除配置模板</p>
+              <p class="modal-heading">{{ pendingConfigTemplateDelete.name }}</p>
+            </div>
+            <button class="modal-close" @click="pendingConfigTemplateDelete = null">
+              <svg width="20" height="20" viewBox="0 0 32 32" fill="currentColor"><path d="M24 9.4L22.6 8 16 14.6 9.4 8 8 9.4l6.6 6.6L8 22.6 9.4 24l6.6-6.6 6.6 6.6 1.4-1.4-6.6-6.6L24 9.4z"/></svg>
+            </button>
+          </div>
+          <div class="modal-body">
+            <p class="confirm-text">删除后，这个自定义配置模板将不再出现在组件右侧栏中。已应用到组件的运行配置不会被自动回滚。</p>
+            <div v-if="pageError" class="form-error" role="alert">{{ pageError }}</div>
+          </div>
+          <div class="modal-footer">
+            <button class="rail-btn rail-btn--ghost" @click="pendingConfigTemplateDelete = null">取消</button>
+            <button class="rail-btn rail-btn--primary danger" @click="confirmDeleteConfigTemplate">删除</button>
           </div>
         </div>
       </div>
@@ -391,6 +340,7 @@
 <script setup lang="ts">
 import { onMounted, ref, computed } from 'vue'
 import { api } from '../api/client'
+import { nativeConfigTemplateSyntax, parseNativeConfigTemplate } from './configTemplateSyntax'
 
 const templates = ref<any[]>([])
 const configTemplates = ref<any[]>([])
@@ -405,6 +355,9 @@ const pageError = ref('')
 const uploadError = ref('')
 const configUploadError = ref('')
 const selectedConfigTemplate = ref<any | null>(null)
+const configTemplatePreviewTab = ref<'native' | 'advanced'>('native')
+const configImportMode = ref<'native' | 'advanced'>('native')
+const pendingConfigTemplateDelete = ref<any | null>(null)
 const activeTemplateTab = ref<'tool' | 'middleware' | 'config'>('tool')
 const uploadForm = ref({
   type: '',
@@ -418,9 +371,21 @@ const configImportForm = ref({
   description: '',
   framework: 'auto',
   bindingMode: 'recommended',
-  componentTypes: 'backend, frontend',
+  componentTypes: 'backend',
 })
 const configTemplateImportText = ref('')
+const configTemplateComponentTypeOptions = [
+  { value: 'all', label: '所有组件' },
+  { value: 'frontend', label: '前端组件' },
+  { value: 'backend', label: '后端组件' },
+  { value: 'frontend-backend', label: '前端 + 后端' },
+  { value: 'worker', label: 'Worker / 任务组件' },
+  { value: 'custom', label: '自定义组件' },
+]
+const configTemplateImportPlaceholder = computed(() => configImportMode.value === 'native'
+  ? 'spring:\n  datasource:\n    url: __TEMPLATE__JDBC_URL__数据库地址__'
+  : '{\n  "template": { "name": "...", "fields": [] },\n  "schema": { "fields": [] }\n}'
+)
 
 const middlewareTemplateTypes = new Set([
   'mysql',
@@ -505,6 +470,7 @@ function normalizeConfigTemplate(raw: any) {
     bindingMode: String(raw?.bindingMode || 'recommended'),
     componentTypes: Array.isArray(raw?.componentTypes) ? raw.componentTypes.map((item: any) => String(item).trim()).filter(Boolean) : [],
     fields: Array.isArray(raw?.fields) ? raw.fields : [],
+    nativeConfigs: normalizeConfigTemplateNativeConfigs(raw?.nativeConfigs),
     syntax: String(raw?.syntax || ''),
     isBuiltin: Boolean(raw?.isBuiltin),
     env: Array.isArray(raw?.env) ? raw.env.map(normalizeConfigTemplateEnv).filter((item: any) => item.name) : [],
@@ -524,6 +490,14 @@ function normalizeConfigTemplateObjects(items: any) {
   })).filter((item: any) => Object.keys(item.data).length)
 }
 
+function normalizeConfigTemplateNativeConfigs(items: any) {
+  if (!Array.isArray(items)) return []
+  return items.map((item: any) => ({
+    name: String(item?.name || '').trim(),
+    content: String(item?.content ?? ''),
+  })).filter((item: any) => item.name && item.content)
+}
+
 function normalizeConfigTemplateFiles(items: any) {
   if (!Array.isArray(items)) return []
   return items.map((item: any) => ({
@@ -531,8 +505,9 @@ function normalizeConfigTemplateFiles(items: any) {
     configMapName: String(item?.configMapName || '').trim(),
     key: String(item?.key || '').trim(),
     mountPath: String(item?.mountPath || '').trim(),
+    recommendedMountPath: String(item?.recommendedMountPath || item?.mountPath || '').trim(),
     readOnly: item?.readOnly !== false,
-  })).filter((item: any) => item.key && item.mountPath)
+  })).filter((item: any) => item.key && (item.mountPath || item.recommendedMountPath))
 }
 
 function normalizeConfigTemplateEnv(item: any) {
@@ -547,6 +522,7 @@ function normalizeConfigTemplateEnv(item: any) {
 
 function openConfigTemplateDetail(tmpl: any) {
   selectedConfigTemplate.value = tmpl
+  configTemplatePreviewTab.value = 'native'
 }
 
 function openUploadModal() {
@@ -605,36 +581,49 @@ async function onConfigTemplateFileChange(event: Event) {
 }
 
 function fillConfigTemplateSample() {
+  if (configImportMode.value === 'advanced') {
+    if (!configImportForm.value.name.trim()) {
+      configImportForm.value.name = '自定义高级配置模板'
+      configImportForm.value.framework = 'custom'
+      configImportForm.value.componentTypes = 'backend'
+    }
+    configTemplateImportText.value = JSON.stringify({
+      template: {
+        name: '自定义高级配置模板',
+        framework: 'custom',
+        componentTypes: ['backend'],
+        fields: [
+          { key: 'APP_PORT', label: '应用端口', type: 'number', default: '8080' },
+        ],
+        env: [
+          { name: 'APP_PORT', source: 'value', value: '[[paap:APP_PORT default=8080]]' },
+        ],
+      },
+      schema: {
+        fields: [
+          { key: 'APP_PORT', label: '应用端口', type: 'number', default: '8080' },
+        ],
+      },
+    }, null, 2)
+    return
+  }
   if (!configImportForm.value.name.trim()) {
     configImportForm.value.name = '自定义 Spring Boot 配置'
     configImportForm.value.framework = 'springboot'
     configImportForm.value.componentTypes = 'backend'
   }
-  configTemplateImportText.value = JSON.stringify({
-    fields: [
-      { key: 'database.jdbcUrl', label: '数据库 JDBC URL', type: 'serviceRef', target: 'postgresql|mysql', output: 'configMap', default: 'jdbc:postgresql://postgresql:5432/postgres', required: true },
-      { key: 'database.username', label: '数据库用户名', type: 'text', output: 'configMap', default: 'postgres', required: true },
-      { key: 'database.password', label: '数据库密码', type: 'password', output: 'secret', required: true },
-      { key: 'redis.host', label: 'Redis 地址', type: 'serviceRef', target: 'redis', output: 'configMap', default: 'redis-master' },
-    ],
-    env: [
-      { name: 'SPRING_CONFIG_ADDITIONAL_LOCATION', source: 'value', value: 'file:/etc/paap/' },
-      { name: 'SPRING_DATASOURCE_PASSWORD', source: 'secret', refKey: 'SPRING_DATASOURCE_PASSWORD' },
-    ],
-    configMaps: [
-      {
-        data: {
-          'application-paap.yml': 'spring:\n  datasource:\n    url: [[paap:database.jdbcUrl default=jdbc:postgresql://postgresql:5432/postgres]]\n    username: [[paap:database.username default=postgres]]\n    password: ${SPRING_DATASOURCE_PASSWORD}\n  data:\n    redis:\n      host: [[paap:redis.host default=redis-master]]\n      port: [[paap:redis.port default=6379]]\n',
-        },
-      },
-    ],
-    secrets: [
-      { data: { SPRING_DATASOURCE_PASSWORD: '' } },
-    ],
-    files: [
-      { key: 'application-paap.yml', mountPath: '/etc/paap/application-paap.yml', readOnly: true },
-    ],
-  }, null, 2)
+  configTemplateImportText.value = [
+    'spring:',
+    '  datasource:',
+    '    url: __TEMPLATE__JDBC_URL__数据库地址__DEFAULT__jdbc:postgresql://postgresql:5432/postgres__',
+    '    username: __TEMPLATE__JDBC_USER__数据库用户__DEFAULT__postgres__',
+    '    password: __TEMPLATE__JDBC_PASSWORD__数据库密码__',
+    '  data:',
+    '    redis:',
+    '      host: __TEMPLATE__REDIS_HOST__Redis地址__DEFAULT__redis-master__',
+    '      port: __TEMPLATE__REDIS_PORT__Redis端口__DEFAULT__6379__',
+    '',
+  ].join('\n')
 }
 
 async function submitConfigTemplateImport() {
@@ -642,12 +631,17 @@ async function submitConfigTemplateImport() {
   let raw: any = {}
   const text = configTemplateImportText.value.trim()
   if (text) {
-    try {
-      const parsed = JSON.parse(text)
-      raw = parsed?.data && typeof parsed.data === 'object' ? parsed.data : parsed
-    } catch (e: any) {
-      configUploadError.value = '模板 JSON 解析失败：' + (e?.message || '未知错误')
-      return
+    if (configImportMode.value === 'advanced') {
+      try {
+        raw = normalizeAdvancedConfigTemplateImport(JSON.parse(text))
+      } catch (e: any) {
+        configUploadError.value = '高级模板 JSON 解析失败：' + (e?.message || 'JSON 格式错误')
+        return
+      }
+    } else {
+      raw = parseNativeConfigTemplate(text, {
+        framework: configImportForm.value.framework,
+      })
     }
   }
   const payload = configTemplatePayloadFromImport(raw)
@@ -675,16 +669,36 @@ function resetConfigTemplateImportForm() {
     description: '',
     framework: 'auto',
     bindingMode: 'recommended',
-    componentTypes: 'backend, frontend',
+    componentTypes: 'backend',
   }
+  configImportMode.value = 'native'
   configTemplateImportText.value = ''
 }
 
+function selectedConfigImportComponentTypes() {
+  const value = String(configImportForm.value.componentTypes || 'all')
+  if (value === 'all') return []
+  if (value === 'frontend-backend') return ['frontend', 'backend']
+  return [value].filter(Boolean)
+}
+
+function normalizeAdvancedConfigTemplateImport(input: any) {
+  const root = input?.data && typeof input.data === 'object' ? input.data : input
+  const template = root?.template && typeof root.template === 'object' ? root.template : root
+  const schema = root?.schema && typeof root.schema === 'object' ? root.schema : {}
+  const fields = Array.isArray(template?.fields)
+    ? template.fields
+    : Array.isArray(schema?.fields)
+      ? schema.fields
+      : []
+  return {
+    ...template,
+    fields,
+  }
+}
+
 function configTemplatePayloadFromImport(raw: any) {
-  const componentTypes = String(configImportForm.value.componentTypes || '')
-    .split(',')
-    .map((item) => item.trim())
-    .filter(Boolean)
+  const componentTypes = selectedConfigImportComponentTypes()
   const rawComponentTypes = Array.isArray(raw?.componentTypes) ? raw.componentTypes.map((item: any) => String(item).trim()).filter(Boolean) : []
   return {
     key: configImportForm.value.key || String(raw?.key || '').trim(),
@@ -693,7 +707,8 @@ function configTemplatePayloadFromImport(raw: any) {
     framework: configImportForm.value.framework || String(raw?.framework || 'auto'),
     bindingMode: configImportForm.value.bindingMode || String(raw?.bindingMode || 'recommended'),
     componentTypes: componentTypes.length ? componentTypes : rawComponentTypes,
-    syntax: String(raw?.syntax || '使用 [[paap:<field>]] 占位符描述用户填写字段；底层配置对象由平台按组件自动生成。'),
+    syntax: String(raw?.syntax || nativeConfigTemplateSyntax),
+    nativeConfigs: normalizeConfigTemplateNativeConfigs(raw?.nativeConfigs),
     fields: Array.isArray(raw?.fields) ? raw.fields : [],
     env: Array.isArray(raw?.env) ? raw.env.map(normalizeConfigTemplateEnv).filter((item: any) => item.name) : [],
     configMaps: normalizeConfigTemplateObjects(raw?.configMaps),
@@ -708,11 +723,17 @@ function configTemplatePayloadFromImport(raw: any) {
 async function deleteConfigTemplate(id: number | string) {
   const tmpl = configTemplates.value.find((item) => String(item.id) === String(id))
   if (!tmpl || tmpl.isBuiltin) return
-  if (!window.confirm(`删除配置模板「${tmpl.name}」？`)) return
+  pendingConfigTemplateDelete.value = tmpl
+}
+
+async function confirmDeleteConfigTemplate() {
+  const tmpl = pendingConfigTemplateDelete.value
+  if (!tmpl || tmpl.isBuiltin) return
   pageError.value = ''
   try {
-    await api.deleteComponentConfigTemplate(id)
-    configTemplates.value = configTemplates.value.filter((item) => String(item.id) !== String(id))
+    await api.deleteComponentConfigTemplate(tmpl.id)
+    configTemplates.value = configTemplates.value.filter((item) => String(item.id) !== String(tmpl.id))
+    pendingConfigTemplateDelete.value = null
   } catch (e: any) {
     pageError.value = '删除配置模板失败：' + (e?.message || '未知错误')
   }
@@ -780,81 +801,76 @@ function configTemplateBindingLabel(value: string) {
   return labels[value] || value || '推荐方式'
 }
 
-function configTemplateEnvSummary(tmpl: any) {
-  const env = Array.isArray(tmpl?.env) ? tmpl.env : []
-  if (!env.length) return '-'
-  return env.map((item: any) => {
-    const name = item.name || '-'
-    if (item.source === 'secret') return `${name}=敏感配置:${item.refKey || name}`
-    if (item.source === 'configMap') return `${name}=普通配置:${item.refKey || name}`
-    return `${name}=value`
-  }).join(', ')
+function configTemplateComponentTypeSummary(items: any[]) {
+  if (!Array.isArray(items) || !items.length) return '适用所有组件'
+  return `适用 ${items.join(' / ')}`
 }
 
-function configTemplateFieldSummary(items: any[]) {
-  if (!Array.isArray(items) || !items.length) return '-'
-  return items.map((item: any) => {
-    const label = configTemplateDisplayText(item?.label || item?.key || '-')
-    const target = item?.target ? ` → ${item.target}` : ''
-    return `${label}${target}`
-  }).join('；')
+function configTemplateNativeBlockCount(tmpl: any) {
+  const count = configTemplateNativePreviewBlocks(tmpl).length
+  return count ? `${count} 个原生配置片段` : '运行变量模板'
 }
 
-function configTemplateObjectSummary(items: any[]) {
-  if (!Array.isArray(items) || !items.length) return '-'
-  return items.map((item: any) => {
-    const keys = Object.keys(item?.data || {})
-    return `${configTemplatePlatformObjectName(item?.name, '普通配置')}${keys.length ? ` (${keys.join(', ')})` : ''}`
-  }).join('；')
+function configTemplateEditableFieldCount(items: any[]) {
+  const count = Array.isArray(items) ? items.length : 0
+  return count ? `${count} 个可填写项` : '无需填写'
 }
 
-function configTemplateSecretSummary(items: any[]) {
-  if (!Array.isArray(items) || !items.length) return '-'
-  const keys = items.flatMap((item: any) => Object.keys(item?.data || {})).filter(Boolean)
-  return keys.length ? keys.join(', ') : `${items.length} 组敏感配置`
+function configTemplateNativePreviewBlocks(tmpl: any) {
+  const blocks: Array<{ name: string; content: string }> = []
+  for (const item of tmpl?.nativeConfigs || []) {
+    const name = String(item?.name || '').trim()
+    const content = String(item?.content || '')
+    if (name && content) blocks.push({ name, content })
+  }
+  if (blocks.length) return blocks
+  for (const item of tmpl?.configMaps || []) {
+    for (const [key, value] of Object.entries(item?.data || {})) {
+      blocks.push({ name: String(key || 'config'), content: configTemplateReadableNativeContent(String(value ?? ''), tmpl) })
+    }
+  }
+  if (!blocks.length && Array.isArray(tmpl?.env) && tmpl.env.length) {
+    blocks.push({
+      name: '.env',
+      content: tmpl.env.map((item:any) => `${item.name}=${item.value || (item.refKey ? `[[${item.refKey}]]` : '')}`).join('\n'),
+    })
+  }
+  return blocks
 }
 
-function configTemplateFileSummary(items: any[]) {
-  if (!Array.isArray(items) || !items.length) return '-'
-  return items.map((item: any) => `${item.mountPath || '-'} ← ${item.key || item.name || 'config'}`).join('；')
+function configTemplateReadableNativeContent(value: string, tmpl: any) {
+  const fieldLabels = new Map<string, string>()
+  for (const field of tmpl?.fields || []) {
+    if (field?.key) fieldLabels.set(String(field.key), String(field.label || field.key))
+    for (const itemField of field?.itemFields || []) {
+      if (itemField?.key) fieldLabels.set(String(itemField.key), String(itemField.label || itemField.key))
+    }
+  }
+  return String(value || '')
+    .replace(/\[\[paap:for\s+([^\]\s]+)\]\]/g, (_match, key) => `__TEMPLATE__FOR__${key}__${fieldLabels.get(String(key)) || key}__`)
+    .replace(/\[\[paap:if\s+([^\]\s]+)\]\]/g, (_match, key) => `__TEMPLATE__IF__${key}__${fieldLabels.get(String(key)) || key}__`)
+    .replace(/\[\[paap:end\s+([^\]\s]+)\]\]/g, (_match, key) => `__TEMPLATE__END__${key}__`)
+    .replace(/\[\[paap:item\.([^\]\s]+)([^\]]*)\]\]/g, (_match, key, options) => {
+      const defaultValue = configTemplateDefaultFromTokenOptions(String(options || ''))
+      return `__TEMPLATE__ITEM_${key}__${fieldLabels.get(String(key)) || key}__${defaultValue ? `DEFAULT__${defaultValue}__` : ''}`
+    })
+    .replace(/\[\[paap:([^\]\s]+)([^\]]*)\]\]/g, (_match, key, options) => {
+      const defaultValue = configTemplateDefaultFromTokenOptions(String(options || ''))
+      return `__TEMPLATE__${key}__${fieldLabels.get(String(key)) || key}__${defaultValue ? `DEFAULT__${defaultValue}__` : ''}`
+    })
 }
 
-function configTemplatePlatformObjectName(value: string, kind: string) {
-  const raw = String(value || '').trim()
-  if (!raw || /\{\{\s*(configMapName|secretName)\s*\}\}/.test(raw)) return `平台自动生成${kind}`
-  return raw
+function configTemplateDefaultFromTokenOptions(options: string) {
+  const match = options.match(/\bdefault=("[^"]*"|'[^']*'|[^\s\]]+)/)
+  return match ? match[1].replace(/^['"]|['"]$/g, '') : ''
 }
 
-function configTemplateFieldUsage(field: any) {
-  const parts = []
-  if (field?.required) parts.push('必填')
-  if (field?.target) parts.push(`连接 ${field.target}`)
-  if (field?.output === 'secret') parts.push('写入敏感配置')
-  else if (field?.output === 'configMap') parts.push('写入普通配置')
-  return parts.join(' / ') || '-'
-}
-
-function configTemplateEnvSourceLabel(source: string) {
-  if (source === 'secret') return '敏感配置'
-  if (source === 'configMap') return '普通配置'
-  return '固定值'
-}
-
-function configTemplateEnvValueLabel(item: any) {
-  if (item?.source === 'secret') return item.refKey || item.name || '-'
-  if (item?.source === 'configMap') return item.refKey || item.name || '-'
-  return item?.value || '-'
-}
-
-function configTemplateGeneratedObjectLabel(source: string) {
-  if (source === 'secret') return '平台自动管理'
-  if (source === 'configMap') return '平台自动管理'
-  return '-'
-}
-
-function configTemplateSecretKeys(items: any[]) {
-  if (!Array.isArray(items)) return []
-  return Array.from(new Set(items.flatMap((item: any) => Object.keys(item?.data || {})).filter(Boolean)))
+function configTemplateSchemaJSON(tmpl: any) {
+  return JSON.stringify({
+    fields: tmpl?.fields || [],
+    files: tmpl?.files || [],
+    env: tmpl?.env || [],
+  }, null, 2)
 }
 
 function configTemplateRawJSON(tmpl: any) {
@@ -867,6 +883,7 @@ function configTemplateRawJSON(tmpl: any) {
     bindingMode: tmpl.bindingMode,
     componentTypes: tmpl.componentTypes,
     syntax: tmpl.syntax,
+    nativeConfigs: tmpl.nativeConfigs,
     fields: tmpl.fields,
     env: tmpl.env,
     configMaps: tmpl.configMaps,
@@ -875,10 +892,6 @@ function configTemplateRawJSON(tmpl: any) {
     command: tmpl.command,
     args: tmpl.args,
   }, null, 2)
-}
-
-function configTemplateSyntaxSummary(_value: string) {
-  return '使用 [[paap:字段名]] 标记需要用户填写的位置，可设置默认值；底层配置对象由平台自动生成。'
 }
 
 function configTemplateDisplayText(value: string) {
@@ -926,20 +939,20 @@ function isHeavyTemplate(tmpl: any) {
 .page-title {
   font-size: 24px;
   font-weight: 600;
-  color: #11181c;
+  color: var(--cds-text-primary, #161616);
   letter-spacing: 0;
   line-height: 1.2;
 }
 .page-desc {
   font-size: 14px;
-  color: #687076;
+  color: var(--cds-text-secondary, #525252);
   line-height: 1.4;
 }
 .page-error {
-  border: 1px solid #fecaca;
-  background: #fef2f2;
-  color: #991b1b;
-  border-radius: 6px;
+  border: 1px solid var(--cds-red-60, #da1e28);
+  background: var(--cds-layer-01, #ffffff);
+  color: var(--cds-red-60, #da1e28);
+  border-radius: 0;
   padding: 10px 12px;
   font-size: 13px;
   line-height: 1.4;
@@ -953,9 +966,9 @@ function isHeavyTemplate(tmpl: any) {
 
 .template-tabs {
   display: flex;
-  gap: 8px;
+  gap: 0;
   margin-bottom: 16px;
-  border-bottom: 1px solid #e6e8eb;
+  border-bottom: 1px solid var(--cds-border-subtle-01, #e0e0e0);
 }
 .template-tabs button {
   display: inline-flex;
@@ -966,21 +979,22 @@ function isHeavyTemplate(tmpl: any) {
   border: 0;
   border-bottom: 2px solid transparent;
   background: transparent;
-  color: #687076;
+  color: var(--cds-text-secondary, #525252);
   font-size: 13px;
   cursor: pointer;
 }
 .template-tabs button.active {
-  border-bottom-color: #11181c;
-  color: #11181c;
+  border-bottom-color: var(--cds-blue-60, #0f62fe);
+  color: var(--cds-text-primary, #161616);
 }
 .template-tabs strong {
   min-width: 20px;
   height: 20px;
   padding: 0 6px;
-  border-radius: 999px;
-  background: #f1f3f5;
-  color: #687076;
+  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  border-radius: var(--cds-border-radius-md, 2px);
+  background: var(--cds-layer-01, #ffffff);
+  color: var(--cds-text-secondary, #525252);
   font-size: 11px;
   line-height: 20px;
   text-align: center;
@@ -994,9 +1008,9 @@ function isHeavyTemplate(tmpl: any) {
   margin-bottom: 32px;
 }
 .kpi-card {
-  background: #ffffff;
-  border: 1px solid #e6e8eb;
-  border-radius: 8px;
+  background: var(--cds-layer-01, #ffffff);
+  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  border-radius: 0;
   padding: 16px 18px;
   display: flex;
   flex-direction: column;
@@ -1005,20 +1019,20 @@ function isHeavyTemplate(tmpl: any) {
 .kpi-number {
   font-size: 28px;
   font-weight: 600;
-  color: #11181c;
+  color: var(--cds-text-primary, #161616);
   letter-spacing: 0;
   line-height: 1.2;
 }
 .kpi-label {
   font-size: 12px;
-  color: #687076;
+  color: var(--cds-text-secondary, #525252);
 }
 
 /* ===== Section ===== */
 .section-card {
-  background: #ffffff;
-  border: 1px solid #e6e8eb;
-  border-radius: 8px;
+  background: var(--cds-layer-01, #ffffff);
+  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  border-radius: 0;
   padding: 24px;
 }
 .section-header {
@@ -1038,8 +1052,8 @@ function isHeavyTemplate(tmpl: any) {
 .loading-spinner {
   width: 24px;
   height: 24px;
-  border: 2px solid #e6e8eb;
-  border-top-color: #11181c;
+  border: 2px solid var(--cds-border-subtle-01, #e0e0e0);
+  border-top-color: var(--cds-text-primary, #161616);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
@@ -1051,12 +1065,12 @@ function isHeavyTemplate(tmpl: any) {
 
 /* ===== Template list ===== */
 .template-list {
-  border-top: 1px solid #f1f3f5;
+  border-top: 1px solid var(--cds-border-subtle-01, #e0e0e0);
 }
 .template-row {
   display: flex;
-  border-bottom: 1px solid #f1f3f5;
-  transition: background-color 0.15s;
+  border-bottom: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  transition: background-color 110ms;
   overflow: hidden;
   cursor: default;
 }
@@ -1064,7 +1078,7 @@ function isHeavyTemplate(tmpl: any) {
   border-bottom: none;
 }
 .template-row:hover {
-  background: #f9fafb;
+  background: var(--cds-background-hover, rgba(141, 141, 141, 0.12));
 }
 .template-body {
   padding: 16px 20px;
@@ -1087,21 +1101,21 @@ function isHeavyTemplate(tmpl: any) {
   font-weight: 600;
   font-size: 15px;
   line-height: 1.4;
-  color: #11181c;
+  color: var(--cds-text-primary, #161616);
 }
 .template-meta {
   display: flex;
   gap: 12px;
   flex-wrap: wrap;
-  color: #687076;
+  color: var(--cds-text-secondary, #525252);
   margin-bottom: 6px;
   font-size: 13px;
 }
 .template-meta .uploaded {
-  color: #22c55e;
+  color: var(--cds-green-60, #198038);
 }
 .template-desc {
-  color: #687076;
+  color: var(--cds-text-secondary, #525252);
   line-height: 1.4;
   font-size: 13px;
 }
@@ -1116,18 +1130,18 @@ function isHeavyTemplate(tmpl: any) {
   gap: 4px;
   min-width: 0;
   padding: 10px;
-  border: 1px solid #f1f3f5;
-  border-radius: 6px;
-  background: #fbfcfd;
+  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  border-radius: 0;
+  background: var(--cds-layer-01, #ffffff);
 }
 .config-template-details span {
-  color: #687076;
+  color: var(--cds-text-secondary, #525252);
   font-size: 11px;
 }
 .config-template-details code {
   min-width: 0;
-  color: #11181c;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  color: var(--cds-text-primary, #161616);
+  font-family: var(--cds-font-family-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
   font-size: 12px;
   white-space: normal;
   overflow-wrap: anywhere;
@@ -1149,43 +1163,43 @@ function isHeavyTemplate(tmpl: any) {
   font-size: 11px;
   font-weight: 500;
   letter-spacing: 0.2px;
-  border-radius: 4px;
+  border-radius: var(--cds-border-radius-md, 2px);
 }
 .tag.builtin {
-  background: #f1f3f5;
-  color: #687076;
+  background: var(--cds-layer-01, #ffffff);
+  color: var(--cds-text-secondary, #525252);
 }
 .tag.custom {
-  background: #eef4ff;
-  color: #5a7fc2;
+  background: var(--cds-blue-10, #edf5ff);
+  color: var(--cds-blue-70, #0043ce);
 }
 .tag.heavy {
-  background: #fdf2f2;
-  color: #c07373;
+  background: var(--cds-red-10, #fff1f1);
+  color: var(--cds-red-60, #da1e28);
 }
 .tag.config {
-  background: #ecfdf5;
-  color: #047857;
+  background: var(--cds-green-10, #defbe6);
+  color: var(--cds-green-60, #198038);
 }
 
 /* Meta info: uploaded state */
 .template-meta .uploaded {
-  color: #7aa87a;
+  color: var(--cds-green-60, #198038);
 }
 
 .policy {
-  color: #a8afb5;
+  color: var(--cds-text-placeholder, rgba(22, 22, 22, 0.4));
   white-space: nowrap;
   font-size: 12px;
   letter-spacing: 0.2px;
 }
 .rail-btn.danger {
-  color: #b42318;
+  color: var(--cds-red-60, #da1e28);
 }
 .text-btn {
   border: 0;
   background: transparent;
-  color: #11181c;
+  color: var(--cds-blue-60, #0f62fe);
   cursor: pointer;
   padding: 0;
   font-size: 12px;
@@ -1226,19 +1240,20 @@ function isHeavyTemplate(tmpl: any) {
   position: fixed;
   inset: 0;
   z-index: 9000;
-  background: rgba(0, 0, 0, 0.45);
+  background: rgba(22, 22, 22, 0.48);
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 24px;
 }
 .modal-container {
-  background: #ffffff;
+  background: var(--cds-layer-01, #ffffff);
   width: 480px;
   max-height: 90vh;
   overflow-y: auto;
-  border-radius: 8px;
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
+  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  border-radius: 0;
+  box-shadow: none;
 }
 .modal-container--wide {
   width: min(760px, 96vw);
@@ -1251,11 +1266,11 @@ function isHeavyTemplate(tmpl: any) {
   justify-content: space-between;
   align-items: flex-start;
   padding: 20px 24px;
-  border-bottom: 1px solid #f1f3f5;
+  border-bottom: 1px solid var(--cds-border-subtle-01, #e0e0e0);
 }
 .modal-label {
   font-size: 11px;
-  color: #9ba1a6;
+  color: var(--cds-text-secondary, #525252);
   margin-bottom: 4px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -1264,25 +1279,25 @@ function isHeavyTemplate(tmpl: any) {
 .modal-heading {
   font-size: 18px;
   font-weight: 600;
-  color: #11181c;
+  color: var(--cds-text-primary, #161616);
   margin: 0;
   line-height: 1.3;
 }
 .modal-close {
   background: none;
   border: none;
-  color: #9ba1a6;
+  color: var(--cds-text-secondary, #525252);
   cursor: pointer;
   padding: 4px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 4px;
-  transition: all 0.15s;
+  border-radius: 0;
+  transition: background 110ms, color 110ms;
 }
 .modal-close:hover {
-  background: #f1f3f5;
-  color: #11181c;
+  background: var(--cds-background-hover, rgba(141, 141, 141, 0.12));
+  color: var(--cds-text-primary, #161616);
 }
 .modal-body {
   padding: 24px;
@@ -1292,7 +1307,7 @@ function isHeavyTemplate(tmpl: any) {
   justify-content: flex-end;
   gap: 8px;
   padding: 16px 24px;
-  border-top: 1px solid #f1f3f5;
+  border-top: 1px solid var(--cds-border-subtle-01, #e0e0e0);
 }
 
 /* ===== Form elements ===== */
@@ -1307,7 +1322,7 @@ function isHeavyTemplate(tmpl: any) {
 }
 .form-label {
   font-size: 12px;
-  color: #687076;
+  color: var(--cds-text-secondary, #525252);
   font-weight: 500;
 }
 .form-label-row {
@@ -1318,15 +1333,15 @@ function isHeavyTemplate(tmpl: any) {
 }
 .form-helper {
   font-size: 12px;
-  color: #9ba1a6;
+  color: var(--cds-text-helper, #6f6f6f);
   margin-top: 2px;
   line-height: 1.4;
 }
 .form-error {
-  border: 1px solid #fecaca;
-  background: #fef2f2;
-  color: #991b1b;
-  border-radius: 6px;
+  border: 1px solid var(--cds-red-60, #da1e28);
+  background: var(--cds-layer-01, #ffffff);
+  color: var(--cds-red-60, #da1e28);
+  border-radius: 0;
   padding: 10px 12px;
   font-size: 13px;
   line-height: 1.4;
@@ -1336,42 +1351,42 @@ function isHeavyTemplate(tmpl: any) {
   width: 100%;
   padding: 9px 12px;
   font-size: 14px;
-  border: 1px solid #e6e8eb;
-  border-radius: 6px;
-  background: #ffffff;
-  color: #11181c;
+  border: 1px solid var(--cds-border-strong-01, #8d8d8d);
+  border-radius: 0;
+  background: var(--cds-field-01, #f4f4f4);
+  color: var(--cds-text-primary, #161616);
   outline: none;
   font-family: inherit;
-  transition: border-color 0.15s, box-shadow 0.15s;
+  transition: border-color 110ms, box-shadow 110ms;
 }
 .rail-input:focus {
-  border-color: #3b82f6;
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  border-color: var(--cds-border-interactive, #0f62fe);
+  box-shadow: inset 0 0 0 1px var(--cds-border-interactive, #0f62fe);
 }
 .rail-input::placeholder {
-  color: #9ba1a6;
+  color: var(--cds-text-placeholder, rgba(22, 22, 22, 0.4));
 }
 
 .rail-select {
   width: 100%;
   padding: 9px 36px 9px 12px;
   font-size: 14px;
-  border: 1px solid #e6e8eb;
-  border-radius: 6px;
-  background: #ffffff;
-  color: #11181c;
+  border: 1px solid var(--cds-border-strong-01, #8d8d8d);
+  border-radius: 0;
+  background: var(--cds-field-01, #f4f4f4);
+  color: var(--cds-text-primary, #161616);
   outline: none;
   appearance: none;
   cursor: pointer;
   font-family: inherit;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M6 8L1 3h10z' fill='%23687076'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M6 8L1 3h10z' fill='%23525252'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 12px center;
-  transition: border-color 0.15s, box-shadow 0.15s;
+  transition: border-color 110ms, box-shadow 110ms;
 }
 .rail-select:focus {
-  border-color: #3b82f6;
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  border-color: var(--cds-border-interactive, #0f62fe);
+  box-shadow: inset 0 0 0 1px var(--cds-border-interactive, #0f62fe);
 }
 
 .rail-textarea {
@@ -1379,21 +1394,51 @@ function isHeavyTemplate(tmpl: any) {
   resize: vertical;
   padding: 10px 12px;
   font-size: 14px;
-  border: 1px solid #e6e8eb;
-  border-radius: 6px;
-  background: #ffffff;
-  color: #11181c;
+  border: 1px solid var(--cds-border-strong-01, #8d8d8d);
+  border-radius: 0;
+  background: var(--cds-layer-01, #ffffff);
+  color: var(--cds-text-primary, #161616);
   outline: none;
   font-family: inherit;
   line-height: 1.5;
-  transition: border-color 0.15s, box-shadow 0.15s;
+  transition: border-color 110ms, box-shadow 110ms;
+}
+.rail-input,
+.rail-select {
+  background: var(--cds-layer-01, #ffffff);
+}
+.template-mode-switch {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  background: var(--cds-layer-01, #ffffff);
+}
+.template-mode-switch button {
+  min-height: 38px;
+  border: 0;
+  border-right: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  background: var(--cds-layer-01, #ffffff);
+  color: var(--cds-text-secondary, #525252);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.template-mode-switch button:last-child {
+  border-right: 0;
+}
+.template-mode-switch button.active {
+  background: var(--cds-blue-60, #0f62fe);
+  color: var(--cds-text-on-color, #ffffff);
+}
+.config-import-mode {
+  grid-column: 1 / -1;
 }
 .rail-textarea:focus {
-  border-color: #3b82f6;
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  border-color: var(--cds-border-interactive, #0f62fe);
+  box-shadow: inset 0 0 0 1px var(--cds-border-interactive, #0f62fe);
 }
 .code-textarea {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-family: var(--cds-font-family-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
   font-size: 12px;
   line-height: 1.45;
 }
@@ -1404,11 +1449,11 @@ function isHeavyTemplate(tmpl: any) {
 }
 .template-preview {
   display: grid;
-  gap: 18px;
+  gap: 16px;
 }
 .template-preview-desc {
   margin: 0;
-  color: #687076;
+  color: var(--cds-text-secondary, #525252);
   line-height: 1.5;
   font-size: 13px;
 }
@@ -1423,24 +1468,57 @@ function isHeavyTemplate(tmpl: any) {
   align-items: center;
   min-height: 22px;
   padding: 0 8px;
-  border-radius: 4px;
-  background: #f1f3f5;
-  color: #687076;
+  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  border-radius: var(--cds-border-radius-md, 2px);
+  background: var(--cds-layer-01, #ffffff);
+  color: var(--cds-text-secondary, #525252);
   font-size: 12px;
 }
 .template-preview-section {
   display: grid;
-  gap: 10px;
+  gap: 12px;
+}
+.template-preview-tabs {
+  display: flex;
+  align-items: flex-end;
+  gap: 0;
+  min-height: 44px;
+  border-bottom: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  background: var(--cds-layer-01, #ffffff);
+}
+.template-preview-tabs button {
+  position: relative;
+  min-height: 44px;
+  padding: 0 18px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: var(--cds-layer-01, #ffffff);
+  color: var(--cds-text-secondary, #525252);
+  font-family: inherit;
+  font-size: var(--cds-body-01-font-size, 14px);
+  font-weight: var(--cds-body-01-font-weight, 400);
+  line-height: 44px;
+  cursor: pointer;
+}
+.template-preview-tabs button:hover {
+  color: var(--cds-text-primary, #161616);
+  background: var(--cds-field-01, #f4f4f4);
+}
+.template-preview-tabs button.active {
+  border-bottom-color: var(--cds-blue-60, #0f62fe);
+  color: var(--cds-text-primary, #161616);
+  background: var(--cds-layer-01, #ffffff);
+  font-weight: var(--cds-heading-01-font-weight, 600);
 }
 .template-preview-section h3 {
   margin: 0;
   font-size: 14px;
   line-height: 1.3;
-  color: #11181c;
+  color: var(--cds-text-primary, #161616);
 }
 .preview-table {
-  border: 1px solid #e6e8eb;
-  border-radius: 6px;
+  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  border-radius: 0;
   overflow: hidden;
 }
 .preview-row {
@@ -1449,22 +1527,22 @@ function isHeavyTemplate(tmpl: any) {
   gap: 10px;
   align-items: start;
   padding: 10px 12px;
-  border-top: 1px solid #f1f3f5;
+  border-top: 1px solid var(--cds-border-subtle-01, #e0e0e0);
   font-size: 12px;
-  color: #3f464d;
+  color: var(--cds-text-primary, #161616);
 }
 .preview-row:first-child {
   border-top: 0;
 }
 .preview-row--head {
-  background: #fbfcfd;
-  color: #687076;
+  background: var(--cds-field-01, #f4f4f4);
+  color: var(--cds-text-secondary, #525252);
   font-weight: 600;
 }
 .preview-row small {
   display: block;
   margin-top: 2px;
-  color: #9ba1a6;
+  color: var(--cds-text-helper, #6f6f6f);
   overflow-wrap: anywhere;
 }
 .preview-block-list {
@@ -1472,34 +1550,40 @@ function isHeavyTemplate(tmpl: any) {
   gap: 12px;
 }
 .preview-block {
-  border: 1px solid #e6e8eb;
-  border-radius: 6px;
+  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  border-radius: 0;
   overflow: hidden;
+  background: var(--cds-layer-01, #ffffff);
 }
 .preview-block-title {
-  padding: 9px 12px;
-  background: #fbfcfd;
-  color: #687076;
-  font-size: 12px;
-  border-bottom: 1px solid #f1f3f5;
+  display: flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 0 14px;
+  background: var(--cds-layer-01, #ffffff);
+  color: var(--cds-text-primary, #161616);
+  font-size: var(--cds-heading-01-font-size, 14px);
+  font-weight: var(--cds-heading-01-font-weight, 600);
+  border-bottom: 1px solid var(--cds-border-subtle-01, #e0e0e0);
 }
 .template-preview pre,
 .preview-block pre {
   margin: 0;
-  padding: 12px;
-  background: #0f172a;
-  color: #e5e7eb;
+  padding: 14px 16px;
+  background: var(--cds-field-01, #f4f4f4);
+  color: var(--cds-text-primary, #161616);
   overflow: auto;
-  max-height: 320px;
+  max-height: 360px;
   font-size: 12px;
-  line-height: 1.45;
+  line-height: 1.55;
+  tab-size: 2;
 }
 .preview-block pre + pre {
-  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  border-top: 1px solid var(--cds-border-subtle-01, #e0e0e0);
 }
 .template-preview code,
 .preview-block code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-family: var(--cds-font-family-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
 }
 .preview-chip-list {
   display: flex;
@@ -1508,9 +1592,9 @@ function isHeavyTemplate(tmpl: any) {
 }
 .preview-empty {
   padding: 10px 12px;
-  border: 1px dashed #d7dbdf;
-  border-radius: 6px;
-  color: #9ba1a6;
+  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  border-radius: 0;
+  color: var(--cds-text-helper, #6f6f6f);
   font-size: 12px;
 }
 

@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	DefaultRegistryHostTemplate = "registry.{app}-{env}.paap.local:5000"
+	DefaultRegistryHostTemplate = "registry.{app}-{env}.paap.local"
 	RegistryHostTemplateEnv     = "PAAP_REGISTRY_HOST_TEMPLATE"
 )
 

@@ -18,20 +18,6 @@
             <h2 class="overview-title">环境拓扑</h2>
             <span class="overview-subtitle">组件、平台工具、中间件和数据库的环境视图</span>
           </div>
-          <div class="environment-foundation-strip" aria-label="环境基座">
-            <button
-              v-for="item in environmentFoundationItems"
-              :key="item.key"
-              type="button"
-              class="environment-foundation-item"
-              :class="`environment-foundation-item--${item.state}`"
-              @click="openFoundationCapability(item)"
-            >
-              <span class="foundation-dot" />
-              <strong>{{ item.label }}</strong>
-              <small>{{ item.statusText }}</small>
-            </button>
-          </div>
           <div class="environment-topology-workspace environment-topology-workspace--primary">
             <div class="component-topology-canvas environment-topology-canvas environment-topology-canvas--primary" @contextmenu.prevent="openCanvasContextMenu">
               <div class="topology-controls">
@@ -63,7 +49,7 @@
                     v-if="connectionDrag"
                     class="connection-drag-line"
                     :d="`M ${connectionDrag.startX} ${connectionDrag.startY} L ${connectionDrag.currentX} ${connectionDrag.currentY}`"
-                    stroke="#3b82f6"
+                    stroke="currentColor"
                     stroke-width="2"
                     stroke-dasharray="5,5"
                     fill="none"
@@ -502,7 +488,7 @@
                     v-if="connectionDrag"
                     class="connection-drag-line"
                     :d="`M ${connectionDrag.startX} ${connectionDrag.startY} L ${connectionDrag.currentX} ${connectionDrag.currentY}`"
-                    stroke="#3b82f6"
+                    stroke="currentColor"
                     stroke-width="2"
                     stroke-dasharray="5,5"
                     fill="none"
@@ -628,14 +614,14 @@
 
     <!-- Create Component Modal -->
     <Teleport to="body">
-      <div v-if="showComponentModal" class="modal-overlay" role="dialog" aria-modal="true" @click.self="showComponentModal=false">
+      <div v-if="showComponentModal" class="modal-overlay" role="dialog" aria-modal="true" @click.self="closeComponentDraftModal">
         <div class="modal-container" style="max-width:600px">
           <div class="modal-header">
             <div>
               <p class="modal-label">组件草稿</p>
               <p class="modal-heading">新建组件草稿</p>
             </div>
-            <button type="button" class="modal-close" aria-label="关闭" @click="showComponentModal=false">
+            <button type="button" class="modal-close" aria-label="关闭" @click="closeComponentDraftModal">
               <svg focusable="false" width="20" height="20" viewBox="0 0 32 32" fill="currentColor"><path d="M24 9.4L22.6 8 16 14.6 9.4 8 8 9.4l6.6 6.6L8 22.6 9.4 24l6.6-6.6 6.6 6.6 1.4-1.4-6.6-6.6L24 9.4z"/></svg>
             </button>
           </div>
@@ -702,7 +688,7 @@
             <p v-if="componentModalError" class="modal-error" role="alert">{{ componentModalError }}</p>
           </div>
           <div class="modal-footer">
-            <button type="button" class="bx--btn bx--btn--secondary" @click="showComponentModal=false">取消</button>
+            <button type="button" class="bx--btn bx--btn--secondary" @click="closeComponentDraftModal">取消</button>
             <button type="button" class="bx--btn bx--btn--primary" @click="submitComponent">保存草稿</button>
           </div>
         </div>
@@ -711,7 +697,7 @@
 
     <Teleport to="body">
       <div v-if="configDrawer.visible" class="config-drawer-shell" role="dialog" aria-modal="true" @click.self="closeConfigDrawer">
-        <aside class="config-drawer">
+        <aside class="config-drawer" @pointerdown.stop="enterDrawerContext">
           <header class="config-drawer-header">
             <div class="config-drawer-title-block">
               <span class="config-drawer-avatar" :class="`config-drawer-avatar--${configDrawer.kind}`">
@@ -867,9 +853,12 @@
             </section>
 
             <section v-if="configDrawerTab === 'deploy' && configDrawer.kind === 'service' && serviceDrawerProfile.showDeploymentConfig" class="config-section">
-              <div class="config-section-title"><span>部署配置</span></div>
-              <div v-if="serviceDrawerVisibleConfigFields.length" class="config-form-grid">
-                <label v-for="field in serviceDrawerVisibleConfigFields" :key="field.key" :class="{ 'config-form-wide': field.control === 'text' }">
+              <div class="config-section-title">
+                <span>部署参数可编辑</span>
+                <small>保存后写入服务部署参数；运行中的服务应用后会更新 ServiceInstance。</small>
+              </div>
+              <div v-if="serviceDrawerVisibleConfigFields.length" class="config-form-grid service-config-form-grid">
+                <label v-for="field in serviceDrawerVisibleConfigFields" :key="field.key" class="service-config-field" :class="{ 'config-form-wide': field.control === 'text' }">
                   <span>{{ field.label }}</span>
                   <select v-if="field.control === 'select'" v-model="serviceConfigForm[field.key]" class="bx--select-input">
                     <option v-for="option in field.options || []" :key="String(option.value)" :value="option.value">{{ option.label }}</option>
@@ -1050,20 +1039,40 @@
 
             <section v-if="configDrawerTab === 'variables' && configDrawer.kind === 'service'" class="config-section">
               <div class="config-section-title">
-                <span>服务参数</span>
+                <span>接入变量只读</span>
                 <div class="config-section-actions">
                   <button type="button" class="text-btn" @click="showServiceRawVariables">查看原始参数</button>
-                  <button type="button" class="text-btn" @click="showServiceNewVariableHint">新增参数</button>
                 </div>
               </div>
+              <div class="config-inline-note">服务接入变量由模板、Secret 和运行态发现生成；业务组件在配置模板里选择服务后引用这些变量。</div>
               <div v-if="serviceDrawerVariableRows.length" class="config-variable-list">
                 <div v-for="row in serviceDrawerVariableRows" :key="row.name" class="config-variable-row">
                   <span class="config-variable-name">{{ row.name }}</span>
-                  <code :class="{ masked: row.secret }">{{ row.secret ? '******' : row.value }}</code>
+                  <span class="config-variable-value">
+                    <code :class="{ masked: row.secret && !serviceDrawerSecretVisible(row.name) }">{{ row.secret ? serviceDrawerSecretDisplayValue(row) : row.value }}</code>
+                    <button
+                      v-if="row.secret"
+                      type="button"
+                      class="service-secret-reveal-btn"
+                      :disabled="serviceDrawerSecretLoadingKey === row.name"
+                      :aria-label="serviceDrawerSecretVisible(row.name) ? '隐藏密码' : '显示密码'"
+                      :title="serviceDrawerSecretVisible(row.name) ? '隐藏密码' : '显示密码'"
+                      @click="toggleServiceDrawerSecret(row)"
+                    >
+                      <svg v-if="serviceDrawerSecretVisible(row.name)" focusable="false" width="16" height="16" viewBox="0 0 32 32" fill="currentColor">
+                        <path d="M16 6C7 6 2 16 2 16s5 10 14 10 14-10 14-10S25 6 16 6zm0 18c-6.4 0-10.5-5.8-11.7-8C5.5 13.8 9.6 8 16 8s10.5 5.8 11.7 8c-1.2 2.2-5.3 8-11.7 8z"/>
+                        <path d="M16 10a6 6 0 1 0 0 12 6 6 0 0 0 0-12zm0 10a4 4 0 1 1 0-8 4 4 0 0 1 0 8z"/>
+                      </svg>
+                      <svg v-else focusable="false" width="16" height="16" viewBox="0 0 32 32" fill="currentColor">
+                        <path d="m3.3 2 26.7 26.7-1.4 1.4-5.1-5.1A15 15 0 0 1 16 26C7 26 2 16 2 16a25 25 0 0 1 6.2-7.5L1.9 3.4 3.3 2zm6.4 8A22.7 22.7 0 0 0 4.3 16C5.5 18.2 9.6 24 16 24c2.1 0 4-.6 5.7-1.5l-3-3A6 6 0 0 1 12.5 13l-2.8-3z"/>
+                        <path d="M16 6c9 0 14 10 14 10a24.9 24.9 0 0 1-4.6 6.1L24 20.7c1.7-1.6 3-3.5 3.7-4.7C26.5 13.8 22.4 8 16 8c-1.5 0-2.8.3-4.1.8L10.4 7.3A14 14 0 0 1 16 6z"/>
+                      </svg>
+                    </button>
+                  </span>
                   <small>{{ row.hint }}</small>
                 </div>
               </div>
-              <div v-else class="config-empty">当前服务还没有可注入变量。</div>
+              <div v-else class="config-empty">当前服务还没有可复制的接入变量。</div>
             </section>
 
             <section v-if="configDrawerTab === 'variables' && configDrawer.kind === 'service' && serviceDrawerProfile.showConnectionBindings" class="config-section">
@@ -1290,36 +1299,6 @@
               <div class="config-inline-note">PAAP 不假设业务框架。识别结果来自镜像、源码字段、运行态端口、环境变量、配置引用和用户在画布上的连接。</div>
             </section>
 
-            <section v-if="configDrawerTab === 'api' && configDrawer.kind === 'component'" class="config-section">
-              <div class="config-section-title"><span>后端地址</span></div>
-              <div class="config-kv-grid service-summary-grid">
-                <div>
-                  <span>外部入口</span>
-                  <strong>{{ configDrawerExternalUrl || '未暴露' }}</strong>
-                </div>
-                <div>
-                  <span>可选后端</span>
-                  <strong>{{ componentDrawerBackendTargets.length }}</strong>
-                </div>
-                <div>
-                  <span>当前地址</span>
-                  <strong>{{ componentDrawerBindingValue('BACKEND_URL') || '未配置' }}</strong>
-                </div>
-              </div>
-              <div class="config-binding-form">
-                <select v-model="configForm.bindingTargetKey" class="bx--select-input">
-                  <option value="">选择后端服务</option>
-                  <option v-for="target in componentDrawerBackendTargets" :key="target.key" :value="target.key">
-                    {{ target.name }} · {{ targetTypeLabel(target) }}
-                  </option>
-                </select>
-                <button type="button" class="bx--btn bx--btn--primary bx--btn--sm" :disabled="configDrawer.saving || !selectedConnectionTarget" @click="applySelectedConfigBinding">
-                  应用后端地址
-                </button>
-              </div>
-              <div class="config-inline-note">前端绑定后端后，平台会自动写入后端地址并在画布上形成依赖线。</div>
-            </section>
-
             <section v-if="configDrawerTab === 'dependencies' && configDrawer.kind === 'component'" class="config-section">
               <div class="config-section-title"><span>运行依赖</span></div>
               <div class="config-binding-form">
@@ -1359,12 +1338,25 @@
 
             <section v-if="configDrawerTab === 'deploy' && configDrawer.kind === 'component'" class="config-section">
               <div class="config-section-title">
-                <span>镜像来源</span>
-                <button type="button" class="text-btn" :disabled="registryWorkspaceLoading" @click="ensureRegistryWorkspaces">
+                <span>交付方式</span>
+                <button v-if="!componentDrawerUsesSourceDelivery" type="button" class="text-btn" :disabled="registryWorkspaceLoading" @click="ensureRegistryWorkspaces">
                   {{ registryWorkspaceLoading ? '刷新中...' : '刷新' }}
                 </button>
               </div>
-              <div class="cds-image-fields">
+              <div class="delivery-switch component-delivery-switch">
+                <label class="delivery-option" :class="{ active: configForm.deliveryMode === 'image' }">
+                  <input v-model="configForm.deliveryMode" type="radio" value="image" />
+                  <span>镜像交付</span>
+                </label>
+                <label class="delivery-option" :class="{ active: configForm.deliveryMode === 'source' }">
+                  <input v-model="configForm.deliveryMode" type="radio" value="source" />
+                  <span>源码交付</span>
+                </label>
+              </div>
+              <p class="cds-helper-text">
+                {{ componentDrawerUsesSourceDelivery ? '源码交付无需 Dockerfile，由平台通过 Buildpacks/kpack 识别源码运行时并构建镜像。' : '镜像交付使用已构建镜像，镜像:Tag 必须填写明确 Tag。' }}
+              </p>
+              <div v-if="!componentDrawerUsesSourceDelivery" class="cds-image-fields">
                 <div class="cds-image-field">
                   <label class="cds-label" for="drawer-repo">仓库地址</label>
                   <input
@@ -1391,12 +1383,41 @@
                   </datalist>
                 </div>
               </div>
-              <div class="cds-image-preview" v-if="registryImageFromConfig">
+              <div v-else class="cds-image-fields">
+                <div class="cds-image-field cds-image-field--full">
+                  <label class="cds-label" for="drawer-source-repo">源码仓库</label>
+                  <input
+                    id="drawer-source-repo"
+                    v-model.trim="configForm.sourceRepoUrl"
+                    class="cds-text-input"
+                    placeholder="https://git.example.com/team/app.git"
+                  />
+                </div>
+                <div class="cds-image-field">
+                  <label class="cds-label" for="drawer-source-branch">源码分支</label>
+                  <input
+                    id="drawer-source-branch"
+                    v-model.trim="configForm.sourceBranch"
+                    class="cds-text-input"
+                    placeholder="main"
+                  />
+                </div>
+                <div class="cds-image-field">
+                  <label class="cds-label" for="drawer-build-context">构建上下文</label>
+                  <input
+                    id="drawer-build-context"
+                    v-model.trim="configForm.buildContext"
+                    class="cds-text-input"
+                    placeholder="."
+                  />
+                </div>
+              </div>
+              <div class="cds-image-preview" v-if="!componentDrawerUsesSourceDelivery && registryImageFromConfig">
                 <svg class="cds-image-preview__icon" width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1zm0 12.5a5.5 5.5 0 1 1 0-11 5.5 5.5 0 0 1 0 11zM8 4a.75.75 0 0 1 .75.75v2.5h2.5a.75.75 0 0 1 0 1.5h-2.5v2.5a.75.75 0 0 1-1.5 0v-2.5h-2.5a.75.75 0 0 1 0-1.5h2.5v-2.5A.75.75 0 0 1 8 4z"/></svg>
                 <span class="cds-image-preview__label">完整镜像</span>
                 <code class="cds-image-preview__text">{{ registryImageFromConfig }}</code>
               </div>
-              <p class="cds-helper-text">仓库地址来自当前环境镜像仓库；镜像:Tag 填写镜像名和明确 Tag。</p>
+              <p v-if="!componentDrawerUsesSourceDelivery" class="cds-helper-text">仓库地址来自当前环境镜像仓库；镜像:Tag 填写镜像名和明确 Tag。</p>
               <p v-if="registryWorkspaceError" class="modal-error" role="alert">{{ registryWorkspaceError }}</p>
             </section>
 
@@ -1443,40 +1464,16 @@
                   </p>
                 </div>
 
-                <div v-if="componentTemplateFields.length" class="component-template-field-list">
-                  <label
-                    v-for="field in componentTemplateFields"
-                    :key="componentTemplateFieldKey(field)"
-                    class="component-template-field"
-                  >
-                    <span class="component-template-field-label">
-                      <span>
-                        {{ componentTemplateFieldLabel(field) }}
-                        <em v-if="componentTemplateFieldRequiredForUser(field)">必填</em>
-                      </span>
-                      <small v-if="componentTemplateFieldHint(field)">{{ componentTemplateFieldHint(field) }}</small>
-                    </span>
-                    <span class="component-template-control">
-                      <select
-                        v-if="componentTemplateFieldUsesTargetSelect(field)"
-                        v-model="componentTemplateFieldValues[componentTemplateFieldKey(field)]"
-                        class="bx--select-input"
-                      >
-                        <option value="">{{ componentTemplateFieldPlaceholder(field) }}</option>
-                        <option v-for="option in componentTemplateFieldOptions(field)" :key="option.value" :value="option.value">
-                          {{ option.label }}
-                        </option>
-                      </select>
-                      <input
-                        v-else
-                        v-model.trim="componentTemplateFieldValues[componentTemplateFieldKey(field)]"
-                        class="bx--text-input"
-                        :type="componentTemplateFieldInputType(field)"
-                        :placeholder="componentTemplateFieldPlaceholder(field)"
-                      />
-                    </span>
-                  </label>
-                </div>
+                <ComponentConfigTemplateFields
+                  v-if="componentTemplateFields.length"
+                  v-model:field-values="componentTemplateFieldValues"
+                  :fields="componentTemplateFields"
+                  :required-for-user="componentTemplateFieldRequiredForUser"
+                  :field-hint="componentTemplateFieldHint"
+                  :field-options="componentTemplateFieldOptions"
+                  :field-uses-target-select="componentTemplateFieldUsesTargetSelect"
+                  :field-placeholder="componentTemplateFieldPlaceholder"
+                />
                 <div v-else-if="selectedComponentConfigTemplate" class="config-empty">这个模板不需要额外填写，直接应用即可。</div>
 
                 <p v-if="selectedComponentConfigTemplate && componentTemplateRequiredFieldsComplete" class="component-template-save-note">
@@ -1484,52 +1481,43 @@
                 </p>
                 <p v-else-if="selectedComponentConfigTemplate" class="component-config-warning">请先补全必填项。</p>
 
-                <details class="component-template-advanced">
-                  <summary>查看生成内容</summary>
-                  <div v-if="configForm.bindings.length" class="component-connected-list">
-                    <span>服务连接</span>
-                    <div v-for="(binding, idx) in configForm.bindings" :key="`${binding.targetKey || binding.targetName}-${idx}`" class="component-connected-row">
-                      <strong>{{ binding.targetName }}</strong>
-                      <small>{{ typeLabel(binding.targetType) || compTypeText(binding.targetType) || binding.targetType }} · {{ componentBindingGeneratedSummary(binding) }}</small>
-                      <button type="button" class="text-btn danger" @click="removeConfigBinding(idx)">移除</button>
+                <details v-if="configForm.env.length || componentNginxRouteEditorVisible" class="component-template-custom-config component-template-advanced-config">
+                  <summary>
+                    <span>高级配置</span>
+                    <small>代理路由和手工覆盖项</small>
+                  </summary>
+                  <div v-if="componentNginxRouteEditorVisible" class="nginx-route-panel">
+                    <div class="nginx-route-head">
+                      <span>代理路由</span>
+                      <button type="button" class="icon-btn icon-btn--compact" aria-label="添加代理路由" title="添加代理路由" @click="addNginxRoute">
+                        <svg focusable="false" width="16" height="16" viewBox="0 0 32 32" fill="currentColor"><path d="M17 15V6h-2v9H6v2h9v9h2v-9h9v-2z"/></svg>
+                      </button>
                     </div>
-                  </div>
-                  <div v-else class="config-empty">保存模板后，平台建立的服务连接会显示在这里。</div>
-                  <div class="config-ref-grid">
-                    <div>
-                      <span>启动配置</span>
-                      <strong>{{ componentRuntimeParamSummary(configForm.env) }}</strong>
-                    </div>
-                    <div>
-                      <span>配置对象</span>
-                      <strong>{{ componentConfigObjectSummary(configForm.configMaps) }}</strong>
-                    </div>
-                    <div>
-                      <span>敏感配置</span>
-                      <strong>{{ componentSecretSummary(configForm.secrets) }}</strong>
-                    </div>
-                    <div>
-                      <span>生成文件</span>
-                      <strong>{{ componentConfigFileSummary(configForm.files) }}</strong>
+                    <div v-if="nginxRouteRows.length" class="nginx-route-list">
+                      <div v-for="(route, idx) in nginxRouteRows" :key="idx" class="nginx-route-row">
+                        <input v-model.trim="route.path" class="bx--text-input" placeholder="匹配路径" aria-label="匹配路径" />
+                        <input
+                          v-model.trim="route.targetUrl"
+                          class="bx--text-input"
+                          list="nginx-route-target-options"
+                          placeholder="转发地址"
+                          aria-label="转发地址"
+                          @change="syncNginxRouteTargetUrl(route)"
+                        />
+                        <button type="button" class="icon-btn icon-btn--danger icon-btn--compact" aria-label="删除代理路由" title="删除代理路由" @click="removeNginxRoute(idx)">
+                          <svg focusable="false" width="16" height="16" viewBox="0 0 32 32" fill="currentColor"><path d="M12 12h2v12h-2zm6 0h2v12h-2z"/><path d="M4 6v2h2v20c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8h2V6H4zm4 22V8h16v20H8zM12 2h8v2h-8z"/></svg>
+                        </button>
+                      </div>
+                      <datalist id="nginx-route-target-options">
+                        <option v-for="target in componentDrawerBackendTargets" :key="target.key" :value="nginxTargetUrl(target)">
+                          {{ target.name }}
+                        </option>
+                      </datalist>
+                      <button type="button" class="rail-btn rail-btn--secondary rail-btn--sm nginx-route-apply" @click="applyNginxRoutes">更新代理配置</button>
                     </div>
                   </div>
                   <div class="component-advanced-tools">
-                    <button type="button" class="text-btn" @click="addConfigEnv">添加自定义配置</button>
-                    <button v-if="componentNginxRouteEditorVisible" type="button" class="text-btn" @click="addNginxRoute">添加前端代理路由</button>
-                  </div>
-                  <div v-if="componentNginxRouteEditorVisible && nginxRouteRows.length" class="nginx-route-list">
-                    <div v-for="(route, idx) in nginxRouteRows" :key="idx" class="nginx-route-row">
-                      <input v-model.trim="route.path" class="bx--text-input" placeholder="/api/" />
-                      <select v-model="route.targetKey" class="bx--select-input" @change="syncNginxRouteTarget(route)">
-                        <option value="">自定义地址</option>
-                        <option v-for="target in componentDrawerBackendTargets" :key="target.key" :value="target.key">
-                          {{ target.name }}
-                        </option>
-                      </select>
-                      <input v-model.trim="route.targetUrl" class="bx--text-input" placeholder="http://backend" />
-                      <button type="button" class="text-btn danger" @click="removeNginxRoute(idx)">删除</button>
-                    </div>
-                    <button type="button" class="rail-btn rail-btn--secondary rail-btn--sm" @click="applyNginxRoutes">更新代理配置</button>
+                    <button type="button" class="text-btn" @click="addConfigEnv">添加环境变量</button>
                   </div>
                   <div v-if="configForm.env.length" class="config-env-list">
                     <div v-for="(envItem, idx) in configForm.env" :key="idx" class="config-env-row" :class="{ 'config-env-row--managed': envItem.managed }">
@@ -1579,7 +1567,10 @@
             </section>
 
             <section v-if="configDrawerTab === 'settings'" class="config-section">
-              <div class="config-section-title"><span>运行配置</span></div>
+              <div class="config-section-title">
+                <span>运行态只读</span>
+                <small>这里反映当前工作负载引用的 ConfigMap、Secret 和挂载；修改部署参数请回到「部署」tab。</small>
+              </div>
               <div class="config-ref-grid">
                 <div>
                   <span>普通配置</span>
@@ -1702,7 +1693,7 @@
               {{ configDrawer.saving ? '保存中...' : '保存配置' }}
             </button>
             <button v-if="configDrawer.kind === 'service' && serviceDrawerProfile.showDeploymentConfig" type="button" class="bx--btn bx--btn--secondary" :disabled="configDrawer.saving || !serviceDrawerConfigurable" @click="saveServiceConfigDrawer">
-              {{ configDrawer.saving ? '保存中...' : '保存配置' }}
+              {{ configDrawer.saving ? '保存中...' : '保存部署配置' }}
             </button>
             <button v-if="configDrawer.kind === 'service'" type="button" class="bx--btn bx--btn--primary" :disabled="serviceDrawerDeployDisabled" @click="deployServiceFromDrawer">
               {{ serviceDrawerDeployLabel }}
@@ -1861,14 +1852,14 @@
 
     <!-- Install Service Modal -->
     <Teleport to="body">
-      <div v-if="showServiceModal" class="modal-overlay" role="dialog" aria-modal="true" @click.self="showServiceModal=false">
+      <div v-if="showServiceModal" class="modal-overlay" role="dialog" aria-modal="true" @click.self="closeServiceInstallModal">
         <div class="modal-container" :style="{ maxWidth: serviceModalMode === 'tool' ? '720px' : '600px' }">
           <div class="modal-header">
             <div>
               <p class="modal-label">{{ serviceModalMode === 'infra' ? '安装中间件' : '安装工具' }}</p>
               <p class="modal-heading">{{ serviceModalMode === 'infra' ? '选择要安装的中间件' : '选择要安装的工具' }}</p>
             </div>
-            <button type="button" class="modal-close" aria-label="关闭" @click="showServiceModal=false">
+            <button type="button" class="modal-close" aria-label="关闭" @click="closeServiceInstallModal">
               <svg focusable="false" width="20" height="20" viewBox="0 0 32 32" fill="currentColor"><path d="M24 9.4L22.6 8 16 14.6 9.4 8 8 9.4l6.6 6.6L8 22.6 9.4 24l6.6-6.6 6.6 6.6 1.4-1.4-6.6-6.6L24 9.4z"/></svg>
             </button>
           </div>
@@ -1900,7 +1891,7 @@
             </div>
           </div>
           <div class="modal-footer">
-            <button type="button" class="bx--btn bx--btn--secondary" @click="showServiceModal=false">取消</button>
+            <button type="button" class="bx--btn bx--btn--secondary" @click="closeServiceInstallModal">取消</button>
             <button type="button" class="bx--btn bx--btn--primary" :disabled="serviceModalLoading || serviceSubmitting || !serviceForm.serviceType" @click="submitService">{{ serviceSubmitting ? '安装中...' : '安装' }}</button>
           </div>
         </div>
@@ -1968,7 +1959,28 @@ import { computed, ref, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 const router = useRouter()
 import { api } from '../api/client'
+import ComponentConfigTemplateFields from '../components/ComponentConfigTemplateFields.vue'
 import { validateWorkspaceActionParams, type ServiceWorkspace, type WorkspaceAction, type WorkspaceActionField, type WorkspaceResource } from './serviceWorkspace'
+import { renderPaapTemplateValue, templatePlaceholderDefault } from './configTemplateRenderer'
+import {
+  componentConfigTemplateMatchesComponent,
+  componentTemplateFieldDefaultValue,
+  componentTemplateCredentialPasswordKeys,
+  componentTemplateCredentialUsernameKeys,
+  componentTemplateDefaultCredentialUsername,
+  componentTemplateExistingFieldValue,
+  componentTemplateFieldKey,
+  componentTemplateFieldLabel,
+  componentTemplateFieldMatchesServiceRef,
+  componentTemplateFieldRequired,
+  componentTemplateFieldTargetTokens,
+  componentTemplateFieldType,
+  componentTemplateListItemFields,
+  componentTemplateInitialFieldValue as templateInitialFieldValue,
+  componentTemplateRenderTargetValue,
+  componentTemplateRequiredFieldsComplete as templateRequiredFieldsComplete,
+  componentTemplateServicePasswordFieldKeys,
+} from './componentConfigTemplateRuntime'
 import {
   connectionBindingPreview,
   serviceConfigFieldVisible,
@@ -1997,6 +2009,7 @@ import {
   registryRepositorySuffix,
   splitImageRepositoryAndTag,
 } from './componentImageConfig'
+import { mergeCreatedCanvasResource, selectCreatedCanvasResource } from './envDetailCanvasResources'
 import {
   buildComponentDependencyEdges,
   buildComponentTopologyNodes,
@@ -2168,7 +2181,7 @@ const normalizeTemplateConfigFiles = (items:any[]): ComponentConfigFileRow[] => 
     name: String(item?.name || '').trim(),
     configMapName: String(item?.configMapName || '').trim(),
     key: String(item?.key || '').trim(),
-    mountPath: String(item?.mountPath || '').trim(),
+    mountPath: String(item?.mountPath || item?.recommendedMountPath || '').trim(),
     readOnly: item?.readOnly !== false,
   })).filter((item:ComponentConfigFileRow) => item.key && item.mountPath)
   : []
@@ -2185,9 +2198,14 @@ const marqueeRect = ref<{ x: number; y: number; width: number; height: number } 
 const marqueeDrag = ref<{ startCanvasX: number; startCanvasY: number; currentCanvasX: number; currentCanvasY: number; stageEl: HTMLElement } | null>(null)
 const defaultConfigForm = () => ({
   framework: 'auto',
+  deliveryMode: 'image' as 'image' | 'source',
   image: '',
   repository: '',
   imageTag: '',
+  sourceRepoUrl: '',
+  sourceBranch: 'main',
+  buildContext: '.',
+  dockerfilePath: '',
   version: '',
   replicas: 1,
   cpu: '',
@@ -2252,13 +2270,16 @@ const loadUserComponentConfigTemplates = async () => {
 const componentConfigTemplatesLoading = ref(false)
 const componentUserConfigTemplates = ref<UserComponentConfigTemplate[]>([])
 const selectedComponentConfigTemplateId = ref('')
-const componentTemplateFieldValues = ref<Record<string, string>>({})
+const componentTemplateFieldValues = ref<Record<string, any>>({})
 const nginxRouteRows = ref<NginxRouteRow[]>([])
 const defaultServiceConfigForm = (): ServiceConfigForm => ({})
 const serviceConfigForm = ref<ServiceConfigForm>(defaultServiceConfigForm())
 const componentDrawerRole = ref('custom')
 const serviceDrawerWorkspaceLoading = ref(false)
 const serviceExternalAccessLoading = ref(false)
+const serviceDrawerRevealedSecrets = ref<Set<string>>(new Set())
+const serviceDrawerSecretValues = ref<Record<string, string>>({})
+const serviceDrawerSecretLoadingKey = ref('')
 const runtimeMetrics = ref<any | null>(null)
 const runtimeMetricsLoading = ref(false)
 const runtimeMetricsError = ref('')
@@ -2293,54 +2314,54 @@ const configDrawerTabs = computed<Array<{ key: ConfigDrawerTab; label: string }>
       { key: 'deploy', label: '部署' },
       { key: 'database', label: '数据库' },
       { key: 'backups', label: '备份' },
-	      { key: 'variables', label: '配置' },
+	      { key: 'variables', label: '接入' },
 	      { key: 'runtime', label: '指标' },
 	      { key: 'logs', label: '日志' },
 	      { key: 'console', label: '控制台' },
-      { key: 'settings', label: '设置' },
+      { key: 'settings', label: '运行态' },
     ]
   }
   if (kind === 'redis') {
     return [
       { key: 'deploy', label: '部署' },
       { key: 'data', label: '数据' },
-	      { key: 'variables', label: '配置' },
+	      { key: 'variables', label: '接入' },
 	      { key: 'runtime', label: '指标' },
 	      { key: 'logs', label: '日志' },
 	      { key: 'console', label: '控制台' },
-      { key: 'settings', label: '设置' },
+      { key: 'settings', label: '运行态' },
     ]
   }
   if (kind === 'message-queue') {
     return [
       { key: 'deploy', label: '部署' },
       { key: 'queues', label: serviceDrawerType.value === 'kafka' ? '主题' : '队列' },
-	      { key: 'variables', label: '配置' },
+	      { key: 'variables', label: '接入' },
 	      { key: 'runtime', label: '指标' },
 	      { key: 'logs', label: '日志' },
 	      { key: 'console', label: '控制台' },
-      { key: 'settings', label: '设置' },
+      { key: 'settings', label: '运行态' },
     ]
   }
   if (kind === 'object-storage') {
     return [
       { key: 'deploy', label: '部署' },
       { key: 'buckets', label: '存储桶' },
-	      { key: 'variables', label: '配置' },
+	      { key: 'variables', label: '接入' },
 	      { key: 'runtime', label: '指标' },
 	      { key: 'logs', label: '日志' },
 	      { key: 'console', label: '控制台' },
-      { key: 'settings', label: '设置' },
+      { key: 'settings', label: '运行态' },
     ]
   }
   return [
     { key: 'deploy', label: '部署' },
     { key: 'workspace', label: serviceDrawerWorkspaceTabLabel.value },
-	    { key: 'variables', label: '配置' },
+	    { key: 'variables', label: '接入' },
 	    { key: 'runtime', label: '指标' },
 	    { key: 'logs', label: '日志' },
 	    { key: 'console', label: '控制台' },
-    { key: 'settings', label: '设置' },
+    { key: 'settings', label: '运行态' },
   ]
 })
 const registryWorkspaceLoading = ref(false)
@@ -2565,7 +2586,11 @@ const compTypeText = (type?:string) => ({ frontend:'前端服务', backend:'后�
 const componentIsSourceDelivery = (comp:any) => comp?.deliveryMode === 'source' || Boolean(comp?.sourceRepoUrl || comp?.sourceMirrorRepoUrl || comp?.jenkinsJob)
 const componentDeliveryModeLabel = (comp:any) => componentIsSourceDelivery(comp) ? '源码交付' : '镜像交付'
 const componentDeliveryTarget = (comp:any) => comp?.registryImage || comp?.image || comp?.sourceRepoUrl || '-'
-const appCanvasServices = computed(() => services.value)
+const isApplicationTopologyService = (svc:any) => {
+  const type = String(serviceProductKey(svc) || svc?.serviceType || svc?.type || '').toLowerCase()
+  return ['postgresql', 'mysql', 'mongodb', 'redis', 'rabbitmq', 'kafka', 'minio'].includes(type)
+}
+const appCanvasServices = computed(() => services.value.filter(isApplicationTopologyService))
 const componentTopologyAllNodes = computed(() => buildComponentTopologyNodes(components.value, appCanvasServices.value))
 const environmentTopologyAllNodes = computed(() => buildComponentTopologyNodes(components.value, services.value))
 const componentTopologyEdges = computed(() => buildComponentDependencyEdges(componentTopologyAllNodes.value))
@@ -2938,9 +2963,49 @@ const handleTopologyNodeClick = (event: MouseEvent, node:any) => {
   selectedNodeKeys.value = [key]
   selectTopologyNode(node)
 }
-const closeComponentContextMenu = () => {
+const closeCanvasMenus = () => {
   componentContextMenu.value = { visible: false, x: 0, y: 0, kind: 'component', component: null, service: null }
   contextSubmenu.value = { visible: false, x: 0, y: 0, mode: 'tool', templates: [] }
+}
+const closeCanvasDialogs = () => {
+  showComponentModal.value = false
+  componentModalError.value = ''
+  if (!serviceSubmitting.value) {
+    showServiceModal.value = false
+    serviceModalError.value = ''
+    serviceModalNotice.value = ''
+  }
+  if (!uninstallSubmitting.value) {
+    pendingUninstallService.value = null
+    uninstallError.value = ''
+  }
+  if (!pendingDeleteDialog.value?.submitting) pendingDeleteDialog.value = null
+  if (!relationshipSubmitting.value) {
+    showRelationshipModal.value = false
+    relationshipSourceComponent.value = null
+    relationshipSelectedKeys.value = []
+    relationshipError.value = ''
+  }
+  if (!adoptResourceSubmitting.value) {
+    showAdoptResourceModal.value = false
+    adoptResourceError.value = ''
+    adoptResourceSelection.value = ''
+  }
+}
+const closeComponentContextMenu = closeCanvasMenus
+const enterDrawerContext = () => {
+  closeCanvasMenus()
+  closeCanvasDialogs()
+}
+const enterCanvasContextMenu = (event: MouseEvent, _kind: 'canvas' | 'component' | 'service' = 'canvas') => {
+  event.preventDefault()
+  closeConfigDrawer()
+  closeCanvasDialogs()
+  closeCanvasMenus()
+}
+const enterModalContext = () => {
+  closeCanvasMenus()
+  closeConfigDrawer()
 }
 const componentTypeTemplates = [
   { type: 'frontend', label: '前端服务', description: '创建前端应用组件' },
@@ -3001,6 +3066,7 @@ const contextMenuPosition = (event: MouseEvent, menuWidth = 220, menuHeight = 22
   }
 }
 const openCanvasContextMenu = (event: MouseEvent) => {
+  enterCanvasContextMenu(event, 'canvas')
   selectedTopologyKey.value = null
   const stageEl = (event.target as HTMLElement | null)?.closest?.('.component-canvas-stage') as HTMLElement | null
   canvasCreatePoint.value = stageEl ? canvasPointFromEvent(event, stageEl) : null
@@ -3015,6 +3081,7 @@ const openCanvasContextMenu = (event: MouseEvent) => {
   }
 }
 const openComponentContextMenu = (event: MouseEvent, comp: any) => {
+  enterCanvasContextMenu(event, 'component')
   selectComponent(comp?.id)
   const pos = contextMenuPosition(event)
   componentContextMenu.value = {
@@ -3027,6 +3094,7 @@ const openComponentContextMenu = (event: MouseEvent, comp: any) => {
   }
 }
 const openServiceContextMenu = (event: MouseEvent, svc: any) => {
+  enterCanvasContextMenu(event, 'service')
   const pos = contextMenuPosition(event, 220, 140)
   selectedTopologyKey.value = String(svc?.topologyId || svc?.id || '')
   componentContextMenu.value = {
@@ -3984,6 +4052,7 @@ const deployComponent = async (comp:any) => {
 }
 const drawerRuntime = computed(() => configDrawer.value.component?.runtimeConfig || configDrawer.value.service?.runtimeConfig || {})
 const componentDrawerType = computed(() => String(componentDrawerRole.value || configDrawer.value.component?.type || 'custom').toLowerCase())
+const componentDrawerUsesSourceDelivery = computed(() => configForm.value.deliveryMode === 'source')
 const componentDrawerRoleOptions = [
   { value: 'frontend', label: '前端 / Web 入口' },
   { value: 'backend', label: '后端 / API 服务' },
@@ -4025,8 +4094,8 @@ const componentDrawerCapabilityRows = computed(() => {
 const componentDrawerConfigSourceSummary = computed(() => componentDrawerProfileModel.value.configSourceSummary)
 const componentDrawerSuggestedActions = computed(() => {
   const actions: Array<{ key: string; label: string }> = []
-  if (componentDrawerProfile.value.webEntry && componentDrawerBackendTargets.value.length && !componentDrawerBindingValue('BACKEND_URL')) {
-    actions.push({ key: 'select-backend', label: '绑定后端 API' })
+  if (componentDrawerProfile.value.webEntry && componentDrawerBackendTargets.value.length && !nginxRouteRows.value.length) {
+    actions.push({ key: 'proxy-route', label: '配置代理路由' })
   }
   if ((componentDrawerProfile.value.apiService || componentDrawerProfile.value.hasRuntimeDependencies) && componentDrawerDependencyTargets.value.length && !configForm.value.bindings.length) {
     actions.push({ key: 'select-dependency', label: '添加运行依赖' })
@@ -4049,15 +4118,6 @@ const componentDrawerDependencyTargets = computed(() =>
       : componentTargetCanAcceptDependency(target.component)
   })
 )
-const componentDrawerBindingValue = (name: string) => {
-  const direct = configForm.value.env.find((item:any) => item.name === name)
-  if (direct?.value) return direct.value
-  for (const binding of configForm.value.bindings) {
-    const value = binding.generated?.[name]
-    if (value) return value
-  }
-  return ''
-}
 const componentDrawerDataRows = computed(() => {
   const comp = configDrawer.value.component || {}
   const runtime = comp.runtimeConfig || {}
@@ -4082,6 +4142,11 @@ const componentDrawerConfigKeySuggestions = computed(() => {
   return componentConfigKeySuggestions(componentDrawerProfile.value)
 })
 const drawerService = computed(() => configDrawer.value.kind === 'service' ? configDrawer.value.service : null)
+watch(() => drawerService.value?.id || '', () => {
+  serviceDrawerRevealedSecrets.value = new Set()
+  serviceDrawerSecretValues.value = {}
+  serviceDrawerSecretLoadingKey.value = ''
+})
 const serviceDrawerLogicalType = computed(() => serviceLogicalType(drawerService.value))
 const serviceDrawerType = computed(() => serviceProductKey(drawerService.value) || serviceDrawerLogicalType.value)
 const serviceDrawerConfigType = computed(() => serviceConfigType({ ...(drawerService.value || {}), productKey: serviceDrawerType.value }))
@@ -4422,6 +4487,60 @@ const serviceDrawerVariableRows = computed(() => {
   }
   return rows
 })
+const serviceDrawerSecretVisible = (name:string) => serviceDrawerRevealedSecrets.value.has(name)
+const serviceDrawerSecretDisplayValue = (row:{ name: string; value: string }) => {
+  if (!serviceDrawerSecretVisible(row.name)) return '******'
+  return serviceDrawerSecretValues.value[row.name] || '未读取到凭据'
+}
+const serviceDrawerSecretKeysForName = (name:string, type:string) => {
+  const upper = String(name || '').toUpperCase()
+  if (upper === 'MINIO_ACCESS_KEY') return ['root-user', 'access-key', 'accesskey', 'minio-access-key', 'username']
+  if (upper === 'MINIO_SECRET_KEY') return ['root-password', 'secret-key', 'secretkey', 'minio-secret-key', 'password']
+  if (upper.includes('POSTGRES') || type === 'postgresql') return ['postgres-password', 'password']
+  if (upper.includes('MYSQL') || type === 'mysql') return ['mysql-root-password', 'mysql-password', 'password']
+  if (upper.includes('MONGODB') || type === 'mongodb') return ['mongodb-root-password', 'mongodb-password', 'password']
+  if (upper.includes('REDIS') || type === 'redis') return ['redis-password', 'password']
+  if (upper.includes('RABBITMQ') || type === 'rabbitmq') return ['rabbitmq-password', 'password']
+  return ['password']
+}
+const serviceDrawerSecretDisplayFromCredential = (row:{ name: string; value: string }, secret:string) => {
+  if (!secret) return ''
+  const upper = String(row.name || '').toUpperCase()
+  if (upper.endsWith('_URL')) return String(row.value || '').replace('******', encodeURIComponent(secret))
+  return secret
+}
+const loadServiceDrawerSecretValue = async (row:{ name: string; value: string }) => {
+  if (serviceDrawerSecretValues.value[row.name]) return
+  const svc = drawerService.value
+  if (!svc?.id) return
+  serviceDrawerSecretLoadingKey.value = row.name
+  try {
+    const credentials = await serviceCredentials(svc)
+    const secret = credentialValue(credentials, serviceDrawerSecretKeysForName(row.name, serviceDrawerType.value))
+    serviceDrawerSecretValues.value = {
+      ...serviceDrawerSecretValues.value,
+      [row.name]: serviceDrawerSecretDisplayFromCredential(row, secret),
+    }
+  } catch (e:any) {
+    serviceDrawerSecretValues.value = {
+      ...serviceDrawerSecretValues.value,
+      [row.name]: `读取失败：${e?.message || '未知错误'}`,
+    }
+  } finally {
+    serviceDrawerSecretLoadingKey.value = ''
+  }
+}
+const toggleServiceDrawerSecret = async (row:{ name: string; value: string }) => {
+  const next = new Set(serviceDrawerRevealedSecrets.value)
+  if (next.has(row.name)) {
+    next.delete(row.name)
+    serviceDrawerRevealedSecrets.value = next
+    return
+  }
+  next.add(row.name)
+  serviceDrawerRevealedSecrets.value = next
+  await loadServiceDrawerSecretValue(row)
+}
 const serviceDrawerDatabaseRows = computed(() => {
   const type = serviceDrawerType.value
   const form = serviceConfigForm.value
@@ -4668,10 +4787,6 @@ const showServiceRawVariables = () => {
   configDrawer.value.error = ''
   configDrawer.value.message = '服务变量由模板、敏感配置和运行态发现生成；当前页面已按可复制变量和原始环境变量分组展示。'
 }
-const showServiceNewVariableHint = () => {
-  configDrawer.value.error = ''
-  configDrawer.value.message = '新增应用变量请在组件配置中选择该服务并应用连接，服务侧只展示模板生成的连接参数。'
-}
 const drawerRuntimeMetricsKey = computed(() => {
   if (!configDrawer.value.visible) return ''
   if (configDrawer.value.kind === 'component') return `component:${configDrawer.value.component?.id || ''}`
@@ -4740,6 +4855,7 @@ watch([() => configDrawerTab.value, drawerConsoleKey], ([tab, key], [, oldKey]) 
   }
 })
 const openComponentConfigDrawer = (comp:any) => {
+  enterDrawerContext()
   const actual = components.value.find((item:any) => Number(item.id) === Number(comp?.id)) || comp
   if (!actual) return
   selectComponent(actual.id)
@@ -4755,6 +4871,7 @@ const openComponentConfigDrawer = (comp:any) => {
   void ensureRegistryWorkspaces()
 }
 const openServiceConfigDrawer = (svc:any) => {
+  enterDrawerContext()
   const actual = services.value.find((item:any) => Number(item.id) === Number(svc?.id)) || svc
   if (!actual) return
   selectedTopologyKey.value = String(actual.topologyId || `service:${actual.id}`)
@@ -4810,12 +4927,18 @@ const loadComponentConfigForm = (comp:any) => {
   const image = String(comp?.image || comp?.registryImage || '')
   const imageParts = splitImageRepositoryAndTag(image)
   const bindings = normalizeConfigBindings(cfg.bindings)
+  const deliveryMode = componentIsSourceDelivery(comp) ? 'source' : 'image'
   componentDrawerRole.value = String(comp?.type || 'custom').toLowerCase()
   configForm.value = {
     framework: cfg.framework || 'auto',
+    deliveryMode,
     image,
     repository: registryHostForImageField(image, registryHostForDrawer.value),
     imageTag: imageTagForImageField(image, registryHostForDrawer.value),
+    sourceRepoUrl: String(comp?.sourceRepoUrl || comp?.sourceMirrorRepoUrl || ''),
+    sourceBranch: String(comp?.sourceBranch || 'main'),
+    buildContext: String(comp?.buildContext || '.'),
+    dockerfilePath: String(comp?.dockerfilePath || ''),
     version: String(comp?.version || imageParts.tag || componentDeployVersion(comp) || ''),
     replicas: Number(runtime.replicas ?? comp?.replicas ?? 1),
     cpu: String(runtime.resources?.requests?.cpu || comp?.cpu || ''),
@@ -4930,34 +5053,15 @@ const componentTemplateTokenContext = () => ({
 const componentTemplateFieldByKey = (key:string) =>
   componentTemplateFields.value.find((field:any) => componentTemplateFieldKey(field) === key) || null
 const componentTemplateTargetRenderedValue = (field:any, target:any, credentials:any[] = []) => {
-  const key = componentTemplateFieldKey(field)
-  if (!target) return ''
-  if (target.kind === 'component') return `http://${target.serviceName || target.name}`
-
   const serviceType = String(target.type || '').toLowerCase()
-  const endpoint = serviceInternalEndpoint(target.service || {})
-  const [host, portText] = splitEndpoint(endpoint, defaultServicePortForBinding(serviceType))
-  const password = credentialValue(credentials, credentialPasswordKeys(serviceType))
-  const passwordPart = password ? `:${encodeURIComponent(password)}` : ''
-  const username = credentialValue(credentials, credentialUsernameKeys(serviceType)) || defaultCredentialUsername(serviceType)
-  const database = defaultCredentialDatabase(serviceType)
-
-  if (key.endsWith('.jdbcUrl')) {
-    if (serviceType === 'mysql') return `jdbc:mysql://${host}:${portText}/${database}`
-    if (serviceType === 'postgresql') return `jdbc:postgresql://${host}:${portText}/${database}`
-  }
-  if (key.endsWith('.url')) {
-    if (serviceType === 'postgresql') return `postgresql://${username}${passwordPart}@${host}:${portText}/${database}`
-    if (serviceType === 'mysql') return `mysql://${username}${passwordPart}@${host}:${portText}/${database}`
-    if (serviceType === 'mongodb') return `mongodb://${username}${passwordPart}@${host}:${portText}/${database}`
-    if (serviceType === 'redis') return password ? `redis://:${encodeURIComponent(password)}@${host}:${portText}` : `redis://${host}:${portText}`
-  }
-  if (key.endsWith('.addr')) return `${host}:${portText}`
-  if (key.endsWith('.host')) return host
-  if (key.endsWith('.port')) return String(portText)
-  return endpoint || host
+  return componentTemplateRenderTargetValue(field, target, {
+    credentials,
+    endpoint: target.kind === 'service' ? serviceInternalEndpoint(target.service || {}) : '',
+    defaultPort: defaultServicePortForBinding(serviceType),
+    credentialValue,
+  })
 }
-const componentTemplateRenderFieldValue = (key:string, fieldValues:Record<string, string>, credentialsByTargetKey:Record<string, any[]> = {}) => {
+const componentTemplateRenderFieldValue = (key:string, fieldValues:Record<string, any>, credentialsByTargetKey:Record<string, any[]> = {}) => {
   const raw = String(fieldValues[key] ?? '').trim()
   const field = componentTemplateFieldByKey(key)
   if (field && componentTemplateFieldType(field) === 'serviceref') {
@@ -4966,44 +5070,15 @@ const componentTemplateRenderFieldValue = (key:string, fieldValues:Record<string
   }
   return raw
 }
-const renderComponentTemplateValue = (value:string, context = componentTemplateTokenContext(), fieldValues:Record<string, string> = {}, credentialsByTargetKey:Record<string, any[]> = {}) => String(value || '')
-  .replace(/\{\{\s*componentName\s*\}\}/g, context.componentName)
-  .replace(/\{\{\s*configMapName\s*\}\}/g, context.configMapName)
-  .replace(/\{\{\s*secretName\s*\}\}/g, context.secretName)
-  .replace(/\[\[\s*paap:([^\]\s]+)([^\]]*)\]\]/g, (_match, key, options) => {
-    const rendered = componentTemplateRenderFieldValue(String(key), fieldValues, credentialsByTargetKey)
-    return rendered || componentTemplatePlaceholderDefault(String(key), String(options || ''))
+const renderComponentTemplateValue = (value:string, context = componentTemplateTokenContext(), fieldValues:Record<string, any> = {}, credentialsByTargetKey:Record<string, any[]> = {}) =>
+  renderPaapTemplateValue(value, {
+    context,
+    fieldValues,
+    resolveFieldValue: (key, values) => {
+      const rendered = componentTemplateRenderFieldValue(String(key), values, credentialsByTargetKey)
+      return rendered || templatePlaceholderDefault(String(key), '')
+    },
   })
-const componentTemplatePlaceholderDefault = (key:string, options:string) => {
-  const defaultMatch = options.match(/\bdefault=("[^"]*"|'[^']*'|[^\s\]]+)/)
-  if (defaultMatch) return defaultMatch[1].replace(/^['"]|['"]$/g, '')
-  if (key === 'listen.port') return '80'
-  if (key.endsWith('.port')) return ''
-  return ''
-}
-const credentialPasswordKeys = (serviceType:string) => {
-  if (serviceType === 'postgresql') return ['postgres-password', 'password']
-  if (serviceType === 'mysql') return ['mysql-root-password', 'mysql-password', 'password']
-  if (serviceType === 'redis') return ['redis-password', 'password']
-  if (serviceType === 'mongodb') return ['mongodb-root-password', 'mongodb-password', 'password']
-  return ['password']
-}
-const credentialUsernameKeys = (serviceType:string) => {
-  if (serviceType === 'postgresql') return ['postgres-username', 'username']
-  if (serviceType === 'mysql') return ['mysql-root-user', 'mysql-username', 'username']
-  if (serviceType === 'mongodb') return ['mongodb-root-user', 'mongodb-username', 'username']
-  return ['username']
-}
-const defaultCredentialUsername = (serviceType:string) => {
-  if (serviceType === 'mysql') return 'root'
-  if (serviceType === 'mongodb') return 'root'
-  return 'postgres'
-}
-const defaultCredentialDatabase = (serviceType:string) => {
-  if (serviceType === 'mysql') return 'mysql'
-  if (serviceType === 'mongodb') return 'admin'
-  return 'postgres'
-}
 const componentTemplateInlineHelp = (template:UserComponentConfigTemplate) =>
   String(template?.description || '下方已按模板抽取出需要填写的配置项。')
     .replace(/ConfigMap/g, '普通配置')
@@ -5011,12 +5086,10 @@ const componentTemplateInlineHelp = (template:UserComponentConfigTemplate) =>
     .replace(/Secret/g, '敏感配置')
 const componentTemplateOptionValue = (template:UserComponentConfigTemplate) => String(template?.key || template?.id || '')
 const componentTemplateMatchesCurrentComponent = (template:UserComponentConfigTemplate) => {
-  const types = Array.isArray(template.componentTypes) ? template.componentTypes.map((item) => String(item).toLowerCase()) : []
-  const currentType = componentDrawerType.value
-  const typeMatches = !types.length || types.includes(currentType) || types.includes('custom')
-  const framework = String(template.framework || 'auto')
-  const frameworkMatches = framework === 'auto' || configForm.value.framework === 'auto' || framework === configForm.value.framework
-  return typeMatches && frameworkMatches
+  return componentConfigTemplateMatchesComponent(template, {
+    componentType: componentDrawerType.value,
+    framework: configForm.value.framework,
+  })
 }
 const componentSelectableConfigTemplates = computed(() =>
   componentUserConfigTemplates.value.filter((template) => componentTemplateMatchesCurrentComponent(template))
@@ -5029,19 +5102,11 @@ const componentTemplateFields = computed(() =>
     ? selectedComponentConfigTemplate.value.fields.filter((field:any) => componentTemplateFieldKey(field))
     : []
 )
-const componentTemplateFieldKey = (field:any) => String(field?.key || '').trim()
-const componentTemplateFieldLabel = (field:any) => String(field?.label || componentTemplateFieldKey(field) || '配置项').trim()
-const componentTemplateFieldType = (field:any) => String(field?.type || 'text').trim().toLowerCase()
-const componentTemplateFieldRequired = (field:any) => Boolean(field?.required)
-const componentTemplateFieldTargetTokens = (field:any) => String(field?.target || '')
-  .toLowerCase()
-  .split('|')
-  .map((item) => item.trim())
-  .filter(Boolean)
 const componentTemplateSelectedServiceTargetForGroup = (field:any) => {
   const group = componentTemplateFieldKey(field).split('.')[0]
-  if (!group) return null
   const serviceRefField = componentTemplateFields.value.find((candidate:any) =>
+    componentTemplateFieldMatchesServiceRef(field, candidate)
+  ) || componentTemplateFields.value.find((candidate:any) =>
     componentTemplateFieldType(candidate) === 'serviceref'
     && componentTemplateFieldKey(candidate).startsWith(`${group}.`)
   )
@@ -5053,17 +5118,6 @@ const componentTemplateFieldAutofillsFromService = (field:any) =>
   componentTemplateFieldType(field) === 'password' && Boolean(componentTemplateSelectedServiceTargetForGroup(field))
 const componentTemplateFieldRequiredForUser = (field:any) =>
   componentTemplateFieldRequired(field) && !componentTemplateFieldAutofillsFromService(field)
-const componentTemplateFieldDefaultValue = (field:any) => {
-  const value = field?.default
-  if (value !== undefined && value !== null) return String(value)
-  return componentTemplatePlaceholderDefault(componentTemplateFieldKey(field), '')
-}
-const componentTemplateFieldInputType = (field:any) => {
-  const type = componentTemplateFieldType(field)
-  if (type === 'password') return 'password'
-  if (type === 'number') return 'number'
-  return 'text'
-}
 const componentTemplateFieldOptions = (field:any) => {
   if (componentTemplateFieldType(field) !== 'serviceref') return []
   const targets = componentTemplateFieldTargetTokens(field)
@@ -5114,14 +5168,32 @@ const componentTemplateExistingTargetKey = (field:any) => {
   })
   return binding?.targetKey || ''
 }
-const componentTemplateInitialFieldValue = (field:any) => {
-  if (componentTemplateFieldType(field) === 'serviceref') {
-    return componentTemplateExistingTargetKey(field) || componentTemplateFieldOptions(field)[0]?.value || ''
+const componentTemplateDefaultListRow = (field:any) => {
+  const row: Record<string, string> = {}
+  for (const itemField of componentTemplateListItemFields(field)) {
+    const key = componentTemplateFieldKey(itemField)
+    const options = componentTemplateFieldOptions(itemField)
+    row[key] = componentTemplateFieldType(itemField) === 'serviceref' && options.length === 1
+      ? options[0].value
+      : componentTemplateFieldDefaultValue(itemField)
   }
-  return componentTemplateFieldDefaultValue(field)
+  return row
+}
+const componentTemplateInitialFieldValue = (field:any) => {
+  const existingValue = componentTemplateExistingFieldValue(field, {
+    env: configForm.value.env,
+    secrets: configForm.value.secrets,
+    configMaps: configForm.value.configMaps,
+  })
+  if (existingValue && componentTemplateFieldType(field) !== 'serviceref') return existingValue
+  if (componentTemplateFieldType(field) === 'list') return [componentTemplateDefaultListRow(field)]
+  return templateInitialFieldValue(field, {
+    existingTargetKey: componentTemplateExistingTargetKey(field),
+    firstOptionValue: componentTemplateFieldOptions(field).length === 1 ? componentTemplateFieldOptions(field)[0]?.value || '' : '',
+  })
 }
 const initializeComponentTemplateFieldValues = (force = false) => {
-  const next: Record<string, string> = {}
+  const next: Record<string, any> = {}
   for (const field of componentTemplateFields.value) {
     const key = componentTemplateFieldKey(field)
     const current = componentTemplateFieldValues.value[key]
@@ -5140,23 +5212,55 @@ const selectRecommendedComponentConfigTemplate = () => {
   initializeComponentTemplateFieldValues(true)
 }
 const componentTemplateRequiredFieldsComplete = computed(() =>
-  componentTemplateFields.value.every((field:any) => {
-    if (!componentTemplateFieldRequiredForUser(field)) return true
-    const key = componentTemplateFieldKey(field)
-    return String(componentTemplateFieldValues.value[key] || '').trim().length > 0
+  templateRequiredFieldsComplete(componentTemplateFields.value, componentTemplateFieldValues.value, {
+    isRequiredForUser: componentTemplateFieldRequiredForUser,
   })
 )
+const componentTemplateServiceRefSignature = computed(() =>
+  componentTemplateFields.value
+    .filter((field:any) => componentTemplateFieldType(field) === 'serviceref')
+    .map((field:any) => `${componentTemplateFieldKey(field)}=${componentTemplateFieldValues.value[componentTemplateFieldKey(field)] || ''}`)
+    .join('|')
+)
+const autofillComponentTemplateServicePasswords = async () => {
+  if (!configDrawer.value.visible || configDrawer.value.kind !== 'component') return
+  const next = { ...componentTemplateFieldValues.value }
+  const credentialsByTargetKey: Record<string, any[]> = {}
+  let changed = false
+  for (const field of componentTemplateFields.value) {
+    if (componentTemplateFieldType(field) !== 'serviceref') continue
+    const target = componentTemplateTargetForValue(next[componentTemplateFieldKey(field)])
+    if (!target || target.kind !== 'service') continue
+    const serviceType = String(target.type || '').toLowerCase()
+    const passwordKeys = componentTemplateServicePasswordFieldKeys(componentTemplateFields.value, serviceType)
+    if (!passwordKeys.some((key) => !String(next[key] || '').trim())) continue
+    const credentials = await componentTemplateCredentialsForTarget(target, credentialsByTargetKey)
+    const password = credentialValue(credentials, componentTemplateCredentialPasswordKeys(serviceType))
+    if (!password) continue
+    for (const passwordKey of passwordKeys) {
+      if (String(next[passwordKey] || '').trim()) continue
+      next[passwordKey] = password
+      changed = true
+    }
+  }
+  if (changed) componentTemplateFieldValues.value = next
+}
 const applySelectedComponentConfigTemplate = (options: { silent?: boolean } = {}) => {
   if (!selectedComponentConfigTemplate.value) return
   return applyUserComponentConfigTemplate(selectedComponentConfigTemplate.value, options)
 }
 watch(() => selectedComponentConfigTemplate.value ? componentTemplateOptionValue(selectedComponentConfigTemplate.value) : '', () => {
   initializeComponentTemplateFieldValues(true)
+  void autofillComponentTemplateServicePasswords()
 })
 watch([componentSelectableConfigTemplates, () => configDrawer.value.visible, () => configDrawer.value.kind], () => {
   if (configDrawer.value.visible && configDrawer.value.kind === 'component') {
     selectRecommendedComponentConfigTemplate()
+    void autofillComponentTemplateServicePasswords()
   }
+})
+watch(componentTemplateServiceRefSignature, () => {
+  void autofillComponentTemplateServicePasswords()
 })
 const componentConnectionTargets = computed(() => {
   const currentId = Number(configDrawer.value.component?.id)
@@ -5186,9 +5290,10 @@ const selectedConnectionTarget = computed(() =>
   componentConnectionTargets.value.find((item:any) => item.key === configForm.value.bindingTargetKey) || null
 )
 const runComponentDrawerSuggestion = (key: string) => {
-  if (key === 'select-backend') {
+  if (key === 'proxy-route') {
     configDrawerTab.value = 'variables'
-    configForm.value.bindingTargetKey = componentDrawerBackendTargets.value[0]?.key || ''
+    configForm.value.framework = 'nginx'
+    if (!nginxRouteRows.value.length) addNginxRoute()
     return
   }
   if (key === 'select-dependency') {
@@ -5204,14 +5309,6 @@ const runComponentDrawerSuggestion = (key: string) => {
 }
 const configFrameworkOptions = componentFrameworkOptions
 const targetTypeLabel = (target:any) => target?.kind === 'component' ? compTypeText(target.type) : typeLabel(target?.type || '')
-const componentBindingGeneratedSummary = (binding:any) => {
-  const keys = Object.keys(binding?.generated || {}).filter(Boolean)
-  if (keys.length) return `${keys.length} 个参数`
-  if (binding?.role === 'database') return '数据库连接'
-  if (binding?.role === 'cache') return '缓存连接'
-  if (binding?.role === 'message-queue') return '消息连接'
-  return '服务连接'
-}
 const applySelectedConfigBinding = async () => {
   const target = selectedConnectionTarget.value
   const comp = configDrawer.value.component
@@ -5236,10 +5333,15 @@ const applySelectedConfigBinding = async () => {
 }
 const applyComponentTargetBinding = (target:any) => {
   const role = String(target.type || '').toLowerCase() === 'backend' ? 'backend' : 'component'
+  const value = `http://${target.serviceName || target.name}`
+  if (role === 'backend' && configForm.value.framework === 'nginx') {
+    ensureNginxRouteForTarget(target, value)
+    configDrawer.value.message = '已选择转发目标，请填写匹配路径后更新代理配置。'
+    return
+  }
   const envName = role === 'backend' && String(configDrawer.value.component?.type || '').toLowerCase() === 'frontend'
     ? 'BACKEND_URL'
     : `${envPrefix(target.name)}_URL`
-  const value = `http://${target.serviceName || target.name}`
   upsertEnvValue(envName, value)
   upsertBinding({
     targetKey: target.key,
@@ -5252,10 +5354,6 @@ const applyComponentTargetBinding = (target:any) => {
     source: 'user',
     generated: { [envName]: value },
   })
-  if (role === 'backend' && configForm.value.framework === 'nginx') {
-    ensureNginxRouteForTarget(target, value)
-    applyNginxRoutes()
-  }
 }
 const managedEnvOptionsForTarget = (target:any, name:string, source: ComponentConfigEnvRow['source'] = 'value'): Partial<ComponentConfigEnvRow> => ({
   managed: true,
@@ -5511,6 +5609,23 @@ const buildComponentTemplateFieldRenderValues = async () => {
   const fieldValues = { ...componentTemplateFieldValues.value }
   const credentialsByTargetKey: Record<string, any[]> = {}
   for (const field of componentTemplateFields.value) {
+    if (componentTemplateFieldType(field) === 'list') {
+      const listKey = componentTemplateFieldKey(field)
+      const rows = Array.isArray(fieldValues[listKey]) ? fieldValues[listKey] : []
+      fieldValues[listKey] = await Promise.all(rows.map(async (row:any) => {
+        const nextRow = { ...row }
+        for (const itemField of componentTemplateListItemFields(field)) {
+          if (componentTemplateFieldType(itemField) !== 'serviceref') continue
+          const itemKey = componentTemplateFieldKey(itemField)
+          const target = componentTemplateTargetForValue(nextRow[itemKey])
+          if (!target) continue
+          const credentials = await componentTemplateCredentialsForTarget(target, credentialsByTargetKey)
+          nextRow[itemKey] = componentTemplateTargetRenderedValue(itemField, target, credentials)
+        }
+        return nextRow
+      }))
+      continue
+    }
     if (componentTemplateFieldType(field) !== 'serviceref') continue
     const key = componentTemplateFieldKey(field)
     const target = componentTemplateTargetForValue(fieldValues[key])
@@ -5520,9 +5635,12 @@ const buildComponentTemplateFieldRenderValues = async () => {
     if (target.kind !== 'service') continue
 
     const serviceType = String(target.type || '').toLowerCase()
-    const password = credentialValue(credentials, credentialPasswordKeys(serviceType))
+    const password = credentialValue(credentials, componentTemplateCredentialPasswordKeys(serviceType))
+    for (const passwordKey of componentTemplateServicePasswordFieldKeys(componentTemplateFields.value, serviceType)) {
+      if (!fieldValues[passwordKey]) fieldValues[passwordKey] = password
+    }
     if (['postgresql', 'mysql', 'mongodb'].includes(serviceType)) {
-      if (!fieldValues['database.username']) fieldValues['database.username'] = credentialValue(credentials, credentialUsernameKeys(serviceType)) || defaultCredentialUsername(serviceType)
+      if (!fieldValues['database.username']) fieldValues['database.username'] = credentialValue(credentials, componentTemplateCredentialUsernameKeys(serviceType)) || componentTemplateDefaultCredentialUsername(serviceType)
       if (!fieldValues['database.password']) fieldValues['database.password'] = password
     }
     if (serviceType === 'redis' && !fieldValues['redis.password']) {
@@ -5534,6 +5652,34 @@ const buildComponentTemplateFieldRenderValues = async () => {
 const applyComponentTemplateServiceRefs = async () => {
   const applied = new Set<string>()
   for (const field of componentTemplateFields.value) {
+    if (componentTemplateFieldType(field) === 'list') {
+      const rows = Array.isArray(componentTemplateFieldValues.value[componentTemplateFieldKey(field)])
+        ? componentTemplateFieldValues.value[componentTemplateFieldKey(field)]
+        : []
+      for (const row of rows) {
+        for (const itemField of componentTemplateListItemFields(field)) {
+          if (componentTemplateFieldType(itemField) !== 'serviceref') continue
+          const target = componentTemplateTargetForValue(row?.[componentTemplateFieldKey(itemField)])
+          if (!target?.key || applied.has(target.key)) continue
+          applied.add(target.key)
+          if (target.kind === 'service') await applyServiceTargetBinding(target)
+          else {
+            upsertBinding({
+              targetKey: target.key,
+              targetKind: 'component',
+              targetName: target.name,
+              targetType: target.type,
+              role: String(target.type || '').toLowerCase() === 'backend' ? 'backend' : 'component',
+              mode: 'configMap',
+              confidence: 'high',
+              source: 'user',
+              generated: { templateField: componentTemplateFieldKey(itemField) },
+            })
+          }
+        }
+      }
+      continue
+    }
     if (componentTemplateFieldType(field) !== 'serviceref') continue
     const target = componentTemplateTargetForValue(componentTemplateFieldValues.value[componentTemplateFieldKey(field)])
     if (!target?.key || applied.has(target.key)) continue
@@ -5656,9 +5802,8 @@ const ensureNginxRouteForTarget = (target:any, value = '') => {
     existing.targetUrl = value || existing.targetUrl || nginxTargetUrl(target)
     return
   }
-  const index = nginxRouteRows.value.length
   nginxRouteRows.value.push({
-    path: index === 0 ? '/api/' : `/api-${index + 1}/`,
+    path: '',
     targetKey: target.key,
     targetUrl: value || nginxTargetUrl(target),
   })
@@ -5670,38 +5815,35 @@ const nginxRoutesFromCurrentConfig = (): NginxRouteRow[] => {
       const key = idx === 0 ? 'BACKEND_URL' : `BACKEND_${idx + 1}_URL`
       const value = binding.generated?.[key] || Object.values(binding.generated || {}).find((item:any) => String(item || '').startsWith('http'))
       return {
-        path: idx === 0 ? '/api/' : `/api-${idx + 1}/`,
+        path: String(binding.generated?.locationPath || '').trim(),
         targetKey: String(binding.targetKey || ''),
         targetUrl: String(value || '').trim(),
       }
     })
     .filter((row:NginxRouteRow) => row.targetUrl)
   if (rows.length) return rows
-  const backend = configForm.value.env.find((item:any) => item.name === 'BACKEND_URL' && item.source === 'value' && item.value)
-  return backend ? [{ path: '/api/', targetKey: '', targetUrl: String(backend.value).trim() }] : []
+  return []
 }
 const addNginxRoute = () => {
-  const target = componentDrawerBackendTargets.value.find((item:any) =>
-    !nginxRouteRows.value.some((route) => route.targetKey === item.key)
-  ) || componentDrawerBackendTargets.value[0]
-  const index = nginxRouteRows.value.length
   nginxRouteRows.value.push({
-    path: index === 0 ? '/api/' : `/api-${index + 1}/`,
-    targetKey: target?.key || '',
-    targetUrl: target ? nginxTargetUrl(target) : '',
+    path: '',
+    targetKey: '',
+    targetUrl: '',
   })
 }
 const removeNginxRoute = (idx:number) => {
   nginxRouteRows.value.splice(idx, 1)
 }
-const syncNginxRouteTarget = (route:NginxRouteRow) => {
-  const target = componentDrawerBackendTargets.value.find((item:any) => item.key === route.targetKey)
-  if (target) route.targetUrl = nginxTargetUrl(target)
+const syncNginxRouteTargetUrl = (route:NginxRouteRow) => {
+  const selectedUrl = String(route.targetUrl || '').trim().replace(/\/+$/, '')
+  const target = componentDrawerBackendTargets.value.find((item:any) => nginxTargetUrl(item).replace(/\/+$/, '') === selectedUrl)
+  route.targetKey = target?.key || ''
 }
 const normalizeNginxRoutePath = (value:string) => {
-  const raw = String(value || '').trim() || '/api/'
+  const raw = String(value || '').trim()
+  if (!raw) return ''
   const withStart = raw.startsWith('/') ? raw : `/${raw}`
-  return withStart.endsWith('/') ? withStart : `${withStart}/`
+  return withStart
 }
 const normalizedNginxRoutes = () => nginxRouteRows.value
   .map((route) => ({
@@ -5709,21 +5851,16 @@ const normalizedNginxRoutes = () => nginxRouteRows.value
     targetUrl: String(route.targetUrl || '').trim().replace(/\/+$/, ''),
     targetKey: route.targetKey,
   }))
-  .filter((route) => route.targetUrl)
+  .filter((route) => route.path || route.targetUrl)
 const applyNginxRoutes = () => {
-  if (!nginxRouteRows.value.length) addNginxRoute()
   const routes = normalizedNginxRoutes()
-  if (!routes.length) {
-    configDrawer.value.error = '请至少填写一个后端地址。'
+  if (!routes.length || routes.some((route) => !route.path || !route.targetUrl)) {
+    configDrawer.value.error = '请填写代理路由的匹配路径和转发地址。'
     return
   }
   configDrawer.value.error = ''
   configForm.value.framework = 'nginx'
-  const first = routes[0]
-  upsertEnvValue('BACKEND_URL', first.targetUrl)
   for (const [index, route] of routes.entries()) {
-    const key = index === 0 ? 'BACKEND_URL' : `BACKEND_${index + 1}_URL`
-    upsertEnvValue(key, route.targetUrl)
     const target = componentDrawerBackendTargets.value.find((item:any) => item.key === route.targetKey)
     if (target) {
       upsertBinding({
@@ -5732,10 +5869,10 @@ const applyNginxRoutes = () => {
         targetName: target.name,
         targetType: target.type,
         role: 'backend',
-        mode: 'env',
+        mode: 'configMap',
         confidence: 'high',
         source: 'user',
-        generated: { [key]: route.targetUrl },
+        generated: { locationPath: route.path, proxyPass: route.targetUrl, [`PROXY_ROUTE_${index + 1}`]: `${route.path} -> ${route.targetUrl}` },
       })
     }
   }
@@ -5753,7 +5890,7 @@ const applyNginxRoutes = () => {
 const buildNginxApiProxyConfigFromRoutes = (routes:Array<{ path:string; targetUrl:string }>) => {
   const routeBlocks = routes.map((route) => {
     const path = normalizeNginxRoutePath(route.path)
-    const target = String(route.targetUrl || '').replace(/\/+$/, '') || 'http://backend'
+    const target = String(route.targetUrl || '').replace(/\/+$/, '')
     return [
       `  location ${path} {`,
       `    proxy_pass ${target};`,
@@ -5905,18 +6042,39 @@ const saveConfigDrawer = async (options: { refresh?: boolean } = {}) => {
   configDrawer.value.error = ''
   configDrawer.value.message = ''
   try {
+    const deliveryMode = configForm.value.deliveryMode === 'source' ? 'source' : 'image'
     const version = imageTagVersion(configForm.value.imageTag) || String(configForm.value.version || '').trim()
-    if (version && version.toLowerCase() === 'latest') {
+    const image = registryImageFromConfig.value || String(configForm.value.image || '').trim()
+    const sourceRepoUrl = String(configForm.value.sourceRepoUrl || '').trim()
+    const sourceBranch = String(configForm.value.sourceBranch || 'main').trim() || 'main'
+    const buildContext = String(configForm.value.buildContext || '.').trim() || '.'
+    if (deliveryMode === 'image' && (!version || version.toLowerCase() === 'latest')) {
+      configDrawer.value.error = '请填写明确镜像 Tag，不能使用 latest。'
+      return
+    }
+    if (deliveryMode === 'source' && version && version.toLowerCase() === 'latest') {
       configDrawer.value.error = '镜像 Tag 不能使用 latest。'
+      return
+    }
+    if (deliveryMode === 'image' && !image) {
+      configDrawer.value.error = '请填写镜像地址。'
+      return
+    }
+    if (deliveryMode === 'source' && !sourceRepoUrl) {
+      configDrawer.value.error = '请填写源码仓库地址。'
       return
     }
     const templateReady = await prepareSelectedComponentConfigTemplateForSave()
     if (!templateReady) return
-    const image = registryImageFromConfig.value || String(configForm.value.image || '').trim()
     const res = await api.updateComponent(Number(comp.id), {
       type: componentDrawerRole.value,
-      image,
+      deliveryMode: configForm.value.deliveryMode,
+      image: deliveryMode === 'image' ? image : '',
       version,
+      sourceRepoUrl: configForm.value.sourceRepoUrl,
+      sourceBranch,
+      buildContext,
+      dockerfilePath: String(configForm.value.dockerfilePath || '').trim(),
       replicas: Number(configForm.value.replicas || 0),
       cpu: configForm.value.cpu,
       memory: configForm.value.memory,
@@ -6041,6 +6199,10 @@ const deployDrawerComponent = async () => {
     loadComponentConfigForm(refreshed)
   }
 }
+const openDeleteDialog = (dialog: PendingDeleteDialog) => {
+  enterModalContext()
+  pendingDeleteDialog.value = dialog
+}
 const closeDeleteDialog = () => {
   if (pendingDeleteDialog.value?.submitting) return
   pendingDeleteDialog.value = null
@@ -6082,7 +6244,7 @@ const deleteTopologyNode = (node:any) => {
 }
 const deleteComponentById = async (comp:any) => {
   if (!comp?.id || componentActionLoading.value) return
-  pendingDeleteDialog.value = {
+  openDeleteDialog({
     kind: 'component',
     label: '组件',
     name: String(comp.name || comp.id),
@@ -6090,7 +6252,7 @@ const deleteComponentById = async (comp:any) => {
     target: comp,
     submitting: false,
     error: '',
-  }
+  })
 }
 const performDeleteComponent = async (comp:any) => {
   if (!comp?.id || componentActionLoading.value) return
@@ -6126,26 +6288,6 @@ const runtimeEnvValue = (envItem:any) => {
   if (envItem?.secretName) return envItem.secretKey ? `由敏感配置管理 · ${envItem.secretKey}` : '由敏感配置管理'
   if (envItem?.configMapName) return envItem.configMapKey ? `由普通配置管理 · ${envItem.configMapKey}` : '由普通配置管理'
   return envItem?.value || '-'
-}
-const componentConfigObjectSummary = (items:any[]) => {
-  if (!Array.isArray(items) || !items.length) return '-'
-  const keys = items.flatMap((item:any) => Object.keys(item?.data || {})).filter(Boolean)
-  return keys.length ? `${items.length} 组普通配置 · ${keys.join(', ')}` : `${items.length} 组普通配置`
-}
-const componentSecretSummary = (items:any[]) => {
-  if (!Array.isArray(items) || !items.length) return '-'
-  const keys = items.flatMap((item:any) => Object.keys(item?.data || {})).filter(Boolean)
-  return keys.length ? `${items.length} 组敏感配置 · ${keys.join(', ')}` : `${items.length} 组敏感配置`
-}
-const componentRuntimeParamSummary = (items:any[]) => {
-  if (!Array.isArray(items) || !items.length) return '-'
-  const names = items.map((item:any) => String(item?.name || '').trim()).filter(Boolean)
-  return names.length ? `${names.length} 项 · ${names.join(', ')}` : `${items.length} 项`
-}
-const componentConfigFileSummary = (items:any[]) => {
-  if (!Array.isArray(items) || !items.length) return '-'
-  const paths = items.map((item:any) => String(item?.mountPath || '').trim()).filter(Boolean)
-  return paths.length ? `${paths.length} 个文件 · ${paths.join(', ')}` : `${items.length} 个文件`
 }
 const runtimeObjectSummary = (items:any[]) => Array.isArray(items) && items.length
   ? items.map((item:any) => Array.isArray(item.keys) && item.keys.length ? item.keys.join(', ') : '已配置').join('；')
@@ -6295,9 +6437,10 @@ const createCanvasComponentDraft = async (type: string) => {
       replicas: 1,
       draftOnly: true,
     })
-    await refreshServices()
     const created = res.data
-    const actual = components.value.find((item:any) => Number(item.id) === Number(created?.id)) || created
+    await refreshServices()
+    components.value = mergeCreatedCanvasResource(components.value, created)
+    const actual = selectCreatedCanvasResource(components.value, created, type)
     if (actual?.id && createPoint) {
       componentNodePositions.value = {
         ...componentNodePositions.value,
@@ -6321,11 +6464,11 @@ const createCanvasServiceDraft = async (serviceType: string) => {
   closeComponentContextMenu()
   pageError.value = ''
   try {
-    const beforeIds = new Set(services.value.map((item:any) => Number(item.id)))
-    await api.createServiceDraft(envId.value, { serviceType })
+    const res = await api.createServiceDraft(envId.value, { serviceType })
+    const created = res.data
     await refreshServices()
-    const installed = services.value.find((item:any) => !beforeIds.has(Number(item.id)) && item.serviceType === serviceType)
-      || services.value.find((item:any) => item.serviceType === serviceType)
+    services.value = mergeCreatedCanvasResource(services.value, created)
+    const installed = selectCreatedCanvasResource(services.value, created, serviceType)
     if (installed) {
       if (createPoint) {
         const key = `service:${installed.id}`
@@ -6346,7 +6489,10 @@ const createCanvasServiceDraft = async (serviceType: string) => {
   }
 }
 const adoptCanvasResource = async () => {
- closeComponentContextMenu()
+  openAdoptResourceModal()
+}
+const openAdoptResourceModal = async () => {
+  enterModalContext()
   showAdoptResourceModal.value = true
   adoptResourceLoading.value = true
   adoptResourceSubmitting.value = false
@@ -6376,10 +6522,8 @@ const submitAdoptResource = async () => {
   try {
     const res = await api.adoptResource(envId.value, { key: adoptResourceSelection.value })
     await refreshServices()
-    const adoptedId = res.data?.id
-    const adopted = adoptedId
-      ? components.value.find((item:any) => Number(item.id) === Number(adoptedId))
-      : components.value.find((item:any) => item.name === res.data?.name)
+    components.value = mergeCreatedCanvasResource(components.value, res.data)
+    const adopted = selectCreatedCanvasResource(components.value, res.data, res.data?.type)
     showAdoptResourceModal.value = false
     setActiveTab('components')
     if (adopted) openComponentConfigDrawer(adopted)
@@ -6391,8 +6535,25 @@ const submitAdoptResource = async () => {
   }
 }
 
+const closeComponentDraftModal = () => {
+  showComponentModal.value = false
+  componentModalError.value = ''
+}
+
+const closeServiceInstallModal = () => {
+  if (serviceSubmitting.value) return
+  showServiceModal.value = false
+  serviceModalError.value = ''
+  serviceModalNotice.value = ''
+}
+
+const openServiceInstallModal = (mode:'tool'|'infra' = 'tool') => {
+  enterModalContext()
+  void prepareServicePicker(mode)
+}
+
 const openServiceModal = () => {
-  void prepareServicePicker('tool')
+  openServiceInstallModal('tool')
 }
 
 const envStatusText = (status: string | undefined) => {
@@ -6471,6 +6632,7 @@ const submitService = async () => {
 }
 
 const beginUninstallService = (svc:any) => {
+  enterModalContext()
   pendingUninstallService.value = svc
   uninstallError.value = ''
   pageError.value = ''
@@ -6791,52 +6953,6 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   white-space: nowrap;
 }
 .flow-list { display: flex; flex-direction: column; }
-.environment-foundation-strip {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: var(--paap-space-3);
-  margin-bottom: var(--paap-space-4);
-}
-.environment-foundation-item {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 2px var(--paap-space-2);
-  min-height: 48px;
-  padding: 9px 10px;
-  border: 1px solid var(--paap-border);
-  border-radius: var(--paap-radius-sm);
-  background: var(--paap-panel);
-  color: var(--paap-text);
-  text-align: left;
-  cursor: pointer;
-}
-.environment-foundation-item:hover {
-  border-color: var(--paap-accent);
-  background: var(--paap-accent-soft);
-}
-.environment-foundation-item strong {
-  min-width: 0;
-  overflow: hidden;
-  font-size: 12px;
-  font-weight: 650;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.environment-foundation-item small {
-  grid-column: 2;
-  color: var(--paap-muted);
-  font-size: 11px;
-}
-.foundation-dot {
-  width: 8px;
-  height: 8px;
-  margin-top: 4px;
-  border-radius: 999px;
-  background: var(--paap-muted-2);
-}
-.environment-foundation-item--ready .foundation-dot { background: var(--paap-success); }
-.environment-foundation-item--failed .foundation-dot { background: var(--paap-danger); }
-.environment-foundation-item--missing .foundation-dot { background: var(--paap-muted-2); }
 .flow-step { display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; align-items: start; gap: var(--paap-space-3); padding: 13px 0; border-bottom: 1px solid #f3f4f6; }
 .flow-step:last-child { border-bottom: none; }
 .flow-dot { width: 9px; height: 9px; margin-top: 5px; border-radius: 50%; background: var(--paap-border-strong); }
@@ -7185,8 +7301,8 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 }
 .component-search-input:focus,
 .component-type-select:focus {
-  border-color: var(--paap-accent);
-  box-shadow: 0 0 0 3px rgba(37,99,235,0.1);
+  border-color: var(--cds-border-interactive, #0f62fe);
+  box-shadow: inset 0 0 0 1px var(--cds-border-interactive, #0f62fe);
 }
 .component-topology-layout {
   display: block;
@@ -7268,10 +7384,10 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   gap: 4px;
   align-items: center;
   padding: 6px;
-  background: rgba(255, 255, 255, 0.95);
-  border: 1px solid var(--paap-border);
-  border-radius: 8px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  background: var(--cds-layer-01, #ffffff);
+  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  border-radius: 0;
+  box-shadow: none;
 }
 .topology-control-btn {
   display: flex;
@@ -7280,18 +7396,18 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   width: 32px;
   height: 32px;
   padding: 0;
-  border: 1px solid var(--paap-border);
-  border-radius: 6px;
-  background: white;
-  color: var(--paap-text);
+  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  border-radius: 0;
+  background: var(--cds-layer-01, #ffffff);
+  color: var(--cds-text-primary, #161616);
   cursor: pointer;
   transition: all 0.15s;
   font-family: inherit;
 }
 .topology-control-btn:hover {
-  background: var(--paap-accent-soft);
-  border-color: var(--paap-accent);
-  color: var(--paap-accent);
+  background: var(--cds-background-hover, rgba(141, 141, 141, 0.12));
+  border-color: var(--cds-border-interactive, #0f62fe);
+  color: var(--cds-blue-60, #0f62fe);
 }
 .topology-zoom-label {
   margin-left: 4px;
@@ -7304,8 +7420,8 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   text-align: center;
 }
 .component-topology-canvas--main {
-  min-height: 720px;
-  max-height: calc(100vh - 190px);
+  min-height: 800px;
+  max-height: none;
   border: 0;
   border-radius: 0;
 }
@@ -7440,14 +7556,14 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   row-gap: 2px;
   align-items: center;
   padding: 12px 14px;
-  border: 2px solid #d0d7de;
-  border-radius: 8px;
-  background: linear-gradient(135deg, #ffffff 0%, #f9fafb 100%);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1), 0 1px 2px rgba(0, 0, 0, 0.06);
+  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  border-radius: 0;
+  background: var(--cds-layer-01, #ffffff);
+  box-shadow: none;
   box-sizing: border-box;
   text-align: left;
   cursor: grab;
-  transition: border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
+  transition: border-color 110ms, background 110ms;
   touch-action: none;
 }
 .component-topology-node:active {
@@ -7455,9 +7571,8 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 }
 .component-topology-node:hover,
 .component-topology-node.active {
-  border-color: #0f62fe;
-  background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
-  box-shadow: 0 4px 12px rgba(15, 98, 254, 0.15), 0 0 0 3px rgba(15, 98, 254, 0.1);
+  border-color: var(--cds-border-interactive, #0f62fe);
+  background: var(--cds-layer-01, #ffffff);
   z-index: 10;
 }
 .component-topology-node strong { color: var(--paap-text); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -7495,22 +7610,21 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   outline: none;
 }
 .component-topology-node--service {
-  background: linear-gradient(135deg, #fef9e7 0%, #fefbf3 100%);
-  border-color: #e5be8a;
+  background: var(--cds-layer-01, #ffffff);
+  border-color: var(--cds-border-subtle-01, #e0e0e0);
 }
 .component-topology-node--service:hover,
 .component-topology-node--service.active {
-  border-color: #d4a574;
-  background: linear-gradient(135deg, #fef5e0 0%, #fef0d8 100%);
-  box-shadow: 0 4px 12px rgba(212, 165, 116, 0.2), 0 0 0 3px rgba(212, 165, 116, 0.08);
+  border-color: var(--cds-border-interactive, #0f62fe);
+  background: var(--cds-layer-01, #ffffff);
 }
 .component-topology-node.selected {
-  border-color: #0f62fe;
-  box-shadow: 0 0 0 2px rgba(15, 98, 254, 0.35), 0 4px 12px rgba(15, 98, 254, 0.12);
+  border-color: var(--cds-border-interactive, #0f62fe);
+  box-shadow: inset 0 0 0 1px var(--cds-border-interactive, #0f62fe);
 }
 .topology-marquee {
   fill: rgba(15, 98, 254, 0.08);
-  stroke: #0f62fe;
+  stroke: var(--cds-blue-60, #0f62fe);
   stroke-width: 1.5;
   stroke-dasharray: 5 3;
   pointer-events: none;
@@ -7586,10 +7700,10 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   display: grid;
   width: 220px;
   padding: 6px;
-  border: 1px solid var(--paap-border);
-  border-radius: var(--paap-radius-sm);
-  background: var(--paap-panel);
-  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.16);
+  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  border-radius: 0;
+  background: var(--cds-layer-01, #ffffff);
+  box-shadow: none;
 }
 .component-context-menu button {
   display: grid;
@@ -7631,9 +7745,9 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   position: absolute;
   width: 12px;
   height: 12px;
-  border: 2px solid #3b82f6;
+  border: 2px solid var(--cds-blue-60, #0f62fe);
   border-radius: 50%;
-  background: white;
+  background: var(--cds-layer-01, #ffffff);
   cursor: crosshair;
   opacity: 0;
   transition: opacity 0.2s;
@@ -7662,6 +7776,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   opacity: 1;
 }
 .connection-drag-line {
+  color: var(--cds-blue-60, #0f62fe);
   pointer-events: none;
 }
 .context-menu-divider {
@@ -7694,10 +7809,10 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   width: clamp(760px, 46vw, 1184px);
   height: 100vh;
   border: 0;
-  border-left: 1px solid var(--paap-border);
+  border-left: 1px solid var(--cds-border-subtle-01, #e0e0e0);
   border-radius: 0;
-  background: var(--paap-panel);
-  box-shadow: -18px 0 46px rgba(15, 23, 42, 0.14);
+  background: var(--cds-layer-01, #ffffff);
+  box-shadow: none;
   overflow: hidden;
   pointer-events: auto;
 }
@@ -7707,7 +7822,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   justify-content: space-between;
   gap: var(--paap-space-4);
   padding: 24px 38px 14px;
-  background: var(--paap-panel);
+  background: var(--cds-layer-01, #ffffff);
 }
 .config-drawer-footer {
   display: flex;
@@ -7715,8 +7830,8 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   justify-content: flex-end;
   gap: var(--paap-space-2);
   padding: 14px 38px;
-  border-top: 1px solid var(--paap-border);
-  background: var(--paap-panel);
+  border-top: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  background: var(--cds-layer-01, #ffffff);
 }
 .config-drawer-title-block {
   display: grid;
@@ -7732,15 +7847,16 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   min-width: 34px;
   width: 34px;
   height: 34px;
-  border-radius: 9px;
-  background: var(--paap-accent-soft);
-  color: var(--paap-accent);
+  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  border-radius: var(--cds-border-radius-md, 2px);
+  background: var(--cds-layer-01, #ffffff);
+  color: var(--cds-blue-60, #0f62fe);
   font-size: 12px;
   font-weight: 750;
 }
 .config-drawer-avatar--service {
-  background: var(--paap-success-soft);
-  color: #047857;
+  background: var(--cds-layer-01, #ffffff);
+  color: var(--cds-text-secondary, #525252);
 }
 .config-drawer-header h3 {
   margin: 2px 0;
@@ -7762,11 +7878,11 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 .config-drawer-tabs {
   display: flex;
   align-items: flex-end;
-  gap: 6px;
+  gap: 0;
   min-height: 48px;
   padding: 0 24px;
-  border-bottom: 1px solid var(--paap-border);
-  background: var(--paap-panel);
+  border-bottom: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  background: var(--cds-layer-01, #ffffff);
   overflow-x: auto;
   scrollbar-width: thin;
 }
@@ -7777,7 +7893,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   padding: 0 12px;
   border: 0;
   background: transparent;
-  color: var(--paap-muted);
+  color: var(--cds-text-secondary, #525252);
   font-family: inherit;
   font-size: 13px;
   font-weight: 560;
@@ -7788,7 +7904,8 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 }
 .config-drawer-tabs button:hover,
 .config-drawer-tabs button.active {
-  color: var(--paap-text);
+  color: var(--cds-text-primary, #161616);
+  background: var(--cds-layer-01, #ffffff);
 }
 .config-drawer-tabs button.active::after {
   content: "";
@@ -7797,8 +7914,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   bottom: -1px;
   left: 0;
   height: 2px;
-  border-radius: 2px 2px 0 0;
-  background: var(--paap-accent);
+  background: var(--cds-blue-60, #0f62fe);
 }
 .config-drawer-body {
   display: grid;
@@ -7807,7 +7923,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   min-height: 0;
   overflow-y: auto;
   padding: 26px 38px 36px;
-  background: var(--paap-panel);
+  background: var(--cds-layer-01, #ffffff);
 }
 .config-section {
   display: grid;
@@ -7816,7 +7932,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   border: 0;
   border-bottom: 1px solid var(--paap-border);
   border-radius: 0;
-  background: var(--paap-panel);
+  background: var(--cds-layer-01, #ffffff);
 }
 .config-section + .config-section {
   padding-top: 26px;
@@ -7924,9 +8040,9 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   display: grid;
   gap: var(--paap-space-4);
   padding: 16px;
-  border: 1px solid var(--paap-border);
-  border-radius: 8px;
-  background: var(--paap-panel-subtle);
+  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  border-radius: 0;
+  background: var(--cds-layer-01, #ffffff);
 }
 .config-deployment-main {
   display: grid;
@@ -7958,9 +8074,9 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   gap: 4px;
   min-width: 0;
   padding: 10px 12px;
-  border: 1px solid var(--paap-border);
-  border-radius: 7px;
-  background: var(--paap-panel);
+  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  border-radius: 0;
+  background: var(--cds-layer-01, #ffffff);
 }
 .config-deployment-meta span,
 .config-variable-row small {
@@ -8005,12 +8121,44 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   color: var(--paap-muted);
   letter-spacing: 0.08em;
 }
+.config-variable-value {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 32px;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.service-secret-reveal-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  border-radius: 0;
+  background: var(--cds-layer-01, #ffffff);
+  color: var(--cds-icon-secondary, #525252);
+  cursor: pointer;
+  transition: border-color 110ms, color 110ms, box-shadow 110ms;
+}
+.service-secret-reveal-btn:hover:not(:disabled) {
+  border-color: var(--cds-border-interactive, #0f62fe);
+  color: var(--cds-blue-60, #0f62fe);
+}
+.service-secret-reveal-btn:focus-visible {
+  outline: 2px solid var(--cds-focus, #0f62fe);
+  outline-offset: 1px;
+}
+.service-secret-reveal-btn:disabled {
+  cursor: progress;
+  opacity: 0.5;
+}
 .config-inline-note {
   padding: 10px 12px;
-  border: 1px solid var(--paap-border);
-  border-radius: 7px;
-  background: var(--paap-panel-subtle);
-  color: var(--paap-muted);
+  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  border-radius: 0;
+  background: var(--cds-field-01, #f4f4f4);
+  color: var(--cds-text-secondary, #525252);
   font-size: 13px;
   line-height: 1.5;
 }
@@ -8021,8 +8169,8 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   gap: var(--paap-space-2);
   min-width: 0;
   padding: 9px 10px;
-  border: 1px solid var(--paap-border);
-  background: var(--paap-panel-subtle);
+  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  background: var(--cds-layer-01, #ffffff);
 }
 .service-access-row > span {
   color: var(--paap-muted);
@@ -8052,9 +8200,12 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 }
 .cds-image-fields {
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: minmax(220px, 0.85fr) minmax(240px, 1.15fr);
   gap: var(--paap-space-3);
   align-items: start;
+}
+.cds-image-field--full {
+  grid-column: 1 / -1;
 }
 .cds-image-field {
   display: flex;
@@ -8134,6 +8285,27 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--paap-space-3);
 }
+.service-config-form-grid {
+  gap: var(--cds-spacing-05, 16px) var(--cds-spacing-06, 24px);
+}
+.service-config-field {
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: var(--cds-layer-01, #ffffff);
+}
+.service-config-field .bx--text-input,
+.service-config-field .bx--select-input {
+  min-height: 40px;
+  padding-top: 10px;
+  padding-bottom: 10px;
+  background: var(--cds-field-01, #f4f4f4);
+  font-size: 13px;
+}
+.service-config-field:focus-within {
+  background: var(--cds-layer-01, #ffffff);
+}
 .config-kv-grid div,
 .config-ref-grid div {
   display: grid;
@@ -8167,12 +8339,12 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   gap: var(--paap-space-3);
   min-width: 0;
   padding: 12px;
-  border: 1px solid var(--paap-border);
-  border-radius: 7px;
-  background: var(--paap-panel);
+  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  border-radius: 0;
+  background: var(--cds-layer-01, #ffffff);
 }
 .service-volume-card.disabled {
-  background: var(--paap-panel-subtle);
+  background: var(--cds-field-01, #f4f4f4);
 }
 .service-volume-card__head {
   display: grid;
@@ -8234,19 +8406,19 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 .service-volume-preset {
   min-height: 28px;
   padding: 0 10px;
-  border: 1px solid var(--paap-border);
-  border-radius: 6px;
-  background: var(--paap-panel-subtle);
-  color: var(--paap-muted);
+  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  border-radius: 0;
+  background: var(--cds-layer-01, #ffffff);
+  color: var(--cds-text-secondary, #525252);
   font-size: 12px;
   font-weight: 650;
   cursor: pointer;
 }
 .service-volume-preset:hover:not(:disabled),
 .service-volume-preset.active {
-  border-color: var(--paap-primary);
-  background: #eef5ff;
-  color: var(--paap-primary);
+  border-color: var(--cds-border-interactive, #0f62fe);
+  background: var(--cds-layer-01, #ffffff);
+  color: var(--cds-blue-60, #0f62fe);
 }
 .service-volume-preset:disabled {
   cursor: not-allowed;
@@ -8446,8 +8618,8 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 .component-template-badge {
   justify-self: start;
   margin: 0 10px 10px;
-  border: 1px solid var(--paap-border);
-  border-radius: 999px;
+  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  border-radius: var(--cds-border-radius-md, 2px);
   padding: 2px 8px;
   color: var(--paap-muted);
   font-size: 11px;
@@ -8459,16 +8631,22 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   min-width: 0;
 }
 .component-config-flow--guided {
-  gap: var(--paap-space-3);
+  gap: 12px;
 }
 .component-template-picker {
   display: grid;
-  gap: 6px;
+  gap: 10px;
   min-width: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: var(--cds-layer-01, #ffffff);
 }
 .component-template-select {
   display: grid;
-  gap: 6px;
+  grid-template-columns: minmax(112px, 0.28fr) minmax(0, 0.72fr);
+  align-items: center;
+  gap: 14px;
   min-width: 0;
 }
 .component-template-select > span,
@@ -8480,59 +8658,10 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 }
 .component-template-helper {
   margin: 0;
+  padding-left: calc(28% + 14px);
   color: var(--paap-muted);
   font-size: 12px;
   line-height: 1.45;
-}
-.component-template-field-list {
-  display: grid;
-  gap: 0;
-  min-width: 0;
-  border-top: 1px solid var(--paap-border);
-  border-bottom: 1px solid var(--paap-border);
-}
-.component-template-field {
-  display: grid;
-  grid-template-columns: minmax(150px, 0.42fr) minmax(0, 0.58fr);
-  align-items: start;
-  gap: var(--paap-space-3);
-  min-width: 0;
-  padding: 12px 0;
-}
-.component-template-field + .component-template-field {
-  border-top: 1px solid var(--paap-border);
-}
-.component-template-field-label {
-  display: grid;
-  gap: 4px;
-  min-width: 0;
-  line-height: 1.35;
-}
-.component-template-field-label > span {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-}
-.component-template-field em {
-  color: var(--paap-danger);
-  font-size: 11px;
-  font-style: normal;
-}
-.component-template-field-label small {
-  color: var(--paap-muted-2);
-  font-size: 11px;
-  line-height: 1.35;
-  font-weight: 500;
-}
-.component-template-control {
-  display: block;
-  min-width: 0;
-}
-.component-template-control .bx--text-input,
-.component-template-control .bx--select-input {
-  width: 100%;
-  min-width: 0;
 }
 .component-config-actions,
 .component-advanced-tools {
@@ -8540,6 +8669,48 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   align-items: center;
   gap: var(--paap-space-2);
   flex-wrap: wrap;
+}
+.component-template-advanced-config {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 10px 0;
+  border: 0;
+  border-top: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  border-radius: 0;
+  background: var(--cds-layer-01, #ffffff);
+}
+.component-template-advanced-config > summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--paap-space-2);
+  min-width: 0;
+  color: var(--paap-muted);
+  cursor: pointer;
+  list-style: none;
+}
+.component-template-advanced-config > summary::-webkit-details-marker {
+  display: none;
+}
+.component-template-advanced-config > summary span {
+  color: var(--paap-text);
+  font-size: 12px;
+  font-weight: 700;
+}
+.component-template-advanced-config > summary small {
+  min-width: 0;
+  color: var(--paap-muted-2);
+  font-size: 11px;
+  text-align: right;
+}
+.component-template-advanced-config:not([open]) {
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+.component-template-advanced-config[open] > summary {
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--cds-border-subtle-01, #e0e0e0);
 }
 .component-config-warning {
   color: var(--paap-danger);
@@ -8605,10 +8776,10 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   justify-content: center;
   width: 24px;
   height: 24px;
-  border: 1px solid var(--paap-border);
-  border-radius: 999px;
-  background: var(--paap-panel-subtle);
-  color: var(--paap-muted);
+  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  border-radius: var(--cds-border-radius-md, 2px);
+  background: var(--cds-layer-01, #ffffff);
+  color: var(--cds-text-secondary, #525252);
   font-size: 12px;
   font-weight: 700;
 }
@@ -8629,20 +8800,43 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   gap: var(--paap-space-2);
   min-width: 0;
 }
+.nginx-route-panel {
+  display: grid;
+  gap: var(--paap-space-2);
+  min-width: 0;
+  padding: 2px 0 10px;
+  border-bottom: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+}
+.nginx-route-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--paap-space-2);
+  min-width: 0;
+}
+.nginx-route-head span {
+  color: var(--cds-text-primary, #161616);
+  font-size: 12px;
+  font-weight: 700;
+}
 .component-template-advanced {
   margin-top: 0;
 }
 .nginx-route-row {
   display: grid;
-  grid-template-columns: minmax(82px, 0.6fr) minmax(120px, 0.8fr) minmax(160px, 1.2fr) auto;
+  grid-template-columns: minmax(112px, 0.72fr) minmax(180px, 1fr) 32px;
   align-items: center;
   gap: var(--paap-space-2);
   min-width: 0;
+  padding: 0;
 }
 .nginx-route-row .bx--text-input,
 .nginx-route-row .bx--select-input {
   min-width: 0;
   font-size: 12px;
+}
+.nginx-route-apply {
+  justify-self: start;
 }
 .component-discovered-list {
   display: grid;
@@ -8668,9 +8862,10 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   gap: 3px;
 }
 .component-suggestion-chip {
-  border: 1px solid var(--paap-border);
-  background: var(--paap-panel-subtle);
-  color: var(--paap-text);
+  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  border-radius: 0;
+  background: var(--cds-layer-01, #ffffff);
+  color: var(--cds-text-primary, #161616);
   font: inherit;
   font-size: 12px;
   line-height: 1;
@@ -8678,8 +8873,8 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   cursor: pointer;
 }
 .component-suggestion-chip:hover {
-  border-color: var(--paap-accent);
-  background: var(--paap-accent-soft);
+  border-color: var(--cds-border-interactive, #0f62fe);
+  color: var(--cds-blue-60, #0f62fe);
 }
 .config-binding-row {
   display: grid;
@@ -8687,7 +8882,8 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   gap: var(--paap-space-2);
   align-items: center;
   padding: 8px 10px;
-  background: var(--paap-panel-subtle);
+  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  background: var(--cds-layer-01, #ffffff);
 }
 .config-binding-row span {
   display: grid;
@@ -8718,9 +8914,9 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 .config-env-row--managed {
   grid-template-columns: minmax(160px, 1fr) auto minmax(220px, 1.4fr) auto;
   padding: 8px 10px;
-  border: 1px solid var(--paap-border);
-  border-radius: 7px;
-  background: var(--paap-panel-subtle);
+  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  border-radius: 0;
+  background: var(--cds-layer-01, #ffffff);
 }
 .config-env-managed-name,
 .config-env-managed-value {
@@ -8743,10 +8939,10 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   align-items: center;
   min-height: 32px;
   padding: 0 10px;
-  border: 1px solid var(--paap-border);
-  border-radius: 6px;
-  background: var(--paap-panel-subtle);
-  color: var(--paap-muted);
+  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  border-radius: 0;
+  background: var(--cds-layer-01, #ffffff);
+  color: var(--cds-text-secondary, #525252);
   font-size: 12px;
   white-space: nowrap;
 }
@@ -8755,7 +8951,8 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   grid-template-columns: minmax(120px, 0.8fr) minmax(0, 1.2fr);
   gap: var(--paap-space-3);
   padding: 8px 10px;
-  background: var(--paap-panel-subtle);
+  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  background: var(--cds-layer-01, #ffffff);
 }
 .config-readonly-row strong,
 .config-readonly-row span {
@@ -8774,9 +8971,9 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   gap: var(--paap-space-3);
   min-width: 0;
   padding: 10px 12px;
-  border: 1px solid var(--paap-border);
-  border-radius: 7px;
-  background: var(--paap-panel-subtle);
+  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  border-radius: 0;
+  background: var(--cds-layer-01, #ffffff);
 }
 .backup-row > div {
   display: grid;
@@ -8819,8 +9016,8 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   gap: var(--paap-space-2);
   min-width: 0;
   padding: 8px 10px;
-  border: 1px solid var(--paap-border);
-  background: var(--paap-panel-subtle);
+  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  background: var(--cds-layer-01, #ffffff);
 }
 .runtime-console-status span {
   display: inline-flex;
@@ -8835,13 +9032,13 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: var(--paap-border-strong);
+  background: var(--cds-border-strong-01, #8d8d8d);
 }
 .runtime-console-status.connected span::before {
-  background: var(--paap-success);
+  background: var(--cds-green-60, #198038);
 }
 .runtime-console-status.connecting span::before {
-  background: var(--paap-accent);
+  background: var(--cds-blue-60, #0f62fe);
 }
 .runtime-console-status small {
   min-width: 0;
@@ -8860,10 +9057,10 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   margin: 0;
   overflow: auto;
   padding: 12px;
-  border: 1px solid #111827;
-  border-radius: 7px;
-  background: #0b1020;
-  color: #e5e7eb;
+  border: 1px solid var(--cds-gray-80, #393939);
+  border-radius: 0;
+  background: var(--cds-gray-100, #161616);
+  color: var(--cds-text-inverse, #ffffff);
   font-family: var(--paap-mono);
   font-size: 12px;
   line-height: 1.55;
@@ -8896,9 +9093,9 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 }
 .runtime-log-meta span {
   padding: 3px 8px;
-  border: 1px solid var(--paap-border);
-  border-radius: 999px;
-  background: var(--paap-panel-subtle);
+  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  border-radius: var(--cds-border-radius-md, 2px);
+  background: var(--cds-layer-01, #ffffff);
 }
 .runtime-log-list {
   display: grid;
@@ -8940,10 +9137,10 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   margin: 0;
   overflow: auto;
   padding: 12px;
-  border: 1px solid #111827;
-  border-radius: 7px;
-  background: #0b1020;
-  color: #d1fae5;
+  border: 1px solid var(--cds-gray-80, #393939);
+  border-radius: 0;
+  background: var(--cds-gray-100, #161616);
+  color: var(--cds-text-inverse, #ffffff);
   font-family: var(--paap-mono);
   font-size: 12px;
   line-height: 1.55;
@@ -8963,8 +9160,8 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   display: grid;
   gap: 4px;
   padding: 10px 12px;
-  background: var(--paap-panel-subtle);
-  border: 1px solid var(--paap-border);
+  background: var(--cds-layer-01, #ffffff);
+  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
 }
 .runtime-metric-card span,
 .runtime-metric-card small {
@@ -8989,9 +9186,9 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   gap: var(--paap-space-2);
   min-width: 0;
   padding: 10px 12px;
-  border: 1px solid var(--paap-border);
-  border-radius: 7px;
-  background: var(--paap-panel);
+  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  border-radius: 0;
+  background: var(--cds-layer-01, #ffffff);
 }
 .runtime-metric-chart header,
 .runtime-metric-chart footer {
@@ -9370,17 +9567,17 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   gap: var(--paap-space-3);
   min-height: 68px;
   padding: 12px;
-  border: 1px solid var(--paap-border);
-  border-radius: 8px;
-  background: var(--paap-panel);
-  color: var(--paap-text);
+  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  border-radius: 0;
+  background: var(--cds-layer-01, #ffffff);
+  color: var(--cds-text-primary, #161616);
   font-family: inherit;
   text-align: left;
   cursor: pointer;
 }
 .capability-install-card:hover {
-  border-color: var(--paap-accent);
-  background: var(--paap-accent-soft);
+  border-color: var(--cds-border-interactive, #0f62fe);
+  background: var(--cds-layer-01, #ffffff);
 }
 .capability-install-card.disabled,
 .capability-install-card:disabled {
@@ -9415,22 +9612,22 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 
 /* Modal */
 .modal-overlay { position: fixed; inset: 0; z-index: 9000; display: flex; align-items: center; justify-content: center; background: rgba(17,19,24,0.46); backdrop-filter: blur(10px); padding: var(--paap-space-6); }
-.modal-container { background: var(--paap-panel); width: 100%; max-height: 90vh; overflow-y: auto; border-radius: var(--paap-radius); border: 1px solid var(--paap-border); box-shadow: none; position: relative; }
+.modal-container { background: var(--cds-layer-01, #ffffff); width: 100%; max-height: 90vh; overflow-y: auto; border-radius: 0; border: 1px solid var(--cds-border-subtle-01, #e0e0e0); box-shadow: none; position: relative; }
 .confirm-modal { max-width: 460px; }
 .modal-header { display: flex; justify-content: space-between; align-items: flex-start; padding: var(--paap-space-5) var(--paap-space-6); border-bottom: 1px solid var(--paap-border); }
 .modal-label { font-size: 11px; color: var(--paap-muted); letter-spacing: 0.04em; margin-bottom: 4px; text-transform: uppercase; font-weight: 600; }
 .modal-heading { font-size: 18px; font-weight: 600; color: var(--paap-text); line-height: 1.3; margin: 0; }
-.modal-close { background: none; border: 1px solid var(--paap-border); color: var(--paap-muted); cursor: pointer; padding: 4px; line-height: 1; transition: all 0.15s; margin-top: -4px; border-radius: var(--paap-radius-sm); width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; }
+.modal-close { background: none; border: 1px solid var(--cds-border-subtle-01, #e0e0e0); color: var(--cds-text-secondary, #525252); cursor: pointer; padding: 4px; line-height: 1; transition: background 110ms, color 110ms, border-color 110ms; margin-top: -4px; border-radius: 0; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; }
 .modal-close:hover { background: var(--paap-panel-subtle); color: var(--paap-text); }
 .modal-content { padding: var(--paap-space-6); }
 .capability-action-field { margin: 0; }
 .capability-action-textarea { min-height: 140px; resize: vertical; }
 .modal-footer { display: flex; justify-content: flex-end; gap: var(--paap-space-2); padding: var(--paap-space-4) var(--paap-space-6); border-top: 1px solid var(--paap-border); }
 .modal-error {
-  border: 1px solid #fecaca;
-  background: var(--paap-danger-soft);
-  color: #991b1b;
-  border-radius: var(--paap-radius);
+  border: 1px solid var(--cds-red-60, #da1e28);
+  background: var(--cds-layer-01, #ffffff);
+  color: var(--cds-red-60, #da1e28);
+  border-radius: 0;
   padding: 10px 12px;
   font-size: 13px;
   line-height: 1.4;
@@ -9448,11 +9645,11 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 .bx--label { display: block; font-size: 12px; color: var(--paap-muted); margin-bottom: 6px; font-weight: 500; }
 .bx--text-input {
   width: 100%; padding: 9px 12px; font-size: 14px;
-  border: 1px solid var(--paap-border); border-radius: var(--paap-radius-sm);
-  background: var(--paap-panel); color: var(--paap-text); outline: none;
-  font-family: inherit; transition: border-color 0.15s, box-shadow 0.15s;
+  border: 1px solid var(--cds-border-strong-01, #8d8d8d); border-radius: 0;
+  background: var(--cds-layer-01, #ffffff); color: var(--cds-text-primary, #161616); outline: none;
+  font-family: inherit; transition: border-color 110ms, box-shadow 110ms;
 }
-.bx--text-input:focus { border-color: var(--paap-accent); box-shadow: 0 0 0 3px rgba(37,99,235,0.1); }
+.bx--text-input:focus { border-color: var(--cds-border-interactive, #0f62fe); box-shadow: inset 0 0 0 1px var(--cds-border-interactive, #0f62fe); }
 .bx--text-input::placeholder { color: var(--paap-muted-2); }
 .form-row {
   display: grid;
@@ -9470,31 +9667,31 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   gap: var(--paap-space-2);
   min-height: 38px;
   padding: 8px 10px;
-  border: 1px solid var(--paap-border);
-  border-radius: var(--paap-radius-sm);
-  color: var(--paap-muted);
+  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  border-radius: 0;
+  color: var(--cds-text-secondary, #525252);
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
-  background: var(--paap-panel);
-  transition: all 0.15s;
+  background: var(--cds-layer-01, #ffffff);
+  transition: border-color 110ms, background 110ms, color 110ms;
 }
 .delivery-option.active {
-  border-color: var(--paap-accent);
-  background: var(--paap-accent-soft);
-  color: var(--paap-text);
+  border-color: var(--cds-border-interactive, #0f62fe);
+  background: var(--cds-layer-01, #ffffff);
+  color: var(--cds-text-primary, #161616);
 }
 .delivery-option input { margin: 0; }
 
 .bx--select { position: relative; }
 .bx--select-input {
   width: 100%; padding: 9px 36px 9px 12px; font-size: 14px;
-  border: 1px solid var(--paap-border); border-radius: var(--paap-radius-sm);
-  background: var(--paap-panel); color: var(--paap-text); outline: none;
+  border: 1px solid var(--cds-border-strong-01, #8d8d8d); border-radius: 0;
+  background: var(--cds-layer-01, #ffffff); color: var(--cds-text-primary, #161616); outline: none;
   appearance: none; cursor: pointer; font-family: inherit;
-  transition: border-color 0.15s, box-shadow 0.15s;
+  transition: border-color 110ms, box-shadow 110ms;
 }
-.bx--select-input:focus { border-color: var(--paap-accent); box-shadow: 0 0 0 3px rgba(37,99,235,0.1); }
+.bx--select-input:focus { border-color: var(--cds-border-interactive, #0f62fe); box-shadow: inset 0 0 0 1px var(--cds-border-interactive, #0f62fe); }
 .bx--select__arrow { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); pointer-events: none; }
 
 /* Service select grid in modal */
@@ -9534,6 +9731,37 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 .bx--btn--ghost { background: transparent; color: var(--paap-muted); border: 1px solid var(--paap-border); }
 .bx--btn--ghost:hover { background: var(--paap-panel-subtle); color: var(--paap-text); }
 .bx--btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  border-radius: 0;
+  background: var(--cds-layer-01, #ffffff);
+  color: var(--cds-text-secondary, #525252);
+  font: inherit;
+  cursor: pointer;
+  transition: background 110ms, border-color 110ms, color 110ms;
+}
+.icon-btn:hover {
+  border-color: var(--cds-border-interactive, #0f62fe);
+  background: var(--cds-layer-hover-01, #e8e8e8);
+  color: var(--cds-link-primary, #0f62fe);
+}
+.icon-btn:focus-visible {
+  outline: 2px solid var(--cds-focus, #0f62fe);
+  outline-offset: 1px;
+}
+.icon-btn--compact {
+  width: 30px;
+  height: 30px;
+}
+.icon-btn--danger:hover {
+  border-color: var(--cds-red-60, #da1e28);
+  color: var(--cds-red-60, #da1e28);
+}
 
 /* Service icon wrap */
 .service-icon-wrap { width: 32px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; align-self: center; background: transparent; color: var(--paap-muted-2); }
@@ -9623,10 +9851,14 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   .config-binding-form,
   .config-binding-row,
   .component-template-field,
+  .component-template-select,
   .nginx-route-row,
   .component-preset-grid,
   .component-discovered-row {
     grid-template-columns: 1fr;
+  }
+  .component-template-helper {
+    padding-left: 0;
   }
   .config-drawer-header,
   .config-drawer-body,

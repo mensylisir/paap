@@ -875,6 +875,12 @@ func TestJenkinsChartPinsPipelineDependenciesForPinnedCore(t *testing.T) {
 	for _, want := range []string{
 		"script-security:1265.va_fb_290b_4b_d34",
 		"workflow-scm-step:415.v434365564324",
+		"pipeline-model-definition:2.2144.v077a_d1928a_40",
+		"pipeline-model-api:2.2144.v077a_d1928a_40",
+		"pipeline-stage-tags-metadata:2.2144.v077a_d1928a_40",
+		"workflow-job:1308.v58d48a_763b_31",
+		"pipeline-stage-step:305.ve96d0205c1c6",
+		"git-server:99.va_0826a_b_cdfa_d",
 	} {
 		if !containsInterfaceString(plugins, want) {
 			t.Fatalf("controller.installPlugins must pin %s so workflow-cps loads on Jenkins 2.414.3, got %#v", want, plugins)

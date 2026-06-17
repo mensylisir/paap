@@ -4,6 +4,8 @@ import (
 	"testing"
 
 	"github.com/segmentio/kafka-go"
+
+	"paap/internal/k8s"
 )
 
 func TestParseKafkaOffset(t *testing.T) {
@@ -40,5 +42,32 @@ func TestParseKafkaOffset(t *testing.T) {
 				t.Fatalf("offset = %d, want %d", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestKafkaClientOptionsUseSASLWhenCredentialsPresent(t *testing.T) {
+	info := k8s.KafkaConnectionInfo{
+		Broker:        "kafka.tools.svc.cluster.local:9092",
+		Username:      "user1",
+		Password:      "kafka-pass",
+		SASLMechanism: "PLAIN",
+	}
+
+	if kafkaDialer(info).SASLMechanism == nil {
+		t.Fatalf("expected dialer to use SASL")
+	}
+	if kafkaTransport(info).SASL == nil {
+		t.Fatalf("expected transport to use SASL")
+	}
+}
+
+func TestKafkaClientOptionsStayUnauthenticatedWithoutCredentials(t *testing.T) {
+	info := k8s.KafkaConnectionInfo{Broker: "kafka.tools.svc.cluster.local:9092"}
+
+	if kafkaDialer(info).SASLMechanism != nil {
+		t.Fatalf("expected dialer to stay unauthenticated")
+	}
+	if kafkaTransport(info) != nil {
+		t.Fatalf("expected no custom transport without credentials")
 	}
 }

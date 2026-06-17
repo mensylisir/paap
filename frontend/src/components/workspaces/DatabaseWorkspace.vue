@@ -14,7 +14,7 @@
           </div>
           <div class="db-tree">
             <div v-for="db in dbs" :key="db.name" class="db-tree-item" :class="{ expanded: expandedDb === db.name, selected: selectedResource?.name === db.name && selectedResource?.type === 'Database' }">
-              <button class="db-tree-row" @click="toggleDb(db); selectResource(db)">
+              <button class="db-tree-row" @click="inspectDatabase(db)">
                 <svg class="db-tree-chevron" :class="{ open: expandedDb === db.name }" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <polyline points="9 18 15 12 9 6"/>
                 </svg>
@@ -31,7 +31,7 @@
                   :key="t.name"
                   class="db-tree-row db-tree-leaf"
                   :class="{ selected: selectedResource?.name === t.name && selectedResource?.type === 'Table' }"
-                  @click="selectResource(t)"
+                  @click="inspectTable(t)"
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
                     <rect x="3" y="3" width="18" height="18" rx="2"/>
@@ -247,6 +247,27 @@ const selectResource = (resource: WorkspaceResource) => {
   selectedResource.value = resource
 }
 
+const findResourceAction = (resource: WorkspaceResource, key: string) =>
+  (resource.actions || []).find((action) => action.key === key)
+
+const runResourceAction = (resource: WorkspaceResource, key: string, fallbackTarget = resource.name) => {
+  const action = findResourceAction(resource, key)
+  if (!action) return
+  const target = action.target || fallbackTarget
+  emit('action', action, target)
+}
+
+const inspectDatabase = (db: WorkspaceResource) => {
+  toggleDb(db)
+  selectResource(db)
+  runResourceAction(db, 'list_database_tables', db.name)
+}
+
+const inspectTable = (table: WorkspaceResource) => {
+  selectResource(table)
+  runResourceAction(table, 'preview_table_rows', table.name)
+}
+
 const actionTarget = (action: WorkspaceAction, fallback = '') => String(action.target || fallback || '')
 const activeActionTarget = computed(() => actionTarget(props.activeAction || { label: '', description: '' }, props.activeActionTarget || ''))
 const selectedResourceActiveAction = computed(() => {
@@ -287,6 +308,14 @@ const syncWorkspaceState = () => {
     expandedDb.value = dbs.value[0]?.name || null
   } else if (!expandedDb.value && dbs.value.length) {
     expandedDb.value = dbs.value[0].name
+  }
+  if (rows.value.length) {
+    activeTab.value = 'data'
+    return
+  }
+  if (columns.value.length) {
+    activeTab.value = 'columns'
+    return
   }
   if (!availableTabs.value.some((tab) => tab.key === activeTab.value)) {
     activeTab.value = availableTabs.value[0]?.key || 'resources'

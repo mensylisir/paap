@@ -42,14 +42,14 @@ type RabbitMQBinding struct {
 }
 
 type RabbitMQMessage struct {
-	Payload       string                 `json:"payload"`
-	PayloadBytes  int                    `json:"payload_bytes"`
-	PayloadString string                 `json:"payload_string"`
-	Exchange      string                 `json:"exchange"`
-	RoutingKey    string                 `json:"routing_key"`
-	MessageCount  int                    `json:"message_count"`
-	Properties    map[string]interface{} `json:"properties"`
-	Redelivered   bool                   `json:"redelivered"`
+	Payload       string      `json:"payload"`
+	PayloadBytes  int         `json:"payload_bytes"`
+	PayloadString string      `json:"payload_string"`
+	Exchange      string      `json:"exchange"`
+	RoutingKey    string      `json:"routing_key"`
+	MessageCount  int         `json:"message_count"`
+	Properties    interface{} `json:"properties"`
+	Redelivered   bool        `json:"redelivered"`
 }
 
 type RabbitMQPublishResult struct {
