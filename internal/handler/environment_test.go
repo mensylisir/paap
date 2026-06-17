@@ -4556,22 +4556,36 @@ func TestAdoptResourceDiscoversAndCreatesDraftFromRealWorkload(t *testing.T) {
 	}
 }
 
-func TestDatabaseTableContextResourcesPreserveTreeContext(t *testing.T) {
-	resources := databaseTableContextResources("postgres", "public.orders", "Preview first 20 rows")
-	if len(resources) != 2 {
-		t.Fatalf("expected database and table context resources, got %#v", resources)
+func TestDatabaseTableContextResourcesPreserveFullDatabaseCatalog(t *testing.T) {
+	resources := appendDatabaseTableResources(
+		databaseCatalogResources([]string{"information_schema", "mysql", "sys"}),
+		"mysql",
+		[]svcservice.DatabaseTable{{Name: "user", Type: "BASE TABLE"}, {Name: "db", Type: "BASE TABLE"}},
+	)
+	var databaseNames []string
+	var tableNames []string
+	var tableAnnotations map[string]interface{}
+	var tableActionCount int
+	for _, resource := range resources {
+		if resource.Type == "Database" {
+			databaseNames = append(databaseNames, resource.Name)
+		}
+		if resource.Type == "Table" {
+			tableNames = append(tableNames, resource.Name)
+			tableAnnotations = resource.Annotations
+			tableActionCount = len(resource.Actions)
+		}
 	}
-	if resources[0].Type != "Database" || resources[0].Name != "postgres" {
-		t.Fatalf("first resource must keep selected database, got %#v", resources[0])
+	if strings.Join(databaseNames, ",") != "information_schema,mysql,sys" {
+		t.Fatalf("database catalog must stay stable after drilling into a table, got %#v", databaseNames)
 	}
-	table := resources[1]
-	if table.Type != "Table" || table.Name != "public.orders" {
-		t.Fatalf("second resource must keep selected table, got %#v", table)
+	if strings.Join(tableNames, ",") != "user,db" {
+		t.Fatalf("table catalog must stay stable after previewing one table, got %#v", tableNames)
 	}
-	if table.Annotations["database"] != "postgres" {
-		t.Fatalf("table must keep database annotation, got %#v", table.Annotations)
+	if tableAnnotations["database"] != "mysql" {
+		t.Fatalf("table must keep database annotation, got %#v", tableAnnotations)
 	}
-	if len(table.Actions) == 0 {
-		t.Fatalf("table context must keep preview/columns actions, got %#v", table.Actions)
+	if tableActionCount == 0 {
+		t.Fatalf("table context must keep preview/columns actions")
 	}
 }

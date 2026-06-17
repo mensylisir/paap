@@ -4520,18 +4520,7 @@ func enrichDatabaseWorkspace(ctx context.Context, workspace service.ToolWorkspac
 	backups, backupErr := k8s.ListDatabaseBackups(ctx, inst.Namespace, inst.ServiceType)
 	resources := make([]service.ToolWorkspaceResource, 0, len(databases)+len(backups)+1)
 	resources = append(resources, databaseConnectionResource("Ready", "Database connection is healthy."))
-	for _, databaseName := range databases {
-		resources = append(resources, service.ToolWorkspaceResource{
-			Name:        databaseName,
-			Type:        "Database",
-			Status:      "Ready",
-			Description: "Database catalog",
-			Actions: []service.ToolWorkspaceAction{
-				{Key: "list_database_tables", Label: "表", Description: "查看该数据库的表。"},
-				{Key: "drop_database", Label: "删除", Description: "删除该数据库。", Tone: "danger", Target: databaseName},
-			},
-		})
-	}
+	resources = append(resources, databaseCatalogResources(databases)...)
 	for _, backup := range backups {
 		resources = append(resources, databaseBackupResource(backup))
 	}
@@ -4549,38 +4538,10 @@ func enrichDatabaseTablesWorkspace(ctx context.Context, workspace service.ToolWo
 		workspace.Resources = []service.ToolWorkspaceResource{databaseConnectionResource("Partial", err.Error())}
 		return workspace
 	}
-	tables, err := service.ListDatabaseTables(ctx, info, databaseName)
+	resources, err := databaseCatalogWithTables(ctx, info, databaseName)
 	if err != nil {
 		workspace.Resources = []service.ToolWorkspaceResource{databaseConnectionResource("Partial", err.Error())}
 		return workspace
-	}
-	resources := make([]service.ToolWorkspaceResource, 0, len(tables)+1)
-	resources = append(resources, service.ToolWorkspaceResource{
-		Name:        databaseName,
-		Type:        "Database",
-		Status:      "Ready",
-		Description: "Selected database",
-	})
-	for _, table := range tables {
-		target := databaseTableTarget(databaseName, table.Name)
-		resources = append(resources, service.ToolWorkspaceResource{
-			Name:        table.Name,
-			Type:        "Table",
-			Status:      "Ready",
-			Description: table.Type,
-			Annotations: map[string]interface{}{"database": databaseName},
-			Actions: []service.ToolWorkspaceAction{
-				{Key: "list_table_columns", Label: "字段", Description: "查看该表字段。", Target: target},
-				{Key: "preview_table_rows", Label: "预览", Description: "预览该表前 20 行。", Target: target},
-				{Key: "insert_table_row", Label: "新增行", Description: "向该表插入一行。", Target: target, Fields: []service.ToolWorkspaceActionField{{Name: "values", Label: "数据 JSON", Type: "textarea", Required: true, Placeholder: `{"column":"value"}`}}},
-				{Key: "update_table_row", Label: "更新行", Description: "按条件更新该表行。", Target: target, Fields: []service.ToolWorkspaceActionField{
-					{Name: "values", Label: "数据 JSON", Type: "textarea", Required: true, Placeholder: `{"name":"updated"}`},
-					{Name: "where", Label: "WHERE JSON", Type: "textarea", Required: true, Placeholder: `{"id":"1"}`},
-				}},
-				{Key: "delete_table_row", Label: "删除行", Description: "按条件删除该表行。", Tone: "danger", Target: target, Fields: []service.ToolWorkspaceActionField{{Name: "where", Label: "WHERE JSON", Type: "textarea", Required: true, Placeholder: `{"id":"1"}`}}},
-				{Key: "drop_table", Label: "删表", Description: "删除该表。", Tone: "danger", Target: target},
-			},
-		})
 	}
 	workspace.Resources = resources
 	return workspace
@@ -4597,7 +4558,11 @@ func enrichTableColumnsWorkspace(ctx context.Context, workspace service.ToolWork
 		workspace.Resources = []service.ToolWorkspaceResource{databaseConnectionResource("Partial", err.Error())}
 		return workspace
 	}
-	resources := databaseTableContextResources(databaseName, tableName, "Selected table")
+	resources, err := databaseTableContextResources(ctx, info, databaseName)
+	if err != nil {
+		workspace.Resources = []service.ToolWorkspaceResource{databaseConnectionResource("Partial", err.Error())}
+		return workspace
+	}
 	for _, column := range columns {
 		description := column.DataType
 		if column.Nullable != "" {
@@ -4628,7 +4593,11 @@ func enrichTablePreviewWorkspace(ctx context.Context, workspace service.ToolWork
 		workspace.Resources = []service.ToolWorkspaceResource{databaseConnectionResource("Partial", err.Error())}
 		return workspace
 	}
-	resources := databaseTableContextResources(databaseName, tableName, "Preview first 20 rows")
+	resources, err := databaseTableContextResources(ctx, info, databaseName)
+	if err != nil {
+		workspace.Resources = []service.ToolWorkspaceResource{databaseConnectionResource("Partial", err.Error())}
+		return workspace
+	}
 	for i, row := range rows {
 		resources = append(resources, service.ToolWorkspaceResource{
 			Name:        fmt.Sprintf("row-%d", i+1),
@@ -4641,30 +4610,63 @@ func enrichTablePreviewWorkspace(ctx context.Context, workspace service.ToolWork
 	return workspace
 }
 
-func databaseTableContextResources(databaseName, tableName, tableDescription string) []service.ToolWorkspaceResource {
-	target := databaseTableTarget(databaseName, tableName)
-	return []service.ToolWorkspaceResource{
-		{
+func databaseTableContextResources(ctx context.Context, info k8s.DatabaseConnectionInfo, databaseName string) ([]service.ToolWorkspaceResource, error) {
+	return databaseCatalogWithTables(ctx, info, databaseName)
+}
+
+func databaseCatalogWithTables(ctx context.Context, info k8s.DatabaseConnectionInfo, databaseName string) ([]service.ToolWorkspaceResource, error) {
+	databases, err := service.ListDatabases(ctx, info)
+	if err != nil {
+		return nil, err
+	}
+	tables, err := service.ListDatabaseTables(ctx, info, databaseName)
+	if err != nil {
+		return nil, err
+	}
+	resources := databaseCatalogResources(databases)
+	return appendDatabaseTableResources(resources, databaseName, tables), nil
+}
+
+func databaseCatalogResources(databases []string) []service.ToolWorkspaceResource {
+	resources := make([]service.ToolWorkspaceResource, 0, len(databases))
+	for _, databaseName := range databases {
+		resources = append(resources, service.ToolWorkspaceResource{
 			Name:        databaseName,
 			Type:        "Database",
 			Status:      "Ready",
-			Description: "Selected database",
+			Description: "Database catalog",
 			Actions: []service.ToolWorkspaceAction{
 				{Key: "list_database_tables", Label: "表", Description: "查看该数据库的表。", Target: databaseName},
+				{Key: "drop_database", Label: "删除", Description: "删除该数据库。", Tone: "danger", Target: databaseName},
 			},
-		},
-		{
-			Name:        tableName,
+		})
+	}
+	return resources
+}
+
+func appendDatabaseTableResources(resources []service.ToolWorkspaceResource, databaseName string, tables []service.DatabaseTable) []service.ToolWorkspaceResource {
+	for _, table := range tables {
+		target := databaseTableTarget(databaseName, table.Name)
+		resources = append(resources, service.ToolWorkspaceResource{
+			Name:        table.Name,
 			Type:        "Table",
 			Status:      "Ready",
-			Description: tableDescription,
+			Description: table.Type,
 			Annotations: map[string]interface{}{"database": databaseName},
 			Actions: []service.ToolWorkspaceAction{
 				{Key: "list_table_columns", Label: "字段", Description: "查看该表字段。", Target: target},
 				{Key: "preview_table_rows", Label: "预览", Description: "预览该表前 20 行。", Target: target},
+				{Key: "insert_table_row", Label: "新增行", Description: "向该表插入一行。", Target: target, Fields: []service.ToolWorkspaceActionField{{Name: "values", Label: "数据 JSON", Type: "textarea", Required: true, Placeholder: `{"column":"value"}`}}},
+				{Key: "update_table_row", Label: "更新行", Description: "按条件更新该表行。", Target: target, Fields: []service.ToolWorkspaceActionField{
+					{Name: "values", Label: "数据 JSON", Type: "textarea", Required: true, Placeholder: `{"name":"updated"}`},
+					{Name: "where", Label: "WHERE JSON", Type: "textarea", Required: true, Placeholder: `{"id":"1"}`},
+				}},
+				{Key: "delete_table_row", Label: "删除行", Description: "按条件删除该表行。", Tone: "danger", Target: target, Fields: []service.ToolWorkspaceActionField{{Name: "where", Label: "WHERE JSON", Type: "textarea", Required: true, Placeholder: `{"id":"1"}`}}},
+				{Key: "drop_table", Label: "删表", Description: "删除该表。", Tone: "danger", Target: target},
 			},
-		},
+		})
 	}
+	return resources
 }
 
 func databaseTableTarget(databaseName, tableName string) string {
