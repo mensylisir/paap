@@ -914,6 +914,20 @@ describe('Vue view markup', () => {
     expect(actionForm.default).toContain('workspace-action-form')
   })
 
+  it('keeps deployment status fresh without a full page reload', async () => {
+    const envDetail = await import('./EnvDetailView.vue?raw')
+    const polling = await import('./envInstallPolling.ts?raw')
+
+    expect(polling.default).toContain('hasPendingResource(services)')
+    expect(polling.default).toContain('hasPendingResource(components)')
+    expect(envDetail.default).toContain('shouldPollTemplateInstallations(env.value, services.value, components.value)')
+    expect(envDetail.default).toContain("configDrawer.value.kind === 'service'")
+    expect(envDetail.default).toContain('configDrawer.value.service = refreshed')
+    expect(envDetail.default).toContain("configDrawer.value.kind === 'component'")
+    expect(envDetail.default).toContain('configDrawer.value.component = refreshed')
+    expect(envDetail.default).toContain('scheduleTemplateInstallPolling()')
+  })
+
   it('exposes real workspace-level management actions inside service drawers', async () => {
     const envDetail = await import('./EnvDetailView.vue?raw')
     const toolWorkspace = await import('../../../internal/service/tool_workspace.go?raw')

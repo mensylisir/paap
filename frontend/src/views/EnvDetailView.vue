@@ -2486,7 +2486,7 @@ const stopTemplateInstallPolling = () => {
 }
 
 const scheduleTemplateInstallPolling = () => {
-  if (templateInstallPollTimer || !shouldPollTemplateInstallations(env.value, services.value)) return
+  if (templateInstallPollTimer || !shouldPollTemplateInstallations(env.value, services.value, components.value)) return
   if (templateInstallPollAttempts >= TEMPLATE_INSTALL_POLL_MAX_ATTEMPTS) return
   templateInstallPollAttempts += 1
   templateInstallPollTimer = window.setTimeout(async () => {
@@ -2494,7 +2494,7 @@ const scheduleTemplateInstallPolling = () => {
     try {
       await refreshServices()
     } finally {
-      if (shouldPollTemplateInstallations(env.value, services.value)) {
+      if (shouldPollTemplateInstallations(env.value, services.value, components.value)) {
         scheduleTemplateInstallPolling()
       } else {
         stopTemplateInstallPolling()
@@ -3976,6 +3976,14 @@ const refreshServices = async () => {
   components.value = res.data.components || []
   services.value = res.data.services || []
   externalAccess.value = res.data.externalAccess || []
+  if (configDrawer.value.visible && configDrawer.value.kind === 'service' && configDrawer.value.service?.id) {
+    const refreshed = services.value.find((item:any) => Number(item.id) === Number(configDrawer.value.service?.id))
+    if (refreshed) configDrawer.value.service = refreshed
+  }
+  if (configDrawer.value.visible && configDrawer.value.kind === 'component' && configDrawer.value.component?.id) {
+    const refreshed = components.value.find((item:any) => Number(item.id) === Number(configDrawer.value.component?.id))
+    if (refreshed) configDrawer.value.component = refreshed
+  }
   notifyEnvUpdated()
 }
 
@@ -4036,6 +4044,7 @@ const deployComponent = async (comp:any) => {
   try {
     await api.deployComponent(Number(comp.id), { version })
     await refreshServices()
+    scheduleTemplateInstallPolling()
     selectComponent(comp.id)
     const refreshed = components.value.find((item:any) => Number(item.id) === Number(comp.id))
     if (configDrawer.value.visible && Number(configDrawer.value.component?.id) === Number(comp.id)) {
@@ -6123,6 +6132,7 @@ const saveServiceConfigDrawer = async () => {
     const updated = res.data
     services.value = services.value.map((item:any) => Number(item.id) === Number(updated.id) ? { ...item, ...updated } : item)
     await refreshServices()
+    scheduleTemplateInstallPolling()
     const next = services.value.find((item:any) => Number(item.id) === Number(updated.id)) || updated
     configDrawer.value.service = next
     serviceConfigForm.value = serviceConfigFormFromInstallation(next)
@@ -6150,6 +6160,7 @@ const deployServiceFromDrawer = async () => {
       services.value = services.value.map((item:any) => Number(item.id) === Number(updated.id) ? { ...item, ...updated } : item)
     }
     await refreshServices()
+    scheduleTemplateInstallPolling()
     const next = services.value.find((item:any) => Number(item.id) === Number(updated?.id || svc.id))
       || services.value.find((item:any) => item.serviceType === svc.serviceType)
       || updated

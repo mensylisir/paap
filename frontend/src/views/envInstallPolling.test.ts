@@ -7,8 +7,13 @@ describe('envInstallPolling', () => {
     expect(shouldPollTemplateInstallations({ templateId: 2, status: 'running' }, [])).toBe(true)
   })
 
-  it('does not poll empty environments or environments that already have services', () => {
+  it('polls while service or component runtime state is still pending', () => {
+    expect(shouldPollTemplateInstallations({ templateId: 0, status: 'running' }, [{ status: 'installing' }])).toBe(true)
+    expect(shouldPollTemplateInstallations({ templateId: 0, status: 'running' }, [], [{ status: 'creating' }])).toBe(true)
+  })
+
+  it('does not poll empty environments or stable environments that already have services', () => {
     expect(shouldPollTemplateInstallations({ templateId: 0, status: 'empty' }, [])).toBe(false)
-    expect(shouldPollTemplateInstallations({ templateId: 2, status: 'creating' }, [{ serviceType: 'git' }])).toBe(false)
+    expect(shouldPollTemplateInstallations({ templateId: 2, status: 'running' }, [{ serviceType: 'git', status: 'running' }])).toBe(false)
   })
 })
