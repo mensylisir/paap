@@ -103,6 +103,26 @@ func TestBuildComponentServiceManifestExposesFrontendAsNodePort(t *testing.T) {
 	}
 }
 
+func TestBuildComponentManifestUsesConfiguredContainerPort(t *testing.T) {
+	app := model.Application{Name: "测试应用", Identifier: "myapp"}
+	env := model.Environment{Name: "开发", Identifier: "dev"}
+	cfg, err := model.ComponentConfig{ContainerPort: 8000}.JSON()
+	if err != nil {
+		t.Fatalf("config json: %v", err)
+	}
+	comp := model.Component{Name: "后端", Type: "backend", Image: "registry.local/api", Version: "v1", Replicas: 1, Config: cfg}
+
+	deployment := BuildComponentDeploymentManifest(app, env, comp, "backend-1", "myapp-dev")
+	service := BuildComponentServiceManifest(app, env, comp, "backend-1", "myapp-dev")
+
+	if !strings.Contains(deployment, "containerPort: 8000") {
+		t.Fatalf("deployment should expose configured container port:\n%s", deployment)
+	}
+	if !strings.Contains(service, "targetPort: 8000") {
+		t.Fatalf("service should target configured container port:\n%s", service)
+	}
+}
+
 func TestBuildComponentManifestMountsNginxApiProxyConfig(t *testing.T) {
 	app := model.Application{Name: "测试应用", Identifier: "myapp"}
 	env := model.Environment{Name: "开发", Identifier: "dev"}

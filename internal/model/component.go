@@ -44,15 +44,16 @@ type Component struct {
 }
 
 type ComponentConfig struct {
-	Framework    string                `json:"framework,omitempty"`
-	Command      []string              `json:"command,omitempty"`
-	Args         []string              `json:"args,omitempty"`
-	Env          []ComponentEnvVar     `json:"env,omitempty"`
-	ConfigMaps   []ComponentConfigMap  `json:"configMaps,omitempty"`
-	Secrets      []ComponentSecret     `json:"secrets,omitempty"`
-	Files        []ComponentConfigFile `json:"files,omitempty"`
-	Bindings     []ComponentBinding    `json:"bindings,omitempty"`
-	Dependencies []string              `json:"dependencies,omitempty"`
+	Framework     string                `json:"framework,omitempty"`
+	ContainerPort int32                 `json:"containerPort,omitempty"`
+	Command       []string              `json:"command,omitempty"`
+	Args          []string              `json:"args,omitempty"`
+	Env           []ComponentEnvVar     `json:"env,omitempty"`
+	ConfigMaps    []ComponentConfigMap  `json:"configMaps,omitempty"`
+	Secrets       []ComponentSecret     `json:"secrets,omitempty"`
+	Files         []ComponentConfigFile `json:"files,omitempty"`
+	Bindings      []ComponentBinding    `json:"bindings,omitempty"`
+	Dependencies  []string              `json:"dependencies,omitempty"`
 }
 
 type ComponentEnvVar struct {
@@ -120,15 +121,19 @@ func ParseComponentConfig(raw string) (ComponentConfig, error) {
 
 func NormalizeComponentConfig(cfg ComponentConfig) (ComponentConfig, error) {
 	out := ComponentConfig{
-		Framework:    strings.TrimSpace(cfg.Framework),
-		Command:      make([]string, 0, len(cfg.Command)),
-		Args:         make([]string, 0, len(cfg.Args)),
-		Env:          make([]ComponentEnvVar, 0, len(cfg.Env)),
-		ConfigMaps:   make([]ComponentConfigMap, 0, len(cfg.ConfigMaps)),
-		Secrets:      make([]ComponentSecret, 0, len(cfg.Secrets)),
-		Files:        make([]ComponentConfigFile, 0, len(cfg.Files)),
-		Bindings:     make([]ComponentBinding, 0, len(cfg.Bindings)),
-		Dependencies: make([]string, 0, len(cfg.Dependencies)),
+		Framework:     strings.TrimSpace(cfg.Framework),
+		ContainerPort: cfg.ContainerPort,
+		Command:       make([]string, 0, len(cfg.Command)),
+		Args:          make([]string, 0, len(cfg.Args)),
+		Env:           make([]ComponentEnvVar, 0, len(cfg.Env)),
+		ConfigMaps:    make([]ComponentConfigMap, 0, len(cfg.ConfigMaps)),
+		Secrets:       make([]ComponentSecret, 0, len(cfg.Secrets)),
+		Files:         make([]ComponentConfigFile, 0, len(cfg.Files)),
+		Bindings:      make([]ComponentBinding, 0, len(cfg.Bindings)),
+		Dependencies:  make([]string, 0, len(cfg.Dependencies)),
+	}
+	if out.ContainerPort < 0 || out.ContainerPort > 65535 {
+		return ComponentConfig{}, fmt.Errorf("containerPort must be between 0 and 65535")
 	}
 	for _, item := range cfg.Command {
 		item = strings.TrimSpace(item)
@@ -239,6 +244,20 @@ func NormalizeComponentConfig(cfg ComponentConfig) (ComponentConfig, error) {
 		out.Dependencies = append(out.Dependencies, dep)
 	}
 	return out, nil
+}
+
+func ResolveComponentContainerPort(componentType string, cfg ComponentConfig) int32 {
+	if cfg.ContainerPort > 0 {
+		return cfg.ContainerPort
+	}
+	return DefaultComponentContainerPort(componentType)
+}
+
+func DefaultComponentContainerPort(componentType string) int32 {
+	if strings.EqualFold(strings.TrimSpace(componentType), "frontend") {
+		return 80
+	}
+	return 8080
 }
 
 func normalizeComponentConfigMaps(items []ComponentConfigMap, out *ComponentConfig) error {

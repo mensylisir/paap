@@ -715,7 +715,7 @@ func CreateComponentCR(ctx context.Context, appIdentifier, envIdentifier, compNa
 				Args:      config.Args,
 				Env:       firstComponentEnvVars(envVars),
 			},
-			Service: componentServiceSpec(compType),
+			Service: componentServiceSpec(compType, config),
 		},
 	}
 	return cl.Create(ctx, comp)
@@ -754,9 +754,9 @@ func UpsertComponentCR(ctx context.Context, appIdentifier, envIdentifier, compNa
 	comp.Spec.Deployment.Args = config.Args
 	comp.Spec.Deployment.Env = firstComponentEnvVars(envVars)
 	if comp.Spec.Service == nil {
-		comp.Spec.Service = componentServiceSpec(compType)
+		comp.Spec.Service = componentServiceSpec(compType, config)
 	} else {
-		comp.Spec.Service = componentServiceSpec(compType)
+		comp.Spec.Service = componentServiceSpec(compType, config)
 	}
 	return cl.Update(ctx, comp)
 }
@@ -768,12 +768,11 @@ func componentArgoCDAppRef(appIdentifier, envIdentifier, compIdentifier, managed
 	return &paapv1.ObjectReference{Name: fmt.Sprintf("%s-%s-%s", appIdentifier, envIdentifier, compIdentifier)}
 }
 
-func componentServiceSpec(compType string) *paapv1.ServiceSpec {
+func componentServiceSpec(compType string, config model.ComponentConfig) *paapv1.ServiceSpec {
 	serviceType := "ClusterIP"
-	targetPort := int32(8080)
+	targetPort := model.ResolveComponentContainerPort(compType, config)
 	if strings.EqualFold(strings.TrimSpace(compType), "frontend") {
 		serviceType = "NodePort"
-		targetPort = 80
 	}
 	return &paapv1.ServiceSpec{Port: 80, TargetPort: targetPort, Type: serviceType}
 }

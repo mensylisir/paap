@@ -130,6 +130,7 @@ func BuildComponentDeploymentManifest(app model.Application, env model.Environme
 	}
 	volumes, volumeMounts := componentConfigVolumes(cfg)
 	podAnnotations := componentConfigPodTemplateAnnotations(cfg)
+	containerPort := model.ResolveComponentContainerPort(comp.Type, cfg)
 	labels := map[string]string{
 		"app":                identifier,
 		"paap.io/app":        app.Identifier,
@@ -157,7 +158,7 @@ func BuildComponentDeploymentManifest(app model.Application, env model.Environme
 						Image:        image,
 						Command:      cfg.Command,
 						Args:         cfg.Args,
-						Ports:        []corev1.ContainerPort{{ContainerPort: componentDefaultContainerPort(comp.Type)}},
+						Ports:        []corev1.ContainerPort{{ContainerPort: containerPort}},
 						VolumeMounts: volumeMounts,
 						Resources: corev1.ResourceRequirements{
 							Requests: componentResourceList(comp),
@@ -220,6 +221,11 @@ func BuildComponentConfigResourceManifest(app model.Application, env model.Envir
 }
 
 func BuildComponentServiceManifest(app model.Application, env model.Environment, comp model.Component, identifier, namespace string) string {
+	cfg, err := model.ParseComponentConfig(comp.Config)
+	if err != nil {
+		cfg = model.ComponentConfig{}
+	}
+	containerPort := model.ResolveComponentContainerPort(comp.Type, cfg)
 	labels := map[string]string{
 		"app":                identifier,
 		"paap.io/app":        app.Identifier,
@@ -240,7 +246,7 @@ func BuildComponentServiceManifest(app model.Application, env model.Environment,
 			Ports: []corev1.ServicePort{{
 				Name:       "http",
 				Port:       80,
-				TargetPort: intstrFromInt(int(componentDefaultContainerPort(comp.Type))),
+				TargetPort: intstrFromInt(int(containerPort)),
 			}},
 		},
 	}
@@ -275,13 +281,6 @@ func componentConfigChecksum(cfg model.ComponentConfig) string {
 	}
 	sum := sha256.Sum256(data)
 	return fmt.Sprintf("%x", sum)
-}
-
-func componentDefaultContainerPort(componentType string) int32 {
-	if strings.EqualFold(strings.TrimSpace(componentType), "frontend") {
-		return 80
-	}
-	return 8080
 }
 
 func componentConfigVolumes(cfg model.ComponentConfig) ([]corev1.Volume, []corev1.VolumeMount) {

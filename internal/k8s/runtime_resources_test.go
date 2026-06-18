@@ -61,6 +61,7 @@ func TestListNamespaceAdoptableResourcesDiscoversRealWorkloads(t *testing.T) {
 					Image:   "registry.local/billing/api:v1",
 					Command: []string{"/app/server"},
 					Args:    []string{"--port=8080"},
+					Ports:   []corev1.ContainerPort{{ContainerPort: 8000}},
 					Env: []corev1.EnvVar{
 						{Name: "PLAIN", Value: "value"},
 						{Name: "FEATURE_FLAG", ValueFrom: &corev1.EnvVarSource{ConfigMapKeyRef: &corev1.ConfigMapKeySelector{LocalObjectReference: corev1.LocalObjectReference{Name: "api-config"}, Key: "FEATURE_FLAG"}}},
@@ -136,6 +137,9 @@ func TestListNamespaceAdoptableResourcesDiscoversRealWorkloads(t *testing.T) {
 	}
 	if got.RuntimeConfig.Command[0] != "/app/server" || got.RuntimeConfig.Args[0] != "--port=8080" {
 		t.Fatalf("command/args not discovered: %#v", got.RuntimeConfig)
+	}
+	if len(got.RuntimeConfig.Ports) != 1 || got.RuntimeConfig.Ports[0] != 8000 {
+		t.Fatalf("container ports not discovered: %#v", got.RuntimeConfig.Ports)
 	}
 }
 

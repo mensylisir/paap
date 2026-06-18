@@ -8,6 +8,8 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -107,6 +109,53 @@ func (r *RegistryClient) ManifestDigest(ctx context.Context, repository, referen
 	return digest, nil
 }
 
+func (r *RegistryClient) ExposedPorts(ctx context.Context, repository, reference string) ([]int32, error) {
+	repository = strings.Trim(strings.TrimSpace(repository), "/")
+	reference = strings.TrimSpace(reference)
+	if repository == "" || reference == "" {
+		return nil, fmt.Errorf("repository and tag or digest are required")
+	}
+	var manifest struct {
+		Config struct {
+			Digest string `json:"digest"`
+		} `json:"config"`
+	}
+	if err := r.getManifestJSON(ctx, repository, reference, &manifest); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(manifest.Config.Digest) == "" {
+		return nil, fmt.Errorf("registry manifest response did not include config digest")
+	}
+	var imageConfig struct {
+		Config struct {
+			ExposedPorts map[string]any `json:"ExposedPorts"`
+		} `json:"config"`
+	}
+	if err := r.getJSON(ctx, "/v2/"+registryRepositoryPath(repository)+"/blobs/"+url.PathEscape(manifest.Config.Digest), &imageConfig); err != nil {
+		return nil, err
+	}
+	ports := make([]int, 0, len(imageConfig.Config.ExposedPorts))
+	seen := map[int]struct{}{}
+	for item := range imageConfig.Config.ExposedPorts {
+		portText := strings.TrimSpace(strings.Split(item, "/")[0])
+		port, err := strconv.Atoi(portText)
+		if err != nil || port <= 0 || port > 65535 {
+			continue
+		}
+		if _, exists := seen[port]; exists {
+			continue
+		}
+		seen[port] = struct{}{}
+		ports = append(ports, port)
+	}
+	sort.Ints(ports)
+	out := make([]int32, 0, len(ports))
+	for _, port := range ports {
+		out = append(out, int32(port))
+	}
+	return out, nil
+}
+
 func (r *RegistryClient) DeleteManifest(ctx context.Context, repository, digest string) error {
 	repository = strings.Trim(strings.TrimSpace(repository), "/")
 	digest = strings.TrimSpace(digest)
@@ -148,6 +197,26 @@ func (r *RegistryClient) getJSON(ctx context.Context, path string, target interf
 	if err != nil {
 		return err
 	}
+	res, err := r.HTTPClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		return fmt.Errorf("registry API returned %d", res.StatusCode)
+	}
+	return json.NewDecoder(res.Body).Decode(target)
+}
+
+func (r *RegistryClient) getManifestJSON(ctx context.Context, repository, reference string, target interface{}) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(r.BaseURL, "/")+"/v2/"+registryRepositoryPath(repository)+"/manifests/"+url.PathEscape(reference), nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Accept", strings.Join([]string{
+		"application/vnd.docker.distribution.manifest.v2+json",
+		"application/vnd.oci.image.manifest.v1+json",
+	}, ", "))
 	res, err := r.HTTPClient.Do(req)
 	if err != nil {
 		return err

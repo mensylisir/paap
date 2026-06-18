@@ -7,7 +7,8 @@ import (
 
 func TestComponentConfigKeepsBindingsAndGeneratedObjects(t *testing.T) {
 	cfg := ComponentConfig{
-		Framework: " springboot ",
+		Framework:     " springboot ",
+		ContainerPort: 8000,
 		ConfigMaps: []ComponentConfigMap{{
 			Name: "orders-config",
 			Data: map[string]string{" application.yml ": "spring: {}"},
@@ -43,6 +44,9 @@ func TestComponentConfigKeepsBindingsAndGeneratedObjects(t *testing.T) {
 
 	if parsed.Framework != "springboot" {
 		t.Fatalf("framework = %q", parsed.Framework)
+	}
+	if parsed.ContainerPort != 8000 {
+		t.Fatalf("containerPort = %d, want 8000", parsed.ContainerPort)
 	}
 	if len(parsed.ConfigMaps) != 1 || parsed.ConfigMaps[0].Data["application.yml"] != "spring: {}" {
 		t.Fatalf("configMaps not normalized: %#v", parsed.ConfigMaps)

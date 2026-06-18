@@ -730,15 +730,6 @@
               </div>
             </div>
             <div class="config-drawer-header-actions">
-              <button
-                v-if="configDrawer.kind === 'component'"
-                type="button"
-                class="bx--btn bx--btn--primary bx--btn--sm"
-                :disabled="componentActionLoading"
-                @click="deployDrawerComponent"
-              >
-                {{ componentActionLoading ? '部署中...' : '部署' }}
-              </button>
               <button type="button" class="modal-close" aria-label="关闭" @click="closeConfigDrawer">
                 <svg focusable="false" width="20" height="20" viewBox="0 0 32 32" fill="currentColor"><path d="M24 9.4L22.6 8 16 14.6 9.4 8 8 9.4l6.6 6.6L8 22.6 9.4 24l6.6-6.6 6.6 6.6 1.4-1.4-6.6-6.6L24 9.4z"/></svg>
               </button>
@@ -823,24 +814,6 @@
                 <div class="config-deployment-actions">
                   <button type="button" class="rail-btn rail-btn--secondary rail-btn--sm" @click="openDrawerLogs">查看日志</button>
                   <button type="button" class="rail-btn rail-btn--secondary rail-btn--sm" @click="openDrawerMonitoring">查看监控</button>
-                  <button
-                    v-if="configDrawer.kind === 'component'"
-                    type="button"
-                    class="rail-btn rail-btn--primary rail-btn--sm"
-                    :disabled="componentActionLoading"
-                    @click="deployDrawerComponent"
-                  >
-                    {{ componentActionLoading ? '部署中...' : '部署' }}
-                  </button>
-                  <button
-                    v-if="configDrawer.kind === 'service'"
-                    type="button"
-                    class="rail-btn rail-btn--primary rail-btn--sm"
-                    :disabled="serviceDrawerDeployDisabled"
-                    @click="deployServiceFromDrawer"
-                  >
-                    {{ serviceDrawerDeployLabel }}
-                  </button>
                 </div>
               </div>
               <div v-if="configDrawer.kind === 'service'" class="service-access-stack">
@@ -1450,6 +1423,10 @@
                   <input v-model.number="configForm.replicas" type="number" min="0" class="bx--text-input" />
                 </label>
                 <label>
+                  <span>容器端口</span>
+                  <input v-model.number="configForm.containerPort" type="number" min="1" max="65535" class="bx--text-input" @input="configForm.containerPortSource = 'user'" />
+                </label>
+                <label>
                   <span>CPU</span>
                   <input v-model.trim="configForm.cpu" class="bx--text-input" placeholder="100m" />
                 </label>
@@ -1728,8 +1705,11 @@
             <button v-if="configDrawer.kind === 'component'" type="button" class="text-btn danger" :disabled="configDrawer.saving" @click="deleteDrawerComponent">删除组件</button>
             <button v-if="configDrawer.kind === 'service'" type="button" class="text-btn danger" :disabled="uninstallSubmitting" @click="deleteDrawerService">删除卡片</button>
             <button type="button" class="bx--btn bx--btn--secondary" @click="closeConfigDrawer">取消</button>
-            <button v-if="configDrawer.kind === 'component'" type="button" class="bx--btn bx--btn--primary" :disabled="configDrawer.saving" @click="() => saveConfigDrawer()">
+            <button v-if="configDrawer.kind === 'component'" type="button" class="bx--btn bx--btn--secondary" :disabled="configDrawer.saving" @click="() => saveConfigDrawer()">
               {{ configDrawer.saving ? '保存中...' : '保存配置' }}
+            </button>
+            <button v-if="configDrawer.kind === 'component'" type="button" class="bx--btn bx--btn--primary" :disabled="configDrawer.saving || componentActionLoading" @click="deployDrawerComponent">
+              {{ componentActionLoading ? '部署中...' : '部署' }}
             </button>
             <button v-if="configDrawer.kind === 'service' && serviceDrawerProfile.showDeploymentConfig" type="button" class="bx--btn bx--btn--secondary" :disabled="configDrawer.saving || !serviceDrawerConfigurable" @click="saveServiceConfigDrawer">
               {{ configDrawer.saving ? '保存中...' : '保存部署配置' }}
@@ -2259,6 +2239,8 @@ const defaultConfigForm = () => ({
   dockerfilePath: '',
   version: '',
   replicas: 1,
+  containerPort: 0,
+  containerPortSource: 'default' as 'saved' | 'detected' | 'default' | 'user',
   cpu: '',
   memory: '',
   env: [] as ComponentConfigEnvRow[],
@@ -5115,6 +5097,7 @@ const loadComponentConfigForm = (comp:any) => {
     dockerfilePath: String(comp?.dockerfilePath || ''),
     version: String(comp?.version || imageParts.tag || componentDeployVersion(comp) || ''),
     replicas: Number(runtime.replicas ?? comp?.replicas ?? 1),
+    ...componentContainerPortForForm(comp, cfg),
     cpu: String(runtime.resources?.requests?.cpu || comp?.cpu || ''),
     memory: String(runtime.resources?.requests?.memory || comp?.memory || ''),
     env: markManagedConfigEnvRows(
@@ -5134,6 +5117,17 @@ const loadComponentConfigForm = (comp:any) => {
   selectedComponentConfigTemplateId.value = ''
   componentTemplateFieldValues.value = {}
   selectRecommendedComponentConfigTemplate()
+}
+const componentContainerPortForForm = (comp:any, cfg:any) => {
+  const saved = Number(cfg?.containerPort || 0)
+  if (saved > 0) return { containerPort: saved, containerPortSource: 'saved' as const }
+  const runtimePorts = Array.isArray(comp?.runtimeConfig?.ports) ? comp.runtimeConfig.ports : []
+  const detected = Number(runtimePorts.find((item:any) => Number(item) > 0) || 0)
+  if (detected > 0) return { containerPort: detected, containerPortSource: 'detected' as const }
+  return { containerPort: defaultComponentContainerPort(componentDrawerType.value), containerPortSource: 'default' as const }
+}
+const defaultComponentContainerPort = (componentType:string) => {
+  return String(componentType || '').toLowerCase() === 'frontend' ? 80 : 8080
 }
 const configEnvFromRuntime = (item:any) => {
   if (item?.secretName || item?.secretKey) return { name: String(item.name || ''), source: 'secret' as const, value: '', refName: String(item.secretName || ''), refKey: String(item.secretKey || '') }
@@ -5402,13 +5396,9 @@ const initializeComponentTemplateFieldValues = (force = false) => {
 }
 const selectRecommendedComponentConfigTemplate = () => {
   const current = componentSelectableConfigTemplates.value.find((template) => componentTemplateOptionValue(template) === selectedComponentConfigTemplateId.value)
-  if (current) {
-    initializeComponentTemplateFieldValues(false)
-    return
-  }
-  const recommended = componentSelectableConfigTemplates.value[0]
-  selectedComponentConfigTemplateId.value = recommended ? componentTemplateOptionValue(recommended) : ''
-  initializeComponentTemplateFieldValues(true)
+  selectedComponentConfigTemplateId.value = current ? componentTemplateOptionValue(current) : ''
+  if (current) initializeComponentTemplateFieldValues(false)
+  else componentTemplateFieldValues.value = {}
 }
 const componentTemplateRequiredFieldsComplete = computed(() =>
   templateRequiredFieldsComplete(componentTemplateFields.value, componentTemplateFieldValues.value, {
@@ -6223,6 +6213,7 @@ const configFormPayload = () => {
     files: configForm.value.files,
     bindings: configForm.value.bindings,
     dependencies: Array.from(new Set([...(cfg.dependencies || []), ...bindingDeps])),
+    containerPort: ['saved', 'user'].includes(configForm.value.containerPortSource) ? Number(configForm.value.containerPort || 0) : 0,
     command: arrayFromLines(configForm.value.commandText),
     args: arrayFromLines(configForm.value.argsText),
   }
@@ -6265,6 +6256,11 @@ const saveConfigDrawer = async (options: { refresh?: boolean } = {}) => {
     }
     if (deliveryMode === 'source' && !sourceRepoUrl) {
       configDrawer.value.error = '请填写源码仓库地址。'
+      return
+    }
+    const containerPort = Number(configForm.value.containerPort || 0)
+    if (!Number.isInteger(containerPort) || containerPort < 1 || containerPort > 65535) {
+      configDrawer.value.error = '请填写 1-65535 范围内的容器端口。'
       return
     }
     syncNginxRouteRowsFromTemplateFieldValues()

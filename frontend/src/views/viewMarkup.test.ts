@@ -1006,6 +1006,17 @@ describe('Vue view markup', () => {
     expect(envDetail.default).toContain('overflow-wrap: anywhere')
   })
 
+  it('uses one editable component container port field without persisting untouched defaults', async () => {
+    const envDetail = await import('./EnvDetailView.vue?raw')
+
+    expect(envDetail.default).toContain('容器端口')
+    expect(envDetail.default).toContain('configForm.containerPort')
+    expect(envDetail.default).toContain("configForm.containerPortSource = 'user'")
+    expect(envDetail.default).toContain('componentContainerPortForForm')
+    expect(envDetail.default).toContain("['saved', 'user'].includes(configForm.value.containerPortSource)")
+    expect(envDetail.default).toContain('defaultComponentContainerPort')
+  })
+
   it('keeps component drawers adaptive for unknown workloads', async () => {
     const envDetail = await import('./EnvDetailView.vue?raw')
     const componentProfile = await import('./componentProfile.ts?raw')
@@ -1227,6 +1238,25 @@ describe('Vue view markup', () => {
     expect(envDetail.default).toContain('服务接入变量由模板、Secret 和运行态发现生成')
     expect(envDetail.default).not.toContain('showServiceNewVariableHint')
     expect(envDetail.default).not.toContain('新增参数')
+  })
+
+  it('does not require an optional config template before deploying a component', async () => {
+    const envDetail = await import('./EnvDetailView.vue?raw')
+
+    expect(envDetail.default).toContain('prepareSelectedComponentConfigTemplateForSave')
+    expect(envDetail.default).toContain('selectedComponentConfigTemplateId.value = current ? componentTemplateOptionValue(current) : \'\'')
+    expect(envDetail.default).not.toContain('const recommended = componentSelectableConfigTemplates.value[0]')
+  })
+
+  it('keeps drawer deploy actions in the footer for components and services', async () => {
+    const envDetail = await import('./EnvDetailView.vue?raw')
+
+    expect(envDetail.default).toContain('config-drawer-footer')
+    expect(envDetail.default).toContain('@click="deployDrawerComponent"')
+    expect(envDetail.default).toContain('@click="deployServiceFromDrawer"')
+    expect(envDetail.default).not.toMatch(/config-drawer-header-actions[\s\S]{0,600}deployDrawerComponent/)
+    expect(envDetail.default).not.toMatch(/config-deployment-actions[\s\S]{0,900}deployDrawerComponent/)
+    expect(envDetail.default).not.toMatch(/config-deployment-actions[\s\S]{0,900}deployServiceFromDrawer/)
   })
 
   it('keeps service and component password fields masked with explicit reveal controls', async () => {

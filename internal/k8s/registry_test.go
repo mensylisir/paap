@@ -73,3 +73,31 @@ func TestRegistryClientDeletesTagByManifestDigest(t *testing.T) {
 		t.Fatalf("expected HEAD and DELETE requests, got head=%v delete=%v", sawHead, sawDelete)
 	}
 }
+
+func TestRegistryClientReadsExposedPortsFromImageConfig(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v2/library/tctools-backend/manifests/v1.2":
+			if accept := r.Header.Get("Accept"); accept == "" {
+				t.Fatalf("manifest lookup should send an Accept header")
+			}
+			_, _ = w.Write([]byte(`{"schemaVersion":2,"config":{"digest":"sha256:config123"}}`))
+		case "/v2/library/tctools-backend/blobs/sha256:config123":
+			_, _ = w.Write([]byte(`{"config":{"ExposedPorts":{"8000/tcp":{},"9000/tcp":{}}}}`))
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	client := NewRegistryClient("test")
+	client.BaseURL = server.URL
+
+	ports, err := client.ExposedPorts(t.Context(), "library/tctools-backend", "v1.2")
+	if err != nil {
+		t.Fatalf("exposed ports: %v", err)
+	}
+	if len(ports) != 2 || ports[0] != 8000 || ports[1] != 9000 {
+		t.Fatalf("ports = %#v, want [8000 9000]", ports)
+	}
+}

@@ -1767,6 +1767,9 @@ func componentConfigFromRuntimeConfig(cfg *k8s.RuntimeConfig) model.ComponentCon
 		Env:     make([]model.ComponentEnvVar, 0, len(cfg.Env)),
 		Files:   make([]model.ComponentConfigFile, 0, len(cfg.Files)),
 	}
+	if len(cfg.Ports) > 0 {
+		out.ContainerPort = cfg.Ports[0]
+	}
 	for _, env := range cfg.Env {
 		out.Env = append(out.Env, model.ComponentEnvVar{
 			Name:          env.Name,
@@ -2391,10 +2394,24 @@ func DeployComponent(c *gin.Context) {
 	} else {
 		comp = applyComponentDeployVersion(comp, req.Version)
 	}
-	database.DB.Save(&comp)
 
 	ctx := context.Background()
 	primaryNS := fmt.Sprintf("%s-%s", app.Identifier, env.Identifier)
+	cfg, err := model.ParseComponentConfig(comp.Config)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "component config invalid: " + err.Error()})
+		return
+	}
+	if detected := detectComponentContainerPort(ctx, env, identifier, comp.Image, cfg); detected > 0 {
+		cfg.ContainerPort = detected
+		configJSON, err := cfg.JSON()
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "component config invalid: " + err.Error()})
+			return
+		}
+		comp.Config = configJSON
+	}
+	database.DB.Save(&comp)
 
 	result, err := service.EnsureComponentGitOps(ctx, k8s.GetClient(), app, env, comp, identifier, primaryNS)
 	if err != nil {
@@ -2416,11 +2433,6 @@ func DeployComponent(c *gin.Context) {
 		comp.ErrorMessage = ""
 	}
 
-	cfg, err := model.ParseComponentConfig(comp.Config)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "component config invalid: " + err.Error()})
-		return
-	}
 	envVars, err := model.ComponentEnvVars(comp.Config)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "component config invalid: " + err.Error()})
@@ -2452,6 +2464,72 @@ func applyComponentDeployVersion(comp model.Component, version string) model.Com
 		comp.PipelineStatus = "built"
 	}
 	return comp
+}
+
+func detectComponentContainerPort(ctx context.Context, env model.Environment, identifier, image string, cfg model.ComponentConfig) int32 {
+	if cfg.ContainerPort > 0 {
+		return 0
+	}
+	if detected := detectComponentImageContainerPort(ctx, env.ID, image); detected > 0 {
+		return detected
+	}
+	if runtime, err := k8s.DiscoverComponentRuntimeConfig(ctx, env.Namespace, identifier); err == nil && runtime != nil && len(runtime.Ports) > 0 {
+		return runtime.Ports[0]
+	}
+	return 0
+}
+
+func detectComponentImageContainerPort(ctx context.Context, envID uint, image string) int32 {
+	repository, reference := imageRepositoryAndReference(image)
+	if repository == "" || reference == "" {
+		return 0
+	}
+	var registries []model.ServiceInstallation
+	if err := database.DB.
+		Where("environment_id = ? AND service_type IN ?", envID, []string{"registry", "harbor"}).
+		Find(&registries).Error; err != nil {
+		return 0
+	}
+	for _, inst := range registries {
+		ports, err := k8s.NewRegistryClient(inst.Namespace).ExposedPorts(ctx, repository, reference)
+		if err != nil || len(ports) == 0 {
+			continue
+		}
+		return ports[0]
+	}
+	return 0
+}
+
+func imageRepositoryAndReference(image string) (string, string) {
+	image = strings.TrimSpace(image)
+	if image == "" {
+		return "", ""
+	}
+	if digestAt := strings.Index(image, "@"); digestAt >= 0 {
+		repository := strings.Trim(strings.TrimSpace(image[:digestAt]), "/")
+		reference := strings.TrimSpace(image[digestAt+1:])
+		if slash := strings.Index(repository, "/"); slash >= 0 && imageReferenceFirstSegmentIsRegistry(repository[:slash]) {
+			repository = repository[slash+1:]
+		}
+		return repository, reference
+	}
+	parts := strings.Split(image, "/")
+	last := parts[len(parts)-1]
+	colon := strings.LastIndex(last, ":")
+	if colon < 0 || colon == len(last)-1 {
+		return "", ""
+	}
+	reference := last[colon+1:]
+	parts[len(parts)-1] = last[:colon]
+	if len(parts) > 1 && imageReferenceFirstSegmentIsRegistry(parts[0]) {
+		parts = parts[1:]
+	}
+	return strings.Trim(strings.Join(parts, "/"), "/"), reference
+}
+
+func imageReferenceFirstSegmentIsRegistry(segment string) bool {
+	segment = strings.ToLower(strings.TrimSpace(segment))
+	return segment == "localhost" || strings.Contains(segment, ".") || strings.Contains(segment, ":")
 }
 
 func applyComponentDeployVersionForRuntimeRegistry(app model.Application, env model.Environment, comp model.Component, identifier, version, registryServiceType string) model.Component {

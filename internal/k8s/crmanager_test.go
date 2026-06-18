@@ -324,6 +324,33 @@ func TestUpsertComponentCRExposesFrontendAsNodePort(t *testing.T) {
 	}
 }
 
+func TestUpsertComponentCRUsesConfiguredContainerPort(t *testing.T) {
+	previousClient := k8sClient
+	t.Cleanup(func() { k8sClient = previousClient })
+
+	testScheme := runtime.NewScheme()
+	if err := clientgoscheme.AddToScheme(testScheme); err != nil {
+		t.Fatalf("add client-go scheme: %v", err)
+	}
+	if err := paapv1.AddToScheme(testScheme); err != nil {
+		t.Fatalf("add paap scheme: %v", err)
+	}
+	k8sClient = fake.NewClientBuilder().WithScheme(testScheme).Build()
+
+	cfg := model.ComponentConfig{ContainerPort: 8000}
+	if err := UpsertComponentCR(context.Background(), "shop", "staging", "API", "api", "backend", "registry/api", "v1", 1, "shop-staging", "argocd", cfg); err != nil {
+		t.Fatalf("create backend component cr: %v", err)
+	}
+
+	var backend paapv1.Component
+	if err := k8sClient.Get(context.Background(), types.NamespacedName{Name: "staging-api", Namespace: "paap-app-shop"}, &backend); err != nil {
+		t.Fatalf("get backend component: %v", err)
+	}
+	if backend.Spec.Service == nil || backend.Spec.Service.TargetPort != 8000 {
+		t.Fatalf("backend service = %#v, want targetPort 8000", backend.Spec.Service)
+	}
+}
+
 func TestUpsertComponentCRRepairsFrontendServiceDefaults(t *testing.T) {
 	previousClient := k8sClient
 	t.Cleanup(func() { k8sClient = previousClient })

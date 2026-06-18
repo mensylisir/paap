@@ -37,6 +37,7 @@ type RuntimeConfig struct {
 	WorkloadKind string                  `json:"workloadKind,omitempty"`
 	Container    string                  `json:"container,omitempty"`
 	Image        string                  `json:"image,omitempty"`
+	Ports        []int32                 `json:"ports,omitempty"`
 	Replicas     *int32                  `json:"replicas,omitempty"`
 	Command      []string                `json:"command,omitempty"`
 	Args         []string                `json:"args,omitempty"`
@@ -385,6 +386,7 @@ func runtimeConfigFromPodTemplate(namespace, kind, workloadName string, replicas
 		WorkloadKind: kind,
 		Container:    container.Name,
 		Image:        container.Image,
+		Ports:        runtimeContainerPorts(container.Ports),
 		Replicas:     replicas,
 		Command:      trimStringSlice(container.Command),
 		Args:         trimStringSlice(container.Args),
@@ -397,6 +399,25 @@ func runtimeConfigFromPodTemplate(namespace, kind, workloadName string, replicas
 		},
 	}
 	return cfg
+}
+
+func runtimeContainerPorts(ports []corev1.ContainerPort) []int32 {
+	if len(ports) == 0 {
+		return nil
+	}
+	out := make([]int32, 0, len(ports))
+	seen := map[int32]struct{}{}
+	for _, port := range ports {
+		if port.ContainerPort <= 0 {
+			continue
+		}
+		if _, exists := seen[port.ContainerPort]; exists {
+			continue
+		}
+		seen[port.ContainerPort] = struct{}{}
+		out = append(out, port.ContainerPort)
+	}
+	return out
 }
 
 func runtimeConfigFiles(podSpec corev1.PodSpec, container corev1.Container) []RuntimeConfigFile {
