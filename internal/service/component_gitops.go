@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -37,6 +38,8 @@ const (
 	jenkinsKubectlImage      = "docker.io/alpine/k8s:1.34.1"
 	jenkinsInboundAgentImage = "docker.io/jenkins/inbound-agent:3107.v665000b_51092-15"
 )
+
+const componentConfigChecksumAnnotation = "paap.io/config-checksum"
 
 var dnsLabelInvalidChars = regexp.MustCompile(`[^a-z0-9-]+`)
 
@@ -126,6 +129,7 @@ func BuildComponentDeploymentManifest(app model.Application, env model.Environme
 		cfg = model.ComponentConfig{}
 	}
 	volumes, volumeMounts := componentConfigVolumes(cfg)
+	podAnnotations := componentConfigPodTemplateAnnotations(cfg)
 	labels := map[string]string{
 		"app":                identifier,
 		"paap.io/app":        app.Identifier,
@@ -145,7 +149,7 @@ func BuildComponentDeploymentManifest(app model.Application, env model.Environme
 			Replicas: &replicaCount,
 			Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": identifier}},
 			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{Labels: labels},
+				ObjectMeta: metav1.ObjectMeta{Labels: labels, Annotations: podAnnotations},
 				Spec: corev1.PodSpec{
 					Volumes: volumes,
 					Containers: []corev1.Container{{
@@ -242,6 +246,35 @@ func BuildComponentServiceManifest(app model.Application, env model.Environment,
 	}
 	serviceYAML, _ := yaml.Marshal(service)
 	return string(serviceYAML)
+}
+
+func componentConfigPodTemplateAnnotations(cfg model.ComponentConfig) map[string]string {
+	checksum := componentConfigChecksum(cfg)
+	if checksum == "" {
+		return nil
+	}
+	return map[string]string{componentConfigChecksumAnnotation: checksum}
+}
+
+func componentConfigChecksum(cfg model.ComponentConfig) string {
+	if len(cfg.ConfigMaps) == 0 && len(cfg.Secrets) == 0 && len(cfg.Files) == 0 {
+		return ""
+	}
+	payload := struct {
+		ConfigMaps []model.ComponentConfigMap  `json:"configMaps,omitempty"`
+		Secrets    []model.ComponentSecret     `json:"secrets,omitempty"`
+		Files      []model.ComponentConfigFile `json:"files,omitempty"`
+	}{
+		ConfigMaps: cfg.ConfigMaps,
+		Secrets:    cfg.Secrets,
+		Files:      cfg.Files,
+	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return ""
+	}
+	sum := sha256.Sum256(data)
+	return fmt.Sprintf("%x", sum)
 }
 
 func componentDefaultContainerPort(componentType string) int32 {

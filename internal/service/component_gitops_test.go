@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -18,6 +19,7 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/yaml"
 
 	"paap/internal/k8s"
 	"paap/internal/model"
@@ -148,6 +150,54 @@ func TestBuildComponentManifestMountsNginxApiProxyConfig(t *testing.T) {
 			t.Fatalf("manifest missing %q:\n%s", want, manifest)
 		}
 	}
+}
+
+func TestBuildComponentDeploymentChecksumChangesWhenMountedConfigChanges(t *testing.T) {
+	app := model.Application{Name: "测试应用", Identifier: "myapp"}
+	env := model.Environment{Name: "开发", Identifier: "dev"}
+	cfg := model.ComponentConfig{
+		ConfigMaps: []model.ComponentConfigMap{{
+			Name: "frontend-1-config",
+			Data: map[string]string{"default.conf": "server { listen 80; }\n"},
+		}},
+		Files: []model.ComponentConfigFile{{
+			Name:          "nginx-config",
+			ConfigMapName: "frontend-1-config",
+			Key:           "default.conf",
+			MountPath:     "/etc/nginx/conf.d/default.conf",
+		}},
+	}
+	configJSON, err := cfg.JSON()
+	if err != nil {
+		t.Fatalf("encode config: %v", err)
+	}
+	comp := model.Component{Name: "前端", Type: "frontend", Image: "nginx", Version: "alpine", Replicas: 1, Config: configJSON}
+
+	first := deploymentConfigChecksum(t, BuildComponentDeploymentManifest(app, env, comp, "frontend-1", "myapp-dev"))
+
+	cfg.ConfigMaps[0].Data["default.conf"] = "server { listen 81; }\n"
+	configJSON, err = cfg.JSON()
+	if err != nil {
+		t.Fatalf("encode changed config: %v", err)
+	}
+	comp.Config = configJSON
+	second := deploymentConfigChecksum(t, BuildComponentDeploymentManifest(app, env, comp, "frontend-1", "myapp-dev"))
+
+	if first == "" || second == "" {
+		t.Fatalf("deployment config checksum must be present, got first=%q second=%q", first, second)
+	}
+	if first == second {
+		t.Fatalf("deployment config checksum must change when mounted config changes, got %q", first)
+	}
+}
+
+func deploymentConfigChecksum(t *testing.T, manifest string) string {
+	t.Helper()
+	var deploy appsv1.Deployment
+	if err := yaml.Unmarshal([]byte(manifest), &deploy); err != nil {
+		t.Fatalf("decode deployment manifest: %v\n%s", err, manifest)
+	}
+	return deploy.Spec.Template.Annotations["paap.io/config-checksum"]
 }
 
 func TestBuildComponentManifestKeepsExplicitImageTag(t *testing.T) {
