@@ -223,7 +223,7 @@ func componentConfigTemplateFromRequest(req componentConfigTemplateRequest, buil
 		EnvJSON:        mustJSON(req.Env),
 		ConfigJSON:     mustJSON(req.ConfigMaps),
 		SecretJSON:     mustJSON(req.Secrets),
-		FileJSON:       mustJSON(req.Files),
+		FileJSON:       mustJSON(normalizeComponentConfigTemplateFileHints(req.Files)),
 		CommandJSON:    mustJSON(req.Command),
 		ArgsJSON:       mustJSON(req.Args),
 		IsBuiltin:      builtin,
@@ -268,7 +268,7 @@ func componentConfigTemplateToResponse(tmpl model.ComponentConfigTemplate) compo
 		Env:            decodeObjectArray(tmpl.EnvJSON),
 		ConfigMaps:     decodeObjectArray(tmpl.ConfigJSON),
 		Secrets:        decodeObjectArray(tmpl.SecretJSON),
-		Files:          decodeObjectArray(tmpl.FileJSON),
+		Files:          normalizeComponentConfigTemplateFileHints(decodeObjectArray(tmpl.FileJSON)),
 		Command:        decodeStringArray(tmpl.CommandJSON),
 		Args:           decodeStringArray(tmpl.ArgsJSON),
 		IsBuiltin:      tmpl.IsBuiltin,
@@ -312,6 +312,46 @@ func decodeObjectArray(raw string) []map[string]interface{} {
 		return []map[string]interface{}{}
 	}
 	return out
+}
+
+func normalizeComponentConfigTemplateFileHints(items []map[string]interface{}) []map[string]interface{} {
+	out := make([]map[string]interface{}, 0, len(items))
+	for _, item := range items {
+		key := templateMapString(item, "key")
+		if key == "" {
+			continue
+		}
+		normalized := map[string]interface{}{
+			"key": key,
+		}
+		if name := templateMapString(item, "name"); name != "" {
+			normalized["name"] = name
+		}
+		if configMapName := templateMapString(item, "configMapName"); configMapName != "" {
+			normalized["configMapName"] = configMapName
+		}
+		if recommended := firstNonEmpty(templateMapString(item, "recommendedMountPath"), templateMapString(item, "mountPath")); recommended != "" {
+			normalized["recommendedMountPath"] = recommended
+		}
+		if readOnly, exists := item["readOnly"]; exists {
+			normalized["readOnly"] = readOnly != false
+		} else {
+			normalized["readOnly"] = true
+		}
+		out = append(out, normalized)
+	}
+	return out
+}
+
+func templateMapString(item map[string]interface{}, key string) string {
+	if item == nil {
+		return ""
+	}
+	value, exists := item[key]
+	if !exists || value == nil {
+		return ""
+	}
+	return strings.TrimSpace(fmt.Sprint(value))
 }
 
 func decodeStringArray(raw string) []string {

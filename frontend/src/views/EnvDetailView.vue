@@ -1483,11 +1483,29 @@
                 </p>
                 <p v-else-if="selectedComponentConfigTemplate" class="component-config-warning">请先补全必填项。</p>
 
-                <details v-if="configForm.env.length || componentNginxRouteEditorVisible" class="component-template-custom-config component-template-advanced-config">
+                <details v-if="configForm.files.length || configForm.env.length || componentNginxRouteEditorVisible" class="component-template-custom-config component-template-advanced-config">
                   <summary>
                     <span>高级配置</span>
-                    <small>代理路由和手工覆盖项</small>
+                    <small>配置文件挂载、代理路由和手工覆盖项</small>
                   </summary>
+                  <div v-if="configForm.files.length" class="component-file-mount-panel">
+                    <div class="component-file-mount-head">
+                      <span>配置文件挂载</span>
+                    </div>
+                    <div class="component-file-mount-list">
+                      <div v-for="(file, idx) in configForm.files" :key="`${file.configMapName}-${file.key}-${idx}`" class="component-file-mount-row">
+                        <div class="component-file-mount-source">
+                          <strong>{{ file.key || file.name }}</strong>
+                          <small>{{ file.configMapName }}</small>
+                        </div>
+                        <input v-model.trim="file.mountPath" class="bx--text-input" placeholder="挂载路径" aria-label="配置文件挂载路径" />
+                        <label class="component-file-readonly">
+                          <input v-model="file.readOnly" type="checkbox" />
+                          <span>只读</span>
+                        </label>
+                      </div>
+                    </div>
+                  </div>
                   <div v-if="componentNginxRouteEditorVisible" class="nginx-route-panel">
                     <div class="nginx-route-head">
                       <span>代理路由</span>
@@ -1515,7 +1533,7 @@
                           {{ target.name }}
                         </option>
                       </datalist>
-                      <button type="button" class="rail-btn rail-btn--secondary rail-btn--sm nginx-route-apply" @click="applyNginxRoutes">更新代理配置</button>
+                      <button type="button" class="rail-btn rail-btn--secondary rail-btn--sm nginx-route-apply" @click="() => applyNginxRoutes()">更新代理配置</button>
                     </div>
                   </div>
                   <div class="component-advanced-tools">
@@ -2011,6 +2029,21 @@ import {
   registryRepositorySuffix,
   splitImageRepositoryAndTag,
 } from './componentImageConfig'
+import {
+  mergeComponentBinding,
+  nginxRouteRowsToTemplateListRows,
+  nginxRouteRowsFromComponentConfig,
+  nginxTemplateListFieldSupportsRoutes,
+  nginxTemplateListRowsToRouteRows,
+  type NginxRouteRow,
+} from './componentNginxRoutes'
+import {
+  componentTemplateFileMountPath,
+  mergeComponentConfigFile,
+  normalizeComponentTemplateFiles,
+  type ComponentConfigFileRow,
+  type ComponentConfigTemplateFileRow,
+} from './componentConfigTemplateFiles'
 import { mergeCreatedCanvasResource, selectCreatedCanvasResource } from './envDetailCanvasResources'
 import {
   buildComponentDependencyEdges,
@@ -2145,8 +2178,6 @@ type ComponentConfigEnvRow = {
   managedLabel?: string
 }
 type ComponentConfigObjectRow = { name: string; data: Record<string, string> }
-type ComponentConfigFileRow = { name: string; configMapName: string; key: string; mountPath: string; readOnly?: boolean }
-type NginxRouteRow = { path: string; targetKey: string; targetUrl: string }
 type ServiceVolumeField = {
   label: string
   description: string
@@ -2167,7 +2198,7 @@ type UserComponentConfigTemplate = {
   env: ComponentConfigEnvRow[]
   configMaps: ComponentConfigObjectRow[]
   secrets: ComponentConfigObjectRow[]
-  files: ComponentConfigFileRow[]
+  files: ComponentConfigTemplateFileRow[]
   command: string[]
   args: string[]
   isBuiltin?: boolean
@@ -2178,15 +2209,7 @@ const normalizeTemplateConfigObjectRows = (items:any[]): ComponentConfigObjectRo
     data: Object.fromEntries(Object.entries(item?.data || {}).map(([key, value]) => [String(key).trim(), String(value ?? '')]).filter(([key]) => key)),
   })).filter((item:ComponentConfigObjectRow) => Object.keys(item.data).length)
   : []
-const normalizeTemplateConfigFiles = (items:any[]): ComponentConfigFileRow[] => Array.isArray(items)
-  ? items.map((item:any) => ({
-    name: String(item?.name || '').trim(),
-    configMapName: String(item?.configMapName || '').trim(),
-    key: String(item?.key || '').trim(),
-    mountPath: String(item?.mountPath || item?.recommendedMountPath || '').trim(),
-    readOnly: item?.readOnly !== false,
-  })).filter((item:ComponentConfigFileRow) => item.key && item.mountPath)
-  : []
+const normalizeTemplateConfigFiles = normalizeComponentTemplateFiles
 const componentNodePositions = ref<Record<string, { x: number; y: number }>>({})
 const manualCanvasEdges = ref<Array<{ fromKey: string; toKey: string }>>([])
 const canvasCreatePoint = ref<{ x: number; y: number } | null>(null)
@@ -5210,6 +5233,30 @@ const componentTemplateInitialFieldValue = (field:any) => {
     firstOptionValue: componentTemplateFieldOptions(field).length === 1 ? componentTemplateFieldOptions(field)[0]?.value || '' : '',
   })
 }
+const componentTemplateNginxRouteField = () =>
+  componentTemplateFields.value.find((field:any) => nginxTemplateListFieldSupportsRoutes(field)) || null
+const syncNginxTemplateFieldValuesFromRouteRows = () => {
+  const field = componentTemplateNginxRouteField()
+  if (!field || !nginxRouteRows.value.length) return
+  const key = componentTemplateFieldKey(field)
+  const currentRows = Array.isArray(componentTemplateFieldValues.value[key]) ? componentTemplateFieldValues.value[key] : []
+  const hasCurrentRoute = nginxTemplateListRowsToRouteRows(currentRows, field, componentDrawerBackendTargets.value)
+    .some((route) => String(route.path || '').trim())
+  if (hasCurrentRoute) return
+  const rows = nginxRouteRowsToTemplateListRows(nginxRouteRows.value, field)
+  if (rows.length) componentTemplateFieldValues.value = { ...componentTemplateFieldValues.value, [key]: rows }
+}
+const syncNginxRouteRowsFromTemplateFieldValues = () => {
+  const field = componentTemplateNginxRouteField()
+  if (!field) return
+  const key = componentTemplateFieldKey(field)
+  const rows = nginxTemplateListRowsToRouteRows(
+    Array.isArray(componentTemplateFieldValues.value[key]) ? componentTemplateFieldValues.value[key] : [],
+    field,
+    componentDrawerBackendTargets.value,
+  )
+  if (rows.length) nginxRouteRows.value = rows
+}
 const initializeComponentTemplateFieldValues = (force = false) => {
   const next: Record<string, any> = {}
   for (const field of componentTemplateFields.value) {
@@ -5218,6 +5265,7 @@ const initializeComponentTemplateFieldValues = (force = false) => {
     next[key] = !force && current !== undefined ? current : componentTemplateInitialFieldValue(field)
   }
   componentTemplateFieldValues.value = next
+  syncNginxTemplateFieldValuesFromRouteRows()
 }
 const selectRecommendedComponentConfigTemplate = () => {
   const current = componentSelectableConfigTemplates.value.find((template) => componentTemplateOptionValue(template) === selectedComponentConfigTemplateId.value)
@@ -5757,11 +5805,19 @@ const applyUserComponentConfigTemplate = async (template: UserComponentConfigTem
       const matchedBlock = platformGeneratedRef
         ? configBlocks.find((block) => renderedKey && block.keys.has(renderedKey))
         : configBlocks.find((block) => block.name === renderedConfigName || block.renderedName === renderedConfigName)
+      const configMapName = matchedBlock?.name || renderedConfigName || configBlocks[0]?.name || context.configMapName
+      const mountPath = componentTemplateFileMountPath({
+        templateFile: item,
+        configMapName,
+        key: renderedKey,
+        existingFiles: configForm.value.files,
+        render,
+      })
       upsertConfigFile({
         name: render(item.name),
-        configMapName: matchedBlock?.name || renderedConfigName || configBlocks[0]?.name || context.configMapName,
+        configMapName,
         key: renderedKey,
-        mountPath: render(item.mountPath),
+        mountPath,
         readOnly: item.readOnly !== false,
       })
     }
@@ -5827,20 +5883,11 @@ const ensureNginxRouteForTarget = (target:any, value = '') => {
   })
 }
 const nginxRoutesFromCurrentConfig = (): NginxRouteRow[] => {
-  const bindings = configForm.value.bindings.filter((binding:any) => binding.role === 'backend' || String(binding.targetType || '').toLowerCase() === 'backend')
-  const rows = bindings
-    .map((binding:any, idx:number) => {
-      const key = idx === 0 ? 'BACKEND_URL' : `BACKEND_${idx + 1}_URL`
-      const value = binding.generated?.[key] || Object.values(binding.generated || {}).find((item:any) => String(item || '').startsWith('http'))
-      return {
-        path: String(binding.generated?.locationPath || '').trim(),
-        targetKey: String(binding.targetKey || ''),
-        targetUrl: String(value || '').trim(),
-      }
-    })
-    .filter((row:NginxRouteRow) => row.targetUrl)
-  if (rows.length) return rows
-  return []
+  return nginxRouteRowsFromComponentConfig({
+    bindings: configForm.value.bindings,
+    configMaps: configForm.value.configMaps,
+    backendTargets: componentDrawerBackendTargets.value,
+  })
 }
 const addNginxRoute = () => {
   nginxRouteRows.value.push({
@@ -5870,11 +5917,11 @@ const normalizedNginxRoutes = () => nginxRouteRows.value
     targetKey: route.targetKey,
   }))
   .filter((route) => route.path || route.targetUrl)
-const applyNginxRoutes = () => {
+const applyNginxRoutes = (options: { showMessage?: boolean } = {}) => {
   const routes = normalizedNginxRoutes()
   if (!routes.length || routes.some((route) => !route.path || !route.targetUrl)) {
     configDrawer.value.error = '请填写代理路由的匹配路径和转发地址。'
-    return
+    return false
   }
   configDrawer.value.error = ''
   configForm.value.framework = 'nginx'
@@ -5903,7 +5950,8 @@ const applyNginxRoutes = () => {
     mountPath: '/etc/nginx/conf.d/default.conf',
     readOnly: true,
   })
-  configDrawer.value.message = `已生成 ${routes.length} 条前端代理路由。`
+  if (options.showMessage !== false) configDrawer.value.message = `已生成 ${routes.length} 条前端代理路由。`
+  return true
 }
 const buildNginxApiProxyConfigFromRoutes = (routes:Array<{ path:string; targetUrl:string }>) => {
   const routeBlocks = routes.map((route) => {
@@ -5944,16 +5992,10 @@ const upsertConfigMapValue = (name:string, key:string, value:string) => {
   else configForm.value.configMaps.push(current)
 }
 const upsertConfigFile = (file:any) => {
-  const idx = configForm.value.files.findIndex((item:any) => item.mountPath === file.mountPath)
-  if (idx >= 0) configForm.value.files.splice(idx, 1, file)
-  else configForm.value.files.push(file)
+  configForm.value.files = mergeComponentConfigFile(configForm.value.files, file)
 }
 const upsertBinding = (binding:any) => {
-  const idx = configForm.value.bindings.findIndex((item:any) =>
-    (item.targetKey && item.targetKey === binding.targetKey) || (item.targetName === binding.targetName && item.role === binding.role)
-  )
-  if (idx >= 0) configForm.value.bindings.splice(idx, 1, binding)
-  else configForm.value.bindings.push(binding)
+  configForm.value.bindings = mergeComponentBinding(configForm.value.bindings, binding) as typeof configForm.value.bindings
 }
 const removeConfigBinding = (idx:number) => {
   configForm.value.bindings.splice(idx, 1)
@@ -6052,6 +6094,16 @@ const configFormPayload = () => {
     args: arrayFromLines(configForm.value.argsText),
   }
 }
+const validateConfigFileMountPaths = () => {
+  const missing = configForm.value.files.find((item:any) =>
+    String(item.configMapName || '').trim()
+    && String(item.key || '').trim()
+    && !String(item.mountPath || '').trim()
+  )
+  if (!missing) return true
+  configDrawer.value.error = `请填写配置文件 ${missing.key || missing.name || ''} 的挂载路径。`
+  return false
+}
 const saveConfigDrawer = async (options: { refresh?: boolean } = {}) => {
   const comp = configDrawer.value.component
   if (!comp?.id || configDrawer.value.saving) return
@@ -6082,8 +6134,14 @@ const saveConfigDrawer = async (options: { refresh?: boolean } = {}) => {
       configDrawer.value.error = '请填写源码仓库地址。'
       return
     }
+    syncNginxRouteRowsFromTemplateFieldValues()
     const templateReady = await prepareSelectedComponentConfigTemplateForSave()
     if (!templateReady) return
+    if (componentNginxRouteEditorVisible.value && normalizedNginxRoutes().length) {
+      const nginxReady = applyNginxRoutes({ showMessage: false })
+      if (!nginxReady) return
+    }
+    if (!validateConfigFileMountPaths()) return
     const res = await api.updateComponent(Number(comp.id), {
       type: componentDrawerRole.value,
       deliveryMode: configForm.value.deliveryMode,
@@ -8819,6 +8877,72 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   display: grid;
   gap: var(--paap-space-2);
   min-width: 0;
+}
+.component-file-mount-panel {
+  display: grid;
+  gap: var(--paap-space-2);
+  min-width: 0;
+  padding: 2px 0 10px;
+  border-bottom: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+}
+.component-file-mount-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--paap-space-2);
+  min-width: 0;
+}
+.component-file-mount-head span {
+  color: var(--cds-text-primary, #161616);
+  font-size: 12px;
+  font-weight: 700;
+}
+.component-file-mount-list {
+  display: grid;
+  gap: var(--paap-space-2);
+  min-width: 0;
+}
+.component-file-mount-row {
+  display: grid;
+  grid-template-columns: minmax(112px, 0.34fr) minmax(0, 0.56fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.component-file-mount-source {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.component-file-mount-source strong,
+.component-file-mount-source small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.component-file-mount-source strong {
+  color: var(--cds-text-primary, #161616);
+  font-size: 12px;
+  font-weight: 650;
+}
+.component-file-mount-source small {
+  color: var(--cds-text-secondary, #525252);
+  font-size: 11px;
+}
+.component-file-readonly {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  color: var(--cds-text-secondary, #525252);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.component-file-readonly input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
 }
 .nginx-route-panel {
   display: grid;

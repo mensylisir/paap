@@ -50,6 +50,12 @@ func TestComponentConfigTemplatesSeedBuiltInsAndList(t *testing.T) {
 	if len(spring.NativeConfigs) == 0 {
 		t.Fatalf("springboot template must keep native template preview source: %#v", spring)
 	}
+	if len(spring.Files) == 0 || spring.Files[0]["recommendedMountPath"] == "" {
+		t.Fatalf("springboot template must expose only recommended mount path hints: %#v", spring.Files)
+	}
+	if _, exists := spring.Files[0]["mountPath"]; exists {
+		t.Fatalf("springboot template must not bind runtime mountPath at template level: %#v", spring.Files[0])
+	}
 	if !bytes.Contains([]byte(spring.NativeConfigs[0]["content"].(string)), []byte("__TEMPLATE__JDBC_URL__数据库地址__")) {
 		t.Fatalf("springboot native preview must use ordinary template syntax: %#v", spring.NativeConfigs)
 	}
@@ -93,6 +99,12 @@ func TestBuiltInNginxTemplateDoesNotAssumeBusinessRoute(t *testing.T) {
 	if !bytes.Contains([]byte(content), []byte("__TEMPLATE__FOR__LOCATION_LIST__代理路由__")) {
 		t.Fatalf("nginx built-in template must expose neutral proxy route list: %s", content)
 	}
+	if len(nginx.Files) == 0 || nginx.Files[0]["recommendedMountPath"] != "/etc/nginx/conf.d/default.conf" {
+		t.Fatalf("nginx built-in template must provide a recommended mount path hint: %#v", nginx.Files)
+	}
+	if _, exists := nginx.Files[0]["mountPath"]; exists {
+		t.Fatalf("nginx built-in template must not bind runtime mountPath at template level: %#v", nginx.Files[0])
+	}
 }
 
 func TestParseNativeComponentConfigTemplate(t *testing.T) {
@@ -128,6 +140,12 @@ func TestParseNativeComponentConfigTemplate(t *testing.T) {
 	if !bytes.Contains([]byte(content), []byte("[[paap:for LOCATION_LIST]]")) {
 		t.Fatalf("for token not converted: %s", content)
 	}
+	if len(parsed.files) != 1 || parsed.files[0]["recommendedMountPath"] != "/etc/nginx/conf.d/default.conf" {
+		t.Fatalf("parsed native template must expose recommended mount path: %#v", parsed.files)
+	}
+	if _, exists := parsed.files[0]["mountPath"]; exists {
+		t.Fatalf("parsed native template must not bind runtime mountPath: %#v", parsed.files[0])
+	}
 }
 
 func TestComponentConfigTemplatesCreateAndDeleteCustom(t *testing.T) {
@@ -138,7 +156,8 @@ func TestComponentConfigTemplatesCreateAndDeleteCustom(t *testing.T) {
 		"framework":"go",
 		"componentTypes":["backend"],
 		"fields":[{"key":"redis.addr","label":"Redis 地址","type":"serviceRef","target":"redis"}],
-		"env":[{"name":"REDIS_ADDR","source":"value","value":"redis-master:6379"}]
+		"env":[{"name":"REDIS_ADDR","source":"value","value":"redis-master:6379"}],
+		"files":[{"name":"app.env","configMapName":"{{configMapName}}","key":"app.env","mountPath":"/etc/app/app.env"}]
 	}`)
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/component-config-templates", bytes.NewReader(payload))
@@ -154,6 +173,12 @@ func TestComponentConfigTemplatesCreateAndDeleteCustom(t *testing.T) {
 	}
 	if created.Data.Key != "custom-custom-gin-runtime" || created.Data.IsBuiltin {
 		t.Fatalf("unexpected custom template: %#v", created.Data)
+	}
+	if len(created.Data.Files) != 1 || created.Data.Files[0]["recommendedMountPath"] != "/etc/app/app.env" {
+		t.Fatalf("custom template must keep legacy mountPath only as a recommendation: %#v", created.Data.Files)
+	}
+	if _, exists := created.Data.Files[0]["mountPath"]; exists {
+		t.Fatalf("custom template must not store runtime mountPath in template files: %#v", created.Data.Files[0])
 	}
 
 	rec = httptest.NewRecorder()

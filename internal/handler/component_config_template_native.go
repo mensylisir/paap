@@ -112,7 +112,6 @@ func parseNativeComponentConfigTemplate(source string, options nativeComponentCo
 		"name":                 fileName,
 		"configMapName":        "{{configMapName}}",
 		"key":                  fileName,
-		"mountPath":            defaultNativeTemplateMountPath(framework, fileName),
 		"recommendedMountPath": defaultNativeTemplateMountPath(framework, fileName),
 		"readOnly":             true,
 	}

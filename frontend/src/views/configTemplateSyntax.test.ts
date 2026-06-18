@@ -29,6 +29,7 @@ describe('config template native syntax', () => {
       key: 'application-paap.yml',
       recommendedMountPath: '/etc/paap/application-paap.yml',
     }))
+    expect(parsed.files[0]).not.toHaveProperty('mountPath')
     expect(parsed.env).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: 'SPRING_CONFIG_ADDITIONAL_LOCATION', value: 'file:/etc/paap/' }),
     ]))
@@ -67,5 +68,6 @@ describe('config template native syntax', () => {
       key: 'default.conf',
       recommendedMountPath: '/etc/nginx/conf.d/default.conf',
     }))
+    expect(parsed.files[0]).not.toHaveProperty('mountPath')
   })
 })

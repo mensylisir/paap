@@ -235,7 +235,7 @@
             </div>
             <div class="form-item">
               <label class="form-label">描述</label>
-              <textarea v-model.trim="configImportForm.description" class="rail-textarea" rows="2" placeholder="说明模板会生成哪些环境变量、配置文件和挂载"></textarea>
+              <textarea v-model.trim="configImportForm.description" class="rail-textarea" rows="2" placeholder="说明模板会生成哪些环境变量、配置文件和敏感配置"></textarea>
             </div>
             <div class="form-item">
               <label class="form-label">{{ configImportMode === 'native' ? '原生配置文件' : '高级模板 JSON 文件' }}</label>
@@ -341,6 +341,7 @@
 import { onMounted, ref, computed } from 'vue'
 import { api } from '../api/client'
 import { nativeConfigTemplateSyntax, parseNativeConfigTemplate } from './configTemplateSyntax'
+import { normalizeComponentTemplateFiles } from './componentConfigTemplateFiles'
 
 const templates = ref<any[]>([])
 const configTemplates = ref<any[]>([])
@@ -499,15 +500,7 @@ function normalizeConfigTemplateNativeConfigs(items: any) {
 }
 
 function normalizeConfigTemplateFiles(items: any) {
-  if (!Array.isArray(items)) return []
-  return items.map((item: any) => ({
-    name: String(item?.name || '').trim(),
-    configMapName: String(item?.configMapName || '').trim(),
-    key: String(item?.key || '').trim(),
-    mountPath: String(item?.mountPath || '').trim(),
-    recommendedMountPath: String(item?.recommendedMountPath || item?.mountPath || '').trim(),
-    readOnly: item?.readOnly !== false,
-  })).filter((item: any) => item.key && (item.mountPath || item.recommendedMountPath))
+  return normalizeComponentTemplateFiles(Array.isArray(items) ? items : [])
 }
 
 function normalizeConfigTemplateEnv(item: any) {
