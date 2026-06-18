@@ -656,6 +656,18 @@ describe('Vue view markup', () => {
     expect(envDetail.default).toContain('environmentCanvasEdges = computed(() => canvasEdgesForNodes(environmentCanvasNodes.value, environmentTopologyEdges.value))')
     expect(envDetail.default).toContain('api.saveEnvironmentCanvasState')
     expect(envDetail.default).toContain('canvasNodesForStage')
+    expect(envDetail.default).not.toContain('component-edge-delete-button')
+    expect(envDetail.default).toContain('component-canvas-link--manual')
+    expect(envDetail.default).toContain('selectedManualEdge')
+    expect(envDetail.default).toContain("edge.source === 'manual'")
+    expect(envDetail.default).toContain("componentContextMenu.kind === 'edge'")
+    expect(envDetail.default).toContain('deleteManualCanvasEdge')
+    expect(envDetail.default).toContain('deleteSelectedCanvasItem')
+    expect(envDetail.default.match(/@contextmenu\.stop\.prevent="openManualEdgeContextMenu/g)).toHaveLength(2)
+    expect(envDetail.default.match(/class="component-canvas-link-hit"[\s\S]{0,160}@pointerdown\.stop/g)).toHaveLength(2)
+    expect(envDetail.default.match(/class="component-canvas-link-hit"/g)).toHaveLength(2)
+    expect(envDetail.default).toContain('pointer-events: auto;')
+    expect(envDetail.default).toContain('pointer-events: none;')
   })
 
   it('keeps topology card geometry stable so zoomed canvas links stay attached', async () => {

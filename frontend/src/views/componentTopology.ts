@@ -24,6 +24,7 @@ export type ComponentTopologyEdge = {
   toId: number
   fromKey?: string
   toKey?: string
+  source?: 'auto' | 'manual'
 }
 
 export type ComponentTopologyLane = {
@@ -392,6 +393,17 @@ export const serializeComponentTopologyManualEdges = (edges: ComponentTopologyMa
     serializable.push({ fromKey, toKey })
   }
   return JSON.stringify(serializable)
+}
+
+export const removeComponentTopologyManualEdge = (
+  edges: ComponentTopologyManualEdge[],
+  fromKey: string,
+  toKey: string
+): ComponentTopologyManualEdge[] => {
+  const from = String(fromKey || '').trim()
+  const to = String(toKey || '').trim()
+  if (!from || !to) return [...(edges || [])]
+  return (edges || []).filter((edge) => !(edge.fromKey === from && edge.toKey === to))
 }
 
 export const hasComponentTopologyDragMoved = (point: ComponentTopologyDragPoint, threshold = 4): boolean => {

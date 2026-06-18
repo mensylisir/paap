@@ -11,6 +11,7 @@ import {
   nodeKey,
   parseComponentTopologyManualEdges,
   parseComponentTopologyPositions,
+  removeComponentTopologyManualEdge,
   serializeComponentTopologyManualEdges,
   serializeComponentTopologyPositions,
   shouldSuppressComponentTopologyClick,
@@ -274,6 +275,20 @@ describe('componentTopology', () => {
       { fromKey: 'component:1', toKey: 'component:2' },
       { fromKey: 'component:2', toKey: 'component:2' },
     ])).toBe('[{"fromKey":"component:1","toKey":"component:2"}]')
+  })
+
+  it('removes only the selected manual canvas link', () => {
+    const edges = [
+      { fromKey: 'component:1', toKey: 'component:2' },
+      { fromKey: 'component:2', toKey: 'service:10' },
+      { fromKey: 'service:10', toKey: 'component:1' },
+    ]
+
+    expect(removeComponentTopologyManualEdge(edges, 'component:2', 'service:10')).toEqual([
+      { fromKey: 'component:1', toKey: 'component:2' },
+      { fromKey: 'service:10', toKey: 'component:1' },
+    ])
+    expect(removeComponentTopologyManualEdge(edges, 'component:9', 'service:10')).toEqual(edges)
   })
 
   it('finds connection targets from canvas coordinates instead of browser hit testing', () => {

@@ -43,7 +43,17 @@
                     v-for="edge in environmentCanvasEdges"
                     :key="`${edge.fromKey || edge.fromId}-${edge.toKey || edge.toId}`"
                     class="component-canvas-link environment-canvas-link"
+                    :class="componentEdgeClasses(edge)"
                     :d="componentEdgePath(edge)"
+                  />
+                  <path
+                    v-for="edge in environmentManualCanvasEdges"
+                    :key="`hit-${edge.fromKey}-${edge.toKey}`"
+                    class="component-canvas-link-hit"
+                    :d="componentEdgePath(edge)"
+                    @pointerdown.stop
+                    @click.stop="selectManualCanvasEdge(edge)"
+                    @contextmenu.stop.prevent="openManualEdgeContextMenu($event, edge)"
                   />
                   <path
                     v-if="connectionDrag"
@@ -482,8 +492,17 @@
                     v-for="edge in componentCanvasEdges"
                     :key="`${edge.fromKey || edge.fromId}-${edge.toKey || edge.toId}`"
                     class="component-canvas-link"
-                    :class="{ active: componentEdgeHighlighted(edge) }"
+                    :class="componentEdgeClasses(edge)"
                     :d="componentEdgePath(edge)"
+                  />
+                  <path
+                    v-for="edge in componentManualCanvasEdges"
+                    :key="`hit-${edge.fromKey}-${edge.toKey}`"
+                    class="component-canvas-link-hit"
+                    :d="componentEdgePath(edge)"
+                    @pointerdown.stop
+                    @click.stop="selectManualCanvasEdge(edge)"
+                    @contextmenu.stop.prevent="openManualEdgeContextMenu($event, edge)"
                   />
                   <path
                     v-if="connectionDrag"
@@ -1751,7 +1770,11 @@
           <span>纳管已有资源</span>
           <small>接入集群现有资源</small>
         </button>
-        <button v-if="componentContextMenu.kind !== 'canvas'" type="button" @click="configureContextNode">
+        <button v-if="componentContextMenu.kind === 'edge'" type="button" @click="deleteContextEdge">
+          <span>删除连线</span>
+          <small>只删除这条手动画布连线</small>
+        </button>
+        <button v-if="componentContextMenu.kind === 'component' || componentContextMenu.kind === 'service'" type="button" @click="configureContextNode">
           <span>配置</span>
           <small>{{ componentContextMenu.kind === 'service' ? '在右侧查看工具或中间件配置' : '在右侧配置环境变量、副本和启动参数' }}</small>
         </button>
@@ -1771,11 +1794,11 @@
           <span>删除</span>
           <small>卸载工具、中间件或数据库并清理卡片</small>
         </button>
-        <button v-if="componentContextMenu.kind !== 'canvas'" type="button" @click="openContextNodeMonitoring">
+        <button v-if="componentContextMenu.kind === 'component' || componentContextMenu.kind === 'service'" type="button" @click="openContextNodeMonitoring">
           <span>监控</span>
           <small>打开监控中心</small>
         </button>
-        <button v-if="componentContextMenu.kind !== 'canvas'" type="button" @click="openContextNodeLogs">
+        <button v-if="componentContextMenu.kind === 'component' || componentContextMenu.kind === 'service'" type="button" @click="openContextNodeLogs">
           <span>日志</span>
           <small>打开日志中心</small>
         </button>
@@ -2057,6 +2080,7 @@ import {
   nodeKey,
   parseComponentTopologyManualEdges,
   parseComponentTopologyPositions,
+  removeComponentTopologyManualEdge,
   serializeComponentTopologyManualEdges,
   serializeComponentTopologyPositions,
 } from './componentTopology'
@@ -2151,15 +2175,17 @@ const resetZoom = () => { canvasZoom.value = 1 }
 const connectorSides = ['top', 'right', 'bottom', 'left'] as const
 const selectedComponentId = ref<number | null>(null)
 const selectedTopologyKey = ref<string | null>(null)
+const selectedManualEdge = ref<{ fromKey: string; toKey: string } | null>(null)
 const coreToolsSection = ref<HTMLElement | null>(null)
 const componentActionLoading = ref(false)
-const componentContextMenu = ref<{ visible: boolean; x: number; y: number; kind: 'component' | 'service' | 'canvas'; component: any | null; service: any | null }>({
+const componentContextMenu = ref<{ visible: boolean; x: number; y: number; kind: 'component' | 'service' | 'canvas' | 'edge'; component: any | null; service: any | null; edge: any | null }>({
   visible: false,
   x: 0,
   y: 0,
   kind: 'component',
   component: null,
   service: null,
+  edge: null,
 })
 const contextSubmenu = ref<{ visible: boolean; x: number; y: number; mode: 'component' | 'tool' | 'infra'; templates: any[] }>({
   visible: false,
@@ -2472,8 +2498,25 @@ watch(() => route.query.tab, () => {
 })
 
 const handleDocumentPointerDown = () => closeComponentContextMenu()
+const isEditableKeyboardTarget = (target: EventTarget | null) => {
+  const el = target as HTMLElement | null
+  if (!el) return false
+  const tag = String(el.tagName || '').toLowerCase()
+  return el.isContentEditable || tag === 'input' || tag === 'textarea' || tag === 'select'
+}
 const handleDocumentKeyDown = (event: KeyboardEvent) => {
-  if (event.key === 'Escape') closeComponentContextMenu()
+  if (event.key === 'Escape') {
+    closeComponentContextMenu()
+    selectedManualEdge.value = null
+    return
+  }
+  if ((event.key === 'Delete' || event.key === 'Backspace') && !isEditableKeyboardTarget(event.target)) {
+    if (pendingDeleteDialog.value || pendingUninstallService.value || showComponentModal.value || showServiceModal.value || showRelationshipModal.value || showAdoptResourceModal.value) return
+    if (deleteSelectedCanvasItem()) {
+      event.preventDefault()
+      event.stopPropagation()
+    }
+  }
 }
 
 const resetEnvironmentState = () => {
@@ -2492,6 +2535,7 @@ const resetEnvironmentState = () => {
   pageError.value = ''
   selectedComponentId.value = null
   selectedTopologyKey.value = null
+  selectedManualEdge.value = null
   componentPanelTab.value = 'topology'
   closeComponentContextMenu()
   capabilityWorkspaceLoadSeq++
@@ -2799,6 +2843,7 @@ const canvasEdgesForNodes = (nodes:any[], baseEdges:any[]) => {
   const explicitEdges = baseEdges
     .map(edge => ({
       ...edge,
+      source: edge.source || 'auto',
       fromNode: nodeByKey.get(edge.fromKey || '') || nodeById.get(String(edge.fromId)),
       toNode: nodeByKey.get(edge.toKey || '') || nodeById.get(String(edge.toId)),
     }))
@@ -2819,6 +2864,7 @@ const canvasEdgesForNodes = (nodes:any[], baseEdges:any[]) => {
         toId: Number(toNode.id || 0),
         fromKey: edge.fromKey,
         toKey: edge.toKey,
+        source: 'manual',
         fromNode,
         toNode,
       }
@@ -2828,6 +2874,9 @@ const canvasEdgesForNodes = (nodes:any[], baseEdges:any[]) => {
 }
 const componentCanvasEdges = computed(() => canvasEdgesForNodes(componentCanvasNodes.value, componentTopologyEdges.value))
 const environmentCanvasEdges = computed(() => canvasEdgesForNodes(environmentCanvasNodes.value, environmentTopologyEdges.value))
+const isManualCanvasEdge = (edge:any) => edge.source === 'manual'
+const componentManualCanvasEdges = computed(() => componentCanvasEdges.value.filter(isManualCanvasEdge))
+const environmentManualCanvasEdges = computed(() => environmentCanvasEdges.value.filter(isManualCanvasEdge))
 const componentNodeStyle = (node:any) => ({
   left: `${node.x}px`,
   top: `${node.y}px`,
@@ -2857,6 +2906,14 @@ const componentNodeIconPath = (node:any) => {
 const componentEdgePath = (edge:any) => {
   return componentTopologyEdgePath(edge)
 }
+const manualEdgeKey = (edge:any) => `${String(edge?.fromKey || '').trim()}->${String(edge?.toKey || '').trim()}`
+const selectedManualEdgeKey = computed(() => selectedManualEdge.value ? manualEdgeKey(selectedManualEdge.value) : '')
+const manualEdgeSelected = (edge:any) => isManualCanvasEdge(edge) && selectedManualEdgeKey.value === manualEdgeKey(edge)
+const componentEdgeClasses = (edge:any) => ({
+  active: selectedManualEdge.value ? manualEdgeSelected(edge) : componentEdgeHighlighted(edge),
+  'component-canvas-link--manual': isManualCanvasEdge(edge),
+  'component-canvas-link--selected': manualEdgeSelected(edge),
+})
 const selectedComponent = computed(() =>
   components.value.find((comp:any) => Number(comp.id) === Number(selectedComponentId.value))
   || filteredComponents.value[0]
@@ -2939,6 +2996,7 @@ const relationshipTargets = computed(() => {
 const selectComponent = (compId?: string | number) => {
   const id = Number(compId)
   if (Number.isFinite(id)) {
+    selectedManualEdge.value = null
     selectedComponentId.value = id
     selectedTopologyKey.value = `component:${id}`
   }
@@ -2976,6 +3034,7 @@ const handleTopologyNodeClick = (event: MouseEvent, node:any) => {
     return
   }
   suppressTopologyClickKeys.value = []
+  selectedManualEdge.value = null
   if (event.shiftKey || event.ctrlKey || event.metaKey) {
     const idx = selectedNodeKeys.value.indexOf(key)
     if (idx >= 0) {
@@ -2989,7 +3048,7 @@ const handleTopologyNodeClick = (event: MouseEvent, node:any) => {
   selectTopologyNode(node)
 }
 const closeCanvasMenus = () => {
-  componentContextMenu.value = { visible: false, x: 0, y: 0, kind: 'component', component: null, service: null }
+  componentContextMenu.value = { visible: false, x: 0, y: 0, kind: 'component', component: null, service: null, edge: null }
   contextSubmenu.value = { visible: false, x: 0, y: 0, mode: 'tool', templates: [] }
 }
 const closeCanvasDialogs = () => {
@@ -3093,6 +3152,7 @@ const contextMenuPosition = (event: MouseEvent, menuWidth = 220, menuHeight = 22
 const openCanvasContextMenu = (event: MouseEvent) => {
   enterCanvasContextMenu(event, 'canvas')
   selectedTopologyKey.value = null
+  selectedManualEdge.value = null
   const stageEl = (event.target as HTMLElement | null)?.closest?.('.component-canvas-stage') as HTMLElement | null
   canvasCreatePoint.value = stageEl ? canvasPointFromEvent(event, stageEl) : null
   const pos = contextMenuPosition(event, 220, 288)
@@ -3103,10 +3163,12 @@ const openCanvasContextMenu = (event: MouseEvent) => {
     kind: 'canvas',
     component: null,
     service: null,
+    edge: null,
   }
 }
 const openComponentContextMenu = (event: MouseEvent, comp: any) => {
   enterCanvasContextMenu(event, 'component')
+  selectedManualEdge.value = null
   selectComponent(comp?.id)
   const pos = contextMenuPosition(event)
   componentContextMenu.value = {
@@ -3116,10 +3178,12 @@ const openComponentContextMenu = (event: MouseEvent, comp: any) => {
     kind: 'component',
     component: comp,
     service: null,
+    edge: null,
   }
 }
 const openServiceContextMenu = (event: MouseEvent, svc: any) => {
   enterCanvasContextMenu(event, 'service')
+  selectedManualEdge.value = null
   const pos = contextMenuPosition(event, 220, 140)
   selectedTopologyKey.value = String(svc?.topologyId || svc?.id || '')
   componentContextMenu.value = {
@@ -3129,6 +3193,33 @@ const openServiceContextMenu = (event: MouseEvent, svc: any) => {
     kind: 'service',
     component: null,
     service: svc,
+    edge: null,
+  }
+}
+const selectManualCanvasEdge = (edge:any) => {
+  if (!isManualCanvasEdge(edge)) return
+  closeComponentContextMenu()
+  selectedTopologyKey.value = null
+  selectedComponentId.value = null
+  selectedNodeKeys.value = []
+  selectedManualEdge.value = { fromKey: String(edge.fromKey || '').trim(), toKey: String(edge.toKey || '').trim() }
+}
+const openManualEdgeContextMenu = (event: MouseEvent, edge:any) => {
+  if (!isManualCanvasEdge(edge)) return
+  event.preventDefault()
+  closeConfigDrawer()
+  closeCanvasDialogs()
+  closeCanvasMenus()
+  selectManualCanvasEdge(edge)
+  const pos = contextMenuPosition(event, 220, 92)
+  componentContextMenu.value = {
+    visible: true,
+    x: pos.x,
+    y: pos.y,
+    kind: 'edge',
+    component: null,
+    service: null,
+    edge,
   }
 }
 const canvasNodesForStage = (stageEl: HTMLElement | null) => {
@@ -3155,6 +3246,7 @@ const connectorPointFromNodeRect = (nodeRect: DOMRect, canvasRect: DOMRect, side
 const startComponentNodeDrag = (event: PointerEvent, node:any) => {
   if (event.button !== 0) return
   closeComponentContextMenu()
+  selectedManualEdge.value = null
   const key = String(node?.topologyId || node?.id || node?.name || '')
   if (!key) return
   suppressNextTopologyClick.value = false
@@ -3261,6 +3353,7 @@ const startCanvasMarquee = (event: PointerEvent) => {
   if ((event.target as HTMLElement)?.closest?.('.component-topology-node')) return
   if ((event.target as HTMLElement)?.closest?.('.topology-controls')) return
   closeComponentContextMenu()
+  selectedManualEdge.value = null
   const stageEl = (event.currentTarget as HTMLElement).closest('.component-canvas-stage') as HTMLElement | null
   if (!stageEl) return
   const point = canvasPointFromEvent(event, stageEl)
@@ -3360,6 +3453,46 @@ const createComponentDependency = async (fromKey: string, toKey: string) => {
   } catch (e:any) {
     pageError.value = '保存画布连线失败：' + (e?.message || '未知错误')
   }
+}
+const deleteManualCanvasEdge = async (edge:any) => {
+  if (edge?.source && edge.source !== 'manual') return false
+  closeComponentContextMenu()
+  const fromKey = String(edge.fromKey || '').trim()
+  const toKey = String(edge.toKey || '').trim()
+  const next = removeComponentTopologyManualEdge(manualCanvasEdges.value, fromKey, toKey)
+  if (next.length === manualCanvasEdges.value.length) return false
+  manualCanvasEdges.value = next
+  selectedManualEdge.value = null
+  try {
+    await saveComponentNodePositions()
+  } catch (e:any) {
+    pageError.value = '保存画布连线失败：' + (e?.message || '未知错误')
+  }
+  return true
+}
+const deleteContextEdge = () => {
+  const edge = componentContextMenu.value.edge || selectedManualEdge.value
+  if (edge) void deleteManualCanvasEdge(edge)
+}
+const topologyNodeByKey = (key:string) => {
+  const normalized = String(key || '').trim()
+  if (!normalized) return null
+  return [...environmentCanvasNodes.value, ...componentCanvasNodes.value]
+    .find((node:any) => String(node.topologyId || node.id || node.name || '') === normalized) || null
+}
+const selectedCanvasNode = () => {
+  const key = selectedTopologyKey.value || (selectedNodeKeys.value.length === 1 ? selectedNodeKeys.value[0] : '')
+  return topologyNodeByKey(key)
+}
+const deleteSelectedCanvasItem = () => {
+  if (selectedManualEdge.value) {
+    void deleteManualCanvasEdge(selectedManualEdge.value)
+    return true
+  }
+  const node = selectedCanvasNode()
+  if (!node) return false
+  deleteTopologyNode(node)
+  return true
 }
 const componentEdgeHighlighted = (edge: { fromId: number; toId: number }) => {
   const edgeWithKeys = edge as any
@@ -6346,6 +6479,7 @@ const performDeleteComponent = async (comp:any) => {
     manualCanvasEdges.value = manualCanvasEdges.value.filter(edge => edge.fromKey !== key && edge.toKey !== key)
     selectedComponentId.value = null
     selectedTopologyKey.value = null
+    selectedManualEdge.value = null
     await saveComponentNodePositions()
     await refreshServices()
     notifyEnvUpdated()
@@ -6745,6 +6879,7 @@ const performDeleteService = async (svc:any) => {
   componentNodePositions.value = nextPositions
   manualCanvasEdges.value = manualCanvasEdges.value.filter(edge => edge.fromKey !== key && edge.toKey !== key)
   selectedTopologyKey.value = null
+  selectedManualEdge.value = null
   await saveComponentNodePositions()
   await refreshServices()
   notifyEnvUpdated()
@@ -7594,7 +7729,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   width: 100%;
   height: 100%;
   overflow: visible;
-  pointer-events: none;
+  pointer-events: auto;
 }
 .component-canvas-link {
   fill: none;
@@ -7606,6 +7741,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   marker-end: url(#component-arrow);
   animation: dash-flow 20s linear infinite;
   transition: stroke 0.2s, stroke-width 0.2s;
+  pointer-events: none;
 }
 .component-canvas-link:hover,
 .component-canvas-link.active {
@@ -7624,6 +7760,22 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 .component-canvas-link.active {
   stroke: var(--paap-accent);
   stroke-width: 2.5;
+}
+.component-canvas-link--manual {
+  cursor: pointer;
+}
+.component-canvas-link--selected {
+  stroke: var(--cds-blue-70, #0043ce);
+  stroke-width: 3;
+  stroke-dasharray: none;
+  animation: none;
+}
+.component-canvas-link-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 14;
+  pointer-events: stroke;
+  cursor: pointer;
 }
 .component-topology-node {
   position: absolute;
