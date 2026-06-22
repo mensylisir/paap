@@ -1244,8 +1244,17 @@ describe('Vue view markup', () => {
     const envDetail = await import('./EnvDetailView.vue?raw')
 
     expect(envDetail.default).toContain('prepareSelectedComponentConfigTemplateForSave')
-    expect(envDetail.default).toContain('selectedComponentConfigTemplateId.value = current ? componentTemplateOptionValue(current) : \'\'')
+    expect(envDetail.default).toContain('if (selectedComponentConfigTemplateId.value && (componentConfigTemplatesLoading.value || componentSelectableConfigTemplates.value.length === 0)) return')
     expect(envDetail.default).not.toContain('const recommended = componentSelectableConfigTemplates.value[0]')
+  })
+
+  it('persists the selected component config template and restores it when reopening the drawer', async () => {
+    const envDetail = await import('./EnvDetailView.vue?raw')
+
+    expect(envDetail.default).toContain('componentConfigTemplateSelectionFromConfig')
+    expect(envDetail.default).toContain('componentConfigTemplateSelectionPayload')
+    expect(envDetail.default).toContain('selectedComponentConfigTemplateId.value = componentConfigTemplateSelectionFromConfig(cfg)')
+    expect(envDetail.default).toContain('...componentConfigTemplateSelectionPayload()')
   })
 
   it('keeps drawer deploy actions in the footer for components and services', async () => {

@@ -44,16 +44,26 @@ type Component struct {
 }
 
 type ComponentConfig struct {
-	Framework     string                `json:"framework,omitempty"`
-	ContainerPort int32                 `json:"containerPort,omitempty"`
-	Command       []string              `json:"command,omitempty"`
-	Args          []string              `json:"args,omitempty"`
-	Env           []ComponentEnvVar     `json:"env,omitempty"`
-	ConfigMaps    []ComponentConfigMap  `json:"configMaps,omitempty"`
-	Secrets       []ComponentSecret     `json:"secrets,omitempty"`
-	Files         []ComponentConfigFile `json:"files,omitempty"`
-	Bindings      []ComponentBinding    `json:"bindings,omitempty"`
-	Dependencies  []string              `json:"dependencies,omitempty"`
+	Framework          string                      `json:"framework,omitempty"`
+	ConfigTemplateID   uint                        `json:"configTemplateId,omitempty"`
+	ConfigTemplateKey  string                      `json:"configTemplateKey,omitempty"`
+	ConfigTemplateName string                      `json:"configTemplateName,omitempty"`
+	ConfigTemplate     *ComponentConfigTemplateRef `json:"configTemplate,omitempty"`
+	ContainerPort      int32                       `json:"containerPort,omitempty"`
+	Command            []string                    `json:"command,omitempty"`
+	Args               []string                    `json:"args,omitempty"`
+	Env                []ComponentEnvVar           `json:"env,omitempty"`
+	ConfigMaps         []ComponentConfigMap        `json:"configMaps,omitempty"`
+	Secrets            []ComponentSecret           `json:"secrets,omitempty"`
+	Files              []ComponentConfigFile       `json:"files,omitempty"`
+	Bindings           []ComponentBinding          `json:"bindings,omitempty"`
+	Dependencies       []string                    `json:"dependencies,omitempty"`
+}
+
+type ComponentConfigTemplateRef struct {
+	ID   uint   `json:"id,omitempty"`
+	Key  string `json:"key,omitempty"`
+	Name string `json:"name,omitempty"`
 }
 
 type ComponentEnvVar struct {
@@ -121,16 +131,42 @@ func ParseComponentConfig(raw string) (ComponentConfig, error) {
 
 func NormalizeComponentConfig(cfg ComponentConfig) (ComponentConfig, error) {
 	out := ComponentConfig{
-		Framework:     strings.TrimSpace(cfg.Framework),
-		ContainerPort: cfg.ContainerPort,
-		Command:       make([]string, 0, len(cfg.Command)),
-		Args:          make([]string, 0, len(cfg.Args)),
-		Env:           make([]ComponentEnvVar, 0, len(cfg.Env)),
-		ConfigMaps:    make([]ComponentConfigMap, 0, len(cfg.ConfigMaps)),
-		Secrets:       make([]ComponentSecret, 0, len(cfg.Secrets)),
-		Files:         make([]ComponentConfigFile, 0, len(cfg.Files)),
-		Bindings:      make([]ComponentBinding, 0, len(cfg.Bindings)),
-		Dependencies:  make([]string, 0, len(cfg.Dependencies)),
+		Framework:          strings.TrimSpace(cfg.Framework),
+		ConfigTemplateID:   cfg.ConfigTemplateID,
+		ConfigTemplateKey:  strings.TrimSpace(cfg.ConfigTemplateKey),
+		ConfigTemplateName: strings.TrimSpace(cfg.ConfigTemplateName),
+		ContainerPort:      cfg.ContainerPort,
+		Command:            make([]string, 0, len(cfg.Command)),
+		Args:               make([]string, 0, len(cfg.Args)),
+		Env:                make([]ComponentEnvVar, 0, len(cfg.Env)),
+		ConfigMaps:         make([]ComponentConfigMap, 0, len(cfg.ConfigMaps)),
+		Secrets:            make([]ComponentSecret, 0, len(cfg.Secrets)),
+		Files:              make([]ComponentConfigFile, 0, len(cfg.Files)),
+		Bindings:           make([]ComponentBinding, 0, len(cfg.Bindings)),
+		Dependencies:       make([]string, 0, len(cfg.Dependencies)),
+	}
+	if cfg.ConfigTemplate != nil {
+		out.ConfigTemplate = &ComponentConfigTemplateRef{
+			ID:   cfg.ConfigTemplate.ID,
+			Key:  strings.TrimSpace(cfg.ConfigTemplate.Key),
+			Name: strings.TrimSpace(cfg.ConfigTemplate.Name),
+		}
+		if out.ConfigTemplateID == 0 {
+			out.ConfigTemplateID = out.ConfigTemplate.ID
+		}
+		if out.ConfigTemplateKey == "" {
+			out.ConfigTemplateKey = out.ConfigTemplate.Key
+		}
+		if out.ConfigTemplateName == "" {
+			out.ConfigTemplateName = out.ConfigTemplate.Name
+		}
+	}
+	if out.ConfigTemplateID > 0 || out.ConfigTemplateKey != "" || out.ConfigTemplateName != "" {
+		out.ConfigTemplate = &ComponentConfigTemplateRef{
+			ID:   out.ConfigTemplateID,
+			Key:  out.ConfigTemplateKey,
+			Name: out.ConfigTemplateName,
+		}
 	}
 	if out.ContainerPort < 0 || out.ContainerPort > 65535 {
 		return ComponentConfig{}, fmt.Errorf("containerPort must be between 0 and 65535")

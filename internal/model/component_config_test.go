@@ -7,7 +7,15 @@ import (
 
 func TestComponentConfigKeepsBindingsAndGeneratedObjects(t *testing.T) {
 	cfg := ComponentConfig{
-		Framework:     " springboot ",
+		Framework:          " springboot ",
+		ConfigTemplateID:   3,
+		ConfigTemplateKey:  " spring-postgresql-redis ",
+		ConfigTemplateName: " Spring Boot + PostgreSQL + Redis ",
+		ConfigTemplate: &ComponentConfigTemplateRef{
+			ID:   3,
+			Key:  " spring-postgresql-redis ",
+			Name: " Spring Boot + PostgreSQL + Redis ",
+		},
 		ContainerPort: 8000,
 		ConfigMaps: []ComponentConfigMap{{
 			Name: "orders-config",
@@ -47,6 +55,12 @@ func TestComponentConfigKeepsBindingsAndGeneratedObjects(t *testing.T) {
 	}
 	if parsed.ContainerPort != 8000 {
 		t.Fatalf("containerPort = %d, want 8000", parsed.ContainerPort)
+	}
+	if parsed.ConfigTemplateID != 3 || parsed.ConfigTemplateKey != "spring-postgresql-redis" || parsed.ConfigTemplateName != "Spring Boot + PostgreSQL + Redis" {
+		t.Fatalf("config template metadata not normalized: %#v", parsed)
+	}
+	if parsed.ConfigTemplate == nil || parsed.ConfigTemplate.Key != "spring-postgresql-redis" {
+		t.Fatalf("config template ref not preserved: %#v", parsed.ConfigTemplate)
 	}
 	if len(parsed.ConfigMaps) != 1 || parsed.ConfigMaps[0].Data["application.yml"] != "spring: {}" {
 		t.Fatalf("configMaps not normalized: %#v", parsed.ConfigMaps)

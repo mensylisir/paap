@@ -2919,6 +2919,10 @@ const applicationSetDeployHint = computed(() => {
 const parseRuntimeConfig = (raw:any) => {
   const emptyConfig = {
     framework: '',
+    configTemplateId: 0,
+    configTemplateKey: '',
+    configTemplateName: '',
+    configTemplate: null as any,
     env: [] as any[],
     configMaps: [] as any[],
     secrets: [] as any[],
@@ -2931,6 +2935,10 @@ const parseRuntimeConfig = (raw:any) => {
   if (!raw) return emptyConfig
   if (typeof raw === 'object') return {
     framework: String(raw.framework || ''),
+    configTemplateId: Number(raw.configTemplateId || raw.configTemplate?.id || 0),
+    configTemplateKey: String(raw.configTemplateKey || raw.configTemplate?.key || ''),
+    configTemplateName: String(raw.configTemplateName || raw.configTemplate?.name || ''),
+    configTemplate: raw.configTemplate || null,
     env: Array.isArray(raw.env) ? raw.env : [],
     configMaps: Array.isArray(raw.configMaps) ? raw.configMaps : [],
     secrets: Array.isArray(raw.secrets) ? raw.secrets : [],
@@ -2944,6 +2952,10 @@ const parseRuntimeConfig = (raw:any) => {
     const parsed = JSON.parse(String(raw))
     return {
       framework: String(parsed?.framework || ''),
+      configTemplateId: Number(parsed?.configTemplateId || parsed?.configTemplate?.id || 0),
+      configTemplateKey: String(parsed?.configTemplateKey || parsed?.configTemplate?.key || ''),
+      configTemplateName: String(parsed?.configTemplateName || parsed?.configTemplate?.name || ''),
+      configTemplate: parsed?.configTemplate || null,
       env: Array.isArray(parsed?.env) ? parsed.env : [],
       configMaps: Array.isArray(parsed?.configMaps) ? parsed.configMaps : [],
       secrets: Array.isArray(parsed?.secrets) ? parsed.secrets : [],
@@ -5114,7 +5126,7 @@ const loadComponentConfigForm = (comp:any) => {
     argsText: linesFromArray(cfg.args?.length ? cfg.args : runtime.args),
   }
   nginxRouteRows.value = nginxRoutesFromCurrentConfig()
-  selectedComponentConfigTemplateId.value = ''
+  selectedComponentConfigTemplateId.value = componentConfigTemplateSelectionFromConfig(cfg)
   componentTemplateFieldValues.value = {}
   selectRecommendedComponentConfigTemplate()
 }
@@ -5253,6 +5265,33 @@ const componentTemplateInlineHelp = (template:UserComponentConfigTemplate) =>
     .replace(/Secret keys/gi, '敏感配置项')
     .replace(/Secret/g, '敏感配置')
 const componentTemplateOptionValue = (template:UserComponentConfigTemplate) => String(template?.key || template?.id || '')
+const componentConfigTemplateSelectionFromConfig = (cfg:any) => {
+  const key = String(cfg?.configTemplateKey || cfg?.configTemplate?.key || '').trim()
+  if (key) return key
+  const id = Number(cfg?.configTemplateId || cfg?.configTemplate?.id || 0)
+  return id > 0 ? String(id) : ''
+}
+const componentConfigTemplateSelectionPayload = () => {
+  const template = selectedComponentConfigTemplate.value
+  if (!template) return {
+    configTemplateId: 0,
+    configTemplateKey: '',
+    configTemplateName: '',
+    configTemplate: null,
+  }
+  const id = Number(template.id || 0)
+  const key = componentTemplateOptionValue(template)
+  return {
+    configTemplateId: id,
+    configTemplateKey: key,
+    configTemplateName: String(template.name || ''),
+    configTemplate: {
+      id,
+      key,
+      name: String(template.name || ''),
+    },
+  }
+}
 const componentTemplateMatchesCurrentComponent = (template:UserComponentConfigTemplate) => {
   return componentConfigTemplateMatchesComponent(template, {
     componentType: componentDrawerType.value,
@@ -5396,9 +5435,14 @@ const initializeComponentTemplateFieldValues = (force = false) => {
 }
 const selectRecommendedComponentConfigTemplate = () => {
   const current = componentSelectableConfigTemplates.value.find((template) => componentTemplateOptionValue(template) === selectedComponentConfigTemplateId.value)
-  selectedComponentConfigTemplateId.value = current ? componentTemplateOptionValue(current) : ''
-  if (current) initializeComponentTemplateFieldValues(false)
-  else componentTemplateFieldValues.value = {}
+  if (current) {
+    selectedComponentConfigTemplateId.value = componentTemplateOptionValue(current)
+    initializeComponentTemplateFieldValues(false)
+    return
+  }
+  if (selectedComponentConfigTemplateId.value && (componentConfigTemplatesLoading.value || componentSelectableConfigTemplates.value.length === 0)) return
+  selectedComponentConfigTemplateId.value = ''
+  componentTemplateFieldValues.value = {}
 }
 const componentTemplateRequiredFieldsComplete = computed(() =>
   templateRequiredFieldsComplete(componentTemplateFields.value, componentTemplateFieldValues.value, {
@@ -6207,6 +6251,7 @@ const configFormPayload = () => {
     .filter(Boolean)
   return {
     framework: configForm.value.framework === 'auto' ? '' : configForm.value.framework,
+    ...componentConfigTemplateSelectionPayload(),
     env,
     configMaps: configForm.value.configMaps,
     secrets: configForm.value.secrets,
