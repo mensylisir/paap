@@ -120,6 +120,7 @@
                   />
                   <strong v-else>{{ node.name }}</strong>
                   <small>{{ environmentTopologyNodeSubtitle(node) }}</small>
+                  <span v-if="node.externalUrl" class="node-external-url" :title="node.externalUrl">{{ shortenUrl(node.externalUrl) }}</span>
                   <span
                     class="node-delete-action"
                     role="button"
@@ -2730,6 +2731,16 @@ const filteredTopologyNodes = computed(() => {
 const environmentTopologyNodeSubtitle = (node:any) => node?.topologyKind === 'service'
   ? `${typeLabel(node.type || node.serviceType || '')}`
   : `${compTypeText(node.type)} · 应用组件`
+const shortenUrl = (url: string) => {
+  if (!url || url.length <= 35) return url || ''
+  try {
+    const u = new URL(url)
+    const host = u.hostname.length + u.port.length + 1 > 25 ? u.hostname.slice(0, 20) + '…' : u.host
+    return host + (u.pathname.length > 10 ? u.pathname.slice(0, 10) + '…' : u.pathname)
+  } catch {
+    return url.length > 35 ? url.slice(0, 32) + '…' : url
+  }
+}
 const componentCanvasMetrics = {
   colWidth: 260,
   nodeWidth: 196,
@@ -7982,6 +7993,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   box-sizing: border-box;
 }
 .component-topology-node small { grid-column: 3; color: var(--paap-muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.node-external-url { grid-column: 3; color: var(--cds-interactive-01, #0f62fe); font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: default; line-height: 1.3; }
 .node-delete-action {
   position: absolute;
   top: 6px;

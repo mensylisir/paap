@@ -318,11 +318,13 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 - [x] 对应文件：`internal/model/service_catalog.go`、`internal/handler/template.go`、`internal/handler/environment.go`、`frontend/src/views/EnvDetailView.vue`
 
 ### Task 7.2: 中间件目录浏览页
-- [ ] 新增只读中间件目录页，按 `Category`（tool/infra）分组
-- [ ] 展示：类型、名称、可用版本、描述、图标
-- [ ] 可放在平台管理界面内，或独立页面
-- [ ] 工作量：1 天
-- [ ] 对应文件：`frontend/src/views/` 新增视图
+- [x] 新增只读中间件目录页，按 `Category`（tool/infra）分组
+- [x] 展示：类型、名称、可用版本（版本标签）、描述
+- [x] 独立页面 `/catalog`，添加路由 + 导航栏入口
+- [x] CDP 端到端验证：14 卡片 2 分类（🔧 工具类 7 + 🗄️ 中间件/数据库 7），版本标签正确
+- [x] Docker 镜像 `v0.1.425` 构建部署到 kind 集群
+- [ ] 工作量：1 天（代码完成 + 部署验证）
+- [ ] 对应文件：`frontend/src/views/CatalogView.vue`、`frontend/src/router/index.ts`、`frontend/src/layouts/MainLayout.vue`
 
 ### Task 7.3: 平台管理员界面
 - [ ] 前端新增 `/platform` 路由 + `PlatformAdminView`
@@ -457,6 +459,51 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 - [ ] Registry 镜像源端到端验证
 - [ ] Source 交付端到端验证
 - [ ] CDP 测试覆盖：每次 UI 变更后用可见 Chrome 测试
+
+### Task 7.19: Keycloak 部署 + 用户认证集成
+- [ ] 新增 Keycloak 到 `deploy/k8s/` 部署文件（keycloak.yaml + 配置）
+- [ ] 用户认证对接 Keycloak：登录/注册/OAuth2/OIDC 流程
+- [ ] 替换或并存当前简单 JWT 认证
+- [ ] 用户管理（同步/创建/角色映射 Keycloak ←→ PAAP User）
+- [ ] 当前状态：`internal/handler/auth.go` 自产 JWT 无外部 IdP
+- [ ] 对应文件：`deploy/k8s/`、`internal/handler/auth.go`、`internal/model/user.go`
+- [ ] 工作量：1-2 周
+
+### Task 7.20: 画布卡片分组分区
+- [ ] 画布上大卡片容器：每个大卡片 = 一个组/区（zone）
+- [ ] 目前每个服务/组件是独立卡片，打开后大卡片包含这些小卡片
+- [ ] 支持分组类型：本环境、平台公共、集群外部（对应 Task 7.5 的 zone 概念）
+- [ ] 组卡片可折叠/展开
+- [ ] 当前状态：画布上所有卡片平铺无分组
+- [ ] 对应文件：`frontend/src/views/EnvDetailView.vue`、`frontend/src/composables/componentTopology.ts`
+- [ ] 工作量：1-2 周
+
+### Task 7.22: 画布卡片端点地址展示
+> 在 canvas 卡片副标题下方显示组件/服务的 externalUrl，方便快速识别访问地址
+
+- [x] `ComponentTopologyComponent` 类型加 `externalUrl` 字段
+- [x] 画布卡片在 subtitle 下方显示 externalUrl（有则显示，无则隐藏）
+- [x] 超长 URL 自动截断（`shortenUrl` 函数，保留 host + 短 path）
+- [x] URL 文字颜色使用 Carbon 品牌蓝 `var(--cds-interactive-01)`
+- [x] CDP 验证通过：prod-gitea/argocd/loki/registry 等卡片均显示端点地址
+- [x] 不会 externalUrl 的卡片（Redis、PostgreSQL、API 服务）不额外占位
+- [x] 对应文件：`frontend/src/views/componentTopology.ts`、`frontend/src/views/EnvDetailView.vue`
+- [x] 工作量：S（半天）
+
+### Task 7.21: `docs/配置示例.md` → 内置配置模板
+> 将 20 个配置示例转为 PAAP 内置配置模板（Go template），供组件配置 Tab 使用
+
+- [ ] 梳理模板目录结构：`data/config-templates/` 按框架分组
+- [ ] **Spring Boot 系列 (9 个)**: 基础 / +PG Hikari / +PG Druid / +PG 集群 Druid / +PG+Redis 单实例 / +PG+Redis 哨兵 / +PG+Redis 集群 / +PG+RabbitMQ / +PG+Nacos
+- [ ] **Nginx 系列 (4 个)**: 基础静态 / +Upstream 负载均衡 / +SSL HTTPS / +静态资源分离缓存
+- [ ] **Go/Gin 系列 (3 个)**: YAML / TOML / INI 格式
+- [ ] **Python 系列 (2 个)**: FastAPI + PG+Redis / Django + PG+Redis
+- [ ] **Node/TS 系列 (2 个)**: NestJS + PG+Redis (.env) / Vue/React Vite (.env.production)
+- [ ] 每个模板提取为 Go template，变量部分标记为 `{{ .VarName }}` 占位符
+- [ ] 前端组件配置 Tab 中的"模板"下拉菜单选择后填充配置编辑区
+- [ ] 当前状态：`docs/配置示例.md` 含 20 个纯文本示例，未被模板系统收录
+- [ ] 对应文件：`data/config-templates/`（新建）、`internal/service/renderer.go`、`frontend/src/views/ComponentDetailView.vue`（配置 Tab）
+- [ ] 工作量：1 周
 
 ---
 

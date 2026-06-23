@@ -15,6 +15,7 @@ export type ComponentTopologyComponent = {
   topologyKind?: 'component' | 'service'
   serviceId?: string | number
   componentId?: string | number
+  externalUrl?: string
 }
 
 export type ComponentTopologyEdge = {

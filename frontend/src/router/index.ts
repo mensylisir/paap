@@ -27,6 +27,11 @@ const routes = [
         component: () => import('../views/TemplatesView.vue'),
       },
       {
+        path: 'catalog',
+        name: 'Catalog',
+        component: () => import('../views/CatalogView.vue'),
+      },
+      {
         path: 'registries',
         name: 'AppRegistries',
         component: () => import('../views/AppRegistryView.vue'),
