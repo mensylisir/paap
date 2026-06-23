@@ -573,6 +573,7 @@
                   />
                   <strong v-else>{{ node.name }}</strong>
                   <small>{{ topologyNodeSubtitle(node) }}</small>
+                  <span v-if="node.externalUrl" class="node-external-url" :title="node.externalUrl">{{ shortenUrl(node.externalUrl) }}</span>
                   <span
                     class="node-delete-action"
                     role="button"
