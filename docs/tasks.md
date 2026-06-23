@@ -242,5 +242,228 @@ Task 1.4 (Vue Init) ──→ Task 4.x (Frontend)
 - [x] 阶段三：PAAP Server 核心 ✅
 - [x] 阶段四：前端页面 ✅
 - [x] 阶段五：集成测试 + 部署 ✅
+- [ ] 阶段六：产品化补齐（Task 7.1-7.18）
 
-**全部完成。** 核心架构已跑通：PAAP Server 管"想要什么"（CR），Operator 管"怎么实现"（K8s 资源）。
+**核心架构已完成。** 产品化补齐阶段剩余 17 项未完成任务（Task 7.1-7.17），其中 Task 7.18（画布重命名）已完成。
+CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
+
+---
+
+## 后续待补齐功能
+
+> 说明：上面的阶段任务表示核心架构和基础流程已经跑通。下面记录的是继续产品化、生产化前仍未完整闭环的功能。
+
+### Task 6.1: 认证、鉴权与应用成员权限
+- [ ] 前端登录页接入真实 `/api/v1/auth/login`，保存 token 和用户信息，并处理登录失败状态
+- [ ] API 路由增加统一认证中间件，除登录/注册/健康检查外默认要求登录
+- [ ] 将内存 token 替换为签名 JWT 或可持久化会话机制
+- [ ] 应用创建、列表、详情、更新、删除改为基于当前用户和 `AppMember` 判断权限
+- [ ] 移除 `OwnerID=1`、`UserID=1` 等硬编码
+- [ ] 补齐应用成员管理页面和 API，包括邀请、角色变更、移除成员
+
+### Task 6.2: 环境模板管理与高级环境配置
+- [ ] 挂载环境模板创建、更新、删除 API 路由
+- [ ] 在前端补齐环境模板管理 UI，而不只是读取模板列表
+- [ ] 创建环境时支持从模板写入 CPU、内存、存储配额到 `Environment.spec.resourceQuota`
+- [ ] 创建环境时支持模板或表单配置附加 namespace，而不是固定只创建 `app` namespace
+- [ ] 评估并实现 `ipPool` 调和逻辑；若暂不支持，需要从 UI 和文档中明确标记为未启用
+- [ ] 支持创建环境后的 namespace 增删，并触发工具 RBAC 与 Helm values 动态同步
+
+### Task 6.3: 服务目录占位项落地
+- [ ] 为 `kingbase` 补齐服务模板、安装参数、连接发现、工作台和测试
+- [ ] 为 `nacos` 补齐服务模板、安装参数、连接发现、工作台和测试
+- [ ] 未落地前从可安装服务列表隐藏占位项，避免用户选择后安装失败
+
+### Task 6.4: 模板体系收口
+- [ ] 将内置模板完全统一到 `Helm Chart + platform-manifest.yaml + preset-values.yaml` 路径
+- [ ] 废弃或移除旧的 `installer/rawYaml/chartRepo/chartName` 创建入口
+- [ ] 将 `WorkloadRolePolicy`、`EnvironmentRolePolicy` 等旧权限字段收敛到 `platform-manifest.yaml`
+- [ ] 补齐内置模板同步、上传到 MinIO、数据库种子数据的一致性校验
+- [ ] 逐个验证内置模板安装、卸载、RBAC 隔离、工作台操作和运行态数据
+
+### Task 6.5: CI/CD 端到端生产化
+- [ ] 明确 Tekton 是否继续作为目标；若继续，需要实现 Tekton 模板和工作台；若不继续，需要清理旧设计文档
+- [ ] 为 source 组件链路补齐前置依赖检查：Gitea、Jenkins、kpack、registry/Harbor、ArgoCD
+- [ ] 将 registry/Harbor 的 DNS、TLS、节点运行时信任配置做成可验证状态，而不是只展示说明
+- [ ] 完整验证 source 模式：源码仓 → Gitea mirror → Jenkins/kpack → registry/Harbor → GitOps 清单 → ArgoCD → 集群
+- [ ] 完整验证 image 模式：镜像输入 → GitOps 清单 → ArgoCD → 集群
+- [ ] 将链路中的 warning/pending 状态映射到前端可操作的修复入口
+
+### Task 6.6: 平台配置与管理员功能
+- [ ] 增加平台配置模块，并按角色控制普通用户是否可见
+- [ ] 补齐用户管理、角色管理、模板管理权限、审计记录等管理员页面
+- [ ] 管理全局配置项，例如 `PAAP_REGISTRY_HOST_TEMPLATE`、MinIO、默认镜像源、kpack 状态
+- [ ] 提供集群级依赖健康检查页面，例如 CRD、Operator、kpack、存储、模板仓库
+
+### Task 6.7: 文档与测试清理
+- [ ] 清理或标记仍描述旧方案的文档，尤其是 Tekton、raw-yaml、生命周期钩子相关内容
+- [ ] 将 `docs/DEPLOYMENT-STATUS.md` 中旧镜像、RBAC、模板上传问题重新验证并更新
+- [ ] 增加端到端测试覆盖：登录鉴权、环境模板、服务安装、组件 image/source 两条部署链路
+- [ ] 增加模板包校验测试，确保所有 `data/charts/*.tar.gz` 包含 `chart/`、`platform-manifest.yaml`、`preset-values.yaml`
+- [ ] 增加权限隔离测试，验证工具权限不会外溢到其他环境或应用
+
+---
+
+## 阶段七：领导需求与产品化补齐（2026-06-23 扫描）
+
+### Task 7.1: 中间件版本号选择器
+- [ ] 前端安装/编辑中间件时增加版本下拉菜单
+- [ ] 数据源为该 `ServiceType` 下所有 `ServiceTemplate` 的 `ChartVersion` 去重排序
+- [ ] 选定后把 `chartVersion` 写进安装 payload
+- [ ] 工作量：0.5-1 天（纯前端 + 少量 API）
+- [ ] 对应文件：前端安装表单组件
+
+### Task 7.2: 中间件目录浏览页
+- [ ] 新增只读中间件目录页，按 `Category`（tool/infra）分组
+- [ ] 展示：类型、名称、可用版本、描述、图标
+- [ ] 可放在平台管理界面内，或独立页面
+- [ ] 工作量：1 天
+- [ ] 对应文件：`frontend/src/views/` 新增视图
+
+### Task 7.3: 平台管理员界面
+- [ ] 前端新增 `/platform` 路由 + `PlatformAdminView`
+- [ ] Tab 页一：中间件目录管理（ServiceCatalog CRUD）
+- [ ] Tab 页二：共享资源管理
+- [ ] Tab 页三：用户/角色管理
+- [ ] 后端给 `ServiceCatalog` 增加 `POST/PUT/DELETE` handler
+- [ ] 当前状态：`ListServiceCatalog` 仅只读
+- [ ] 工作量：1 周
+
+### Task 7.4: 三种角色体系
+- [ ] 角色定义：`platform_admin` / `app_admin` / `user`
+- [ ] 后端 `internal/middleware/` 增加 auth + role 检查中间件（当前仅 `cors.go`）
+- [ ] 路由分公开/应用/平台三层
+- [ ] 前端按 `role` 显隐平台管理入口
+- [ ] 当前状态：`User.Role` 只有 `user`/`admin`（`user.go:17`）
+- [ ] 工作量：1 周（与 Task 7.3 合并做）
+
+### Task 7.5: Capability 来源模型（环境内/共享/外部）
+> 领导需求 2+3+4 的统一模型，也是 External Capability Design Direction 的落地
+
+- [ ] 新增 `EnvironmentCapability` GORM 模型（`EnvironmentID` + `Capability` + `Source` + `RefServiceID` + `ExternalConfig`）
+- [ ] `Source` 枚举：`self` / `shared` / `external`
+- [ ] 系统初始化时创建 `default` 应用 + `default` 环境（受保护、只装工具/中间件）
+- [ ] 平台管理员在 default 环境预装共享实例，供其它环境 `shared` 引用
+- [ ] 重构 `registry_endpoint.go:16` `RuntimeRegistryHost` 的硬编码
+- [ ] 重构 `environment.go` 中 `toolHTTPBaseURL` 等 FQDN 拼接
+- [ ] 组件消费 capability 时按 `Source` 分流（self→本环境，shared→default，external→用户 endpoint）
+- [ ] 放行 NetworkPolicy：业务 namespace → default 工具 namespace ingress
+- [ ] external 来源放行到集群外 endpoint 的 egress
+- [ ] 画布节点带 `zone` 字段（`environment` / `shared` / `external`）
+- [ ] 三条泳道渲染：本环境、平台公共、集群外部
+- [ ] `componentTopology.ts` 已有 `laneLabels`，扩展为可配置 zone
+- [ ] 扩展 `ListAdoptableResources` 可扫指定 namespace / 全集群
+- [ ] 新增"手动接入"外部资源表单（类型 + endpoint + 凭证）
+- [ ] external 卡片只支持"断开"，不删真实资源
+- [ ] 环境模板声明所需 capabilities
+- [ ] 创建环境时每个 capability 让用户四选一
+- [ ] 当前状态：`ServiceInstallation` 是环境级（`service_catalog.go:111`），无共享/外部概念
+- [ ] 当前状态：`ListAdoptableResources` 只扫自己 namespace（`environment.go:1700`）
+- [ ] 工作量：4-6 周，按来源分三步交付
+
+### Task 7.6: Ingress/Gateway 暴露面配置
+- [ ] 给组件/环境添加暴露规则表单（域名、路径、TLS）
+- [ ] 后端生成 Ingress 或 Gateway HTTPRoute 资源
+- [ ] 当前状态：`external_access.go` 可读取，`component_types.go` 有 `IngressSpec`，画布有分组卡片
+- [ ] 工作量：1-1.5 周
+
+### Task 7.7: ServiceIP 展示
+- [ ] 从 K8s 读回 `Service.spec.clusterIP` / `LoadBalancer IP`
+- [ ] 在卡片和 drawer 展示
+- [ ] 当前状态：无展示/分配
+- [ ] 工作量：0.5-1 周
+
+### Task 7.8: 认证鉴权体系升级
+- [ ] 内存 token 替换为签名 JWT（`auth.go:18`）
+- [ ] 增加集中式 auth 中间件（当前 `internal/middleware/` 仅 `cors.go`）
+- [ ] 应用操作基于 `AppMember` 判断权限
+- [ ] 移除 `OwnerID=1`、`UserID=1` 等硬编码
+- [ ] 补齐应用成员管理页面和 API
+- [ ] 工作量：1 周
+
+### Task 7.9: KubeVirt 虚拟机
+- [ ] 将 VM 作为新服务类型纳入 `ServiceCatalog`
+- [ ] 用 KubeVirt CRD（`VirtualMachine`）而非 Helm chart 部署
+- [ ] 需要集群已装 KubeVirt operator
+- [ ] 当前状态：全项目零基础
+- [ ] 工作量：3-4 周
+
+### Task 7.10: KEDA 水平扩展
+- [ ] 组件配置加弹性伸缩段：最小/最大副本、触发器（CPU/Q/自定义）
+- [ ] 后端生成 `ScaledObject`（KEDA CRD）而非固定副本数 Deployment
+- [ ] 当前状态：`Component.Replicas` 固定值（`component.go:25`）
+- [ ] 需要集群已装 KEDA
+- [ ] 工作量：2-3 周
+
+### Task 7.11: 双集群 ArgoCD + 跨集群网络（架构级）
+- [ ] 引入 `Cluster` 模型（注册集群、kubeconfig、label）
+- [ ] `Environment` 加 `ClusterID` 字段
+- [ ] ArgoCD 主从：一个主 ArgoCD 管多集群
+- [ ] 跨集群网络：Submariner（推荐）或 VXLAN overlay
+- [ ] 当前状态：无 `Cluster` 模型，纯单集群
+- [ ] 工作量：1-2 月+
+
+### Task 7.12: VXLAN 纳管虚拟机（架构级，依赖 Task 7.11）
+- [ ] 在 Cluster 模型和网络层之上纳管已有虚拟机
+- [ ] VXLAN 接入 + 资源注册
+- [ ] 当前状态：零基础
+- [ ] 工作量：XL
+
+### Task 7.13: 配置模板覆盖扩展
+- [ ] nginx 多 backend 路由模板
+- [ ] Spring Boot datasource/cache/mq 配置模板
+- [ ] Gin/Go 应用配置模板
+- [ ] Node/Vite 前端 API 配置模板
+- [ ] 纯 config-file 型应用配置模板
+- [ ] 工作量：2-3 周
+
+### Task 7.14: 自动关系检测增强
+- [ ] 深度解析 ConfigMap/Secret/文件挂载配置
+- [ ] 后端-数据库/缓存/消息队列关系线自动出现
+- [ ] 当前状态：仅 env vars 可连线
+- [ ] 工作量：2-3 周
+
+### Task 7.15: 配置模板导入 UI 重设计
+- [ ] 导入对话框改为 Carbon Design System 白色风格
+- [ ] "适用组件"字段改为 select/combobox 控件
+- [ ] 区分普通模板（表单）和高级模板（JSON schema 上传）两种导入模式
+- [ ] 工作量：1-2 周
+
+### Task 7.16: 模板体系收口
+- [ ] 废弃旧 `installer/rawYaml/chartRepo/chartName` 创建入口
+- [ ] 将 `WorkloadRolePolicy` / `EnvironmentRolePolicy` 等旧权限字段收敛到 `platform-manifest.yaml`
+- [ ] 具体文件：`internal/handler/template.go`、`internal/model/service_catalog.go`
+- [ ] 工作量：1-2 周
+
+### Task 7.17: K8s 术语隐藏
+- [ ] 审查所有 drawer 和 workspace 中的 namespace/service/pod/configmap/secret/helm 等术语
+- [ ] 替换或隐藏 K8s 概念，仅在 debug/高级模式下展示
+- [ ] 工作量：0.5-1 周
+
+### Task 7.18: 产品化验证与审计队列
+- [ ] 产品化 Drawer 审计：每个工具/中间件的 drawer CDP 端到端验证
+- [ ] 无伪造/占位数据审计：每个 workspace 资源必须追溯到真实 backend
+- [ ] Per-card 指标视觉审计：检查真实数据、空状态、时间范围
+- [ ] Per-card 日志审计：检查真实日志行，无 "no such host" 式失败
+- [ ] Console 审计：所有工具 pod 测试，特别是无 shell 镜像和 ephemeral container 受限的 pod
+- [ ] 数据库备份 restore/download/list 完善
+- [ ] PV 配置 chart-by-chart 验证
+- [ ] 拓扑模式端到端验证（Redis/PostgreSQL/MySQL 各模式）
+- [ ] Runtime 配置更新验证
+- [ ] Registry 镜像源端到端验证
+- [ ] Source 交付端到端验证
+- [ ] CDP 测试覆盖：每次 UI 变更后用可见 Chrome 测试
+
+---
+
+## 执行顺序
+
+```
+Week 0  : Task 7.1(版本号) → Task 7.2(目录页)
+Week 1-2: Task 7.3+7.4(平台管理+角色) → Task 7.8(认证鉴权)
+Week 3-4: Task 7.5a~7.5c(Capability 模型地基)
+Week 5-7: Task 7.5d~7.5g(画布分区+外部接入) → Task 7.6+7.7(Ingress+ServiceIP)
+Week 8+  : Task 7.13~7.15(配置模板) 并行 Task 7.9+7.10(KubeVirt+KEDA)
+季度级   : Task 7.11(多集群) → Task 7.12(VM纳管)
+穿插     : Task 7.17~7.18(验证与审计)
+```
