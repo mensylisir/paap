@@ -509,6 +509,14 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 - [x] 对应文件：`frontend/src/views/CatalogView.vue`
 - [x] 工作量：S（半小时）
 
+### Task 7.25: 目录页总数展示
+> 目录页副标题显示 "平台支持的中间件与工具一览（共 N 个）"
+
+- [x] 添加 `totalItems` computed，随搜索过滤实时变化
+- [x] CDP 验证：副标题显示 "（共 14 个）"
+- [x] 对应文件：`frontend/src/views/CatalogView.vue`
+- [x] 工作量：S（15 分钟）
+
 ### Task 7.21: `docs/配置示例.md` → 内置配置模板
 > 将 20 个配置示例转为 PAAP 内置配置模板（Go template），供组件配置 Tab 使用
 

@@ -3,7 +3,7 @@
     <header class="page-header">
       <div class="header-text">
         <h1 class="page-title">中间件目录</h1>
-        <p class="page-desc">平台支持的中间件与工具一览</p>
+        <p class="page-desc">平台支持的中间件与工具一览<template v-if="totalItems">（共 {{ totalItems }} 个）</template></p>
       </div>
     </header>
 
@@ -115,6 +115,7 @@ const filteredTemplates = computed(() => {
     String(t.description || '').toLowerCase().includes(q)
   )
 })
+const totalItems = computed(() => filteredTemplates.value.length)
 
 const catalogGroups = computed<CatalogGroup[]>(() => {
   const groups = new Map<string, CatalogGroup>()
