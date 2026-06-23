@@ -97,6 +97,7 @@
                   :style="componentNodeStyle(node)"
                   :data-node-key="node.topologyId || node.id"
                   @click="handleTopologyNodeClick($event, node)"
+                  @dblclick.stop.prevent="startRenameNode(node)"
                   @pointerdown="startComponentNodeDrag($event, node)"
                   @pointerup="finishComponentNodePointer($event, node)"
                   @contextmenu.stop.prevent="openTopologyContextMenu($event, node)"
@@ -105,7 +106,19 @@
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path :d="componentNodeIconPath(node)" /></svg>
                   </span>
                   <span class="node-status" :class="node.status"></span>
-                  <strong>{{ node.name }}</strong>
+                  <input
+                    v-if="renamingNodeKey === (node.topologyId || String(node.id))"
+                    class="node-rename-input"
+                    type="text"
+                    :value="renamingNodeValue"
+                    @input="renamingNodeValue = ($event.target as HTMLInputElement).value"
+                    @keydown.enter.stop.prevent="submitRenameNode"
+                    @keydown.escape.stop.prevent="cancelRenameNode"
+                    @blur="submitRenameNode"
+                    @pointerdown.stop
+                    @click.stop
+                  />
+                  <strong v-else>{{ node.name }}</strong>
                   <small>{{ environmentTopologyNodeSubtitle(node) }}</small>
                   <span
                     class="node-delete-action"
@@ -536,6 +549,7 @@
                   :style="componentNodeStyle(node)"
                   :data-node-key="node.topologyId || node.id"
                   @click="handleTopologyNodeClick($event, node)"
+                  @dblclick.stop.prevent="startRenameNode(node)"
                   @pointerdown="startComponentNodeDrag($event, node)"
                   @pointerup="finishComponentNodePointer($event, node)"
                   @contextmenu.stop.prevent="openTopologyContextMenu($event, node)"
@@ -544,7 +558,19 @@
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path :d="componentNodeIconPath(node)" /></svg>
                   </span>
                   <span class="node-status" :class="node.status"></span>
-                  <strong>{{ node.name }}</strong>
+                  <input
+                    v-if="renamingNodeKey === (node.topologyId || String(node.id))"
+                    class="node-rename-input"
+                    type="text"
+                    :value="renamingNodeValue"
+                    @input="renamingNodeValue = ($event.target as HTMLInputElement).value"
+                    @keydown.enter.stop.prevent="submitRenameNode"
+                    @keydown.escape.stop.prevent="cancelRenameNode"
+                    @blur="submitRenameNode"
+                    @pointerdown.stop
+                    @click.stop
+                  />
+                  <strong v-else>{{ node.name }}</strong>
                   <small>{{ topologyNodeSubtitle(node) }}</small>
                   <span
                     class="node-delete-action"
@@ -1758,6 +1784,10 @@
           <span>配置</span>
           <small>{{ componentContextMenu.kind === 'service' ? '在右侧查看工具或中间件配置' : '在右侧配置环境变量、副本和启动参数' }}</small>
         </button>
+        <button v-if="componentContextMenu.kind === 'component' || componentContextMenu.kind === 'service'" type="button" @click="renameContextNode">
+          <span>重命名</span>
+          <small>修改画布上显示的卡片名称</small>
+        </button>
         <button v-if="componentContextMenu.kind === 'component'" type="button" @click="deployContextComponent">
           <span>部署</span>
           <small>提交 GitOps 并同步</small>
@@ -2058,9 +2088,11 @@ import {
   isNodeInMarquee,
   nextComponentTopologyDragPosition,
   nodeKey,
+  parseComponentTopologyDisplayNames,
   parseComponentTopologyManualEdges,
   parseComponentTopologyPositions,
   removeComponentTopologyManualEdge,
+  serializeComponentTopologyDisplayNames,
   serializeComponentTopologyManualEdges,
   serializeComponentTopologyPositions,
 } from './componentTopology'
@@ -2218,6 +2250,9 @@ const normalizeTemplateConfigObjectRows = (items:any[]): ComponentConfigObjectRo
 const normalizeTemplateConfigFiles = normalizeComponentTemplateFiles
 const componentNodePositions = ref<Record<string, { x: number; y: number }>>({})
 const manualCanvasEdges = ref<Array<{ fromKey: string; toKey: string }>>([])
+const componentDisplayNames = ref<Record<string, string>>({})
+const renamingNodeKey = ref<string | null>(null)
+const renamingNodeValue = ref('')
 const canvasCreatePoint = ref<{ x: number; y: number } | null>(null)
 const componentNodeDrag = ref<{ keys: string[]; origins: Record<string, { x: number; y: number }>; startX: number; startY: number; moved: boolean; lastX: number; lastY: number } | null>(null)
 const connectionDrag = ref<{ fromNode: any; startX: number; startY: number; currentX: number; currentY: number; stageEl: HTMLElement } | null>(null)
@@ -2642,8 +2677,8 @@ const isApplicationTopologyService = (svc:any) => {
   return ['postgresql', 'mysql', 'mongodb', 'redis', 'rabbitmq', 'kafka', 'minio'].includes(type)
 }
 const appCanvasServices = computed(() => services.value.filter(isApplicationTopologyService))
-const componentTopologyAllNodes = computed(() => buildComponentTopologyNodes(components.value, appCanvasServices.value))
-const environmentTopologyAllNodes = computed(() => buildComponentTopologyNodes(components.value, services.value))
+const componentTopologyAllNodes = computed(() => buildComponentTopologyNodes(components.value, appCanvasServices.value, componentDisplayNames.value))
+const environmentTopologyAllNodes = computed(() => buildComponentTopologyNodes(components.value, services.value, componentDisplayNames.value))
 const componentTopologyEdges = computed(() => buildComponentDependencyEdges(componentTopologyAllNodes.value))
 const environmentTopologyEdges = computed(() => buildComponentDependencyEdges(environmentTopologyAllNodes.value))
 const componentTypes = computed(() =>
@@ -2752,16 +2787,19 @@ const canvasStateRawJSON = (value: unknown, fallback: unknown) => {
 const loadComponentNodePositions = async () => {
   componentNodePositions.value = {}
   manualCanvasEdges.value = []
+  componentDisplayNames.value = {}
   if (!envId.value) return
   const res = await api.getEnvironmentCanvasState(envId.value)
   componentNodePositions.value = parseComponentTopologyPositions(canvasStateRawJSON(res?.data?.positions, {}))
   manualCanvasEdges.value = parseComponentTopologyManualEdges(canvasStateRawJSON(res?.data?.edges, []))
+  componentDisplayNames.value = parseComponentTopologyDisplayNames(canvasStateRawJSON(res?.data?.names, {}))
 }
 const saveComponentNodePositions = async () => {
   if (!envId.value) return
   await api.saveEnvironmentCanvasState(envId.value, {
     positions: JSON.parse(serializeComponentTopologyPositions(componentNodePositions.value)),
     edges: JSON.parse(serializeComponentTopologyManualEdges(manualCanvasEdges.value)),
+    names: JSON.parse(serializeComponentTopologyDisplayNames(componentDisplayNames.value)),
   })
 }
 const graphLayout = computed(() => {
@@ -3014,6 +3052,7 @@ const selectTopologyNode = (node:any) => {
   openComponentConfigDrawer(node)
 }
 const handleTopologyNodeClick = (event: MouseEvent, node:any) => {
+  if (renamingNodeKey.value) return
   const key = String(node?.topologyId || node?.id || node?.name || '')
   if (suppressNextTopologyClick.value && (suppressTopologyClickKeys.value.length === 0 || suppressTopologyClickKeys.value.includes(key))) {
     suppressNextTopologyClick.value = false
@@ -3178,7 +3217,7 @@ const openComponentContextMenu = (event: MouseEvent, comp: any) => {
 const openServiceContextMenu = (event: MouseEvent, svc: any) => {
   enterCanvasContextMenu(event, 'service')
   selectedManualEdge.value = null
-  const pos = contextMenuPosition(event, 220, 140)
+  const pos = contextMenuPosition(event, 220, 200)
   selectedTopologyKey.value = String(svc?.topologyId || svc?.id || '')
   componentContextMenu.value = {
     visible: true,
@@ -3239,9 +3278,9 @@ const connectorPointFromNodeRect = (nodeRect: DOMRect, canvasRect: DOMRect, side
 }
 const startComponentNodeDrag = (event: PointerEvent, node:any) => {
   if (event.button !== 0) return
+  const key = String(node?.topologyId || node?.id || node?.name || '')
   closeComponentContextMenu()
   selectedManualEdge.value = null
-  const key = String(node?.topologyId || node?.id || node?.name || '')
   if (!key) return
   suppressNextTopologyClick.value = false
   suppressTopologyClickKeys.value = []
@@ -6567,6 +6606,48 @@ const configureContextNode = () => {
   if (comp?.id) openComponentConfigDrawer(comp)
   else if (svc?.id) openServiceConfigDrawer(svc)
 }
+const startRenameNode = (node: any) => {
+  const key = String(node?.topologyId || node?.id || '')
+  if (!key) return
+  // A double-click still fires two click events first; the first one already
+  // opened the sidebar via selectTopologyNode. Close it so the user lands in
+  // the rename input without the sidebar stealing focus.
+  closeConfigDrawer()
+  renamingNodeKey.value = key
+  renamingNodeValue.value = componentDisplayNames.value[key] || String(node?.name || '')
+  nextTick(() => {
+    const input = document.querySelector('.node-rename-input') as HTMLInputElement | null
+    input?.focus()
+    input?.select()
+  })
+}
+const renameContextNode = () => {
+  const comp = componentContextMenu.value.component
+  const svc = componentContextMenu.value.service
+  const node = comp || svc
+  closeComponentContextMenu()
+  if (!node) return
+  startRenameNode(node)
+}
+const submitRenameNode = () => {
+  const key = renamingNodeKey.value
+  if (!key) return
+  const value = renamingNodeValue.value.trim()
+  if (value) {
+    componentDisplayNames.value = { ...componentDisplayNames.value, [key]: value }
+  } else {
+    const next = { ...componentDisplayNames.value }
+    delete next[key]
+    componentDisplayNames.value = next
+  }
+  renamingNodeKey.value = null
+  renamingNodeValue.value = ''
+  void saveComponentNodePositions()
+}
+const cancelRenameNode = () => {
+  renamingNodeKey.value = null
+  renamingNodeValue.value = ''
+}
 const deployContextComponent = async () => {
   const comp = componentContextMenu.value.component
   closeComponentContextMenu()
@@ -7848,8 +7929,22 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 }
 .component-topology-node strong { color: var(--paap-text); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .component-topology-node strong,
-.component-topology-node small {
+.component-topology-node small,
+.component-topology-node .node-rename-input {
   min-width: 0;
+}
+.node-rename-input {
+  grid-column: 3;
+  color: var(--paap-text);
+  font-size: 13px;
+  font-weight: 600;
+  background: var(--paap-card-bg, #fff);
+  border: 1px solid var(--cds-interactive-01, #0f62fe);
+  border-radius: 3px;
+  padding: 1px 4px;
+  outline: none;
+  width: 100%;
+  box-sizing: border-box;
 }
 .component-topology-node small { grid-column: 3; color: var(--paap-muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .node-delete-action {

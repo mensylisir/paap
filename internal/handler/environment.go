@@ -165,6 +165,7 @@ type CanvasManualEdge struct {
 type EnvironmentCanvasStateRequest struct {
 	Positions map[string]CanvasNodePosition `json:"positions"`
 	Edges     []CanvasManualEdge            `json:"edges"`
+	Names     map[string]string             `json:"names"`
 }
 
 type AdoptResourceRequest struct {
@@ -1293,7 +1294,7 @@ func GetEnvironmentCanvasState(c *gin.Context) {
 	var state model.EnvironmentCanvasState
 	if err := database.DB.Where("environment_id = ?", env.ID).First(&state).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.JSON(http.StatusOK, gin.H{"data": gin.H{"positions": gin.H{}, "edges": []CanvasManualEdge{}}})
+			c.JSON(http.StatusOK, gin.H{"data": gin.H{"positions": gin.H{}, "edges": []CanvasManualEdge{}, "names": gin.H{}}})
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -1308,6 +1309,7 @@ func GetEnvironmentCanvasState(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": gin.H{
 		"positions": json.RawMessage(positions),
 		"edges":     json.RawMessage(edges),
+		"names":     json.RawMessage(valueOrDefaultString(state.Names, "{}")),
 	}})
 }
 
@@ -1337,6 +1339,11 @@ func SaveEnvironmentCanvasState(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid canvas edges"})
 		return
 	}
+	namesJSON, err := json.Marshal(normalizeCanvasNames(req.Names))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid canvas names"})
+		return
+	}
 	var state model.EnvironmentCanvasState
 	err = database.DB.Where("environment_id = ?", env.ID).First(&state).Error
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
@@ -1346,6 +1353,7 @@ func SaveEnvironmentCanvasState(c *gin.Context) {
 	state.EnvironmentID = env.ID
 	state.Positions = string(positionsJSON)
 	state.Edges = string(edgesJSON)
+	state.Names = string(namesJSON)
 	if state.ID == 0 {
 		err = database.DB.Create(&state).Error
 	} else {
@@ -1358,6 +1366,7 @@ func SaveEnvironmentCanvasState(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": gin.H{
 		"positions": json.RawMessage(state.Positions),
 		"edges":     json.RawMessage(state.Edges),
+		"names":     json.RawMessage(state.Names),
 	}})
 }
 
@@ -1446,6 +1455,19 @@ func normalizeCanvasEdges(input []CanvasManualEdge) []CanvasManualEdge {
 		}
 		seen[key] = struct{}{}
 		out = append(out, CanvasManualEdge{FromKey: from, ToKey: to})
+	}
+	return out
+}
+
+func normalizeCanvasNames(input map[string]string) map[string]string {
+	out := map[string]string{}
+	for key, value := range input {
+		key = strings.TrimSpace(key)
+		value = strings.TrimSpace(value)
+		if key == "" || value == "" {
+			continue
+		}
+		out[key] = value
 	}
 	return out
 }
@@ -2337,6 +2359,14 @@ func removeComponentFromCanvasState(envID uint, componentID uint) {
 		}
 		if data, err := json.Marshal(filtered); err == nil {
 			state.Edges = string(data)
+		}
+	}
+
+	var names map[string]string
+	if err := json.Unmarshal([]byte(valueOrDefaultString(state.Names, "{}")), &names); err == nil {
+		delete(names, componentKey)
+		if data, err := json.Marshal(names); err == nil {
+			state.Names = string(data)
 		}
 	}
 

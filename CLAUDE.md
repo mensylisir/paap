@@ -1,6 +1,121 @@
-# PAAP Agent Notes
+# CLAUDE.md
 
-## Unfinished Work And Known Gaps
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## What Is PAAP
+
+PAAP (Platform-as-a-Application Platform) is a Railway-like self-service cloud-native application management platform. Users create applications, define environments, install tool/middleware services (Gitea, Harbor, Argo CD, Jenkins, PostgreSQL, Redis, etc.), and deploy business components — all through a canvas UI with drawers, not raw Kubernetes YAML.
+
+## Development Commands
+
+Requires Go 1.25+ via GVM (`source ~/.gvm/scripts/gvm && gvm use go1.25.7`). All `make` targets source GVM automatically.
+
+```bash
+# Backend
+make run              # Run PAAP server (Go + Gin, default port 9090)
+make run-operator     # Run PAAP operator (controller-runtime, connects to kind cluster)
+make build            # Build server binary to bin/paap-server
+make build-operator   # Build operator binary to bin/paap-operator
+make all              # Build both
+
+# Testing
+make test             # Run all Go tests: go test ./...
+make frontend-test    # Run frontend unit tests: cd frontend && npm run test
+make frontend-smoke   # Headless browser smoke test (no Xorg needed)
+make frontend-verify  # Full frontend check: unit tests + type check + build + smoke
+make verify           # Backend tests + frontend-verify
+
+# Code quality
+make fmt              # go fmt ./...
+make lint             # go vet ./...
+
+# CRD management
+make manifests        # Generate CRD YAML + deepcopy functions (controller-gen)
+make install          # Apply CRDs to cluster
+make uninstall        # Remove CRDs from cluster
+make install-kpack    # Install kpack CRDs for source component Buildpacks builds
+
+# Docker
+make docker-build-server    # Build server image (includes frontend bundle + built-in templates)
+make docker-build-operator  # Build operator image
+make preload-kind-images    # Pre-load images into kind cluster
+
+# Single Go test
+source ~/.gvm/scripts/gvm && gvm use go1.25.7 && go test ./internal/handler/ -run TestFunctionName -v
+```
+
+## Architecture
+
+Three-process system communicating through Kubernetes CRDs and a shared PostgreSQL/SQLite database:
+
+```
+Vue 3 Frontend  ──REST/WS──▶  PAAP Server (Gin)  ──CR CRUD──▶  PAAP Operator (controller-runtime)  ──▶  K8s
+                                  │                                      │
+                                  ├─ GORM models (PostgreSQL/SQLite)     ├─ Application/Environment/ServiceInstance/Component controllers
+                                  ├─ Helm client (install/upgrade svc)   ├─ Creates namespaces, deployments, services, RBAC
+                                  ├─ K8s client (proxy to tools)         └─ Reconciles CR state → K8s state
+                                  └─ Direct tool APIs (Gitea, Harbor, ArgoCD, Jenkins, Prometheus, Loki, DBs, Redis, etc.)
+```
+
+### Server (`cmd/server/main.go` → `internal/`)
+
+| Layer | Path | Role |
+|-------|------|------|
+| Entry | `cmd/server/main.go` | Init DB, seed defaults, sync cluster state, start Gin |
+| Config | `config/config.go` | Env vars: `PORT` (default 9090), `DATABASE_URL` (default `paap.db`), `JWT_SECRET` |
+| Router | `internal/handler/router.go` | All REST routes under `/api/v1/` + WebSocket at `/ws` + SPA static serving |
+| Handlers | `internal/handler/` | HTTP handlers — one file per domain (application, environment, auth, template, sync, etc.) |
+| Services | `internal/service/` | Business logic — cluster sync, component GitOps, DB admin, tool workspace actions, template rendering |
+| Models | `internal/model/` | GORM models — application, environment, component, service_catalog, template, user, platform_manifest |
+| K8s Client | `internal/k8s/` | Direct K8s API calls — CR manager, tool-specific clients (Gitea, Harbor, ArgoCD, Jenkins, Prometheus, Grafana, Loki, registry, database discovery, Redis discovery, runtime console/logs/metrics) |
+| Helm Client | `internal/helm/` | Helm SDK wrapper for service install/upgrade/uninstall |
+| Middleware | `internal/middleware/` | CORS, auth |
+| Database | `internal/database/` | DB init/connection (SQLite dev, PostgreSQL prod) |
+
+### Operator (`cmd/operator/main.go` → `internal/controller/`)
+
+Standard Kubebuilder operator with four controllers:
+- **ApplicationController** — creates/manages `paap-app-{id}` namespaces
+- **EnvironmentController** — manages environment namespace, NetworkPolicy, ResourceQuota
+- **ServiceInstanceController** — manages tool/middleware instances (SA, Role, Deployment via Helm)
+- **ComponentController** — manages business component Deployment/Service
+
+CRD types are defined in `api/v1/` (Application, Environment, ServiceInstance, Component).
+
+### Frontend (`frontend/`)
+
+Vue 3 + TypeScript + Carbon Design System + Pinia. Key structure:
+
+- **Views** (`src/views/`): Top-level pages — `AppListView`, `EnvDetailView` (the main canvas), `ComponentDetailView`, `TemplatesView`, etc.
+- **Composables** (`src/views/`): Co-located `.ts` files with business logic — `serviceWorkspace`, `componentWorkspace`, `envCapabilities`, `componentProfile`, `componentTopology`, `configTemplateRenderer`, etc. These contain the real domain logic; the `.vue` files are thin presentation.
+- **Workspace Components** (`src/components/workspaces/`): Per-tool drawer content — `GiteaWorkspace`, `ArgocdWorkspace`, `DatabaseWorkspace`, `RedisWorkspace`, `MongoWorkspace`, `KafkaWorkspace`, `MinioWorkspace`, `RabbitWorkspace`, `MonitorWorkspace`, `LogWorkspace`, `PipelineWorkspace`, `RegistryWorkspace`. Each has a `ToolWorkspaceFrame` wrapper and `WorkspaceActionForm` for embedded actions.
+- **API Client** (`src/api/client.ts`): Axios-based REST client
+- **Store** (`src/stores/app.ts`): Pinia store
+- **WebSocket** (`src/composables/useWebSocket.ts`): Real-time status updates
+- **Tests**: Vitest — co-located `*.test.ts` files alongside source
+
+### Built-in Templates (`data/charts/`)
+
+Pre-packaged Helm chart tarballs for all supported services (Gitea, Harbor, ArgoCD, Jenkins, PostgreSQL, MySQL, Redis, MongoDB, Kafka, RabbitMQ, MinIO, Loki, Prometheus/Grafana, registry). These are embedded into the server image via `scripts/package-built-in-templates.sh`.
+
+### Deployment (`deploy/k8s/`)
+
+`deploy.sh` is the one-command deploy to a kind cluster. Individual manifests for server, operator, PostgreSQL, MinIO, namespace, and kpack.
+
+## Key Patterns
+
+- **Service install flow**: Server creates a draft ServiceInstance in DB → Operator reconciles it → Operator calls Helm install → Server polls for ready state → WebSocket pushes status to frontend.
+- **Workspace actions**: Frontend workspace components call `POST /services/:id/workspace/actions` with a tool-specific action payload. Server dispatches to the appropriate tool client in `internal/k8s/` (e.g., `gitea.go`, `redis_admin.go`, `database_admin.go`).
+- **Component delivery**: Two modes — image delivery (registry + image:tag) and source delivery (git repo + branch, built via kpack/Buildpacks). The Deploy tab form switches based on mode.
+- **Canvas state**: The environment canvas layout (node positions, links) is persisted via `PUT /environments/:id/canvas-state`.
+- **Config templates**: Component config templates use Go template syntax rendered by `internal/service/renderer.go`. Built-in templates are synced from `data/charts/` to MinIO + DB on startup.
+- **Cluster sync**: On startup, `service.SyncClusterState` reconciles the DB with actual K8s cluster state to handle drift.
+- **Tool proxy**: `ProxyServiceInstance` and `ProxyComponent` handlers forward HTTP/WebSocket requests directly to in-cluster tool pods.
+- **External capability direction**: Tools and middleware should support externally-provided infrastructure, not only PAAP-managed installs. See "External Capability Design Direction" below.
+
+## PAAP Agent Notes
+
+### Unfinished Work And Known Gaps
 
 Do not treat the long-running Railway-like drawer objective as complete until every item below has direct code, runtime, and CDP evidence.
 

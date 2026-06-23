@@ -9,9 +9,11 @@ import {
   hasComponentTopologyDragMoved,
   nextComponentTopologyDragPosition,
   nodeKey,
+  parseComponentTopologyDisplayNames,
   parseComponentTopologyManualEdges,
   parseComponentTopologyPositions,
   removeComponentTopologyManualEdge,
+  serializeComponentTopologyDisplayNames,
   serializeComponentTopologyManualEdges,
   serializeComponentTopologyPositions,
   shouldSuppressComponentTopologyClick,
@@ -362,5 +364,62 @@ describe('componentTopology', () => {
       fromNode: { x: 520, y: 210, width: 196, height: 70 },
       toNode: { x: 120, y: 80, width: 196, height: 70 },
     })).toBe('M 520 245 H 418 V 115 H 316')
+  })
+
+  it('parses only non-empty canvas display names', () => {
+    expect(parseComponentTopologyDisplayNames('{"component:1":"My App","service:10":"主数据库","bad":""}')).toEqual({
+      'component:1': 'My App',
+      'service:10': '主数据库',
+    })
+    expect(parseComponentTopologyDisplayNames(null)).toEqual({})
+    expect(parseComponentTopologyDisplayNames('not-json')).toEqual({})
+  })
+
+  it('serializes canvas display names trimming whitespace keys', () => {
+    expect(serializeComponentTopologyDisplayNames({
+      'component:1': 'My App',
+      'service:10': '主数据库',
+      '  ': 'ignored',
+      'component:2': '',
+    })).toBe('{"component:1":"My App","service:10":"主数据库"}')
+  })
+
+  it('applies display name overrides from canvas state to topology nodes', () => {
+    const nodes = buildComponentTopologyNodes(
+      [
+        { id: 1, name: 'web', type: 'frontend' },
+        { id: 2, name: 'api', type: 'backend' },
+      ],
+      [{ id: 10, name: 'redis-cache', type: 'redis', status: 'running' }],
+      { 'component:1': '用户前端', 'service:10': '主缓存' }
+    )
+
+    expect(nodes.map((n) => ({ topologyId: n.topologyId, name: n.name }))).toEqual([
+      { topologyId: 'component:1', name: '用户前端' },
+      { topologyId: 'component:2', name: 'api' },
+      { topologyId: 'service:10', name: '主缓存' },
+    ])
+  })
+
+  it('falls back to real name when display name is empty or absent', () => {
+    const nodes = buildComponentTopologyNodes(
+      [{ id: 1, name: 'web', type: 'frontend' }],
+      [{ id: 10, name: 'redis', type: 'redis', status: 'running' }],
+      { 'component:1': '', 'service:10': '  ' }
+    )
+
+    expect(nodes.find((n) => n.topologyId === 'component:1')?.name).toBe('web')
+    expect(nodes.find((n) => n.topologyId === 'service:10')?.name).toBe('redis')
+  })
+
+  it('ignores display name overrides for nodes that do not exist', () => {
+    const nodes = buildComponentTopologyNodes(
+      [{ id: 1, name: 'web', type: 'frontend' }],
+      [],
+      { 'component:999': 'Ghost', 'service:888': 'Phantom' }
+    )
+
+    expect(nodes).toHaveLength(1)
+    expect(nodes[0].name).toBe('web')
   })
 })

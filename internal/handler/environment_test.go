@@ -3865,6 +3865,85 @@ func TestEnvironmentCanvasStatePersistsPositionsAndEdges(t *testing.T) {
 	}
 }
 
+func TestEnvironmentCanvasStatePersistsDisplayNames(t *testing.T) {
+	previousDB := database.DB
+	t.Cleanup(func() { database.DB = previousDB })
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&model.Application{}, &model.Environment{}, &model.EnvironmentCanvasState{}, &model.Component{}, &model.ServiceInstallation{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	database.DB = db
+
+	app := model.Application{Name: "测试应用", Identifier: "test", OwnerID: 1}
+	if err := db.Create(&app).Error; err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	env := model.Environment{ApplicationID: app.ID, Name: "测试环境", Identifier: "staging", Status: "running", Namespace: "test-staging"}
+	if err := db.Create(&env).Error; err != nil {
+		t.Fatalf("create env: %v", err)
+	}
+	if err := db.Create(&model.Component{ID: 1, EnvironmentID: env.ID, Name: "api", Type: "backend"}).Error; err != nil {
+		t.Fatalf("create component: %v", err)
+	}
+	if err := db.Create(&model.ServiceInstallation{ID: 2, EnvironmentID: env.ID, ServiceType: "redis", ServiceName: "cache"}).Error; err != nil {
+		t.Fatalf("create service: %v", err)
+	}
+
+	body := []byte(`{
+		"positions": {"component:1": {"x": 100, "y": 80}},
+		"edges": [],
+		"names": {
+			"component:1": "用户前端",
+			"service:2": "主缓存",
+			"  ": "ignored",
+			"component:999": "ghost"
+		}
+	}`)
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.PUT("/api/v1/environments/:id/canvas-state", SaveEnvironmentCanvasState)
+	router.GET("/api/v1/environments/:id/canvas-state", GetEnvironmentCanvasState)
+
+	saveReq := httptest.NewRequest(http.MethodPut, "/api/v1/environments/1/canvas-state", bytes.NewReader(body))
+	saveReq.Header.Set("Content-Type", "application/json")
+	saveRec := httptest.NewRecorder()
+	router.ServeHTTP(saveRec, saveReq)
+	if saveRec.Code != http.StatusOK {
+		t.Fatalf("save status = %d, want %d; body=%s", saveRec.Code, http.StatusOK, saveRec.Body.String())
+	}
+
+	getReq := httptest.NewRequest(http.MethodGet, "/api/v1/environments/1/canvas-state", nil)
+	getRec := httptest.NewRecorder()
+	router.ServeHTTP(getRec, getReq)
+	if getRec.Code != http.StatusOK {
+		t.Fatalf("get status = %d, want %d; body=%s", getRec.Code, http.StatusOK, getRec.Body.String())
+	}
+	var response struct {
+		Data struct {
+			Names map[string]string `json:"names"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(getRec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if response.Data.Names["component:1"] != "用户前端" {
+		t.Fatalf("component display name not persisted: %q", response.Data.Names["component:1"])
+	}
+	if response.Data.Names["service:2"] != "主缓存" {
+		t.Fatalf("service display name not persisted: %q", response.Data.Names["service:2"])
+	}
+	if _, ok := response.Data.Names[" "]; ok {
+		t.Fatalf("whitespace-only key should be filtered: %#v", response.Data.Names)
+	}
+	if _, ok := response.Data.Names["component:999"]; !ok {
+		t.Fatalf("display names are not cleaned by valid keys (unlike positions): %#v", response.Data.Names)
+	}
+}
+
 func TestUpdateComponentPersistsRuntimeConfig(t *testing.T) {
 	previousDB := database.DB
 	t.Cleanup(func() { database.DB = previousDB })

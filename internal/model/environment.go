@@ -29,6 +29,7 @@ type EnvironmentCanvasState struct {
 	EnvironmentID uint           `gorm:"not null;uniqueIndex" json:"environmentId"`
 	Positions     string         `gorm:"type:text" json:"positions"`
 	Edges         string         `gorm:"type:text" json:"edges"`
+	Names         string         `gorm:"type:text" json:"names"`
 }
 
 type EnvironmentTemplate struct {

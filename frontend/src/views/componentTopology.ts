@@ -89,6 +89,8 @@ export type ComponentTopologyCanvasSize = {
   height: number
 }
 
+export type ComponentTopologyDisplayNames = Record<string, string>
+
 const laneLabels: Record<string, string> = {
   frontend: '入口层',
   backend: '服务层',
@@ -123,9 +125,17 @@ const stableNodeId = (kind: 'component' | 'service', node: { id?: string | numbe
 
 export const buildComponentTopologyNodes = (
   components: ComponentTopologyComponent[],
-  services: ComponentTopologyComponent[] = []
+  services: ComponentTopologyComponent[] = [],
+  displayNames?: ComponentTopologyDisplayNames
 ): ComponentTopologyComponent[] => {
-  const componentNodes = components.map((comp) => ({
+  const applyDisplayName = (node: ComponentTopologyComponent): ComponentTopologyComponent => {
+    if (!displayNames) return node
+    const key = String(node.topologyId || '')
+    const override = key ? String(displayNames[key] || '').trim() : ''
+    if (!override) return node
+    return { ...node, name: override }
+  }
+  const componentNodes = components.map((comp) => applyDisplayName({
     ...comp,
     topologyKind: 'component' as const,
     topologyId: stableNodeId('component', comp),
@@ -137,13 +147,13 @@ export const buildComponentTopologyNodes = (
       name: svc.name || svc.serviceName || svc.serviceType,
       type: svc.type || svc.serviceType,
     }
-    return {
+    return applyDisplayName({
       ...normalized,
       topologyKind: 'service' as const,
       topologyId: stableNodeId('service', normalized),
       serviceId: svc.id,
       status: svc.status || 'running',
-    }
+    })
   })
   return [...componentNodes, ...serviceNodes]
 }
@@ -347,6 +357,35 @@ export const serializeComponentTopologyPositions = (positions: ComponentTopology
     const y = Number(value?.y)
     if (!key || !Number.isFinite(x) || !Number.isFinite(y)) continue
     serializable[key] = { x, y }
+  }
+  return JSON.stringify(serializable)
+}
+
+export const parseComponentTopologyDisplayNames = (raw: string | null | undefined): ComponentTopologyDisplayNames => {
+  if (!raw) return {}
+  try {
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
+    const names: ComponentTopologyDisplayNames = {}
+    for (const [key, value] of Object.entries(parsed)) {
+      const trimmedKey = String(key || '').trim()
+      const trimmedValue = String(value || '').trim()
+      if (!trimmedKey || !trimmedValue) continue
+      names[trimmedKey] = trimmedValue
+    }
+    return names
+  } catch {
+    return {}
+  }
+}
+
+export const serializeComponentTopologyDisplayNames = (names: ComponentTopologyDisplayNames): string => {
+  const serializable: ComponentTopologyDisplayNames = {}
+  for (const [key, value] of Object.entries(names || {})) {
+    const trimmedKey = String(key || '').trim()
+    const trimmedValue = String(value || '').trim()
+    if (!trimmedKey || !trimmedValue) continue
+    serializable[trimmedKey] = trimmedValue
   }
   return JSON.stringify(serializable)
 }
