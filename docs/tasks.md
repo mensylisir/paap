@@ -500,6 +500,15 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 - [x] 对应文件：`frontend/src/views/CatalogView.vue`
 - [x] 工作量：S（半天）
 
+### Task 7.24: 目录页快捷键 "/" 聚焦搜索
+> 按 "/" 键自动聚焦目录页搜索框，提升操作效率
+
+- [x] 注册全局 keydown 监听 "/" 键
+- [x] 仅在非输入框/文本域/选择框区域生效
+- [x] CDP 验证：按 "/" 后搜索框获得焦点（`document.activeElement` 匹配）
+- [x] 对应文件：`frontend/src/views/CatalogView.vue`
+- [x] 工作量：S（半小时）
+
 ### Task 7.21: `docs/配置示例.md` → 内置配置模板
 > 将 20 个配置示例转为 PAAP 内置配置模板（Go template），供组件配置 Tab 使用
 

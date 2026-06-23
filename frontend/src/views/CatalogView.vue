@@ -16,6 +16,7 @@
         <svg width="14" height="14" viewBox="0 0 32 32" fill="currentColor"><path d="M30 28.6L22.4 21c1.2-1.5 1.9-3.4 1.9-5.4 0-4.8-3.9-8.7-8.7-8.7S6.9 10.9 6.9 15.7s3.9 8.7 8.7 8.7c2 0 3.9-.7 5.4-1.9l7.6 7.6 1.4-1.5zM9 15.7c0-3.7 3-6.7 6.7-6.7s6.7 3 6.7 6.7-3 6.7-6.7 6.7S9 19.4 9 15.7z"/></svg>
       </div>
       <input
+        ref="searchInputRef"
         v-model="filterQuery"
         class="catalog-search-input"
         type="text"
@@ -71,7 +72,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watchEffect, onMounted } from 'vue'
+import { ref, computed, watchEffect, onMounted, onBeforeUnmount } from 'vue'
 import { api } from '../api/client'
 
 interface CatalogItem {
@@ -92,6 +93,7 @@ const pageError = ref('')
 const templates = ref<any[]>([])
 const activeTab = ref('')
 const filterQuery = ref('')
+const searchInputRef = ref<HTMLInputElement | null>(null)
 
 const stripV = (v: string) => v.replace(/^v/i, '')
 
@@ -180,6 +182,16 @@ onMounted(async () => {
   } finally {
     loading.value = false
   }
+
+  // Press "/" to focus search input
+  const handler = (e: KeyboardEvent) => {
+    if (e.key === '/' && !['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement)?.tagName)) {
+      e.preventDefault()
+      searchInputRef.value?.focus()
+    }
+  }
+  document.addEventListener('keydown', handler)
+  onBeforeUnmount(() => document.removeEventListener('keydown', handler))
 })
 </script>
 
