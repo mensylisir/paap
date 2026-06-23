@@ -174,6 +174,7 @@ type AdoptResourceRequest struct {
 
 type InstallServiceRequest struct {
 	ServiceType string            `json:"serviceType" binding:"required"`
+	AppVersion  string            `json:"appVersion"`
 	Values      map[string]string `json:"values"`
 }
 
@@ -7781,7 +7782,11 @@ func InstallService(c *gin.Context) {
 
 	// 查找模板获取安装方式
 	var svcTmpl model.ServiceTemplate
-	if err := database.DB.Where("type = ?", req.ServiceType).First(&svcTmpl).Error; err != nil {
+	query := database.DB.Where("type = ? AND enabled = ?", req.ServiceType, true)
+	if req.AppVersion != "" {
+		query = query.Where("app_version = ?", req.AppVersion)
+	}
+	if err := query.Order("install_order").First(&svcTmpl).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "service template not found"})
 		return
 	}

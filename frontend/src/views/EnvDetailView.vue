@@ -871,6 +871,23 @@
               </div>
             </section>
 
+            <section v-if="configDrawerTab === 'deploy' && configDrawer.kind === 'service' && serviceTypeVersions.length" class="config-section">
+              <div class="config-section-title">
+                <span>版本</span>
+              </div>
+              <div class="config-form-grid">
+                <label class="service-config-field">
+                  <span>{{ serviceStatusHasRuntime(drawerService) ? '当前版本' : '选择版本' }}</span>
+                  <select v-if="!serviceStatusHasRuntime(drawerService)" v-model="selectedAppVersion" class="bx--select-input">
+                    <option v-for="tv in serviceTypeVersions" :key="tv.appVersion" :value="tv.appVersion">
+                      v{{ (tv.appVersion || '').replace(/^v/, '') }}
+                    </option>
+                  </select>
+                  <strong v-else class="service-version-installed">v{{ (serviceAppVersion(drawerService) || '').replace(/^v/, '') }}</strong>
+                </label>
+              </div>
+            </section>
+
             <section v-if="configDrawerTab === 'deploy' && configDrawer.kind === 'service' && serviceDrawerProfile.showDeploymentConfig" class="config-section">
               <div class="config-section-title">
                 <span>部署参数可编辑</span>
@@ -2711,7 +2728,7 @@ const filteredTopologyNodes = computed(() => {
   })
 })
 const environmentTopologyNodeSubtitle = (node:any) => node?.topologyKind === 'service'
-  ? `${typeLabel(node.type || node.serviceType || '')} · ${serviceCategory(node) === 'infra' ? '中间件/数据库' : '平台工具'}`
+  ? `${typeLabel(node.type || node.serviceType || '')}`
   : `${compTypeText(node.type)} · 应用组件`
 const componentCanvasMetrics = {
   colWidth: 260,
@@ -3039,7 +3056,7 @@ const componentNodeActive = (node:any) => {
   return node?.topologyKind !== 'service' && selectedComponent.value?.id === node?.id
 }
 const topologyNodeSubtitle = (node:any) => node?.topologyKind === 'service'
-  ? `${typeLabel(node.type || 'infra')} · 已安装服务`
+  ? `${typeLabel(node.type || 'infra')}`
   : `${compTypeText(node.type)} · ${componentDeliveryModeLabel(node)}`
 const selectTopologyNode = (node:any) => {
   if (!node) return
@@ -3543,6 +3560,18 @@ const serviceTemplateForInstallation = (svc:any) => {
   }
   return templateFor(String(svc?.serviceType || svc?.type || '')) || svc?.template || null
 }
+const serviceAppVersion = (svc:any) => {
+  const tmpl = serviceTemplateForInstallation(svc)
+  const ver = tmpl?.appVersion || ''
+  return ver.startsWith('v') ? ver.slice(1) : ver
+}
+const serviceTypeVersions = computed(() => {
+  const svc = drawerService.value
+  if (!svc) return []
+  const type = svc.serviceType || svc.type || ''
+  return templates.value.filter((t:any) => t.type === type && t.appVersion)
+})
+const selectedAppVersion = ref('')
 const normalizeServiceProductKey = (value:any) => {
   const text = String(value || '').toLowerCase()
   if (!text) return ''
@@ -4578,7 +4607,9 @@ const setServiceVolumeSize = (volume: ServiceVolumeField, size: string) => {
 }
 const configDrawerTitle = computed(() => configDrawer.value.component?.name || configDrawer.value.service?.serviceName || configDrawer.value.service?.name || configDrawer.value.service?.serviceType || '-')
 const configDrawerSubtitle = computed(() => {
-  if (configDrawer.value.kind === 'service') return `${serviceProductLabel(configDrawer.value.service)} · ${serviceStatusText(configDrawer.value.service?.status)}`
+  if (configDrawer.value.kind === 'service') {
+    return `${serviceProductLabel(configDrawer.value.service)} · ${serviceStatusText(configDrawer.value.service?.status)}`
+  }
   return `${compTypeText(configDrawer.value.component?.type)} · ${componentDeliveryModeLabel(configDrawer.value.component)}`
 })
 const configDrawerExternalUrl = computed(() => configDrawer.value.component?.externalUrl || configDrawer.value.service?.externalUrl || '')
@@ -5095,6 +5126,10 @@ const openServiceConfigDrawer = (svc:any) => {
   serviceConfigForm.value = serviceConfigFormFromInstallation(actual)
   selectedComponentConfigTemplateId.value = ''
   componentTemplateFieldValues.value = {}
+  // Pre-select current version if installed, else pick first available
+  const curVer = serviceAppVersion(actual)
+  const versions = templates.value.filter((t:any) => t.type === (actual.serviceType || actual.type || '') && t.appVersion)
+  selectedAppVersion.value = curVer || versions[0]?.appVersion || ''
   void loadServiceDrawerWorkspace(actual)
 }
 const closeConfigDrawer = () => {
@@ -6425,7 +6460,7 @@ const deployServiceFromDrawer = async () => {
     const values = serviceDrawerProfile.value.showDeploymentConfig
       ? serviceConfigValuesFromForm(serviceDrawerConfigType.value, serviceConfigForm.value)
       : {}
-    const res = await api.installService(envId.value, { serviceType: svc.serviceType, values })
+    const res = await api.installService(envId.value, { serviceType: svc.serviceType, values, appVersion: selectedAppVersion.value || undefined })
     const updated = res.data
     if (updated?.id) {
       services.value = services.value.map((item:any) => Number(item.id) === Number(updated.id) ? { ...item, ...updated } : item)
