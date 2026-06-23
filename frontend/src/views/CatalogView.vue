@@ -10,6 +10,22 @@
     <div v-if="pageError" class="page-error" role="alert">{{ pageError }}</div>
     <div v-if="loading" class="loading-text">加载中...</div>
 
+    <!-- Search bar -->
+    <div v-if="availableTabs.length" class="catalog-search">
+      <div class="catalog-search-icon">
+        <svg width="14" height="14" viewBox="0 0 32 32" fill="currentColor"><path d="M30 28.6L22.4 21c1.2-1.5 1.9-3.4 1.9-5.4 0-4.8-3.9-8.7-8.7-8.7S6.9 10.9 6.9 15.7s3.9 8.7 8.7 8.7c2 0 3.9-.7 5.4-1.9l7.6 7.6 1.4-1.5zM9 15.7c0-3.7 3-6.7 6.7-6.7s6.7 3 6.7 6.7-3 6.7-6.7 6.7S9 19.4 9 15.7z"/></svg>
+      </div>
+      <input
+        v-model="filterQuery"
+        class="catalog-search-input"
+        type="text"
+        placeholder="搜索中间件或工具名称..."
+      />
+      <button v-if="filterQuery" class="catalog-search-clear" @click="filterQuery = ''" title="清除搜索">
+        <svg width="12" height="12" viewBox="0 0 32 32" fill="currentColor"><path d="M24 9.4L22.6 8 16 14.6 9.4 8 8 9.4l6.6 6.6L8 22.6 9.4 24l6.6-6.6 6.6 6.6 1.4-1.4-6.6-6.6L24 9.4z"/></svg>
+      </button>
+    </div>
+
     <!-- Tab bar -->
     <div v-if="availableTabs.length" class="catalog-tabs">
       <button
@@ -75,6 +91,7 @@ const loading = ref(false)
 const pageError = ref('')
 const templates = ref<any[]>([])
 const activeTab = ref('')
+const filterQuery = ref('')
 
 const stripV = (v: string) => v.replace(/^v/i, '')
 
@@ -87,11 +104,22 @@ const availableTabs = computed(() =>
   }))
 )
 
+const filteredTemplates = computed(() => {
+  const q = filterQuery.value.trim().toLowerCase()
+  if (!q) return templates.value
+  return templates.value.filter((t: any) =>
+    String(t.name || '').toLowerCase().includes(q) ||
+    String(t.type || '').toLowerCase().includes(q) ||
+    String(t.description || '').toLowerCase().includes(q)
+  )
+})
+
 const catalogGroups = computed<CatalogGroup[]>(() => {
   const groups = new Map<string, CatalogGroup>()
   const items = new Map<string, CatalogItem>()
+  const source = filteredTemplates.value
 
-  for (const t of templates.value) {
+  for (const t of source) {
     if (!t.type) continue
     const key = String(t.type)
 
@@ -112,7 +140,7 @@ const catalogGroups = computed<CatalogGroup[]>(() => {
 
   for (const item of items.values()) {
     item.versions.sort()
-    const t = templates.value.find((x: any) => x.type === item.type)
+    const t = source.find((x: any) => x.type === item.type)
     const cat = String(t?.category || 'other')
 
     if (!groups.has(cat)) {
@@ -200,6 +228,57 @@ onMounted(async () => {
   padding: 2rem 0;
   color: #6f6f6f;
   font-size: 0.875rem;
+}
+
+/* ===== Search bar ===== */
+.catalog-search {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  border: 1px solid #c6c6c6;
+  border-radius: 0;
+  padding: 0 0.75rem;
+  margin-bottom: 0.75rem;
+  background: #fff;
+  transition: border-color 0.15s;
+}
+.catalog-search:focus-within {
+  border-color: #0f62fe;
+  outline: 1px solid #0f62fe;
+}
+.catalog-search-icon {
+  display: flex;
+  align-items: center;
+  color: #6f6f6f;
+  flex-shrink: 0;
+}
+.catalog-search-input {
+  flex: 1;
+  border: none;
+  outline: none;
+  background: none;
+  font-size: 0.875rem;
+  padding: 0.5rem 0.5rem;
+  color: #161616;
+  min-width: 0;
+}
+.catalog-search-input::placeholder {
+  color: #a8a8a8;
+}
+.catalog-search-clear {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #6f6f6f;
+  padding: 0.25rem;
+  border-radius: 0;
+  flex-shrink: 0;
+}
+.catalog-search-clear:hover {
+  color: #161616;
 }
 
 /* ===== Tab bar ===== */

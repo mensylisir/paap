@@ -490,6 +490,16 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 - [x] 对应文件：`frontend/src/views/componentTopology.ts`、`frontend/src/views/EnvDetailView.vue`
 - [x] 工作量：S（半天）
 
+### Task 7.23: 中间件目录搜索/过滤
+> 目录页面增加搜索输入框，按名称/类型/描述实时过滤中间件卡片
+
+- [x] 添加搜索输入框（Carbon 风格，带搜索图标和清除按钮）
+- [x] 输入时实时过滤卡片（按 name/type/description 模糊匹配）
+- [x] 清除搜索恢复全部显示
+- [x] CDP 验证通过：搜索 "postgres" 仅显示 PostgreSQL 卡片，清除后恢复 14 张
+- [x] 对应文件：`frontend/src/views/CatalogView.vue`
+- [x] 工作量：S（半天）
+
 ### Task 7.21: `docs/配置示例.md` → 内置配置模板
 > 将 20 个配置示例转为 PAAP 内置配置模板（Go template），供组件配置 Tab 使用
 
