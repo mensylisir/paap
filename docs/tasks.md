@@ -306,12 +306,16 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 
 ## 阶段七：领导需求与产品化补齐（2026-06-23 扫描）
 
-### Task 7.1: 中间件版本号选择器
-- [ ] 前端安装/编辑中间件时增加版本下拉菜单
-- [ ] 数据源为该 `ServiceType` 下所有 `ServiceTemplate` 的 `ChartVersion` 去重排序
-- [ ] 选定后把 `chartVersion` 写进安装 payload
-- [ ] 工作量：0.5-1 天（纯前端 + 少量 API）
-- [ ] 对应文件：前端安装表单组件
+### Task 7.1: 中间件版本号选择器 ✅ 已完成
+- [x] 后端 `ServiceTemplate` 增加 `AppVersion` 字段，`Type` 改为普通 index（允许多版本）
+- [x] 新增 `extractChartYamlMeta()` 从 tarball `chart/Chart.yaml` 自动解析 `version` 和 `appVersion`
+- [x] 重写 `SeedServiceTemplates()` 遍历 `data/charts/*.tar.gz` 自动解析版本，取代硬编码
+- [x] `InstallServiceRequest` 增加 `AppVersion`，安装时按 type + appVersion 查模板
+- [x] 前端 deploy tab 增加版本下拉框（未部署时可选版本，已部署后只读显示当前版本）
+- [x] 画布卡片和 drawer 头部不再显示版本号
+- [x] 提交：`9946b64` / `b9be953` / `aff00ec`（3 个 commit）
+- [x] 工作量：约 2 天（含反复修改 + 部署验证）
+- [x] 对应文件：`internal/model/service_catalog.go`、`internal/handler/template.go`、`internal/handler/environment.go`、`frontend/src/views/EnvDetailView.vue`
 
 ### Task 7.2: 中间件目录浏览页
 - [ ] 新增只读中间件目录页，按 `Category`（tool/infra）分组
@@ -459,7 +463,7 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 ## 执行顺序
 
 ```
-Week 0  : Task 7.1(版本号) → Task 7.2(目录页)
+Week 0  : ~~Task 7.1(版本号)~~ ✅ → Task 7.2(目录页)
 Week 1-2: Task 7.3+7.4(平台管理+角色) → Task 7.8(认证鉴权)
 Week 3-4: Task 7.5a~7.5c(Capability 模型地基)
 Week 5-7: Task 7.5d~7.5g(画布分区+外部接入) → Task 7.6+7.7(Ingress+ServiceIP)
