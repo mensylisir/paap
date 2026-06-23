@@ -15,9 +15,9 @@ type ServiceTemplate struct {
 	UpdatedAt time.Time      `json:"updatedAt"`
 	DeletedAt gorm.DeletedAt `gorm:"index" json:"deletedAt"`
 
-	Type        string `gorm:"uniqueIndex;size:30;not null" json:"type"` // e.g. "postgresql", "deploy", "ci"
-	Name        string `gorm:"size:50;not null" json:"name"`             // e.g. "PostgreSQL", "部署服务"
-	Category    string `gorm:"size:20;not null" json:"category"`         // "tool" | "infra" | "middleware"
+	Type        string `gorm:"index;size:30;not null" json:"type"` // e.g. "postgresql", "deploy", "ci" (not unique — multiple versions per type)
+	Name        string `gorm:"size:50;not null" json:"name"`       // e.g. "PostgreSQL", "部署服务"
+	Category    string `gorm:"size:20;not null" json:"category"`   // "tool" | "infra" | "middleware"
 	Description string `gorm:"size:500" json:"description"`
 	Icon        string `gorm:"size:50" json:"icon"`
 
@@ -25,7 +25,8 @@ type ServiceTemplate struct {
 	Installer    string `gorm:"size:20;not null" json:"installer"` // "helm" | "kubectl" | "raw-yaml"
 	ChartRepo    string `gorm:"size:200" json:"chartRepo"`         // "https://charts.bitnami.com/bitnami"
 	ChartName    string `gorm:"size:100" json:"chartName"`         // "bitnami/postgresql"
-	ChartVersion string `gorm:"size:30" json:"chartVersion"`       // "12.12.10"
+	ChartVersion string `gorm:"size:30" json:"chartVersion"`       // Helm chart version e.g. "12.12.10"
+	AppVersion   string `gorm:"size:30" json:"appVersion"`         // Application version e.g. "15.4.0"
 
 	// Default values (JSON)
 	DefaultValues string `gorm:"type:text" json:"defaultValues"`

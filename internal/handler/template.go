@@ -348,265 +348,56 @@ func SeedServiceCatalog() {
 	SeedServiceTemplates()
 }
 
-// SeedServiceTemplates creates ServiceTemplate entries for built-in tools
-// Stores chart archives in S3 (MinIO)
 func SeedServiceTemplates() {
-	templates := []model.ServiceTemplate{
-		// ArgoCD (deploy)
-		{
-			Type:                  "deploy",
-			Name:                  "ArgoCD (官方)",
-			Category:              "tool",
-			Description:           "ArgoCD - GitOps 持续部署工具",
-			Icon:                  "rocket",
-			Installer:             "helm",
-			S3Bucket:              "paap-charts",
-			S3Key:                 "charts/argocd.tar.gz",
-			IsCustom:              false,
-			PlatformManifestJSON:  builtInManifestJSON("argocd"),
-			WorkloadRolePolicy:    builtInWorkloadRolePolicy("argocd"),
-			EnvironmentRolePolicy: builtInEnvironmentRolePolicy("argocd"),
-			InstallOrder:          10,
-			Enabled:               true,
-		},
-		// Jenkins (ci)
-		{
-			Type:                  "ci",
-			Name:                  "Jenkins (官方)",
-			Category:              "tool",
-			Description:           "Jenkins - CI/CD 服务器",
-			Icon:                  "flow",
-			Installer:             "helm",
-			S3Bucket:              "paap-charts",
-			S3Key:                 "charts/jenkins.tar.gz",
-			IsCustom:              false,
-			PlatformManifestJSON:  builtInManifestJSON("jenkins"),
-			WorkloadRolePolicy:    builtInWorkloadRolePolicy("jenkins"),
-			EnvironmentRolePolicy: builtInEnvironmentRolePolicy("jenkins"),
-			InstallOrder:          40,
-			Enabled:               true,
-		},
-		// Prometheus+Grafana (monitor)
-		{
-			Type:                  "monitor",
-			Name:                  "Prometheus+Grafana (官方)",
-			Category:              "tool",
-			Description:           "Prometheus + Grafana - 全栈监控",
-			Icon:                  "chart-line",
-			Installer:             "helm",
-			S3Bucket:              "paap-charts",
-			S3Key:                 "charts/monitor.tar.gz",
-			IsCustom:              false,
-			PlatformManifestJSON:  builtInManifestJSON("monitor"),
-			WorkloadRolePolicy:    builtInWorkloadRolePolicy("monitor"),
-			EnvironmentRolePolicy: builtInEnvironmentRolePolicy("monitor"),
-			InstallOrder:          50,
-			Enabled:               true,
-		},
-		// Loki (log)
-		{
-			Type:                  "log",
-			Name:                  "Loki+Promtail (官方)",
-			Category:              "tool",
-			Description:           "Loki + Promtail - 日志收集与查询",
-			Icon:                  "document",
-			Installer:             "helm",
-			S3Bucket:              "paap-charts",
-			S3Key:                 "charts/loki.tar.gz",
-			IsCustom:              false,
-			PlatformManifestJSON:  builtInManifestJSON("loki"),
-			WorkloadRolePolicy:    builtInWorkloadRolePolicy("loki"),
-			EnvironmentRolePolicy: builtInEnvironmentRolePolicy("loki"),
-			InstallOrder:          60,
-			Enabled:               true,
-		},
-		// Docker Registry v2 (lightweight registry)
-		{
-			Type:                  "registry",
-			Name:                  "Docker Registry v2",
-			Category:              "tool",
-			Description:           "Docker Registry v2 - 轻量 OCI 镜像仓库，适合开发测试环境",
-			Icon:                  "cube",
-			Installer:             "helm",
-			S3Bucket:              "paap-charts",
-			S3Key:                 "charts/registry.tar.gz",
-			IsCustom:              false,
-			PlatformManifestJSON:  builtInManifestJSON("registry"),
-			WorkloadRolePolicy:    builtInWorkloadRolePolicy("registry"),
-			EnvironmentRolePolicy: builtInEnvironmentRolePolicy("registry"),
-			InstallOrder:          20,
-			Enabled:               true,
-		},
-		// Harbor (advanced/heavy option)
-		{
-			Type:                  "harbor",
-			Name:                  "Harbor (官方)",
-			Category:              "tool",
-			Description:           "Harbor - 企业级镜像仓库，组件多、镜像大，建议生产或资源充足环境使用",
-			Icon:                  "cube",
-			Installer:             "helm",
-			S3Bucket:              "paap-charts",
-			S3Key:                 "charts/harbor.tar.gz",
-			IsCustom:              false,
-			PlatformManifestJSON:  builtInManifestJSON("harbor"),
-			WorkloadRolePolicy:    builtInWorkloadRolePolicy("harbor"),
-			EnvironmentRolePolicy: builtInEnvironmentRolePolicy("harbor"),
-			InstallOrder:          900,
-			Enabled:               true,
-		},
-		// Gitea (git)
-		{
-			Type:                  "git",
-			Name:                  "Gitea",
-			Category:              "tool",
-			Description:           "Gitea - 轻量 Git 代码仓库",
-			Icon:                  "document",
-			Installer:             "helm",
-			S3Bucket:              "paap-charts",
-			S3Key:                 "charts/gitea.tar.gz",
-			IsCustom:              false,
-			PlatformManifestJSON:  builtInManifestJSON("gitea"),
-			WorkloadRolePolicy:    builtInWorkloadRolePolicy("gitea"),
-			EnvironmentRolePolicy: builtInEnvironmentRolePolicy("gitea"),
-			InstallOrder:          30,
-			Enabled:               true,
-		},
-		// PostgreSQL
-		{
-			Type:                  "postgresql",
-			Name:                  "PostgreSQL (Bitnami)",
-			Category:              "infra",
-			Description:           "PostgreSQL - 关系型数据库",
-			Icon:                  "database",
-			Installer:             "helm",
-			S3Bucket:              "paap-charts",
-			S3Key:                 "charts/postgresql.tar.gz",
-			IsCustom:              false,
-			PlatformManifestJSON:  builtInManifestJSON("postgresql"),
-			WorkloadRolePolicy:    builtInWorkloadRolePolicy("postgresql"),
-			EnvironmentRolePolicy: builtInEnvironmentRolePolicy("postgresql"),
-			InstallOrder:          100,
-			Enabled:               true,
-		},
-		// MySQL
-		{
-			Type:                  "mysql",
-			Name:                  "MySQL (Bitnami)",
-			Category:              "infra",
-			Description:           "MySQL - 关系型数据库",
-			Icon:                  "database",
-			Installer:             "helm",
-			S3Bucket:              "paap-charts",
-			S3Key:                 "charts/mysql.tar.gz",
-			IsCustom:              false,
-			PlatformManifestJSON:  builtInManifestJSON("mysql"),
-			WorkloadRolePolicy:    builtInWorkloadRolePolicy("mysql"),
-			EnvironmentRolePolicy: builtInEnvironmentRolePolicy("mysql"),
-			InstallOrder:          110,
-			Enabled:               true,
-		},
-		// MongoDB
-		{
-			Type:                  "mongodb",
-			Name:                  "MongoDB (Bitnami)",
-			Category:              "infra",
-			Description:           "MongoDB - 文档型数据库",
-			Icon:                  "database",
-			Installer:             "helm",
-			S3Bucket:              "paap-charts",
-			S3Key:                 "charts/mongodb.tar.gz",
-			IsCustom:              false,
-			PlatformManifestJSON:  builtInManifestJSON("mongodb"),
-			WorkloadRolePolicy:    builtInWorkloadRolePolicy("mongodb"),
-			EnvironmentRolePolicy: builtInEnvironmentRolePolicy("mongodb"),
-			InstallOrder:          120,
-			Enabled:               true,
-		},
-		// Redis
-		{
-			Type:                  "redis",
-			Name:                  "Redis (Bitnami)",
-			Category:              "infra",
-			Description:           "Redis - 缓存服务",
-			Icon:                  "cloud",
-			Installer:             "helm",
-			S3Bucket:              "paap-charts",
-			S3Key:                 "charts/redis.tar.gz",
-			IsCustom:              false,
-			PlatformManifestJSON:  builtInManifestJSON("redis"),
-			WorkloadRolePolicy:    builtInWorkloadRolePolicy("redis"),
-			EnvironmentRolePolicy: builtInEnvironmentRolePolicy("redis"),
-			InstallOrder:          130,
-			Enabled:               true,
-		},
-		// RabbitMQ
-		{
-			Type:                  "rabbitmq",
-			Name:                  "RabbitMQ (Bitnami)",
-			Category:              "infra",
-			Description:           "RabbitMQ - 消息队列",
-			Icon:                  "network",
-			Installer:             "helm",
-			S3Bucket:              "paap-charts",
-			S3Key:                 "charts/rabbitmq.tar.gz",
-			IsCustom:              false,
-			PlatformManifestJSON:  builtInManifestJSON("rabbitmq"),
-			WorkloadRolePolicy:    builtInWorkloadRolePolicy("rabbitmq"),
-			EnvironmentRolePolicy: builtInEnvironmentRolePolicy("rabbitmq"),
-			InstallOrder:          140,
-			Enabled:               true,
-		},
-		// Kafka
-		{
-			Type:                  "kafka",
-			Name:                  "Kafka (Bitnami)",
-			Category:              "infra",
-			Description:           "Apache Kafka - 流处理平台",
-			Icon:                  "network",
-			Installer:             "helm",
-			S3Bucket:              "paap-charts",
-			S3Key:                 "charts/kafka.tar.gz",
-			IsCustom:              false,
-			PlatformManifestJSON:  builtInManifestJSON("kafka"),
-			WorkloadRolePolicy:    builtInWorkloadRolePolicy("kafka"),
-			EnvironmentRolePolicy: builtInEnvironmentRolePolicy("kafka"),
-			InstallOrder:          150,
-			Enabled:               true,
-		},
-		// MinIO
-		{
-			Type:                  "minio",
-			Name:                  "MinIO (Bitnami)",
-			Category:              "infra",
-			Description:           "MinIO - 对象存储",
-			Icon:                  "data-base",
-			Installer:             "helm",
-			S3Bucket:              "paap-charts",
-			S3Key:                 "charts/minio.tar.gz",
-			IsCustom:              false,
-			PlatformManifestJSON:  builtInManifestJSON("minio"),
-			WorkloadRolePolicy:    builtInWorkloadRolePolicy("minio"),
-			EnvironmentRolePolicy: builtInEnvironmentRolePolicy("minio"),
-			InstallOrder:          160,
-			Enabled:               true,
-		},
-	}
+	migrateServiceTemplateUniqueIndex()
+	chartsDir := "data/charts"
 
-	for _, t := range templates {
-		var existing model.ServiceTemplate
-		if err := database.DB.Where("type = ?", t.Type).Assign(t).FirstOrCreate(&existing).Error; err != nil {
-			log.Printf("[SeedServiceTemplates] failed to seed %s: %v", t.Type, err)
+	for _, archive := range builtInTemplateArchives() {
+		tmplBase, ok := builtInServiceTemplateByType(archive.ServiceType)
+		if !ok {
 			continue
 		}
-		if existing.ID != 0 {
-			t.ID = existing.ID
-			if err := database.DB.Model(&existing).Updates(t).Error; err != nil {
-				log.Printf("[SeedServiceTemplates] failed to update %s: %v", t.Type, err)
+		tmpl := tmplBase
+
+		// Parse version info from chart/Chart.yaml
+		localPath := filepath.Join(chartsDir, archive.ChartName+".tar.gz")
+		if chartVersion, appVersion, err := extractChartYamlMeta(localPath); err == nil {
+			tmpl.ChartVersion = chartVersion
+			tmpl.AppVersion = appVersion
+		} else {
+			log.Printf("[SeedServiceTemplates] could not read version from %s: %v", localPath, err)
+		}
+
+		// Parse manifest from platform-manifest.yaml
+		tmpl.PlatformManifestJSON = builtInManifestJSON(archive.ServiceType)
+		tmpl.WorkloadRolePolicy = builtInWorkloadRolePolicy(archive.ServiceType)
+		tmpl.EnvironmentRolePolicy = builtInEnvironmentRolePolicy(archive.ServiceType)
+
+		// Upsert by type + s3_key (safe even after removing unique index)
+		var existing model.ServiceTemplate
+		if err := database.DB.Where("type = ? AND s3_key = ?", tmpl.Type, tmpl.S3Key).First(&existing).Error; err != nil {
+			if err := database.DB.Create(&tmpl).Error; err != nil {
+				log.Printf("[SeedServiceTemplates] failed to create %s: %v", tmpl.Type, err)
+			}
+		} else {
+			tmpl.ID = existing.ID
+			if err := database.DB.Model(&existing).Updates(tmpl).Error; err != nil {
+				log.Printf("[SeedServiceTemplates] failed to update %s: %v", tmpl.Type, err)
 			}
 		}
 	}
 	removeObsoleteDockerRegistryTemplate()
+}
 
+func migrateServiceTemplateUniqueIndex() {
+	oldIndexName := "idx_service_templates_type"
+	if database.DB.Migrator().HasIndex(&model.ServiceTemplate{}, oldIndexName) {
+		if err := database.DB.Migrator().DropIndex(&model.ServiceTemplate{}, oldIndexName); err != nil {
+			log.Printf("[migrateServiceTemplateUniqueIndex] drop %s: %v", oldIndexName, err)
+		} else {
+			log.Printf("[migrateServiceTemplateUniqueIndex] dropped %s", oldIndexName)
+		}
+	}
 }
 
 func builtInManifestJSON(templateType string) string {
@@ -948,14 +739,20 @@ func SyncBuiltinTemplatesNow(ctx context.Context, forceUpload bool) (BuiltInTemp
 			continue
 		}
 
+		chartVersion, appVersion, _ := extractChartYamlMeta(localPath)
+
 		manifestJSON, _ := json.Marshal(manifest)
 		workloadRoleJSON := manifest.ToWorkloadRoleJSON()
 		environmentRoleJSON := manifest.ToEnvironmentRoleJSON()
+
+		builtinS3Key := fmt.Sprintf("charts/%s.tar.gz", archive.ChartName)
 		updates := map[string]interface{}{
 			"platform_manifest_json":  string(manifestJSON),
 			"workload_role_policy":    workloadRoleJSON,
 			"environment_role_policy": environmentRoleJSON,
 			"install_order":           builtInInstallOrder(archive.ServiceType),
+			"chart_version":           chartVersion,
+			"app_version":             appVersion,
 		}
 		if tmpl, ok := builtInServiceTemplateByType(archive.ServiceType); ok {
 			updates["name"] = tmpl.Name
@@ -965,21 +762,20 @@ func SyncBuiltinTemplatesNow(ctx context.Context, forceUpload bool) (BuiltInTemp
 			updates["installer"] = tmpl.Installer
 			updates["chart_repo"] = tmpl.ChartRepo
 			updates["chart_name"] = tmpl.ChartName
-			updates["chart_version"] = tmpl.ChartVersion
 			updates["default_values"] = tmpl.DefaultValues
 			updates["configurable_params"] = tmpl.ConfigurableParams
 			updates["raw_yaml_template"] = tmpl.RawYamlTemplate
 			updates["is_custom"] = tmpl.IsCustom
 			updates["chart_archive_path"] = tmpl.ChartArchivePath
 			updates["s3_bucket"] = tmpl.S3Bucket
-			updates["s3_key"] = tmpl.S3Key
+			updates["s3_key"] = builtinS3Key
 			updates["preset_values"] = tmpl.PresetValues
 			updates["enabled"] = tmpl.Enabled
 		} else if description := builtInDescriptionOverride(archive.ServiceType); description != "" {
 			updates["description"] = description
 		}
 
-		result := database.DB.Model(&model.ServiceTemplate{}).Where("type = ?", archive.ServiceType).Updates(updates)
+		result := database.DB.Model(&model.ServiceTemplate{}).Where("type = ? AND s3_key = ?", archive.ServiceType, builtinS3Key).Updates(updates)
 		if result.Error != nil {
 			return BuiltInTemplateSyncResult{Updated: updated}, result.Error
 		}
@@ -987,6 +783,8 @@ func SyncBuiltinTemplatesNow(ctx context.Context, forceUpload bool) (BuiltInTemp
 			updated++
 			log.Printf("[SyncBuiltinTemplates] updated DB for %s", archive.ServiceType)
 		} else if tmpl, ok := builtInServiceTemplateByType(archive.ServiceType); ok {
+			tmpl.ChartVersion = chartVersion
+			tmpl.AppVersion = appVersion
 			tmpl.PlatformManifestJSON = string(manifestJSON)
 			tmpl.WorkloadRolePolicy = workloadRoleJSON
 			tmpl.EnvironmentRolePolicy = environmentRoleJSON
@@ -998,7 +796,7 @@ func SyncBuiltinTemplatesNow(ctx context.Context, forceUpload bool) (BuiltInTemp
 		}
 
 		var refreshedTemplate model.ServiceTemplate
-		if err := database.DB.Where("type = ?", archive.ServiceType).First(&refreshedTemplate).Error; err != nil {
+		if err := database.DB.Where("type = ? AND s3_key = ?", archive.ServiceType, builtinS3Key).First(&refreshedTemplate).Error; err != nil {
 			return BuiltInTemplateSyncResult{Updated: updated}, err
 		}
 		if k8s.GetClient() != nil {
@@ -1167,6 +965,49 @@ func extractManifestFromTar(tarPath string) (*model.PlatformManifest, error) {
 	}
 }
 
+type chartYamlMeta struct {
+	Version    string `yaml:"version"`
+	AppVersion string `yaml:"appVersion"`
+}
+
+func extractChartYamlMeta(tarPath string) (chartVersion, appVersion string, err error) {
+	f, err := os.Open(tarPath)
+	if err != nil {
+		return "", "", err
+	}
+	defer f.Close()
+
+	gz, err := gzip.NewReader(f)
+	if err != nil {
+		return "", "", fmt.Errorf("not a valid gzip: %w", err)
+	}
+	defer gz.Close()
+
+	tr := tar.NewReader(gz)
+	for {
+		header, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return "", "", err
+		}
+		name := strings.TrimPrefix(header.Name, "./")
+		if name == "chart/Chart.yaml" {
+			data, err := io.ReadAll(tr)
+			if err != nil {
+				return "", "", err
+			}
+			var meta chartYamlMeta
+			if err := yaml.Unmarshal(data, &meta); err != nil {
+				return "", "", fmt.Errorf("failed to parse chart/Chart.yaml: %w", err)
+			}
+			return meta.Version, meta.AppVersion, nil
+		}
+	}
+	return "", "", fmt.Errorf("chart/Chart.yaml not found in archive")
+}
+
 // --- BYO Custom Template Upload ---
 
 const chartStorageDir = "data/charts"
@@ -1190,13 +1031,6 @@ func UploadTemplate(c *gin.Context) {
 
 	if typ == "" || name == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "type and name are required"})
-		return
-	}
-
-	// Check if type already exists
-	var existing model.ServiceTemplate
-	if err := database.DB.Where("type = ?", typ).First(&existing).Error; err == nil {
-		c.JSON(http.StatusConflict, gin.H{"error": fmt.Sprintf("template type '%s' already exists", typ)})
 		return
 	}
 
@@ -1253,13 +1087,19 @@ func UploadTemplate(c *gin.Context) {
 		return
 	}
 
+	// Parse Chart.yaml for version info
+	chartVersion, appVersion, _ := extractChartYamlMeta(tmpFile.Name())
+
 	// Store chart in S3
 	s3, err := getOrCreateS3Client()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("S3 client error: %v", err)})
 		return
 	}
-	s3Key := fmt.Sprintf("charts/%s.tar.gz", typ)
+	s3Key := fmt.Sprintf("charts/%s-%s.tar.gz", typ, appVersion)
+	if appVersion == "" {
+		s3Key = fmt.Sprintf("charts/%s.tar.gz", typ)
+	}
 	if err := s3.UploadFile(context.Background(), s3Key, tmpFile.Name(), "application/gzip"); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("S3 upload error: %v", err)})
 		return
@@ -1277,6 +1117,8 @@ func UploadTemplate(c *gin.Context) {
 		Description:           description,
 		Icon:                  "puzzle",
 		Installer:             "helm",
+		ChartVersion:          chartVersion,
+		AppVersion:            appVersion,
 		WorkloadRolePolicy:    manifest.ToWorkloadRoleJSON(),
 		EnvironmentRolePolicy: manifest.ToEnvironmentRoleJSON(),
 		IsCustom:              true,
