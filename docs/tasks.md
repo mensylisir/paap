@@ -681,6 +681,20 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 - [x] 对应文件：`frontend/src/views/CatalogView.vue`、`frontend/src/views/viewMarkup.test.ts`
 - [x] 工作量：S（半天）
 
+### Task 7.30: 目录页版本号按语义版本倒序 ✅
+> 同一目录项存在多个版本时，按语义版本 newest-first 展示，避免 `v1.2.10` 排在 `v1.2.2` 后面。
+
+- [x] 新增 `semanticVersionParts` / `compareCatalogVersions`，先去掉 `v` 前缀，再按数字段比较
+- [x] 版本列表从默认字符串 `.sort()` 改为 `.sort(compareCatalogVersions)`
+- [x] 前端目标测试：`npm run test -- src/utils/catalogVersions.test.ts src/views/viewMarkup.test.ts`，2 files / 78 tests passed
+- [x] 前端全量测试：`npm run test`，25 files / 211 tests passed
+- [x] 前端构建：`npm run build` 通过
+- [x] Docker 镜像 `v0.1.452` 构建并部署到 kind 集群
+- [x] kind 验证：显式使用 `--context kind-rbac-governance-test` 检查 `paap-server:v0.1.452`，Deployment `1/1 ready`，Pod `paap-server-9f8b8cdb9-c4lsq` Running
+- [x] CDP/API 验证：`http://172.18.0.2:30091/catalog` 页面加载 14 个目录项和版本标签；`/api/v1/service-templates` 返回 14 条，当前内置数据没有同类型多版本，排序行为由回归测试覆盖
+- [x] 对应文件：`frontend/src/views/CatalogView.vue`、`frontend/src/views/viewMarkup.test.ts`、`frontend/src/utils/catalogVersions.ts`、`frontend/src/utils/catalogVersions.test.ts`
+- [x] 工作量：S（15 分钟）
+
 ### Task 7.21: `docs/配置示例.md` → 内置配置模板
 > 将 20 个配置示例转为 PAAP 内置配置模板（Go template），供组件配置 Tab 使用
 

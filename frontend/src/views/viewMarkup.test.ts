@@ -276,6 +276,14 @@ describe('Vue view markup', () => {
     expect(catalogView.default).not.toContain('v-if="availableTabs.length" class="catalog-search"')
   })
 
+  it('sorts catalog version tags with semantic newest-first ordering', async () => {
+    const catalogView = await import('./CatalogView.vue?raw')
+
+    expect(catalogView.default).toContain('compareCatalogVersions')
+    expect(catalogView.default).toContain('item.versions.sort(compareCatalogVersions)')
+    expect(catalogView.default).not.toContain('item.versions.sort()')
+  })
+
   it('uses a wide working canvas for dense operational pages', () => {
     const globalStyles = readFileSync(new URL('../style.scss', import.meta.url), 'utf8')
     const mainEntry = readFileSync(new URL('../main.ts', import.meta.url), 'utf8')

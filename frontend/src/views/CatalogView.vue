@@ -103,6 +103,7 @@
 <script setup lang="ts">
 import { ref, computed, watchEffect, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { api } from '../api/client'
+import { compareCatalogVersions, stripCatalogVersionPrefix } from '../utils/catalogVersions'
 
 interface CatalogItem {
   type: string
@@ -124,7 +125,7 @@ const activeTab = ref('')
 const filterQuery = ref('')
 const searchInputRef = ref<HTMLInputElement | null>(null)
 
-const stripV = (v: string) => v.replace(/^v/i, '')
+const stripV = stripCatalogVersionPrefix
 
 const availableTabs = computed(() =>
   catalogGroups.value.map(g => ({
@@ -172,7 +173,7 @@ const catalogGroups = computed<CatalogGroup[]>(() => {
   }
 
   for (const item of items.values()) {
-    item.versions.sort()
+    item.versions.sort(compareCatalogVersions)
     const t = source.find((x: any) => x.type === item.type)
     const cat = String(t?.category || 'other')
 
