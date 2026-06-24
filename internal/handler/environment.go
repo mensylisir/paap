@@ -1278,6 +1278,9 @@ func GetEnvironment(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	if !requireApplicationAccess(c, env.ApplicationID) {
+		return
+	}
 
 	var components []model.Component
 	database.DB.Where("environment_id = ?", env.ID).Find(&components)

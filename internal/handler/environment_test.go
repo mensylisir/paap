@@ -1372,7 +1372,7 @@ func TestGetEnvironmentReturnsApplicationAndServiceExternalAccess(t *testing.T) 
 
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	router.GET("/api/v1/environments/:id", GetEnvironment)
+	router.GET("/api/v1/environments/:id", withTestAuthUserRole(1, "admin", GetEnvironment))
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/environments/1", nil)
 	router.ServeHTTP(rec, req)
@@ -1437,6 +1437,46 @@ func TestGetEnvironmentReturnsApplicationAndServiceExternalAccess(t *testing.T) 
 	}
 	if !foundServiceEndpoint {
 		t.Fatalf("service endpoint not returned: %#v", body.Data.ExternalAccess)
+	}
+}
+
+func TestGetEnvironmentRejectsNonMembers(t *testing.T) {
+	previousDB := database.DB
+	previousSync := syncClusterState
+	t.Cleanup(func() {
+		database.DB = previousDB
+		syncClusterState = previousSync
+	})
+	syncClusterState = func(context.Context, *gorm.DB, ctrlclient.Client) error { return nil }
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.Component{}, &model.ServiceInstallation{}, &model.InfraInstallation{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	database.DB = db
+
+	app := model.Application{Name: "隐藏应用", Identifier: "hidden", OwnerID: 1}
+	if err := db.Create(&app).Error; err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	env := model.Environment{ApplicationID: app.ID, Name: "生产", Identifier: "prod", Namespace: "hidden-prod"}
+	if err := db.Create(&env).Error; err != nil {
+		t.Fatalf("create env: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/environments/1", nil)
+	rec := httptest.NewRecorder()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.GET("/api/v1/environments/:id", withTestAuthUser(2, GetEnvironment))
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusForbidden, rec.Body.String())
 	}
 }
 
