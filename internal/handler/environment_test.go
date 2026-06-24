@@ -5705,6 +5705,136 @@ func TestPlanComponentDeliveryKeepsImageFlow(t *testing.T) {
 	}
 }
 
+func TestDeployComponentRejectsNonMembers(t *testing.T) {
+	previousDB := database.DB
+	t.Cleanup(func() { database.DB = previousDB })
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.Component{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	database.DB = db
+
+	app := model.Application{Name: "隐藏应用", Identifier: "hidden", OwnerID: 1}
+	if err := db.Create(&app).Error; err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	env := model.Environment{ApplicationID: app.ID, Name: "生产", Identifier: "prod", Status: "running", Namespace: "hidden-prod"}
+	if err := db.Create(&env).Error; err != nil {
+		t.Fatalf("create env: %v", err)
+	}
+	comp := model.Component{EnvironmentID: env.ID, Name: "orders", Type: "backend", Image: "registry.local/orders:v1", Version: "v1", Replicas: 1, Status: "draft"}
+	if err := db.Create(&comp).Error; err != nil {
+		t.Fatalf("create component: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/components/%d/deploy", comp.ID), strings.NewReader(`{"version":"v2"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.POST("/api/v1/components/:id/deploy", withTestAuthUser(2, DeployComponent))
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusForbidden, rec.Body.String())
+	}
+	var saved model.Component
+	if err := db.First(&saved, comp.ID).Error; err != nil {
+		t.Fatalf("load component: %v", err)
+	}
+	if saved.Version != "v1" || saved.Status != "draft" {
+		t.Fatalf("component changed for non-member: version=%q status=%q", saved.Version, saved.Status)
+	}
+}
+
+func TestDeployComponentRejectsNonMembersBeforeVersionValidation(t *testing.T) {
+	previousDB := database.DB
+	t.Cleanup(func() { database.DB = previousDB })
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.Component{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	database.DB = db
+
+	app := model.Application{Name: "隐藏应用", Identifier: "hidden", OwnerID: 1}
+	if err := db.Create(&app).Error; err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	env := model.Environment{ApplicationID: app.ID, Name: "生产", Identifier: "prod", Status: "running", Namespace: "hidden-prod"}
+	if err := db.Create(&env).Error; err != nil {
+		t.Fatalf("create env: %v", err)
+	}
+	comp := model.Component{EnvironmentID: env.ID, Name: "orders", Type: "backend", Image: "registry.local/orders:v1", Version: "v1", Replicas: 1, Status: "draft"}
+	if err := db.Create(&comp).Error; err != nil {
+		t.Fatalf("create component: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/components/%d/deploy", comp.ID), strings.NewReader(`{"version":""}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.POST("/api/v1/components/:id/deploy", withTestAuthUser(2, DeployComponent))
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusForbidden, rec.Body.String())
+	}
+}
+
+func TestDeployComponentValidatesVersionAfterMemberAccess(t *testing.T) {
+	previousDB := database.DB
+	t.Cleanup(func() { database.DB = previousDB })
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.Component{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	database.DB = db
+
+	app := model.Application{Name: "测试应用", Identifier: "test", OwnerID: 1}
+	if err := db.Create(&app).Error; err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	env := model.Environment{ApplicationID: app.ID, Name: "测试环境", Identifier: "staging", Status: "running", Namespace: "test-staging"}
+	if err := db.Create(&env).Error; err != nil {
+		t.Fatalf("create env: %v", err)
+	}
+	if err := db.Create(&model.AppMember{ApplicationID: app.ID, UserID: 2, Role: "member"}).Error; err != nil {
+		t.Fatalf("create member: %v", err)
+	}
+	comp := model.Component{EnvironmentID: env.ID, Name: "orders", Type: "backend", Image: "registry.local/orders:v1", Version: "v1", Replicas: 1, Status: "draft"}
+	if err := db.Create(&comp).Error; err != nil {
+		t.Fatalf("create component: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/components/%d/deploy", comp.ID), strings.NewReader(`{"version":""}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.POST("/api/v1/components/:id/deploy", withTestAuthUser(2, DeployComponent))
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusBadRequest, rec.Body.String())
+	}
+}
+
 func TestApplyComponentDeployVersionReplacesExistingImageTag(t *testing.T) {
 	comp := model.Component{
 		Image:         "registry.shop-dev.corp.example.com:5443/shop-dev/orders-api:v1.2.3",

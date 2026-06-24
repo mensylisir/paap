@@ -2455,6 +2455,20 @@ func DeployComponent(c *gin.Context) {
 		return
 	}
 
+	var env model.Environment
+	if err := database.DB.First(&env, comp.EnvironmentID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "environment not found"})
+		return
+	}
+	if !requireApplicationAccess(c, env.ApplicationID) {
+		return
+	}
+	var app model.Application
+	if err := database.DB.First(&app, env.ApplicationID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "application not found"})
+		return
+	}
+
 	var req struct {
 		Version string `json:"version"`
 	}
@@ -2465,17 +2479,6 @@ func DeployComponent(c *gin.Context) {
 	req.Version = strings.TrimSpace(req.Version)
 	if req.Version == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "version is required"})
-		return
-	}
-
-	var env model.Environment
-	if err := database.DB.First(&env, comp.EnvironmentID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "environment not found"})
-		return
-	}
-	var app model.Application
-	if err := database.DB.First(&app, env.ApplicationID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "application not found"})
 		return
 	}
 
