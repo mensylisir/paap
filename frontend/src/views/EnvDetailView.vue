@@ -869,10 +869,10 @@
                   <code>{{ componentDrawerServiceEndpoint || '等待生成' }}</code>
                 </div>
                 <div class="service-access-row service-access-row--action">
-                  <span>外部访问</span>
-                  <code v-if="configDrawerExternalUrl">{{ configDrawerExternalUrl }}</code>
-                  <strong v-else>未开启</strong>
-                  <a v-if="configDrawerExternalUrl" :href="configDrawerExternalUrl" target="_blank" rel="noreferrer" class="text-btn">打开</a>
+                  <span>Ingress 入口</span>
+                  <code v-if="componentDrawerIngressUrl">{{ componentDrawerIngressUrl }}</code>
+                  <strong v-else>未启用</strong>
+                  <a v-if="componentDrawerIngressUrl" :href="componentDrawerIngressUrl" target="_blank" rel="noreferrer" class="text-btn">打开</a>
                   <button
                     v-if="componentDrawerExternalAccessToggleVisible"
                     type="button"
@@ -882,6 +882,12 @@
                   >
                     {{ componentDrawerExternalAccessLabel }}
                   </button>
+                </div>
+                <div class="service-access-row service-access-row--action">
+                  <span>NodePort 端口</span>
+                  <code v-if="componentDrawerNodePortUrl">{{ componentDrawerNodePortUrl }}</code>
+                  <strong v-else>未启用</strong>
+                  <a v-if="componentDrawerNodePortUrl" :href="componentDrawerNodePortUrl" target="_blank" rel="noreferrer" class="text-btn">打开</a>
                 </div>
               </div>
             </section>
@@ -4580,6 +4586,9 @@ const componentDrawerIngressUrl = computed(() => {
 const componentDrawerExternalAccessToggleVisible = computed(() => {
   const comp = configDrawer.value.component
   return configDrawer.value.kind === 'component' && comp?.runtimeConfig?.serviceName
+})
+const componentDrawerNodePortUrl = computed(() => {
+  return configDrawer.value.component?.nodePortUrl || ''
 })
 const componentDrawerExternalAccessEnabled = computed(() => Boolean(componentDrawerIngressUrl.value))
 const componentDrawerExternalAccessLabel = computed(() => {
@@ -8318,9 +8327,6 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   border-bottom: 1px solid var(--cds-border-subtle-01, #e0e0e0);
   border-radius: 0;
   background: var(--cds-layer-01, #ffffff);
-}
-.config-section:nth-child(even) {
-  background: var(--cds-gray-10, #f4f4f4);
 }
 .config-section + .config-section {
   padding-top: 20px;
