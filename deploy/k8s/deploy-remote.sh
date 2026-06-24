@@ -62,26 +62,31 @@ IMAGES=(
   "busybox:1.36"
   "minio/mc:RELEASE.2024-05-09T17-04-24Z"
   "quay.io/keycloak/keycloak:25.0.0"
-  "paap-server:v0.1.446"
+  "paap-server:v0.1.447"
   "paap-operator:v0.1.52"
 )
 echo "2. Exporting ${#IMAGES[@]} PAAP system images to oci-archive..."
 IMG_DIR="/tmp/paap-image-tars"
+MAPPING_FILE="/tmp/paap-image-mapping.sh"
 rm -rf "$IMG_DIR"
 mkdir -p "$IMG_DIR"
+rm -f "$MAPPING_FILE"
 
 for IMG in "${IMAGES[@]}"; do
   SAFE_NAME=$(echo "$IMG" | tr '/:.' '---')
   ARCHIVE="$IMG_DIR/${SAFE_NAME}.tar"
   echo "   -> $IMG"
   skopeo copy "docker-daemon:${IMG}" "oci-archive:${ARCHIVE}:latest" 2>&1 | tail -1
+  # Record mapping: safename -> original image reference
+  echo "${SAFE_NAME}.tar:${IMG}" >> "$MAPPING_FILE"
 done
 
-# Combine all image archives into one tar for SCP
+# Combine all images and the mapping into a single tar
 echo "   Creating combined archive..."
+cp "$MAPPING_FILE" "$IMG_DIR/mapping.txt"
 tar -cf "$IMAGES_TAR" -C "$IMG_DIR" .
 echo "   Saved to $IMAGES_TAR ($(du -h "$IMAGES_TAR" | cut -f1))"
-rm -rf "$IMG_DIR"
+rm -rf "$IMG_DIR" "$MAPPING_FILE"
 echo ""
 
 # ── Step 3: Distribute to all nodes ──
@@ -93,7 +98,7 @@ for NODE_IP in $NODE_IPS; do
   echo "      Importing into containerd..."
   ssh -p "$SSH_PORT" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
     "$SSH_USER@$NODE_IP" \
-    "mkdir -p /tmp/paap-load && cd /tmp/paap-load && tar -xf /tmp/paap-images.tar && for f in *.tar; do echo \"   Importing \$f\"; ctr -n=k8s.io images import \"\$f\" 2>&1 | tail -1; done && cd / && rm -rf /tmp/paap-load /tmp/paap-images.tar && echo '   OK'" 2>&1
+    "cd /tmp && mkdir -p paap-load && cd paap-load && tar -xf /tmp/paap-images.tar && while IFS=: read -r FILE IMG_NAME; do echo \"   Importing \$IMG_NAME\"; ctr -n=k8s.io images import --base-name \"\$IMG_NAME\" \"\$FILE\" 2>&1 | tail -1; done < mapping.txt && cd / && rm -rf /tmp/paap-load /tmp/paap-images.tar && echo '   OK'" 2>&1
 done
 echo ""
 

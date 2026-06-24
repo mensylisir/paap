@@ -294,6 +294,27 @@
                 <strong>{{ item.value }}</strong>
               </div>
             </div>
+            <section class="template-preview-section template-preview-fields" aria-label="配置模板抽取字段">
+              <h3>抽取字段</h3>
+              <div v-if="configTemplatePreviewFields(selectedConfigTemplate).length" class="preview-table">
+                <div class="preview-row preview-row--head">
+                  <span>字段键</span>
+                  <span>类型</span>
+                  <span>默认值</span>
+                  <span>来源</span>
+                </div>
+                <div v-for="field in configTemplatePreviewFields(selectedConfigTemplate)" :key="field.key" class="preview-row">
+                  <span>
+                    <strong>{{ field.key }}</strong>
+                    <small>{{ field.label }}</small>
+                  </span>
+                  <span>{{ field.type }}</span>
+                  <span>{{ field.defaultValue }}</span>
+                  <span>{{ field.source }}</span>
+                </div>
+              </div>
+              <div v-else class="preview-empty">这个模板没有抽取出可填写字段。</div>
+            </section>
             <div class="template-preview-tabs">
               <button type="button" :class="{ active: configTemplatePreviewTab === 'native' }" @click="configTemplatePreviewTab = 'native'">原生配置预览</button>
               <button type="button" :class="{ active: configTemplatePreviewTab === 'advanced' }" @click="configTemplatePreviewTab = 'advanced'">高级 JSON / schema</button>
@@ -873,6 +894,61 @@ function configTemplateGeneratedFileCount(tmpl: any) {
     }
   }
   return files.size ? `${files.size} 个生成文件` : '无文件输出'
+}
+
+function configTemplatePreviewFields(tmpl: any) {
+  const fields: Array<{ key: string; label: string; type: string; defaultValue: string; source: string }> = []
+  for (const field of tmpl?.fields || []) {
+    const key = String(field?.key || '').trim()
+    if (!key) continue
+    fields.push(configTemplatePreviewFieldRow(field, key))
+    for (const child of field?.itemFields || []) {
+      const childKey = String(child?.key || '').trim()
+      if (!childKey) continue
+      fields.push(configTemplatePreviewFieldRow(child, `${key}.${childKey}`))
+    }
+  }
+  return fields
+}
+
+function configTemplatePreviewFieldRow(field: any, key: string) {
+  return {
+    key,
+    label: String(field?.label || key),
+    type: configTemplateFieldTypeLabel(field?.type),
+    defaultValue: configTemplateFieldDefaultLabel(field),
+    source: configTemplateFieldSourceLabel(field),
+  }
+}
+
+function configTemplateFieldTypeLabel(value: string) {
+  const labels: Record<string, string> = {
+    text: '文本',
+    string: '文本',
+    number: '数字',
+    boolean: '开关',
+    password: '敏感文本',
+    secret: '敏感文本',
+    list: '列表',
+    serviceRef: '服务引用',
+  }
+  return labels[String(value || '')] || String(value || '文本')
+}
+
+function configTemplateFieldDefaultLabel(field: any) {
+  const value = field?.default ?? field?.defaultValue ?? ''
+  const text = String(value ?? '').trim()
+  return text || '无默认值'
+}
+
+function configTemplateFieldSourceLabel(field: any) {
+  const hint = String(field?.target || field?.output || field?.source || field?.type || '').toLowerCase()
+  if (hint.includes('secret') || hint.includes('password') || hint.includes('token')) return '敏感配置'
+  if (hint.includes('config') || hint.includes('file')) return '配置文件'
+  if (hint.includes('env')) return '运行变量'
+  if (hint.includes('service')) return '服务引用'
+  if (hint.includes('backend') || hint.includes('frontend') || hint.includes('worker')) return '组件引用'
+  return '模板字段'
 }
 
 function configTemplateNativePreviewBlocks(tmpl: any) {
@@ -1596,6 +1672,20 @@ function isHeavyTemplate(tmpl: any) {
 .template-preview-section {
   display: grid;
   gap: 12px;
+}
+.template-preview-fields h3 {
+  margin: 0;
+  color: var(--cds-text-primary, #161616);
+  font-size: var(--cds-heading-01-font-size, 14px);
+  font-weight: var(--cds-heading-01-font-weight, 600);
+  line-height: var(--cds-heading-01-line-height, 1.42857);
+  letter-spacing: var(--cds-heading-01-letter-spacing, 0.16px);
+}
+.template-preview-fields .preview-row strong {
+  display: block;
+  color: var(--cds-text-primary, #161616);
+  font-weight: var(--cds-heading-01-font-weight, 600);
+  overflow-wrap: anywhere;
 }
 .template-preview-tabs {
   display: flex;

@@ -161,6 +161,18 @@ describe('Vue view markup', () => {
     expect(templatesView.default).toContain('configTemplateGeneratedFileCount')
   })
 
+  it('shows extracted config template fields before raw preview content', async () => {
+    const templatesView = await import('./TemplatesView.vue?raw')
+
+    expect(templatesView.default).toContain('template-preview-fields')
+    expect(templatesView.default).toContain('抽取字段')
+    expect(templatesView.default).toContain('字段键')
+    expect(templatesView.default).toContain('默认值')
+    expect(templatesView.default).toContain('来源')
+    expect(templatesView.default).toContain('configTemplatePreviewFields')
+    expect(templatesView.default).toContain('configTemplateFieldSourceLabel')
+  })
+
   it('uses Railway-like app and environment context switching with modal creation', async () => {
     const appList = await import('./AppListView.vue?raw')
     const environmentsView = await import('./AppEnvironmentsView.vue?raw')

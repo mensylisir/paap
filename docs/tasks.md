@@ -525,6 +525,16 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 - [x] 对应文件：`frontend/src/views/TemplatesView.vue`、`frontend/src/views/viewMarkup.test.ts`
 - [x] 工作量：S（半天）
 
+### Task 7.15b: 配置模板抽取字段预览 ✅
+- [x] 配置模板预览弹窗增加“抽取字段”表，展示字段键、显示名、类型、默认值和来源
+- [x] 列表字段展开为 `父字段.子字段`，便于查看 FOR/ITEM 模板变量，例如 `LOCATION_LIST.PATH`、`LOCATION_LIST.PROXY_PASS`
+- [x] 表格沿用 Carbon white 风格：白色弹窗、细边框表格、0 圆角、无阴影，保持和摘要区/原生预览一致
+- [x] Docker 镜像 `v0.1.447` 构建并部署到 kind 集群
+- [x] kind 验证：显式使用 `--context kind-rbac-governance-test` 检查 `paap-server:v0.1.447`，Deployment `1/1 ready`，Pod `paap-server-7f75df788c-sb6xs` Running
+- [x] CDP 验证：复用现有 Chrome `/templates` 标签；Spring Boot 预览显示 6 个抽取字段并包含 `JDBC_URL`、`REDIS_HOST`；Nginx 预览显示 4 个抽取字段并展开 `LOCATION_LIST.PATH`、`LOCATION_LIST.PROXY_PASS`；高级 JSON tab 仍显示 `schema.json` 和 `template.json`
+- [x] 对应文件：`frontend/src/views/TemplatesView.vue`、`frontend/src/views/viewMarkup.test.ts`
+- [x] 工作量：S（半天）
+
 ### Task 7.16: 模板体系收口
 - [ ] 废弃旧 `installer/rawYaml/chartRepo/chartName` 创建入口
 - [ ] 将 `WorkloadRolePolicy` / `EnvironmentRolePolicy` 等旧权限字段收敛到 `platform-manifest.yaml`
