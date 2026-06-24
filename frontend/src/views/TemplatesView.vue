@@ -315,6 +315,37 @@
               </div>
               <div v-else class="preview-empty">这个模板没有抽取出可填写字段。</div>
             </section>
+            <section class="template-preview-section template-preview-files" aria-label="配置模板生成文件明细">
+              <h3>生成文件明细</h3>
+              <div v-if="configTemplatePreviewFiles(selectedConfigTemplate).length" class="preview-table">
+                <div class="preview-row preview-row--files preview-row--head">
+                  <span>文件名</span>
+                  <span>来源</span>
+                  <span>推荐挂载路径</span>
+                  <span>访问方式</span>
+                </div>
+                <div v-for="file in configTemplatePreviewFiles(selectedConfigTemplate)" :key="file.identity" class="preview-row preview-row--files">
+                  <span>
+                    <strong>{{ file.name }}</strong>
+                    <small>{{ file.key }}</small>
+                  </span>
+                  <span>{{ file.source }}</span>
+                  <span>{{ file.mountPath }}</span>
+                  <span>{{ file.readMode }}</span>
+                </div>
+              </div>
+              <div v-else class="preview-empty">这个模板不会生成配置文件。</div>
+            </section>
+            <section class="template-preview-section template-preview-validation" aria-label="配置模板校验提示">
+              <h3>校验提示</h3>
+              <div v-if="configTemplatePreviewValidationItems(selectedConfigTemplate).length" class="preview-validation-list">
+                <div v-for="item in configTemplatePreviewValidationItems(selectedConfigTemplate)" :key="item.message" :class="['preview-validation-item', item.level]">
+                  <strong>{{ item.label }}</strong>
+                  <span>{{ item.message }}</span>
+                </div>
+              </div>
+              <div v-else class="preview-empty">未发现预览层面的配置问题。</div>
+            </section>
             <div class="template-preview-tabs">
               <button type="button" :class="{ active: configTemplatePreviewTab === 'native' }" @click="configTemplatePreviewTab = 'native'">原生配置预览</button>
               <button type="button" :class="{ active: configTemplatePreviewTab === 'advanced' }" @click="configTemplatePreviewTab = 'advanced'">高级 JSON / schema</button>
@@ -949,6 +980,101 @@ function configTemplateFieldSourceLabel(field: any) {
   if (hint.includes('service')) return '服务引用'
   if (hint.includes('backend') || hint.includes('frontend') || hint.includes('worker')) return '组件引用'
   return '模板字段'
+}
+
+function configTemplatePreviewFiles(tmpl: any) {
+  const rows: Array<{ identity: string; name: string; key: string; source: string; mountPath: string; readMode: string }> = []
+  const seen = new Set<string>()
+  const add = (input: { name?: string; key?: string; source: string; mountPath?: string; readOnly?: boolean }) => {
+    const name = String(input.name || input.key || '').trim()
+    const key = String(input.key || input.name || '').trim()
+    if (!name && !key) return
+    const mountPath = String(input.mountPath || '').trim()
+    const identity = [name, key].join(':')
+    if (seen.has(identity)) return
+    seen.add(identity)
+    rows.push({
+      identity,
+      name: name || key,
+      key: key || name,
+      source: input.source,
+      mountPath: mountPath || '组件配置时选择',
+      readMode: input.readOnly === false ? '可写入' : '只读挂载',
+    })
+  }
+
+  for (const item of tmpl?.files || []) {
+    add({
+      name: item?.name,
+      key: item?.key,
+      source: '模板文件',
+      mountPath: item?.recommendedMountPath || item?.mountPath,
+      readOnly: item?.readOnly,
+    })
+  }
+  for (const item of tmpl?.nativeConfigs || []) {
+    add({
+      name: item?.name,
+      key: item?.name,
+      source: '原生配置',
+      mountPath: item?.recommendedMountPath || item?.mountPath,
+      readOnly: true,
+    })
+  }
+  for (const item of tmpl?.configMaps || []) {
+    const objectName = String(item?.name || '普通配置').trim()
+    for (const key of Object.keys(item?.data || {})) {
+      add({
+        name: key,
+        key,
+        source: objectName,
+        mountPath: item?.recommendedMountPath || item?.mountPath,
+        readOnly: true,
+      })
+    }
+  }
+  return rows
+}
+
+function configTemplatePreviewValidationItems(tmpl: any) {
+  const items: Array<{ level: 'info' | 'warning' | 'danger'; label: string; message: string }> = []
+  const fields = Array.isArray(tmpl?.fields) ? tmpl.fields : []
+  const files = configTemplatePreviewFiles(tmpl)
+  const fieldKeys = new Set<string>()
+
+  if (!fields.length) {
+    items.push({ level: 'info', label: '提示', message: '没有可填写项，应用该模板时不会打开字段表单。' })
+  }
+  if (!files.length && !arrayLength(tmpl?.env) && !arrayLength(tmpl?.secrets)) {
+    items.push({ level: 'warning', label: '提示', message: '没有生成文件或运行配置，导入后可能不会产生配置内容。' })
+  }
+  for (const field of fields) {
+    const key = String(field?.key || '').trim()
+    if (!key) {
+      items.push({ level: 'danger', label: '错误', message: '存在未填写字段键的可填写项。' })
+      continue
+    }
+    if (fieldKeys.has(key)) {
+      items.push({ level: 'warning', label: '提示', message: `字段 ${key} 重复出现，应用时可能互相覆盖。` })
+    }
+    fieldKeys.add(key)
+    if (!String(field?.label || '').trim()) {
+      items.push({ level: 'info', label: '提示', message: `字段 ${key} 缺少显示名，将直接使用字段键展示。` })
+    }
+    if (String(field?.type || '').toLowerCase() === 'list' && !Array.isArray(field?.itemFields)) {
+      items.push({ level: 'warning', label: '提示', message: `列表字段 ${key} 没有子字段定义，批量项预览可能不完整。` })
+    }
+  }
+  for (const file of files) {
+    if (file.mountPath === '组件配置时选择') {
+      items.push({ level: 'info', label: '提示', message: `${file.name} 没有推荐挂载路径，应用到组件时需要手动选择。` })
+    }
+  }
+  return items
+}
+
+function arrayLength(value: any) {
+  return Array.isArray(value) ? value.length : 0
 }
 
 function configTemplateNativePreviewBlocks(tmpl: any) {
@@ -1673,7 +1799,9 @@ function isHeavyTemplate(tmpl: any) {
   display: grid;
   gap: 12px;
 }
-.template-preview-fields h3 {
+.template-preview-fields h3,
+.template-preview-files h3,
+.template-preview-validation h3 {
   margin: 0;
   color: var(--cds-text-primary, #161616);
   font-size: var(--cds-heading-01-font-size, 14px);
@@ -1681,7 +1809,8 @@ function isHeavyTemplate(tmpl: any) {
   line-height: var(--cds-heading-01-line-height, 1.42857);
   letter-spacing: var(--cds-heading-01-letter-spacing, 0.16px);
 }
-.template-preview-fields .preview-row strong {
+.template-preview-fields .preview-row strong,
+.template-preview-files .preview-row strong {
   display: block;
   color: var(--cds-text-primary, #161616);
   font-weight: var(--cds-heading-01-font-weight, 600);
@@ -1748,6 +1877,9 @@ function isHeavyTemplate(tmpl: any) {
   color: var(--cds-text-secondary, #525252);
   font-weight: 600;
 }
+.preview-row--files {
+  grid-template-columns: 1.3fr 1fr 1.4fr 0.8fr;
+}
 .preview-row small {
   display: block;
   margin-top: 2px;
@@ -1806,11 +1938,41 @@ function isHeavyTemplate(tmpl: any) {
   color: var(--cds-text-helper, #6f6f6f);
   font-size: 12px;
 }
+.preview-validation-list {
+  display: grid;
+  gap: 8px;
+}
+.preview-validation-item {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+  padding: 10px 12px;
+  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  background: var(--cds-layer-01, #ffffff);
+  color: var(--cds-text-secondary, #525252);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.preview-validation-item strong {
+  color: var(--cds-text-primary, #161616);
+  font-weight: 600;
+}
+.preview-validation-item.warning {
+  border-left: 3px solid var(--cds-yellow-30, #f1c21b);
+}
+.preview-validation-item.danger {
+  border-left: 3px solid var(--cds-red-60, #da1e28);
+}
+.preview-validation-item.info {
+  border-left: 3px solid var(--cds-blue-60, #0f62fe);
+}
 
 @media (max-width: 672px) {
   .config-import-grid,
   .template-preview-summary,
-  .preview-row {
+  .preview-row,
+  .preview-validation-item {
     grid-template-columns: 1fr;
   }
   .template-preview-summary-item {

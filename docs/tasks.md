@@ -331,7 +331,7 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 - [ ] 重设计配置模板导入 UI，使用白色 Carbon 表单视觉，避免重灰输入块
 - [ ] 将配置模板导入的“适用组件”改为 select/combobox 控件
 - [ ] 导入流程同时支持普通原生配置模板和高级 template/schema JSON，并清晰区分两种模式
-- [ ] 模板预览展示原始内容、抽取字段、敏感字段、生成文件和校验错误，不要求用户理解 Kubernetes 对象名
+- [x] 模板预览展示原始内容、抽取字段、敏感字段、生成文件和校验错误，不要求用户理解 Kubernetes 对象名
 - [ ] 增强 configmap、secret、file-based config 解析，让后端到数据库/缓存/消息队列关系能安全自动连线
 
 ### Task 6.12: 降低 Kubernetes 术语暴露
@@ -532,6 +532,16 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 - [x] Docker 镜像 `v0.1.447` 构建并部署到 kind 集群
 - [x] kind 验证：显式使用 `--context kind-rbac-governance-test` 检查 `paap-server:v0.1.447`，Deployment `1/1 ready`，Pod `paap-server-7f75df788c-sb6xs` Running
 - [x] CDP 验证：复用现有 Chrome `/templates` 标签；Spring Boot 预览显示 6 个抽取字段并包含 `JDBC_URL`、`REDIS_HOST`；Nginx 预览显示 4 个抽取字段并展开 `LOCATION_LIST.PATH`、`LOCATION_LIST.PROXY_PASS`；高级 JSON tab 仍显示 `schema.json` 和 `template.json`
+- [x] 对应文件：`frontend/src/views/TemplatesView.vue`、`frontend/src/views/viewMarkup.test.ts`
+- [x] 工作量：S（半天）
+
+### Task 7.15c: 配置模板生成文件与校验提示预览 ✅
+- [x] 配置模板预览弹窗增加“生成文件明细”，展示文件名、来源、推荐挂载路径和访问方式
+- [x] 配置模板预览弹窗增加“校验提示”，展示字段缺失、重复字段、缺少推荐挂载路径等非阻塞问题；无问题时明确显示“未发现预览层面的配置问题”
+- [x] 文件明细优先使用模板 `files` 中的推荐挂载路径，避免和原生配置片段重复展示
+- [x] Docker 镜像 `v0.1.448` 构建并部署到 kind 集群
+- [x] kind 验证：显式使用 `--context kind-rbac-governance-test` 检查 `paap-server:v0.1.448`，Deployment `1/1 ready`，Pod `paap-server-589b874cdd-f844r` Running
+- [x] CDP 验证：复用现有 Chrome `/templates` 标签；Spring Boot 预览显示“生成文件明细”、`application-paap.yml`、推荐挂载路径 `/etc/paap/application-paap.yml` 和“校验提示/未发现预览层面的配置问题”
 - [x] 对应文件：`frontend/src/views/TemplatesView.vue`、`frontend/src/views/viewMarkup.test.ts`
 - [x] 工作量：S（半天）
 

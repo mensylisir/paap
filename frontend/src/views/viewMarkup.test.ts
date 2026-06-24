@@ -173,6 +173,19 @@ describe('Vue view markup', () => {
     expect(templatesView.default).toContain('configTemplateFieldSourceLabel')
   })
 
+  it('shows generated files and validation notices in config template preview', async () => {
+    const templatesView = await import('./TemplatesView.vue?raw')
+
+    expect(templatesView.default).toContain('template-preview-files')
+    expect(templatesView.default).toContain('生成文件明细')
+    expect(templatesView.default).toContain('文件名')
+    expect(templatesView.default).toContain('推荐挂载路径')
+    expect(templatesView.default).toContain('template-preview-validation')
+    expect(templatesView.default).toContain('校验提示')
+    expect(templatesView.default).toContain('configTemplatePreviewFiles')
+    expect(templatesView.default).toContain('configTemplatePreviewValidationItems')
+  })
+
   it('uses Railway-like app and environment context switching with modal creation', async () => {
     const appList = await import('./AppListView.vue?raw')
     const environmentsView = await import('./AppEnvironmentsView.vue?raw')
