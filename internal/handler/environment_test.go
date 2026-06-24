@@ -1987,6 +1987,65 @@ func TestDeleteComponentUsesArgoCDApplicationIdentifierForRuntimeCleanup(t *test
 	}
 }
 
+func TestDeleteEnvironmentRejectsNonMembers(t *testing.T) {
+	previousDB := database.DB
+	t.Cleanup(func() { database.DB = previousDB })
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := db.AutoMigrate(
+		&model.Application{},
+		&model.AppMember{},
+		&model.Environment{},
+		&model.EnvironmentCanvasState{},
+		&model.ServiceInstallation{},
+		&model.InfraInstallation{},
+		&model.Component{},
+	); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	database.DB = db
+
+	app := model.Application{Name: "隐藏应用", Identifier: "hidden", OwnerID: 1}
+	if err := db.Create(&app).Error; err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	env := model.Environment{ApplicationID: app.ID, Name: "生产", Identifier: "prod", Namespace: "hidden-prod"}
+	if err := db.Create(&env).Error; err != nil {
+		t.Fatalf("create env: %v", err)
+	}
+	if err := db.Create(&model.Component{EnvironmentID: env.ID, Name: "api", Type: "backend"}).Error; err != nil {
+		t.Fatalf("create component: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/environments/1", nil)
+	rec := httptest.NewRecorder()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.DELETE("/api/v1/environments/:id", withTestAuthUser(2, DeleteEnvironment))
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusForbidden, rec.Body.String())
+	}
+	var count int64
+	if err := db.Model(&model.Environment{}).Where("id = ?", env.ID).Count(&count).Error; err != nil {
+		t.Fatalf("count environment: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("environment count = %d, want unchanged", count)
+	}
+	if err := db.Model(&model.Component{}).Where("environment_id = ?", env.ID).Count(&count).Error; err != nil {
+		t.Fatalf("count components: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("component count = %d, want unchanged", count)
+	}
+}
+
 func TestDeleteEnvironmentRemovesClusterCRsNamespacesAndDatabaseRows(t *testing.T) {
 	previousDB := database.DB
 	previousK8sClient := k8s.GetClient()
@@ -2072,7 +2131,7 @@ func TestDeleteEnvironmentRemovesClusterCRsNamespacesAndDatabaseRows(t *testing.
 
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	router.DELETE("/api/v1/environments/:id", DeleteEnvironment)
+	router.DELETE("/api/v1/environments/:id", withTestAuthUserRole(1, "admin", DeleteEnvironment))
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodDelete, fmt.Sprintf("/api/v1/environments/%d", env.ID), nil)
 	router.ServeHTTP(rec, req)

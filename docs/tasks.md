@@ -599,6 +599,21 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 - [x] 对应文件：`internal/handler/environment.go`、`internal/handler/environment_test.go`
 - [x] 工作量：S（半天）
 
+### Task 7.8j: 环境删除按成员鉴权 ✅
+> 普通用户删除环境前必须具备所属应用访问权限，避免非成员通过环境 ID 删除环境及其组件、服务、infra、画布和集群资源。
+
+- [x] `DeleteEnvironment` 查到环境后立即复用 `requireApplicationAccess(env.ApplicationID)`
+- [x] 非成员删除返回 403，并且不会执行集群清理或数据库级联删除
+- [x] 后端目标测试：`go test ./internal/handler -run TestDeleteEnvironmentRejectsNonMembers -count=1` 先红后绿
+- [x] 后端相关测试：`go test ./internal/handler -run 'Test(DeleteEnvironmentRejectsNonMembers|DeleteEnvironmentRemovesClusterCRsNamespacesAndDatabaseRows)' -count=1` 通过
+- [x] 后端 handler 测试：`go test ./internal/handler -count=1` 通过
+- [x] 后端全量测试：`make test` 通过
+- [x] Docker 镜像 `v0.1.466` 构建并部署到 kind 集群
+- [x] kind 验证：显式使用 `--context kind-rbac-governance-test` 检查 `paap-server:v0.1.466`，Deployment `1/1 ready`，Pod `paap-server-7f8cb8548d-nk95h` Running
+- [x] API/数据库验证：临时普通用户 ID=11 删除非成员环境 1 返回 403 和 `application access denied`；环境计数保持 1，组件计数保持 7；临时用户已清理，残留计数 0
+- [x] 对应文件：`internal/handler/environment.go`、`internal/handler/environment_test.go`
+- [x] 工作量：S（半天）
+
 ### Task 7.9: KubeVirt 虚拟机
 - [ ] 将 VM 作为新服务类型纳入 `ServiceCatalog`
 - [ ] 用 KubeVirt CRD（`VirtualMachine`）而非 Helm chart 部署
