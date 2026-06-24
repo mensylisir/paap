@@ -357,11 +357,15 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 
 ### Task 6.11: 组件配置模板与关系自动识别
 - [ ] 扩充内置组件配置模板：nginx 多后端路由、Spring Boot datasource/cache/mq profiles、Gin/Go 配置、Node/Vite API 配置、配置文件型应用
-- [ ] 重设计配置模板导入 UI，使用白色 Carbon 表单视觉，避免重灰输入块
+- [x] 重设计配置模板导入 UI，使用白色 Carbon 表单视觉，避免重灰输入块
+  - 配置模板导入弹窗使用 `config-import-shell--carbon` 和 `config-import-mode-card`，表单控件沿用白色 Carbon 风格的 `rail-input`、`rail-select`、`rail-textarea`，不再使用重灰输入块
+  - 验证：`npm --prefix frontend run test -- src/views/viewMarkup.test.ts -t "splits template management"` 通过；CDP 验证当前部署 `/templates` 的导入弹窗可见普通/高级模式卡片和白色表单控件
 - [x] 将配置模板导入的“适用组件”改为 select/combobox 控件
   - 配置模板导入弹窗已使用 `config-template-component-type-select` 下拉控件，选项覆盖所有组件、前端、后端、前端 + 后端、Worker / 任务组件和自定义组件；导入时转换为 `componentTypes` 数组，影响组件配置 Tab 模板候选范围
   - 验证：`npm --prefix frontend run test -- src/views/viewMarkup.test.ts -t "splits template management"` 通过；CDP 验证当前部署 `/templates` 的“导入配置模板”弹窗存在该 select 和完整选项
-- [ ] 导入流程同时支持普通原生配置模板和高级 template/schema JSON，并清晰区分两种模式
+- [x] 导入流程同时支持普通原生配置模板和高级 template/schema JSON，并清晰区分两种模式
+  - 普通模式通过 `parseNativeConfigTemplate` 解析原生配置里的 `__TEMPLATE__KEY__显示名__` 标记；高级模式通过 `normalizeAdvancedConfigTemplateImport` 接收完整 template JSON 或 `template/schema` 包装结构
+  - 验证：`npm --prefix frontend run test -- src/views/viewMarkup.test.ts -t "splits template management"` 通过；CDP 验证高级模式切换后标题为“导入高级模板 JSON”、文件 accept 为 `.json,application/json`，并展示 `template/schema` JSON placeholder
 - [x] 模板预览展示原始内容、抽取字段、敏感字段、生成文件和校验错误，不要求用户理解 Kubernetes 对象名
 - [ ] 增强 configmap、secret、file-based config 解析，让后端到数据库/缓存/消息队列关系能安全自动连线
 
