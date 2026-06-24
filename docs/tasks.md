@@ -31,11 +31,12 @@
 - [x] 验证 `go run ./cmd/operator` 能启动并连接 kind 集群 ✅ 4 个 Controller 全部运行
 
 ### Task 1.4: 初始化 Vue 前端
-- [ ] 检查 frontend/ 现有状态，补充缺失依赖
-- [ ] 安装 `@carbon/vue3 pinia vue-router axios`
-- [ ] 配置 vite.config.ts（proxy 到后端 9090 端口）
-- [ ] 创建基础布局（侧边栏 + 内容区）
-- [ ] 验证 `npm run dev` 启动成功
+- [x] 检查 frontend/ 现有状态，补充缺失依赖
+- [x] 安装 Carbon Vue、Pinia、Vue Router、Axios（当前依赖为 `@carbon/vue`、`pinia`、`vue-router`、`axios`）
+- [x] 配置 vite.config.ts（proxy 到后端 9090 端口）
+- [x] 创建基础布局（侧边栏 + 内容区）
+- [x] 验证 `npm run dev` 启动成功
+  - 2026-06-25 验证：`npm --prefix frontend run dev -- --host 127.0.0.1 --port 5174` 正常 ready
 
 ---
 
@@ -399,8 +400,8 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 - [x] 独立页面 `/catalog`，添加路由 + 导航栏入口
 - [x] CDP 端到端验证：14 卡片 2 分类（🔧 工具类 7 + 🗄️ 中间件/数据库 7），版本标签正确
 - [x] Docker 镜像 `v0.1.425` 构建部署到 kind 集群
-- [ ] 工作量：1 天（代码完成 + 部署验证）
-- [ ] 对应文件：`frontend/src/views/CatalogView.vue`、`frontend/src/router/index.ts`、`frontend/src/layouts/MainLayout.vue`
+- [x] 工作量：1 天（代码完成 + 部署验证）
+- [x] 对应文件：`frontend/src/views/CatalogView.vue`、`frontend/src/router/index.ts`、`frontend/src/layouts/MainLayout.vue`
 
 ### Task 7.3: 平台管理员界面
 - [ ] 前端新增 `/platform` 路由 + `PlatformAdminView`
