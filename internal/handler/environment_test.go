@@ -3910,6 +3910,118 @@ func TestGetServiceRuntimeLogsRejectsNonMembersBeforeServiceLookup(t *testing.T)
 	}
 }
 
+func TestProxyServiceInstanceRejectsNonMembers(t *testing.T) {
+	previousDB := database.DB
+	t.Cleanup(func() { database.DB = previousDB })
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.ServiceInstallation{}, &model.Component{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	database.DB = db
+
+	app := model.Application{Name: "隐藏应用", Identifier: "hidden", OwnerID: 1}
+	if err := db.Create(&app).Error; err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	env := model.Environment{ApplicationID: app.ID, Name: "生产", Identifier: "prod", Namespace: "hidden-prod"}
+	if err := db.Create(&env).Error; err != nil {
+		t.Fatalf("create env: %v", err)
+	}
+	service := model.ServiceInstallation{EnvironmentID: env.ID, ServiceType: "custom", Status: "running", Namespace: "hidden-prod-custom"}
+	if err := db.Create(&service).Error; err != nil {
+		t.Fatalf("create service: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/v1/environments/%d/services/%d/proxy/", env.ID, service.ID), nil)
+	rec := httptest.NewRecorder()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Any("/api/v1/environments/:id/services/:serviceId/proxy/*path", withTestAuthUser(2, ProxyServiceInstance))
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusForbidden, rec.Body.String())
+	}
+}
+
+func TestProxyServiceInstanceRejectsNonMembersBeforeServiceLookup(t *testing.T) {
+	previousDB := database.DB
+	t.Cleanup(func() { database.DB = previousDB })
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.ServiceInstallation{}, &model.Component{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	database.DB = db
+
+	app := model.Application{Name: "隐藏应用", Identifier: "hidden", OwnerID: 1}
+	if err := db.Create(&app).Error; err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	env := model.Environment{ApplicationID: app.ID, Name: "生产", Identifier: "prod", Namespace: "hidden-prod"}
+	if err := db.Create(&env).Error; err != nil {
+		t.Fatalf("create env: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/v1/environments/%d/services/999/proxy/", env.ID), nil)
+	rec := httptest.NewRecorder()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Any("/api/v1/environments/:id/services/:serviceId/proxy/*path", withTestAuthUser(2, ProxyServiceInstance))
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusForbidden, rec.Body.String())
+	}
+}
+
+func TestProxyServiceInstanceChecksServiceAfterMemberAccess(t *testing.T) {
+	previousDB := database.DB
+	t.Cleanup(func() { database.DB = previousDB })
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.ServiceInstallation{}, &model.Component{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	database.DB = db
+
+	app := model.Application{Name: "测试应用", Identifier: "test", OwnerID: 1}
+	if err := db.Create(&app).Error; err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	env := model.Environment{ApplicationID: app.ID, Name: "测试环境", Identifier: "staging", Namespace: "test-staging"}
+	if err := db.Create(&env).Error; err != nil {
+		t.Fatalf("create env: %v", err)
+	}
+	if err := db.Create(&model.AppMember{ApplicationID: app.ID, UserID: 2, Role: "member"}).Error; err != nil {
+		t.Fatalf("create member: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/v1/environments/%d/services/999/proxy/", env.ID), nil)
+	rec := httptest.NewRecorder()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Any("/api/v1/environments/:id/services/:serviceId/proxy/*path", withTestAuthUser(2, ProxyServiceInstance))
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusNotFound, rec.Body.String())
+	}
+}
+
 func TestRunServiceWorkspaceActionRejectsNonMembers(t *testing.T) {
 	previousDB := database.DB
 	t.Cleanup(func() { database.DB = previousDB })
