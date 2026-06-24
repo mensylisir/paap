@@ -2,7 +2,7 @@
 # any PAAP workload or built-in template is installed. Keep this list explicit
 # for offline kind clusters; scripts/preload-kind-images.sh also tries to render
 # built-in Helm charts and discover additional images.
-paap-server:v0.1.476
+paap-server:v0.1.477
 paap-operator:v0.1.52
 postgres:15-alpine
 minio/minio:RELEASE.2025-09-07T16-13-09Z

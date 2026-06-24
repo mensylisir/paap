@@ -759,7 +759,7 @@ func TestCreateServiceDraftDoesNotCreateServiceInstanceCR(t *testing.T) {
 		t.Fatalf("sqlite db handle: %v", err)
 	}
 	sqlDB.SetMaxOpenConns(1)
-	if err := db.AutoMigrate(&model.Application{}, &model.Environment{}, &model.ServiceTemplate{}, &model.ServiceInstallation{}); err != nil {
+	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.ServiceTemplate{}, &model.ServiceInstallation{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	database.DB = db
@@ -771,6 +771,9 @@ func TestCreateServiceDraftDoesNotCreateServiceInstanceCR(t *testing.T) {
 	env := model.Environment{ApplicationID: app.ID, Name: "Dev", Identifier: "dev", Namespace: "billing-dev", Status: "running"}
 	if err := db.Create(&env).Error; err != nil {
 		t.Fatalf("create env: %v", err)
+	}
+	if err := db.Create(&model.AppMember{ApplicationID: app.ID, UserID: 2, Role: "member"}).Error; err != nil {
+		t.Fatalf("create member: %v", err)
 	}
 	tmpl := model.ServiceTemplate{Type: "rabbitmq", Name: "RabbitMQ", Installer: "helm", Category: "infra", PlatformManifestJSON: `{"name":"rabbitmq","version":"v1"}`}
 	if err := db.Create(&tmpl).Error; err != nil {
@@ -788,7 +791,7 @@ func TestCreateServiceDraftDoesNotCreateServiceInstanceCR(t *testing.T) {
 
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	router.POST("/api/v1/environments/:id/services/drafts", CreateServiceDraft)
+	router.POST("/api/v1/environments/:id/services/drafts", withTestAuthUser(2, CreateServiceDraft))
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/environments/1/services/drafts", strings.NewReader(`{"serviceType":"rabbitmq"}`))
 	req.Header.Set("Content-Type", "application/json")
@@ -2720,6 +2723,99 @@ func TestDownloadRegistryCACertificateRejectsNonMembersBeforeServiceLookup(t *te
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	router.GET("/api/v1/environments/:id/services/:serviceId/registry-ca.crt", withTestAuthUser(2, DownloadRegistryCACertificate))
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusForbidden, rec.Body.String())
+	}
+}
+
+func TestCreateServiceDraftRejectsNonMembers(t *testing.T) {
+	previousDB := database.DB
+	previousSync := syncClusterState
+	t.Cleanup(func() {
+		database.DB = previousDB
+		syncClusterState = previousSync
+	})
+	syncClusterState = func(context.Context, *gorm.DB, ctrlclient.Client) error { return nil }
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.ServiceTemplate{}, &model.ServiceInstallation{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	database.DB = db
+
+	app := model.Application{Name: "隐藏应用", Identifier: "hidden", OwnerID: 1}
+	if err := db.Create(&app).Error; err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	env := model.Environment{ApplicationID: app.ID, Name: "生产", Identifier: "prod", Namespace: "hidden-prod", Status: "running"}
+	if err := db.Create(&env).Error; err != nil {
+		t.Fatalf("create env: %v", err)
+	}
+	tmpl := model.ServiceTemplate{Type: "rabbitmq", Name: "RabbitMQ", Installer: "helm", Category: "infra", PlatformManifestJSON: `{"name":"rabbitmq","version":"v1"}`}
+	if err := db.Create(&tmpl).Error; err != nil {
+		t.Fatalf("create template: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/environments/%d/services/drafts", env.ID), strings.NewReader(`{"serviceType":"rabbitmq"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.POST("/api/v1/environments/:id/services/drafts", withTestAuthUser(2, CreateServiceDraft))
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusForbidden, rec.Body.String())
+	}
+	var count int64
+	if err := db.Model(&model.ServiceInstallation{}).Count(&count).Error; err != nil {
+		t.Fatalf("count service installations: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("service installations = %d, want 0", count)
+	}
+}
+
+func TestCreateServiceDraftRejectsNonMembersBeforeTemplateLookup(t *testing.T) {
+	previousDB := database.DB
+	previousSync := syncClusterState
+	t.Cleanup(func() {
+		database.DB = previousDB
+		syncClusterState = previousSync
+	})
+	syncClusterState = func(context.Context, *gorm.DB, ctrlclient.Client) error { return nil }
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.ServiceTemplate{}, &model.ServiceInstallation{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	database.DB = db
+
+	app := model.Application{Name: "隐藏应用", Identifier: "hidden", OwnerID: 1}
+	if err := db.Create(&app).Error; err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	env := model.Environment{ApplicationID: app.ID, Name: "生产", Identifier: "prod", Namespace: "hidden-prod", Status: "running"}
+	if err := db.Create(&env).Error; err != nil {
+		t.Fatalf("create env: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/environments/%d/services/drafts", env.ID), strings.NewReader(`{"serviceType":"not-a-template"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.POST("/api/v1/environments/:id/services/drafts", withTestAuthUser(2, CreateServiceDraft))
 	router.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusForbidden {

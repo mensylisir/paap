@@ -746,6 +746,22 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 - [x] 对应文件：`internal/handler/environment.go`、`internal/handler/environment_test.go`
 - [x] 工作量：S（半天）
 
+### Task 7.8t: 服务草稿创建按成员鉴权 ✅
+> 普通用户创建环境服务草稿前必须具备所属应用访问权限，避免非成员探测服务模板或向他人环境写入服务草稿。
+
+- [x] `CreateServiceDraft` 在读取环境后复用 `requireApplicationAccess(env.ApplicationID)`，通过后才读取应用、查找服务模板和创建/更新草稿
+- [x] 非成员创建服务草稿返回 403，并且不会创建 `service_installations` 记录
+- [x] 非成员请求不存在模板也先返回 403，避免通过 404 判断服务模板是否存在
+- [x] 正向服务草稿测试补齐真实受保护路由上下文：创建 app/env/member 后以成员用户创建草稿，继续校验草稿不会创建 ServiceInstance CR
+- [x] 后端目标测试：`go test ./internal/handler -run 'TestCreateServiceDraft(DoesNotCreateServiceInstanceCR|RejectsNonMembers|RejectsNonMembersBeforeTemplateLookup)|TestCreateComponent(RejectsImplicitLatestBeforeCreatingRecord|CreatesDraftWithoutDeploying|AllowsCanvasDraftWithoutImage)' -count=1` 通过
+- [x] 后端 handler 测试：`go test ./internal/handler -count=1` 通过
+- [x] 后端全量测试：`make test` 通过
+- [x] Docker 镜像 `v0.1.477` 构建并部署到 kind 集群
+- [x] kind 验证：显式使用 `--context kind-rbac-governance-test` 检查 `paap-server:v0.1.477`，Deployment `1/1 ready`，Pod `paap-server-79d4ddc54-zfl5z` Running；`paap-system` 与 `kpack` Pod 均 Running，节点 Ready
+- [x] CDP 验证：复用 Chrome tab `http://172.18.0.2:30091/catalog`，临时普通用户 ID=21 POST `/api/v1/environments/5/services/drafts` + `{"serviceType":"not-a-template-1782318882303"}` 返回 403 和 `application access denied`；临时加入应用 5 成员后同一请求返回 404 和 `service template not found`，证明鉴权通过后才进入模板查找；临时用户和成员关系已清理，服务草稿残留计数 0
+- [x] 对应文件：`internal/handler/environment.go`、`internal/handler/environment_test.go`
+- [x] 工作量：S（半天）
+
 ### Task 7.9: KubeVirt 虚拟机
 - [ ] 将 VM 作为新服务类型纳入 `ServiceCatalog`
 - [ ] 用 KubeVirt CRD（`VirtualMachine`）而非 Helm chart 部署
