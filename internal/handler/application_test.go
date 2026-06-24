@@ -9,12 +9,20 @@ import (
 	"testing"
 
 	"paap/internal/database"
+	"paap/internal/middleware"
 	"paap/internal/model"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
+
+func withTestAuthUser(userID uint, next gin.HandlerFunc) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Set(middleware.ContextUserIDKey, userID)
+		next(c)
+	}
+}
 
 func TestListApplicationsIncludesEnvironmentCounts(t *testing.T) {
 	previousDB := database.DB
@@ -121,7 +129,7 @@ func TestCreateApplicationGeneratesIdentifierWhenMissing(t *testing.T) {
 
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	router.POST("/api/v1/applications", CreateApplication)
+	router.POST("/api/v1/applications", withTestAuthUser(1, CreateApplication))
 	router.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusCreated {
@@ -135,6 +143,50 @@ func TestCreateApplicationGeneratesIdentifierWhenMissing(t *testing.T) {
 	}
 	if got.Data.Identifier != "app" {
 		t.Fatalf("identifier = %q, want app", got.Data.Identifier)
+	}
+}
+
+func TestCreateApplicationUsesAuthenticatedUserAsOwner(t *testing.T) {
+	previousDB := database.DB
+	t.Cleanup(func() { database.DB = previousDB })
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	database.DB = db
+
+	body, _ := json.Marshal(CreateAppRequest{Name: "结算服务"})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/applications", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.POST("/api/v1/applications", withTestAuthUser(42, CreateApplication))
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+	var got struct {
+		Data model.Application `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.Data.OwnerID != 42 {
+		t.Fatalf("ownerID = %d, want 42", got.Data.OwnerID)
+	}
+	var member model.AppMember
+	if err := db.Where("application_id = ?", got.Data.ID).First(&member).Error; err != nil {
+		t.Fatalf("find member: %v", err)
+	}
+	if member.UserID != 42 {
+		t.Fatalf("member userID = %d, want 42", member.UserID)
 	}
 }
 

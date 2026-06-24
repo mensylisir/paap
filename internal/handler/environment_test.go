@@ -1212,7 +1212,7 @@ func TestCreateApplicationGeneratesIdentifierForDuplicateNames(t *testing.T) {
 
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	router.POST("/api/v1/applications", CreateApplication)
+	router.POST("/api/v1/applications", withTestAuthUser(1, CreateApplication))
 	router.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusCreated {

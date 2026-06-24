@@ -7,6 +7,7 @@ import (
 
 	"paap/internal/database"
 	"paap/internal/k8s"
+	"paap/internal/middleware"
 	"paap/internal/model"
 
 	"github.com/gin-gonic/gin"
@@ -85,6 +86,11 @@ func CreateApplication(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	userID, ok := authenticatedUserID(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid or missing authenticated user"})
+		return
+	}
 	identifier, err := uniqueIdentifierWithFallback(database.DB, firstNonEmpty(req.Identifier, req.Name), "app", 50, func(db *gorm.DB, candidate string) (bool, error) {
 		var count int64
 		if err := db.Model(&model.Application{}).Where("identifier = ?", candidate).Count(&count).Error; err != nil {
@@ -101,7 +107,7 @@ func CreateApplication(c *gin.Context) {
 		Name:        req.Name,
 		Identifier:  identifier,
 		Description: req.Description,
-		OwnerID:     1,
+		OwnerID:     userID,
 	}
 
 	if err := database.DB.Create(&app).Error; err != nil {
@@ -119,12 +125,31 @@ func CreateApplication(c *gin.Context) {
 	// Create app member record for owner
 	member := model.AppMember{
 		ApplicationID: app.ID,
-		UserID:        1,
+		UserID:        userID,
 		Role:          "admin",
 	}
-	database.DB.Create(&member)
+	if err := database.DB.Create(&member).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 
 	c.JSON(http.StatusCreated, gin.H{"data": app})
+}
+
+func authenticatedUserID(c *gin.Context) (uint, bool) {
+	value, exists := c.Get(middleware.ContextUserIDKey)
+	if !exists {
+		return 0, false
+	}
+	switch v := value.(type) {
+	case uint:
+		return v, v > 0
+	case int:
+		if v > 0 {
+			return uint(v), true
+		}
+	}
+	return 0, false
 }
 
 // GetApplication returns application details with environments

@@ -465,6 +465,21 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 - [x] API/CDP 验证：`admin/admin123` 返回 401；`admin/Def@u1tpwd` 登录成功并可访问受保护 API
 - [ ] 工作量：1 周
 
+### Task 7.8a: 创建应用归属当前登录用户 ✅
+> 用户通过受保护 API 创建应用时，应用 owner 和 owner 成员记录使用 JWT 解析出的当前用户 ID，不再固定写入 `1`。
+
+- [x] `CreateApplication` 从 Gin auth context 读取 `authUserID`，缺失时返回 401
+- [x] 新建应用 `OwnerID` 使用当前用户 ID
+- [x] owner 成员 `AppMember.UserID` 使用当前用户 ID，并检查成员创建错误
+- [x] 后端目标测试：`go test ./internal/handler -run TestCreateApplicationUsesAuthenticatedUserAsOwner -count=1` 先红后绿
+- [x] 后端 handler 测试：`go test ./internal/handler -count=1` 通过
+- [x] 后端全量测试：`make test` 通过
+- [x] Docker 镜像 `v0.1.457` 构建并部署到 kind 集群
+- [x] kind 验证：显式使用 `--context kind-rbac-governance-test` 检查 `paap-server:v0.1.457`，Deployment `1/1 ready`，Pod `paap-server-5b547b65fb-ztck7` Running
+- [x] API/数据库验证：临时普通用户 ID=3 创建应用后，API 返回 `ownerId=3`，数据库 `applications.owner_id/app_members.user_id=3,3`；临时应用和用户已清理，残留计数 0
+- [x] 对应文件：`internal/handler/application.go`、`internal/handler/application_test.go`、`internal/handler/environment_test.go`
+- [x] 工作量：S（半天）
+
 ### Task 7.9: KubeVirt 虚拟机
 - [ ] 将 VM 作为新服务类型纳入 `ServiceCatalog`
 - [ ] 用 KubeVirt CRD（`VirtualMachine`）而非 Helm chart 部署
