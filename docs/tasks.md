@@ -716,6 +716,21 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 - [x] 对应文件：`internal/handler/environment.go`、`internal/handler/environment_test.go`
 - [x] 工作量：S（半天）
 
+### Task 7.8r: 服务工作区动作按成员鉴权 ✅
+> 普通用户执行服务实例工作区动作前必须具备所属应用访问权限，避免非成员触发刷新、仓库、GitOps 或监控类操作。
+
+- [x] `RunServiceWorkspaceAction` 解析动作请求后先读取环境并复用 `requireApplicationAccess(env.ApplicationID)`，通过后才加载服务实例和执行 `refresh`/GitOps/Gitea/Grafana 动作
+- [x] 非成员访问存在或不存在的服务工作区动作均先返回 403，避免通过 404/200 判断服务实例是否存在或执行只读 refresh
+- [x] 既有 GitOps action 测试补齐真实受保护路由上下文：创建 app/env/member 后以成员用户执行 action
+- [x] 后端目标测试：`go test ./internal/handler -run 'Test(RunServiceWorkspaceActionRejectsNonMembers|RunServiceWorkspaceActionRejectsNonMembersBeforeServiceLookup|ApplyArgoCDApplicationRejectsNamespaceOutsideEnvironment|ApplyArgoCDApplicationForcesEnvironmentProject|ApplyArgoCDApplicationSetForcesEnvironmentProject)' -count=1` 先红后绿
+- [x] 后端 handler 测试：`go test ./internal/handler -count=1` 通过
+- [x] 后端全量测试：`make test` 通过
+- [x] Docker 镜像 `v0.1.475` 构建并部署到 kind 集群
+- [x] kind 验证：显式使用 `--context kind-rbac-governance-test` 检查 `paap-server:v0.1.475`，Deployment `1/1 ready`，Pod `paap-server-685bb65db8-9rmjc` Running；`paap-system` 与 `kpack` Pod 均 Running，节点 Ready
+- [x] CDP 验证：复用 Chrome tab `http://172.18.0.2:30091/catalog`，临时普通用户 ID=19 POST `/api/v1/environments/5/services/22/workspace/actions` + `{"action":"refresh"}` 返回 403 和 `application access denied`；临时加入应用 5 成员后同一 action 返回 200，工作区类型 `repository`、资源 1 个、动作 5 个；临时用户和成员关系已清理，残留计数 0
+- [x] 对应文件：`internal/handler/environment.go`、`internal/handler/environment_test.go`
+- [x] 工作量：S（半天）
+
 ### Task 7.9: KubeVirt 虚拟机
 - [ ] 将 VM 作为新服务类型纳入 `ServiceCatalog`
 - [ ] 用 KubeVirt CRD（`VirtualMachine`）而非 Helm chart 部署

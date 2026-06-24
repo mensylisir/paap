@@ -2559,6 +2559,90 @@ func TestGetServiceRuntimeLogsRejectsNonMembersBeforeServiceLookup(t *testing.T)
 	}
 }
 
+func TestRunServiceWorkspaceActionRejectsNonMembers(t *testing.T) {
+	previousDB := database.DB
+	t.Cleanup(func() { database.DB = previousDB })
+	previousSync := syncClusterState
+	t.Cleanup(func() { syncClusterState = previousSync })
+	syncClusterState = func(context.Context, *gorm.DB, ctrlclient.Client) error { return nil }
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.ServiceInstallation{}, &model.Component{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	database.DB = db
+
+	app := model.Application{Name: "隐藏应用", Identifier: "hidden", OwnerID: 1}
+	if err := db.Create(&app).Error; err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	env := model.Environment{ApplicationID: app.ID, Name: "生产", Identifier: "prod", Namespace: "hidden-prod"}
+	if err := db.Create(&env).Error; err != nil {
+		t.Fatalf("create env: %v", err)
+	}
+	service := model.ServiceInstallation{EnvironmentID: env.ID, ServiceType: "deploy", Status: "running", Namespace: "hidden-prod-deploy"}
+	if err := db.Create(&service).Error; err != nil {
+		t.Fatalf("create service: %v", err)
+	}
+
+	body, _ := json.Marshal(WorkspaceActionRequest{Action: "refresh"})
+	req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/environments/%d/services/%d/workspace/actions", env.ID, service.ID), bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.POST("/api/v1/environments/:id/services/:serviceId/workspace/actions", withTestAuthUser(2, RunServiceWorkspaceAction))
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusForbidden, rec.Body.String())
+	}
+}
+
+func TestRunServiceWorkspaceActionRejectsNonMembersBeforeServiceLookup(t *testing.T) {
+	previousDB := database.DB
+	t.Cleanup(func() { database.DB = previousDB })
+	previousSync := syncClusterState
+	t.Cleanup(func() { syncClusterState = previousSync })
+	syncClusterState = func(context.Context, *gorm.DB, ctrlclient.Client) error { return nil }
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.ServiceInstallation{}, &model.Component{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	database.DB = db
+
+	app := model.Application{Name: "隐藏应用", Identifier: "hidden", OwnerID: 1}
+	if err := db.Create(&app).Error; err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	env := model.Environment{ApplicationID: app.ID, Name: "生产", Identifier: "prod", Namespace: "hidden-prod"}
+	if err := db.Create(&env).Error; err != nil {
+		t.Fatalf("create env: %v", err)
+	}
+
+	body, _ := json.Marshal(WorkspaceActionRequest{Action: "refresh"})
+	req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/environments/%d/services/999/workspace/actions", env.ID), bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.POST("/api/v1/environments/:id/services/:serviceId/workspace/actions", withTestAuthUser(2, RunServiceWorkspaceAction))
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusForbidden, rec.Body.String())
+	}
+}
+
 func TestDeleteEnvironmentRemovesClusterCRsNamespacesAndDatabaseRows(t *testing.T) {
 	previousDB := database.DB
 	previousK8sClient := k8s.GetClient()
@@ -2688,7 +2772,7 @@ func TestApplyArgoCDApplicationRejectsNamespaceOutsideEnvironment(t *testing.T) 
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&model.Application{}, &model.Environment{}, &model.ServiceInstallation{}, &model.Component{}); err != nil {
+	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.ServiceInstallation{}, &model.Component{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	database.DB = db
@@ -2700,6 +2784,9 @@ func TestApplyArgoCDApplicationRejectsNamespaceOutsideEnvironment(t *testing.T) 
 	env := model.Environment{ApplicationID: app.ID, Name: "开发", Identifier: "dev", Namespace: "billing-dev"}
 	if err := db.Create(&env).Error; err != nil {
 		t.Fatalf("create env: %v", err)
+	}
+	if err := db.Create(&model.AppMember{ApplicationID: app.ID, UserID: 2, Role: "member"}).Error; err != nil {
+		t.Fatalf("create member: %v", err)
 	}
 	inst := model.ServiceInstallation{EnvironmentID: env.ID, ServiceType: "deploy", Status: "running", Namespace: "billing-dev-deploy"}
 	if err := db.Create(&inst).Error; err != nil {
@@ -2722,7 +2809,7 @@ func TestApplyArgoCDApplicationRejectsNamespaceOutsideEnvironment(t *testing.T) 
 	})
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	router.POST("/api/v1/environments/:id/services/:serviceId/workspace/actions", RunServiceWorkspaceAction)
+	router.POST("/api/v1/environments/:id/services/:serviceId/workspace/actions", withTestAuthUser(2, RunServiceWorkspaceAction))
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/environments/1/services/1/workspace/actions", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -2746,7 +2833,7 @@ func TestApplyArgoCDApplicationForcesEnvironmentProject(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&model.Application{}, &model.Environment{}, &model.ServiceInstallation{}, &model.Component{}); err != nil {
+	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.ServiceInstallation{}, &model.Component{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	database.DB = db
@@ -2758,6 +2845,9 @@ func TestApplyArgoCDApplicationForcesEnvironmentProject(t *testing.T) {
 	env := model.Environment{ApplicationID: app.ID, Name: "开发", Identifier: "dev", Namespace: "billing-dev"}
 	if err := db.Create(&env).Error; err != nil {
 		t.Fatalf("create env: %v", err)
+	}
+	if err := db.Create(&model.AppMember{ApplicationID: app.ID, UserID: 2, Role: "member"}).Error; err != nil {
+		t.Fatalf("create member: %v", err)
 	}
 	inst := model.ServiceInstallation{EnvironmentID: env.ID, ServiceType: "deploy", Status: "running", Namespace: "billing-dev-deploy"}
 	if err := db.Create(&inst).Error; err != nil {
@@ -2781,7 +2871,7 @@ func TestApplyArgoCDApplicationForcesEnvironmentProject(t *testing.T) {
 	})
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	router.POST("/api/v1/environments/:id/services/:serviceId/workspace/actions", RunServiceWorkspaceAction)
+	router.POST("/api/v1/environments/:id/services/:serviceId/workspace/actions", withTestAuthUser(2, RunServiceWorkspaceAction))
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/environments/1/services/1/workspace/actions", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -2891,7 +2981,7 @@ func TestApplyArgoCDApplicationSetForcesEnvironmentProject(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&model.Application{}, &model.Environment{}, &model.ServiceInstallation{}, &model.Component{}); err != nil {
+	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.ServiceInstallation{}, &model.Component{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	database.DB = db
@@ -2903,6 +2993,9 @@ func TestApplyArgoCDApplicationSetForcesEnvironmentProject(t *testing.T) {
 	env := model.Environment{ApplicationID: app.ID, Name: "开发", Identifier: "dev", Namespace: "billing-dev"}
 	if err := db.Create(&env).Error; err != nil {
 		t.Fatalf("create env: %v", err)
+	}
+	if err := db.Create(&model.AppMember{ApplicationID: app.ID, UserID: 2, Role: "member"}).Error; err != nil {
+		t.Fatalf("create member: %v", err)
 	}
 	inst := model.ServiceInstallation{EnvironmentID: env.ID, ServiceType: "deploy", Status: "running", Namespace: "billing-dev-deploy"}
 	if err := db.Create(&inst).Error; err != nil {
@@ -2927,7 +3020,7 @@ func TestApplyArgoCDApplicationSetForcesEnvironmentProject(t *testing.T) {
 	})
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	router.POST("/api/v1/environments/:id/services/:serviceId/workspace/actions", RunServiceWorkspaceAction)
+	router.POST("/api/v1/environments/:id/services/:serviceId/workspace/actions", withTestAuthUser(2, RunServiceWorkspaceAction))
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/environments/1/services/1/workspace/actions", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
