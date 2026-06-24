@@ -355,6 +355,46 @@ func TestGetApplicationRejectsNonMembers(t *testing.T) {
 	}
 }
 
+func TestUpdateApplicationRejectsNonMembers(t *testing.T) {
+	previousDB := database.DB
+	t.Cleanup(func() { database.DB = previousDB })
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	database.DB = db
+
+	app := model.Application{Name: "隐藏应用", Identifier: "hidden", OwnerID: 1}
+	if err := db.Create(&app).Error; err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+
+	body, _ := json.Marshal(UpdateAppRequest{Name: "非法更新"})
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/applications/1", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.PUT("/api/v1/applications/:id", withTestAuthUser(2, UpdateApplication))
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusForbidden, rec.Body.String())
+	}
+	var got model.Application
+	if err := db.First(&got, app.ID).Error; err != nil {
+		t.Fatalf("find app: %v", err)
+	}
+	if got.Name != "隐藏应用" {
+		t.Fatalf("name = %q, want unchanged", got.Name)
+	}
+}
+
 func TestBuiltInTemplateOrderingPrefersLightweightRegistry(t *testing.T) {
 	if builtInInstallOrder("registry") >= builtInInstallOrder("harbor") {
 		t.Fatalf("lightweight registry should be ordered before Harbor")

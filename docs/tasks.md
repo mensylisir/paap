@@ -525,6 +525,20 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 - [x] 对应文件：`internal/handler/application.go`、`internal/handler/application_test.go`
 - [x] 工作量：S（半天）
 
+### Task 7.8e: 应用更新按成员鉴权 ✅
+> 普通用户更新应用前必须具备该应用访问权限，避免非成员按 ID 修改应用信息。
+
+- [x] `UpdateApplication` 先确认应用存在，再复用 `requireApplicationAccess`
+- [x] 非成员更新返回 403，并且不执行名称/描述更新
+- [x] 后端目标测试：`go test ./internal/handler -run TestUpdateApplicationRejectsNonMembers -count=1` 先红后绿
+- [x] 后端 handler 测试：`go test ./internal/handler -count=1` 通过
+- [x] 后端全量测试：`make test` 通过
+- [x] Docker 镜像 `v0.1.461` 构建并部署到 kind 集群
+- [x] kind 验证：显式使用 `--context kind-rbac-governance-test` 检查 `paap-server:v0.1.461`，Deployment `1/1 ready`，Pod `paap-server-76dc675799-2t6x7` Running
+- [x] API/数据库验证：临时普通用户 ID=6 更新非成员应用 1 返回 403 和 `application access denied`；应用名保持“测试应用”；临时用户已清理，残留计数 0
+- [x] 对应文件：`internal/handler/application.go`、`internal/handler/application_test.go`
+- [x] 工作量：S（半天）
+
 ### Task 7.9: KubeVirt 虚拟机
 - [ ] 将 VM 作为新服务类型纳入 `ServiceCatalog`
 - [ ] 用 KubeVirt CRD（`VirtualMachine`）而非 Helm chart 部署

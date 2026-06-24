@@ -292,6 +292,18 @@ func UpdateApplication(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	var app model.Application
+	if err := database.DB.First(&app, id).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "application not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if !requireApplicationAccess(c, app.ID) {
+		return
+	}
 
 	updates := make(map[string]interface{})
 	if req.Name != "" {
@@ -301,7 +313,7 @@ func UpdateApplication(c *gin.Context) {
 		updates["description"] = req.Description
 	}
 
-	if err := database.DB.Model(&model.Application{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+	if err := database.DB.Model(&app).Updates(updates).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
