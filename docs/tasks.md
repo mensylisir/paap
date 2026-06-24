@@ -614,6 +614,21 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 - [x] 对应文件：`internal/handler/environment.go`、`internal/handler/environment_test.go`
 - [x] 工作量：S（半天）
 
+### Task 7.8k: 环境组件/服务列表按成员鉴权 ✅
+> 普通用户读取环境组件或服务列表前必须具备所属应用访问权限，避免非成员通过环境 ID 枚举运行组件和中间件。
+
+- [x] `ListEnvironmentComponents` 先确认环境存在，再复用 `requireApplicationAccess(env.ApplicationID)`，通过后才读取组件列表
+- [x] `ListServiceInstances` 先确认环境存在，再复用 `requireApplicationAccess(env.ApplicationID)`，通过后才读取服务列表和运行态信息
+- [x] 非成员组件/服务列表请求均返回 403，并且不会继续读取子资源或运行态详情
+- [x] 后端目标测试：`go test ./internal/handler -run 'Test(ListEnvironmentComponentsRejectsNonMembers|ListServiceInstancesRejectsNonMembers)' -count=1` 先红后绿
+- [x] 后端 handler 测试：`go test ./internal/handler -count=1` 通过
+- [x] 后端全量测试：`make test` 通过
+- [x] Docker 镜像 `v0.1.467` 构建并部署到 kind 集群
+- [x] kind 验证：显式使用 `--context kind-rbac-governance-test` 检查 `paap-server:v0.1.467`，Deployment `1/1 ready`，Pod `paap-server-fcbbcb549-vwfph` Running；`paap-system` 与 `kpack` Pod 均 Running，节点 Ready
+- [x] CDP 验证：复用 Chrome tab `http://172.18.0.2:30091/catalog`，临时普通用户 ID=12 读取 `/api/v1/environments/1/components` 和 `/api/v1/environments/1/services` 均返回 403 和 `application access denied`；临时加入应用 1 成员后两个接口均返回 200；临时用户和成员关系已清理，残留计数 0
+- [x] 对应文件：`internal/handler/environment.go`、`internal/handler/environment_test.go`
+- [x] 工作量：S（半天）
+
 ### Task 7.9: KubeVirt 虚拟机
 - [ ] 将 VM 作为新服务类型纳入 `ServiceCatalog`
 - [ ] 用 KubeVirt CRD（`VirtualMachine`）而非 Helm chart 部署

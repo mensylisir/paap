@@ -1934,14 +1934,17 @@ func ListEnvironmentComponents(c *gin.Context) {
 	syncClusterStateNow()
 
 	envID, _ := strconv.Atoi(c.Param("id"))
-	var components []model.Component
-	if err := database.DB.Where("environment_id = ?", envID).Find(&components).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
 	var env model.Environment
 	if err := database.DB.First(&env, envID).Error; err != nil {
-		c.JSON(http.StatusOK, gin.H{"data": components})
+		c.JSON(http.StatusNotFound, gin.H{"error": "environment not found"})
+		return
+	}
+	if !requireApplicationAccess(c, env.ApplicationID) {
+		return
+	}
+	var components []model.Component
+	if err := database.DB.Where("environment_id = ?", env.ID).Find(&components).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 	ctx := context.Background()
@@ -2686,18 +2689,22 @@ func ListServiceInstances(c *gin.Context) {
 	syncClusterStateIfPossible()
 
 	envID, _ := strconv.Atoi(c.Param("id"))
+	var env model.Environment
+	if err := database.DB.First(&env, envID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "environment not found"})
+		return
+	}
+	if !requireApplicationAccess(c, env.ApplicationID) {
+		return
+	}
+
 	var services []model.ServiceInstallation
-	if err := database.DB.Where("environment_id = ?", envID).Find(&services).Error; err != nil {
+	if err := database.DB.Where("environment_id = ?", env.ID).Find(&services).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 	ctx := c.Request.Context()
 	enrichServiceInstallationsWithCRStatus(ctx, envID, services)
-	var env model.Environment
-	if err := database.DB.First(&env, envID).Error; err != nil {
-		c.JSON(http.StatusOK, gin.H{"data": enrichServiceInstallationViews(ctx, services, nil)})
-		return
-	}
 	access := collectEnvironmentExternalAccess(ctx, env)
 	c.JSON(http.StatusOK, gin.H{"data": enrichServiceInstallationViews(ctx, services, access)})
 }
