@@ -1720,6 +1720,138 @@ func TestSetComponentExternalAccessRejectsNonMembersBeforeComponentLookup(t *tes
 	}
 }
 
+func TestSetComponentNodePortAccessRejectsNonMembers(t *testing.T) {
+	previousDB := database.DB
+	previousClient := k8s.GetClient()
+	t.Cleanup(func() {
+		database.DB = previousDB
+		k8s.SetClient(previousClient)
+	})
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.Component{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	database.DB = db
+	k8s.SetClient(fake.NewClientBuilder().Build())
+
+	app := model.Application{Name: "隐藏应用", Identifier: "hidden", OwnerID: 1}
+	if err := db.Create(&app).Error; err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	env := model.Environment{ApplicationID: app.ID, Name: "生产", Identifier: "prod", Status: "running", Namespace: "hidden-prod"}
+	if err := db.Create(&env).Error; err != nil {
+		t.Fatalf("create env: %v", err)
+	}
+	comp := model.Component{EnvironmentID: env.ID, Name: "orders", Type: "backend", Image: "registry.local/orders:v1", Version: "v1", Replicas: 1, Status: "running"}
+	if err := db.Create(&comp).Error; err != nil {
+		t.Fatalf("create component: %v", err)
+	}
+
+	path := fmt.Sprintf("/api/v1/environments/%d/components/%d/nodeport-access", env.ID, comp.ID)
+	req := httptest.NewRequest(http.MethodPut, path, strings.NewReader(`{"enabled":true}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.PUT("/api/v1/environments/:id/components/:componentId/nodeport-access", withTestAuthUser(2, SetComponentNodePortAccess))
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusForbidden, rec.Body.String())
+	}
+}
+
+func TestSetComponentNodePortAccessChecksNamespaceAfterMemberAccess(t *testing.T) {
+	previousDB := database.DB
+	previousClient := k8s.GetClient()
+	t.Cleanup(func() {
+		database.DB = previousDB
+		k8s.SetClient(previousClient)
+	})
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.Component{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	database.DB = db
+	k8s.SetClient(fake.NewClientBuilder().Build())
+
+	app := model.Application{Name: "测试应用", Identifier: "test", OwnerID: 1}
+	if err := db.Create(&app).Error; err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	env := model.Environment{ApplicationID: app.ID, Name: "测试环境", Identifier: "staging", Status: "running"}
+	if err := db.Create(&env).Error; err != nil {
+		t.Fatalf("create env: %v", err)
+	}
+	if err := db.Create(&model.AppMember{ApplicationID: app.ID, UserID: 2, Role: "member"}).Error; err != nil {
+		t.Fatalf("create member: %v", err)
+	}
+	comp := model.Component{EnvironmentID: env.ID, Name: "orders", Type: "backend", Image: "registry.local/orders:v1", Version: "v1", Replicas: 1, Status: "running"}
+	if err := db.Create(&comp).Error; err != nil {
+		t.Fatalf("create component: %v", err)
+	}
+
+	path := fmt.Sprintf("/api/v1/environments/%d/components/%d/nodeport-access", env.ID, comp.ID)
+	req := httptest.NewRequest(http.MethodPut, path, strings.NewReader(`{"enabled":true}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.PUT("/api/v1/environments/:id/components/:componentId/nodeport-access", withTestAuthUser(2, SetComponentNodePortAccess))
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusConflict, rec.Body.String())
+	}
+}
+
+func TestSetComponentNodePortAccessRejectsNonMembersBeforeComponentLookup(t *testing.T) {
+	previousDB := database.DB
+	t.Cleanup(func() { database.DB = previousDB })
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.Component{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	database.DB = db
+
+	app := model.Application{Name: "隐藏应用", Identifier: "hidden", OwnerID: 1}
+	if err := db.Create(&app).Error; err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	env := model.Environment{ApplicationID: app.ID, Name: "生产", Identifier: "prod", Status: "running", Namespace: "hidden-prod"}
+	if err := db.Create(&env).Error; err != nil {
+		t.Fatalf("create env: %v", err)
+	}
+
+	path := fmt.Sprintf("/api/v1/environments/%d/components/999/nodeport-access", env.ID)
+	req := httptest.NewRequest(http.MethodPut, path, strings.NewReader(`{"enabled":true}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.PUT("/api/v1/environments/:id/components/:componentId/nodeport-access", withTestAuthUser(2, SetComponentNodePortAccess))
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusForbidden, rec.Body.String())
+	}
+}
+
 func TestGetServiceCredentialsReadsRealSecrets(t *testing.T) {
 	previousDB := database.DB
 	previousClient := k8s.GetClient()

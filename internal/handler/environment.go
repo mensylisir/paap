@@ -8228,6 +8228,19 @@ func SetComponentNodePortAccess(c *gin.Context) {
 		return
 	}
 
+	var env model.Environment
+	if err := database.DB.First(&env, envID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "environment not found"})
+		return
+	}
+	if !requireApplicationAccess(c, env.ApplicationID) {
+		return
+	}
+	if strings.TrimSpace(env.Namespace) == "" {
+		c.JSON(http.StatusConflict, gin.H{"error": "environment namespace is not ready"})
+		return
+	}
+
 	var comp model.Component
 	if err := database.DB.Where("id = ? AND environment_id = ?", compID, envID).First(&comp).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
@@ -8235,16 +8248,6 @@ func SetComponentNodePortAccess(c *gin.Context) {
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	var env model.Environment
-	if err := database.DB.First(&env, envID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "environment not found"})
-		return
-	}
-	if strings.TrimSpace(env.Namespace) == "" {
-		c.JSON(http.StatusConflict, gin.H{"error": "environment namespace is not ready"})
 		return
 	}
 
