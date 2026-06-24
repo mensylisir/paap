@@ -1,0 +1,153 @@
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - generic [ref=e5]:
+      - link "PAAP" [ref=e6] [cursor=pointer]:
+        - /url: /apps
+        - img [ref=e8]
+        - generic [ref=e12]: PAAP
+      - navigation "环境菜单" [ref=e14]:
+        - link "概览" [ref=e15] [cursor=pointer]:
+          - /url: /apps/5/environments/5
+          - img [ref=e16]
+          - generic [ref=e18]: 概览
+        - link "组件 2" [ref=e19] [cursor=pointer]:
+          - /url: /apps/5/environments/5?tab=components
+          - img [ref=e20]
+          - generic [ref=e22]: 组件
+          - generic [ref=e23]: "2"
+    - link "返回环境列表" [ref=e25] [cursor=pointer]:
+      - /url: /apps/5/environments
+      - img [ref=e26]
+      - generic [ref=e28]: 返回环境列表
+  - main [ref=e29]:
+    - generic [ref=e30]:
+      - button "R 应用 Real Fullstack PostgreSQL Redis Demo" [ref=e32] [cursor=pointer]:
+        - generic [ref=e33]: R
+        - generic [ref=e34]:
+          - generic [ref=e35]: 应用
+          - strong [ref=e36]: Real Fullstack PostgreSQL Redis Demo
+        - img [ref=e37]
+      - generic [ref=e39]: /
+      - button "环境 生产环境" [ref=e41] [cursor=pointer]:
+        - generic [ref=e43]:
+          - generic [ref=e44]: 环境
+          - strong [ref=e45]: 生产环境
+        - img [ref=e46]
+    - main [ref=e50]:
+      - generic [ref=e51]:
+        - generic [ref=e52]:
+          - button "环境拓扑" [ref=e53] [cursor=pointer]
+          - button "环境详情" [ref=e54] [cursor=pointer]
+        - generic [ref=e56]:
+          - generic [ref=e57]:
+            - heading "环境拓扑" [level=2] [ref=e58]
+            - generic [ref=e59]: 组件、平台工具、中间件和数据库的环境视图
+          - generic [ref=e61]:
+            - generic [ref=e62]:
+              - button "放大" [ref=e63] [cursor=pointer]:
+                - img [ref=e64]
+              - button "缩小" [ref=e66] [cursor=pointer]:
+                - img [ref=e67]
+              - button "重置视图" [ref=e69] [cursor=pointer]:
+                - img [ref=e70]
+              - generic [ref=e72]: 100%
+            - generic [ref=e73]:
+              - img [ref=e74]
+              - button "用户前端 前端服务 · 应用组件 http://172.18.0.2:32441 拖拽到其他节点建立连接 拖拽到其他节点建立连接 拖拽到其他节点建立连接 拖拽到其他节点建立连接" [ref=e75]:
+                - img [ref=e77]
+                - strong [ref=e80]: 用户前端
+                - generic [ref=e81]: 前端服务 · 应用组件
+                - generic "http://172.18.0.2:32441" [ref=e82]
+                - button "删除组件" [ref=e83] [cursor=pointer]:
+                  - img [ref=e84]
+                - generic "拖拽到其他节点建立连接" [ref=e87]
+                - generic "拖拽到其他节点建立连接" [ref=e88]
+                - generic "拖拽到其他节点建立连接" [ref=e89]
+                - generic "拖拽到其他节点建立连接" [ref=e90]
+              - button "API 服务 后端服务 · 应用组件 拖拽到其他节点建立连接 拖拽到其他节点建立连接 拖拽到其他节点建立连接 拖拽到其他节点建立连接" [ref=e91]:
+                - img [ref=e93]
+                - strong [ref=e96]: API 服务
+                - generic [ref=e97]: 后端服务 · 应用组件
+                - button "删除组件" [ref=e98] [cursor=pointer]:
+                  - img [ref=e99]
+                - generic "拖拽到其他节点建立连接" [ref=e102]
+                - generic "拖拽到其他节点建立连接" [ref=e103]
+                - generic "拖拽到其他节点建立连接" [ref=e104]
+                - generic "拖拽到其他节点建立连接" [ref=e105]
+              - button "prod-loki 日志服务 http://172.18.0.2:32596 拖拽到其他节点建立连接 拖拽到其他节点建立连接 拖拽到其他节点建立连接 拖拽到其他节点建立连接" [ref=e106]:
+                - img [ref=e108]
+                - strong [ref=e111]: prod-loki
+                - generic [ref=e112]: 日志服务
+                - generic "http://172.18.0.2:32596" [ref=e113]
+                - button "删除卡片" [ref=e114] [cursor=pointer]:
+                  - img [ref=e115]
+                - generic "拖拽到其他节点建立连接" [ref=e118]
+                - generic "拖拽到其他节点建立连接" [ref=e119]
+                - generic "拖拽到其他节点建立连接" [ref=e120]
+                - generic "拖拽到其他节点建立连接" [ref=e121]
+              - button "prod-redis 缓存服务 http://172.18.0.2:31458 拖拽到其他节点建立连接 拖拽到其他节点建立连接 拖拽到其他节点建立连接 拖拽到其他节点建立连接" [ref=e122]:
+                - img [ref=e124]
+                - strong [ref=e127]: prod-redis
+                - generic [ref=e128]: 缓存服务
+                - generic "http://172.18.0.2:31458" [ref=e129]
+                - button "删除卡片" [ref=e130] [cursor=pointer]:
+                  - img [ref=e131]
+                - generic "拖拽到其他节点建立连接" [ref=e134]
+                - generic "拖拽到其他节点建立连接" [ref=e135]
+                - generic "拖拽到其他节点建立连接" [ref=e136]
+                - generic "拖拽到其他节点建立连接" [ref=e137]
+              - button "prod-argocd 部署与持续交付 http://172.18.0.2:31119 拖拽到其他节点建立连接 拖拽到其他节点建立连接 拖拽到其他节点建立连接 拖拽到其他节点建立连接" [ref=e138]:
+                - img [ref=e140]
+                - strong [ref=e143]: prod-argocd
+                - generic [ref=e144]: 部署与持续交付
+                - generic "http://172.18.0.2:31119" [ref=e145]
+                - button "删除卡片" [ref=e146] [cursor=pointer]:
+                  - img [ref=e147]
+                - generic "拖拽到其他节点建立连接" [ref=e150]
+                - generic "拖拽到其他节点建立连接" [ref=e151]
+                - generic "拖拽到其他节点建立连接" [ref=e152]
+                - generic "拖拽到其他节点建立连接" [ref=e153]
+              - button "prod-gitea 代码仓库 http://172.18.0.2:30787 拖拽到其他节点建立连接 拖拽到其他节点建立连接 拖拽到其他节点建立连接 拖拽到其他节点建立连接" [ref=e154]:
+                - img [ref=e156]
+                - strong [ref=e159]: prod-gitea
+                - generic [ref=e160]: 代码仓库
+                - generic "http://172.18.0.2:30787" [ref=e161]
+                - button "删除卡片" [ref=e162] [cursor=pointer]:
+                  - img [ref=e163]
+                - generic "拖拽到其他节点建立连接" [ref=e166]
+                - generic "拖拽到其他节点建立连接" [ref=e167]
+                - generic "拖拽到其他节点建立连接" [ref=e168]
+                - generic "拖拽到其他节点建立连接" [ref=e169]
+              - button "prod-registry 轻量镜像仓库 registry.real-fullst…/ 拖拽到其他节点建立连接 拖拽到其他节点建立连接 拖拽到其他节点建立连接 拖拽到其他节点建立连接" [ref=e170]:
+                - img [ref=e172]
+                - strong [ref=e175]: prod-registry
+                - generic [ref=e176]: 轻量镜像仓库
+                - generic "https://registry.real-fullstack-prod.paap.local/" [ref=e177]: registry.real-fullst…/
+                - button "删除卡片" [ref=e178] [cursor=pointer]:
+                  - img [ref=e179]
+                - generic "拖拽到其他节点建立连接" [ref=e182]
+                - generic "拖拽到其他节点建立连接" [ref=e183]
+                - generic "拖拽到其他节点建立连接" [ref=e184]
+                - generic "拖拽到其他节点建立连接" [ref=e185]
+              - button "prod-kube-prometheus-stack 监控与可观测性 http://172.18.0.2:32596 拖拽到其他节点建立连接 拖拽到其他节点建立连接 拖拽到其他节点建立连接 拖拽到其他节点建立连接" [ref=e186]:
+                - img [ref=e188]
+                - strong [ref=e191]: prod-kube-prometheus-stack
+                - generic [ref=e192]: 监控与可观测性
+                - generic "http://172.18.0.2:32596" [ref=e193]
+                - button "删除卡片" [ref=e194] [cursor=pointer]:
+                  - img [ref=e195]
+                - generic "拖拽到其他节点建立连接" [ref=e198]
+                - generic "拖拽到其他节点建立连接" [ref=e199]
+                - generic "拖拽到其他节点建立连接" [ref=e200]
+                - generic "拖拽到其他节点建立连接" [ref=e201]
+              - button "prod-postgresql 关系型数据库 http://172.18.0.2:30794 拖拽到其他节点建立连接 拖拽到其他节点建立连接 拖拽到其他节点建立连接 拖拽到其他节点建立连接" [ref=e202]:
+                - img [ref=e204]
+                - strong [ref=e207]: prod-postgresql
+                - generic [ref=e208]: 关系型数据库
+                - generic "http://172.18.0.2:30794" [ref=e209]
+                - button "删除卡片" [ref=e210] [cursor=pointer]:
+                  - img [ref=e211]
+                - generic "拖拽到其他节点建立连接" [ref=e214]
+                - generic "拖拽到其他节点建立连接" [ref=e215]
+                - generic "拖拽到其他节点建立连接" [ref=e216]
+                - generic "拖拽到其他节点建立连接" [ref=e217]

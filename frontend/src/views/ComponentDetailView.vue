@@ -81,7 +81,7 @@
         <div class="section-header">
           <div>
             <h2 class="rail-section-title">资源拓扑</h2>
-            <p class="rail-section-desc">按当前组件配置和 GitOps 元数据展示资源关系；不会根据状态推断未返回的 Pod 或 ReplicaSet。</p>
+            <p class="rail-section-desc">按当前组件配置和 GitOps 元数据展示资源关系；不会根据状态推断未返回的运行实例或副本集。</p>
           </div>
         </div>
         <div class="component-argocd-topology">
@@ -180,7 +180,7 @@
         <div class="section-header config-header">
           <div>
             <h2 class="rail-section-title">运行配置</h2>
-            <p class="rail-section-desc">保存环境变量、Secret 引用、ConfigMap 引用和组件依赖。保存配置不会部署，点击部署后才写入 GitOps 和运行态。</p>
+            <p class="rail-section-desc">保存环境变量、凭据引用、配置引用和组件依赖。保存配置不会部署，点击部署后才写入 GitOps 和运行态。</p>
           </div>
           <button type="button" class="rail-btn rail-btn--primary" :disabled="actionLoading" @click="() => saveComponentConfig()">
             保存配置
@@ -206,7 +206,7 @@
           <div class="env-editor-head">
             <div>
               <h3>环境变量</h3>
-              <p>普通值、SecretKeyRef 和 ConfigMapKeyRef 会在部署时进入 Deployment。</p>
+              <p>普通值、敏感配置引用和配置引用会在部署时生效。</p>
             </div>
             <button type="button" class="rail-btn rail-btn--ghost" @click="addEnvRow">添加变量</button>
           </div>
@@ -222,12 +222,12 @@
               <input v-model.trim="item.name" class="rail-input mono" placeholder="DATABASE_URL" />
               <select v-model="item.source" class="rail-select">
                 <option value="value">值</option>
-                <option value="secret">Secret</option>
-                <option value="configmap">ConfigMap</option>
+                <option value="secret">敏感项</option>
+                <option value="configmap">应用配置</option>
               </select>
               <input v-if="item.source === 'value'" v-model.trim="item.value" class="rail-input mono" placeholder="postgres://..." />
-              <input v-else-if="item.source === 'secret'" v-model.trim="item.secretName" class="rail-input mono" placeholder="secret-name" />
-              <input v-else v-model.trim="item.configMapName" class="rail-input mono" placeholder="configmap-name" />
+              <input v-else-if="item.source === 'secret'" v-model.trim="item.secretName" class="rail-input mono" placeholder="凭据名称" />
+              <input v-else v-model.trim="item.configMapName" class="rail-input mono" placeholder="配置名称" />
               <input v-if="item.source === 'value'" class="rail-input mono" disabled value="-" />
               <input v-else-if="item.source === 'secret'" v-model.trim="item.secretKey" class="rail-input mono" placeholder="password" />
               <input v-else v-model.trim="item.configMapKey" class="rail-input mono" placeholder="host" />

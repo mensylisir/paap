@@ -109,6 +109,7 @@ func SetupRouter(r *gin.Engine) {
 		api.POST("/components/:id/deploy", DeployComponent)
 		// Component external access toggle
 		api.PUT("/environments/:id/components/:componentId/external-access", SetComponentExternalAccess)
+		api.PUT("/environments/:id/components/:componentId/nodeport-access", SetComponentNodePortAccess)
 		// Component delete
 		api.DELETE("/components/:id", DeleteComponent)
 	}

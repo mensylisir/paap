@@ -441,10 +441,14 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 - [ ] 具体文件：`internal/handler/template.go`、`internal/model/service_catalog.go`
 - [ ] 工作量：1-2 周
 
-### Task 7.17: K8s 术语隐藏
-- [ ] 审查所有 drawer 和 workspace 中的 namespace/service/pod/configmap/secret/helm 等术语
-- [ ] 替换或隐藏 K8s 概念，仅在 debug/高级模式下展示
-- [ ] 工作量：0.5-1 周
+### Task 7.17: K8s 术语隐藏 ✅
+- [x] 审查所有 drawer 和 workspace 中的 namespace/service/pod/configmap/secret/helm 等术语
+- [x] 替换或隐藏 K8s 概念，仅在 debug/高级模式下展示
+- [x] 工作量：0.5-1 周
+- [x] 改动文件：`EnvDetailView.vue`、`ComponentDetailView.vue`、`ArgocdWorkspace.vue`、`RegistryWorkspace.vue`、`LogWorkspace.vue`、`componentProfile.ts`
+- [x] 改动内容：Secret→敏感配置，ConfigMap→普通配置/应用配置，Pod→运行实例，ReplicaSet→副本集，Namespace→部署环境，Kind→类型，Workload→工作负载，Service→服务名称，Image→镜像，Replicas→副本数，dropdown labels→敏感项/应用配置，placeholder→凭据名称/配置名称，kpack→构建服务
+- [x] 附带清理：移除组件 drawer 无用的"设置" tab 和服务 drawer 无用的"运行态" tab，Command/Args 移至部署 tab 高级区域，删除 `componentDrawerDataRows` 死代码及 4 个未使用的 runtime summary helper 函数
+- [x] CDP 验证：v0.1.437 部署后组件 drawer tabs 正确（部署/配置/指标/日志/控制台），Redis 服务 drawer tabs 正确（部署/数据/接入/指标/日志/控制台）
 
 ### Task 7.18: 产品化验证与审计队列
 - [ ] 产品化 Drawer 审计：每个工具/中间件的 drawer CDP 端到端验证

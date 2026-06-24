@@ -142,7 +142,7 @@
                     <em>{{ selectedApp.name }}</em>
                   </div>
                   <div class="argocd-detail-prop">
-                    <span>Namespace</span>
+                    <span>环境</span>
                     <em>{{ selectedResourceView.annotations?.namespace || selectedResourceView.description || selectedApp.annotations?.namespace || '-' }}</em>
                   </div>
                   <div v-for="entry in selectedAnnotations" :key="entry.key" class="argocd-detail-prop">

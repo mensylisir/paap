@@ -157,7 +157,7 @@ const subjectKindLabel = (subject?: WorkspaceResource | null) => {
   if (kind === 'component') return '组件'
   if (kind === 'tool') return '工具'
   if (kind === 'middleware') return '数据库/中间件'
-  if (kind === 'pod') return 'Pod'
+  if (kind === 'pod') return '运行实例'
   return '环境'
 }
 const grafanaFrameSource = (resource?: WorkspaceResource | null) =>

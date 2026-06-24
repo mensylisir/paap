@@ -112,6 +112,8 @@ type ComponentView struct {
 	model.Component
 	RuntimeConfig *k8s.RuntimeConfig `json:"runtimeConfig,omitempty"`
 	ExternalURL   string             `json:"externalUrl,omitempty"`
+	IngressURL    string             `json:"ingressUrl"`
+	NodePortURL   string             `json:"nodePortUrl"`
 }
 
 type ServiceInstallationView struct {
@@ -1549,6 +1551,8 @@ func enrichComponentViews(ctx context.Context, env model.Environment, components
 			log.Printf("[GetEnvironment] discover component runtime config failed component=%s namespace=%s: %v", identifier, env.Namespace, err)
 		}
 		view.ExternalURL = componentExternalURL(env.ID, comp, identifier, access, view.RuntimeConfig)
+		view.IngressURL = componentIngressURL(identifier, access)
+		view.NodePortURL = componentNodePortURL(identifier, access)
 		views = append(views, view)
 	}
 	return views
@@ -1567,6 +1571,25 @@ func enrichServiceInstallationViews(ctx context.Context, services []model.Servic
 		views = append(views, view)
 	}
 	return views
+}
+
+func componentIngressURL(identifier string, access []EnvironmentExternalAccess) string {
+	ingressName := "comp-" + identifier
+	for _, item := range access {
+		if item.Kind == "Ingress" && (item.Name == ingressName || strings.HasPrefix(item.Name, identifier+"-")) {
+			return item.URL
+		}
+	}
+	return ""
+}
+
+func componentNodePortURL(identifier string, access []EnvironmentExternalAccess) string {
+	for _, item := range access {
+		if item.Kind == "NodePort" && strings.Contains(item.Name, identifier) {
+			return item.URL
+		}
+	}
+	return ""
 }
 
 func componentExternalURL(envID uint, comp model.Component, identifier string, access []EnvironmentExternalAccess, runtime *k8s.RuntimeConfig) string {
@@ -8037,6 +8060,48 @@ func SetComponentExternalAccess(c *gin.Context) {
 	ctx := context.Background()
 	identifier := service.ComponentIdentifier(comp.Name, comp.Type, comp.ID)
 	if err := k8s.SetComponentExternalAccess(ctx, env.Namespace, identifier, req.Enabled); err != nil {
+		c.JSON(http.StatusFailedDependency, gin.H{"error": err.Error()})
+		return
+	}
+
+	access := collectEnvironmentExternalAccess(ctx, env)
+	view := enrichComponentViews(ctx, env, []model.Component{comp}, access)[0]
+	c.JSON(http.StatusOK, gin.H{"data": view, "externalAccess": access})
+}
+
+func SetComponentNodePortAccess(c *gin.Context) {
+	envID, _ := strconv.Atoi(c.Param("id"))
+	compID, _ := strconv.Atoi(c.Param("componentId"))
+
+	var req ServiceExternalAccessRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	var comp model.Component
+	if err := database.DB.Where("id = ? AND environment_id = ?", compID, envID).First(&comp).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "component not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	var env model.Environment
+	if err := database.DB.First(&env, envID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "environment not found"})
+		return
+	}
+	if strings.TrimSpace(env.Namespace) == "" {
+		c.JSON(http.StatusConflict, gin.H{"error": "environment namespace is not ready"})
+		return
+	}
+
+	ctx := context.Background()
+	identifier := service.ComponentIdentifier(comp.Name, comp.Type, comp.ID)
+	if err := k8s.SetComponentNodePortAccess(ctx, env.Namespace, identifier, req.Enabled); err != nil {
 		c.JSON(http.StatusFailedDependency, gin.H{"error": err.Error()})
 		return
 	}

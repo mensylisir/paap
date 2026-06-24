@@ -87,21 +87,14 @@ func SetNamespaceServiceExternalAccess(ctx context.Context, namespace, serviceTy
 	return next, nil
 }
 
-// SetComponentExternalAccess creates or removes an Ingress for a component's Service.
-func SetComponentExternalAccess(ctx context.Context, namespace, componentIdentifier string, enabled bool) error {
-	cl, err := requireClient()
-	if err != nil {
-		return err
-	}
-
-	// Find the component's Service by label selector
+func findComponentService(ctx context.Context, cl client.Client, namespace, componentIdentifier string) (*corev1.Service, error) {
 	services := &corev1.ServiceList{}
 	selector := []client.ListOption{
 		client.InNamespace(namespace),
 		client.MatchingLabels{"paap.io/component": componentIdentifier},
 	}
 	if err := cl.List(ctx, services, selector...); err != nil {
-		return fmt.Errorf("list services: %w", err)
+		return nil, fmt.Errorf("list services: %w", err)
 	}
 	if len(services.Items) == 0 {
 		fallback := []client.ListOption{
@@ -109,13 +102,26 @@ func SetComponentExternalAccess(ctx context.Context, namespace, componentIdentif
 			client.MatchingLabels{"app": componentIdentifier},
 		}
 		if err := cl.List(ctx, services, fallback...); err != nil {
-			return fmt.Errorf("list services (fallback): %w", err)
+			return nil, fmt.Errorf("list services (fallback): %w", err)
 		}
 	}
 	if len(services.Items) == 0 {
-		return fmt.Errorf("no service found for component %s in namespace %s", componentIdentifier, namespace)
+		return nil, fmt.Errorf("no service found for component %s in namespace %s", componentIdentifier, namespace)
 	}
-	target := &services.Items[0]
+	return &services.Items[0], nil
+}
+
+// SetComponentExternalAccess creates or removes an Ingress for a component's Service.
+func SetComponentExternalAccess(ctx context.Context, namespace, componentIdentifier string, enabled bool) error {
+	cl, err := requireClient()
+	if err != nil {
+		return err
+	}
+
+	target, err := findComponentService(ctx, cl, namespace, componentIdentifier)
+	if err != nil {
+		return err
+	}
 	if len(target.Spec.Ports) == 0 {
 		return fmt.Errorf("service %s/%s has no ports", namespace, target.Name)
 	}
@@ -181,6 +187,27 @@ func ingressObjectMeta(namespace, name, componentIdentifier string) metav1.Objec
 			"paap.io/ingress-purpose": "component-external-access",
 		},
 	}
+}
+
+func SetComponentNodePortAccess(ctx context.Context, namespace, componentIdentifier string, enabled bool) error {
+	cl, err := requireClient()
+	if err != nil {
+		return err
+	}
+	target, err := findComponentService(ctx, cl, namespace, componentIdentifier)
+	if err != nil {
+		return err
+	}
+	next := target.DeepCopy()
+	if enabled {
+		next.Spec.Type = corev1.ServiceTypeNodePort
+	} else {
+		next.Spec.Type = corev1.ServiceTypeClusterIP
+		for i := range next.Spec.Ports {
+			next.Spec.Ports[i].NodePort = 0
+		}
+	}
+	return cl.Update(ctx, next)
 }
 
 func endpointPriority(kind string) int {

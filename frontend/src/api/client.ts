@@ -102,5 +102,7 @@ export const api = {
      request(`/environments/${envId}/services/${serviceId}/external-access`, { method: 'PUT', body: JSON.stringify({ enabled }) }),
    setComponentExternalAccess: (envId: number, componentId: number, enabled: boolean) =>
      request(`/environments/${envId}/components/${componentId}/external-access`, { method: 'PUT', body: JSON.stringify({ enabled }) }),
+   setComponentNodePortAccess: (envId: number, componentId: number, enabled: boolean) =>
+     request(`/environments/${envId}/components/${componentId}/nodeport-access`, { method: 'PUT', body: JSON.stringify({ enabled }) }),
    uninstallService: (envId: number, serviceId: number) => request(`/environments/${envId}/services/${serviceId}`, { method: 'DELETE' }),
 }

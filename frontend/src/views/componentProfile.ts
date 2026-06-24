@@ -349,7 +349,6 @@ export function componentDrawerBlueprint(profile: ComponentProfile): ComponentDr
     { key: 'runtime', label: '指标' },
     { key: 'logs', label: '日志' },
     { key: 'console', label: '控制台' },
-    { key: 'settings', label: '设置' },
   ]
 
   if (profile.webEntry) {

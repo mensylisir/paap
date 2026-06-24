@@ -1,0 +1,15 @@
+- generic [ref=e4]:
+  - generic [ref=e5]:
+    - img [ref=e7]
+    - heading "PAAP" [level=1] [ref=e11]
+    - paragraph [ref=e12]: 应用管理平台
+  - generic [ref=e13]:
+    - heading "登录" [level=2] [ref=e14]
+    - generic [ref=e15]:
+      - generic [ref=e16]:
+        - generic [ref=e17]: 用户名
+        - textbox "请输入用户名" [ref=e18]
+      - generic [ref=e19]:
+        - generic [ref=e20]: 密码
+        - textbox "请输入密码" [ref=e21]
+      - button "登录" [ref=e22] [cursor=pointer]

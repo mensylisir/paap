@@ -1,0 +1,101 @@
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - generic [ref=e5]:
+      - link "PAAP" [ref=e6] [cursor=pointer]:
+        - /url: /apps
+        - img [ref=e8]
+        - generic [ref=e12]: PAAP
+      - navigation [ref=e13]:
+        - link "应用" [ref=e14] [cursor=pointer]:
+          - /url: /apps
+          - img [ref=e15]
+          - generic [ref=e20]: 应用
+        - link "模板" [ref=e21] [cursor=pointer]:
+          - /url: /templates
+          - img [ref=e22]
+          - generic [ref=e25]: 模板
+        - link "目录" [ref=e26] [cursor=pointer]:
+          - /url: /catalog
+          - img [ref=e27]
+          - generic [ref=e37]: 目录
+    - generic [ref=e38]:
+      - generic [ref=e39]:
+        - generic [ref=e40]: 用
+        - generic [ref=e41]: 用户
+      - button "退出" [ref=e42] [cursor=pointer]:
+        - img [ref=e43]
+        - generic [ref=e46]: 退出
+  - main [ref=e47]:
+    - generic [ref=e48]:
+      - generic [ref=e50]:
+        - heading "中间件目录" [level=1] [ref=e51]
+        - paragraph [ref=e52]: 平台支持的中间件与工具一览（共 14 个）
+      - generic [ref=e53]:
+        - img [ref=e55]
+        - textbox "搜索中间件或工具名称..." [ref=e57]
+      - generic [ref=e58]:
+        - button "🔧 工具类 7" [ref=e59] [cursor=pointer]:
+          - generic [ref=e60]: 🔧
+          - generic [ref=e61]: 工具类
+          - generic [ref=e62]: "7"
+        - button "🗄️ 中间件 / 数据库 7" [ref=e63] [cursor=pointer]:
+          - generic [ref=e64]: 🗄️
+          - generic [ref=e65]: 中间件 / 数据库
+          - generic [ref=e66]: "7"
+      - generic [ref=e68]:
+        - article [ref=e69]:
+          - generic [ref=e70]:
+            - generic [ref=e71]: 🔧
+            - generic [ref=e72]:
+              - strong [ref=e73]: ArgoCD (官方)
+              - code [ref=e74]: deploy
+          - paragraph [ref=e75]: ArgoCD - GitOps 持续部署工具
+          - generic [ref=e78]: v2.13.1
+        - article [ref=e79]:
+          - generic [ref=e80]:
+            - generic [ref=e81]: 🔧
+            - generic [ref=e82]:
+              - strong [ref=e83]: Docker Registry v2
+              - code [ref=e84]: registry
+          - paragraph [ref=e85]: Docker Registry v2 - 轻量 OCI 镜像仓库，适合开发测试环境
+          - generic [ref=e88]: v2.8.3
+        - article [ref=e89]:
+          - generic [ref=e90]:
+            - generic [ref=e91]: 🔧
+            - generic [ref=e92]:
+              - strong [ref=e93]: Gitea
+              - code [ref=e94]: git
+          - paragraph [ref=e95]: Gitea - 轻量 Git 代码仓库
+          - generic [ref=e98]: v1.23.8
+        - article [ref=e99]:
+          - generic [ref=e100]:
+            - generic [ref=e101]: 🔧
+            - generic [ref=e102]:
+              - strong [ref=e103]: Jenkins (官方)
+              - code [ref=e104]: ci
+          - paragraph [ref=e105]: Jenkins - CI/CD 服务器
+          - generic [ref=e108]: v2.414.3
+        - article [ref=e109]:
+          - generic [ref=e110]:
+            - generic [ref=e111]: 🔧
+            - generic [ref=e112]:
+              - strong [ref=e113]: Prometheus+Grafana (官方)
+              - code [ref=e114]: monitor
+          - paragraph [ref=e115]: Prometheus + Grafana - 全栈监控
+          - generic [ref=e118]: v0.77.2
+        - article [ref=e119]:
+          - generic [ref=e120]:
+            - generic [ref=e121]: 🔧
+            - generic [ref=e122]:
+              - strong [ref=e123]: Loki+Promtail (官方)
+              - code [ref=e124]: log
+          - paragraph [ref=e125]: Loki + Promtail - 日志收集与查询
+          - generic [ref=e128]: v2.9.3
+        - article [ref=e129]:
+          - generic [ref=e130]:
+            - generic [ref=e131]: 🔧
+            - generic [ref=e132]:
+              - strong [ref=e133]: Harbor (官方)
+              - code [ref=e134]: harbor
+          - paragraph [ref=e135]: Harbor - 企业级镜像仓库，组件多、镜像大，建议生产或资源充足环境使用
+          - generic [ref=e138]: v2.12.0

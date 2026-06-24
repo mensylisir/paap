@@ -120,7 +120,6 @@
                   />
                   <strong v-else>{{ node.name }}</strong>
                   <small>{{ environmentTopologyNodeSubtitle(node) }}</small>
-                  <span v-if="node.externalUrl" class="node-external-url" :title="node.externalUrl">{{ shortenUrl(node.externalUrl) }}</span>
                   <span
                     class="node-delete-action"
                     role="button"
@@ -573,7 +572,6 @@
                   />
                   <strong v-else>{{ node.name }}</strong>
                   <small>{{ topologyNodeSubtitle(node) }}</small>
-                  <span v-if="node.externalUrl" class="node-external-url" :title="node.externalUrl">{{ shortenUrl(node.externalUrl) }}</span>
                   <span
                     class="node-delete-action"
                     role="button"
@@ -871,10 +869,10 @@
                   <code>{{ componentDrawerServiceEndpoint || '等待生成' }}</code>
                 </div>
                 <div class="service-access-row service-access-row--action">
-                  <span>外部入口</span>
-                  <code v-if="configDrawerExternalUrl">{{ configDrawerExternalUrl }}</code>
-                  <strong v-else>未暴露</strong>
-                  <a v-if="configDrawerExternalUrl" :href="configDrawerExternalUrl" target="_blank" rel="noreferrer" class="text-btn">打开</a>
+                  <span>Ingress 入口</span>
+                  <code v-if="componentDrawerIngressUrl">{{ componentDrawerIngressUrl }}</code>
+                  <strong v-else>未启用</strong>
+                  <a v-if="componentDrawerIngressUrl" :href="componentDrawerIngressUrl" target="_blank" rel="noreferrer" class="text-btn">打开</a>
                   <button
                     v-if="componentDrawerExternalAccessToggleVisible"
                     type="button"
@@ -883,6 +881,21 @@
                     @click="toggleComponentExternalAccess"
                   >
                     {{ componentDrawerExternalAccessLabel }}
+                  </button>
+                </div>
+                <div class="service-access-row service-access-row--action">
+                  <span>NodePort 端口</span>
+                  <code v-if="componentDrawerNodePortUrl">{{ componentDrawerNodePortUrl }}</code>
+                  <strong v-else>未启用</strong>
+                  <a v-if="componentDrawerNodePortUrl" :href="componentDrawerNodePortUrl" target="_blank" rel="noreferrer" class="text-btn">打开</a>
+                  <button
+                    v-if="componentDrawerNodePortToggleVisible"
+                    type="button"
+                    class="bx--btn bx--btn--secondary bx--btn--sm"
+                    :disabled="componentNodePortLoading"
+                    @click="toggleComponentNodePortAccess"
+                  >
+                    {{ componentDrawerNodePortLabel }}
                   </button>
                 </div>
               </div>
@@ -1098,7 +1111,7 @@
                   <button type="button" class="text-btn" @click="showServiceRawVariables">查看原始参数</button>
                 </div>
               </div>
-              <div class="config-inline-note">服务接入变量由模板、Secret 和运行态发现生成；业务组件在配置模板里选择服务后引用这些变量。</div>
+              <div class="config-inline-note">服务接入变量由模板、敏感配置和运行态发现生成；业务组件在配置模板里选择服务后引用这些变量。</div>
               <div v-if="serviceDrawerVariableRows.length" class="config-variable-list">
                 <div v-for="row in serviceDrawerVariableRows" :key="row.name" class="config-variable-row">
                   <span class="config-variable-name">{{ row.name }}</span>
@@ -1379,16 +1392,6 @@
               <div v-else class="config-empty">当前后端还没有绑定数据库、缓存或中间件。</div>
             </section>
 
-            <section v-if="configDrawerTab === 'data' && configDrawer.kind === 'component'" class="config-section">
-              <div class="config-section-title"><span>{{ componentDrawerType === 'database' ? '数据服务' : '中间件服务' }}</span></div>
-              <div class="config-kv-grid service-summary-grid">
-                <div v-for="row in componentDrawerDataRows" :key="row.label">
-                  <span>{{ row.label }}</span>
-                  <strong>{{ row.value }}</strong>
-                </div>
-              </div>
-              <div class="config-inline-note">纳管来的数据库或中间件组件只展示运行资源；推荐新建数据库、Redis、MQ、MinIO 时使用画布里的中间件卡片。</div>
-            </section>
 
             <section v-if="configDrawerTab === 'deploy' && configDrawer.kind === 'component'" class="config-section">
               <div class="config-section-title">
@@ -1495,6 +1498,17 @@
                   <input v-model.trim="configForm.memory" class="bx--text-input" placeholder="128Mi" />
                 </label>
               </div>
+              <details class="config-advanced-details">
+                <summary>高级启动配置</summary>
+                <label class="config-stack-field">
+                  <span>Command</span>
+                  <textarea v-model="configForm.commandText" class="bx--text-input" rows="2" placeholder="每行一个 command 片段"></textarea>
+                </label>
+                <label class="config-stack-field">
+                  <span>Args</span>
+                  <textarea v-model="configForm.argsText" class="bx--text-input" rows="3" placeholder="每行一个参数"></textarea>
+                </label>
+              </details>
             </section>
 
             <section v-if="configDrawerTab === 'variables' && configDrawer.kind === 'component'" class="config-section">
@@ -1642,44 +1656,6 @@
               </div>
             </section>
 
-            <section v-if="configDrawerTab === 'settings'" class="config-section">
-              <div class="config-section-title">
-                <span>运行态只读</span>
-                <small>这里反映当前工作负载引用的 ConfigMap、Secret 和挂载；修改部署参数请回到「部署」tab。</small>
-              </div>
-              <div class="config-ref-grid">
-                <div>
-                  <span>普通配置</span>
-                  <strong>{{ runtimeObjectSummary(drawerRuntime.configMaps) }}</strong>
-                </div>
-                <div>
-                  <span>敏感配置</span>
-                  <strong>{{ runtimeSecretObjectSummary(drawerRuntime.secrets) }}</strong>
-                </div>
-                <div>
-                  <span>批量注入</span>
-                  <strong>{{ runtimeEnvFromSummary(drawerRuntime.envFrom) }}</strong>
-                </div>
-                <div>
-                  <span>文件挂载</span>
-                  <strong>{{ runtimeFileSummary(drawerRuntime.files) }}</strong>
-                </div>
-              </div>
-            </section>
-
-            <section v-if="configDrawerTab === 'settings' && configDrawer.kind === 'component'" class="config-section">
-              <details>
-                <summary>高级启动配置</summary>
-                <label class="config-stack-field">
-                  <span>Command</span>
-                  <textarea v-model="configForm.commandText" class="bx--text-input" rows="2" placeholder="每行一个 command 片段"></textarea>
-                </label>
-                <label class="config-stack-field">
-                  <span>Args</span>
-                  <textarea v-model="configForm.argsText" class="bx--text-input" rows="3" placeholder="每行一个参数"></textarea>
-                </label>
-              </details>
-            </section>
 
             <section v-if="configDrawerTab === 'runtime'" class="config-section">
               <div class="config-section-title">
@@ -2380,6 +2356,7 @@ const componentDrawerRole = ref('custom')
 const serviceDrawerWorkspaceLoading = ref(false)
 const serviceExternalAccessLoading = ref(false)
 const componentExternalAccessLoading = ref(false)
+const componentNodePortLoading = ref(false)
 const serviceDrawerRevealedSecrets = ref<Set<string>>(new Set())
 const serviceDrawerSecretValues = ref<Record<string, string>>({})
 const serviceDrawerSecretLoadingKey = ref('')
@@ -2396,7 +2373,7 @@ const runtimeConsoleError = ref('')
 const runtimeConsoleBuffer = ref('')
 const runtimeConsoleInput = ref('')
 const runtimeConsoleView = ref<HTMLElement | null>(null)
-type ConfigDrawerTab = 'deploy' | 'workspace' | 'capabilities' | 'api' | 'dependencies' | 'database' | 'data' | 'queues' | 'buckets' | 'backups' | 'variables' | 'runtime' | 'logs' | 'console' | 'settings'
+type ConfigDrawerTab = 'deploy' | 'workspace' | 'capabilities' | 'api' | 'dependencies' | 'database' | 'data' | 'queues' | 'buckets' | 'backups' | 'variables' | 'runtime' | 'logs' | 'console'
 const configDrawerTab = ref<ConfigDrawerTab>('deploy')
 const configDrawer = ref<{ visible: boolean; kind: 'component' | 'service'; component: any | null; service: any | null; saving: boolean; error: string; message: string }>({
   visible: false,
@@ -2421,7 +2398,6 @@ const configDrawerTabs = computed<Array<{ key: ConfigDrawerTab; label: string }>
 	      { key: 'runtime', label: '指标' },
 	      { key: 'logs', label: '日志' },
 	      { key: 'console', label: '控制台' },
-      { key: 'settings', label: '运行态' },
     ]
   }
   if (kind === 'redis') {
@@ -2432,7 +2408,6 @@ const configDrawerTabs = computed<Array<{ key: ConfigDrawerTab; label: string }>
 	      { key: 'runtime', label: '指标' },
 	      { key: 'logs', label: '日志' },
 	      { key: 'console', label: '控制台' },
-      { key: 'settings', label: '运行态' },
     ]
   }
   if (kind === 'message-queue') {
@@ -2443,7 +2418,6 @@ const configDrawerTabs = computed<Array<{ key: ConfigDrawerTab; label: string }>
 	      { key: 'runtime', label: '指标' },
 	      { key: 'logs', label: '日志' },
 	      { key: 'console', label: '控制台' },
-      { key: 'settings', label: '运行态' },
     ]
   }
   if (kind === 'object-storage') {
@@ -2454,7 +2428,6 @@ const configDrawerTabs = computed<Array<{ key: ConfigDrawerTab; label: string }>
 	      { key: 'runtime', label: '指标' },
 	      { key: 'logs', label: '日志' },
 	      { key: 'console', label: '控制台' },
-      { key: 'settings', label: '运行态' },
     ]
   }
   return [
@@ -2464,7 +2437,6 @@ const configDrawerTabs = computed<Array<{ key: ConfigDrawerTab; label: string }>
 	    { key: 'runtime', label: '指标' },
 	    { key: 'logs', label: '日志' },
 	    { key: 'console', label: '控制台' },
-    { key: 'settings', label: '运行态' },
   ]
 })
 const registryWorkspaceLoading = ref(false)
@@ -2748,16 +2720,6 @@ const filteredTopologyNodes = computed(() => {
 const environmentTopologyNodeSubtitle = (node:any) => node?.topologyKind === 'service'
   ? `${typeLabel(node.type || node.serviceType || '')}`
   : `${compTypeText(node.type)} · 应用组件`
-const shortenUrl = (url: string) => {
-  if (!url || url.length <= 35) return url || ''
-  try {
-    const u = new URL(url)
-    const host = u.hostname.length + u.port.length + 1 > 25 ? u.hostname.slice(0, 20) + '…' : u.host
-    return host + (u.pathname.length > 10 ? u.pathname.slice(0, 10) + '…' : u.pathname)
-  } catch {
-    return url.length > 35 ? url.slice(0, 32) + '…' : url
-  }
-}
 const componentCanvasMetrics = {
   colWidth: 260,
   nodeWidth: 196,
@@ -4379,18 +4341,6 @@ const componentDrawerDependencyTargets = computed(() =>
       : componentTargetCanAcceptDependency(target.component)
   })
 )
-const componentDrawerDataRows = computed(() => {
-  const comp = configDrawer.value.component || {}
-  const runtime = comp.runtimeConfig || {}
-  return [
-    { label: 'Kind', value: compTypeText(comp.type) },
-    { label: 'Namespace', value: runtime.namespace || env.value?.namespace || '-' },
-    { label: 'Workload', value: runtime.workloadName || componentRuntimeIdentifier(comp) || comp.name || '-' },
-    { label: 'Service', value: runtime.serviceName || componentRuntimeIdentifier(comp) || '-' },
-    { label: 'Image', value: comp.registryImage || comp.image || '-' },
-    { label: 'Replicas', value: String(runtime.replicas ?? comp.replicas ?? '-') },
-  ]
-})
 const componentTargetLooksLikeApi = (comp:any) => {
   return buildComponentProfile({ component: comp }).apiService
 }
@@ -4648,14 +4598,29 @@ const componentDrawerServiceEndpoint = computed(() => {
   if (!rc?.serviceName || !rc?.namespace) return ''
   return `${rc.serviceName}.${rc.namespace}.svc.cluster.local`
 })
+const componentDrawerIngressUrl = computed(() => {
+  return configDrawer.value.component?.ingressUrl || ''
+})
 const componentDrawerExternalAccessToggleVisible = computed(() => {
   const comp = configDrawer.value.component
   return configDrawer.value.kind === 'component' && comp?.runtimeConfig?.serviceName
 })
-const componentDrawerExternalAccessEnabled = computed(() => Boolean(configDrawerExternalUrl.value && configDrawer.value.kind === 'component'))
+const componentDrawerExternalAccessEnabled = computed(() => Boolean(componentDrawerIngressUrl.value))
 const componentDrawerExternalAccessLabel = computed(() => {
   if (componentExternalAccessLoading.value) return componentDrawerExternalAccessEnabled.value ? '关闭中...' : '开启中...'
-  return componentDrawerExternalAccessEnabled.value ? '关闭外部访问' : '开启外部访问'
+  return componentDrawerExternalAccessEnabled.value ? '关闭 Ingress' : '开启 Ingress'
+})
+const componentDrawerNodePortUrl = computed(() => {
+  return configDrawer.value.component?.nodePortUrl || ''
+})
+const componentDrawerNodePortToggleVisible = computed(() => {
+  const comp = configDrawer.value.component
+  return configDrawer.value.kind === 'component' && comp?.runtimeConfig?.serviceName
+})
+const componentDrawerNodePortEnabled = computed(() => Boolean(componentDrawerNodePortUrl.value))
+const componentDrawerNodePortLabel = computed(() => {
+  if (componentNodePortLoading.value) return componentDrawerNodePortEnabled.value ? '关闭中...' : '开启中...'
+  return componentDrawerNodePortEnabled.value ? '关闭 NodePort' : '开启 NodePort'
 })
 const serviceDrawerExternalAccessEnabled = computed(() => Boolean(configDrawer.value.kind === 'service' && configDrawerExternalUrl.value))
 const serviceDrawerExternalAccessToggleVisible = computed(() => configDrawer.value.kind === 'service' && serviceStatusHasRuntime(drawerService.value) && serviceDrawerProfile.value.showConnectionBindings)
@@ -6581,6 +6546,32 @@ const toggleComponentExternalAccess = async () => {
     componentExternalAccessLoading.value = false
   }
 }
+const toggleComponentNodePortAccess = async () => {
+  const comp = configDrawer.value.component
+  if (!comp?.id || componentNodePortLoading.value) return
+  componentNodePortLoading.value = true
+  configDrawer.value.error = ''
+  configDrawer.value.message = ''
+  try {
+    const nextEnabled = !componentDrawerNodePortEnabled.value
+    const res = await api.setComponentNodePortAccess(envId.value, Number(comp.id), nextEnabled)
+    if (Array.isArray(res.externalAccess)) {
+      externalAccess.value = res.externalAccess
+    }
+    const updated = res.data
+    if (updated?.id) {
+      components.value = components.value.map((item:any) => Number(item.id) === Number(updated.id) ? { ...item, ...updated } : item)
+    }
+    const next = components.value.find((item:any) => Number(item.id) === Number(comp.id)) || updated || comp
+    configDrawer.value.component = next
+    notifyEnvUpdated()
+    configDrawer.value.message = nextEnabled ? 'NodePort 已开启。' : 'NodePort 已关闭。'
+  } catch (e:any) {
+    configDrawer.value.error = 'NodePort 切换失败：' + (e?.message || '未知错误')
+  } finally {
+    componentNodePortLoading.value = false
+  }
+}
 const deployDrawerComponent = async () => {
   const comp = configDrawer.value.component
   if (!comp?.id) return
@@ -6685,24 +6676,6 @@ const runtimeEnvValue = (envItem:any) => {
   if (envItem?.configMapName) return envItem.configMapKey ? `由普通配置管理 · ${envItem.configMapKey}` : '由普通配置管理'
   return envItem?.value || '-'
 }
-const runtimeObjectSummary = (items:any[]) => Array.isArray(items) && items.length
-  ? items.map((item:any) => Array.isArray(item.keys) && item.keys.length ? item.keys.join(', ') : '已配置').join('；')
-  : '未发现'
-const runtimeSecretObjectSummary = (items:any[]) => {
-  if (!Array.isArray(items) || !items.length) return '未发现'
-  const keys = items.flatMap((item:any) => Array.isArray(item.keys) ? item.keys : []).filter(Boolean)
-  return keys.length ? `${items.length} 组敏感配置 · ${keys.join(', ')}` : `${items.length} 组敏感配置`
-}
-const runtimeEnvFromSummary = (items:any[]) => Array.isArray(items) && items.length
-  ? items.map((item:any) => String(item.kind || '').toLowerCase() === 'secret' ? '敏感配置管理' : '普通配置管理').join('；')
-  : '未发现'
-const runtimeFileSummary = (items:any[]) => Array.isArray(items) && items.length
-  ? items.map((item:any) => {
-    const kind = String(item.kind || 'config')
-    if (kind.toLowerCase() === 'secret') return `${item.mountPath || '-'} ← 敏感配置${item.key ? `/${item.key}` : ''}`
-    return `${item.mountPath || '-'} ← 普通配置${item.key ? `/${item.key}` : ''}`
-  }).join('；')
-  : '未发现'
 const configureContextNode = () => {
   const comp = componentContextMenu.value.component
   const svc = componentContextMenu.value.service

@@ -19,7 +19,7 @@
           <div>
             <div class="trust-title">节点运行时配置待确认</div>
             <div class="trust-sub">
-              PAAP 内部调用工具继续使用集群内 Service URL；业务 Pod 拉镜像时使用下面这个 HTTPS registry。内网默认按自签或企业 CA 处理，内网自签 CA 需要下载后交给集群管理员，配置节点运行时信任以及 DNS/路由。
+              PAAP 内部调用工具继续使用集群内服务地址；业务运行实例拉镜像时使用下面这个 HTTPS registry。内网默认按自签或企业 CA 处理，内网自签 CA 需要下载后交给集群管理员，配置节点运行时信任以及 DNS/路由。
             </div>
           </div>
           <span class="badge orange">{{ runtimeTrust.status }}</span>
@@ -56,7 +56,7 @@
             下载 CA 证书
           </a>
           <span>把证书链接、Registry Host 和运行时路径一起交给集群管理员配置节点信任。</span>
-          <span>PAAP 会在可读取 CA 时自动同步给 kpack controller 和 kpack build pod。</span>
+          <span>PAAP 会在可读取 CA 时自动同步给构建服务。</span>
           <span>可选兜底清单：</span><code class="mono">{{ runtimeTrust.annotations?.agentManifest || 'deploy/k8s/paap-node-registry-agent.yaml' }}</code>
         </div>
       </div>
