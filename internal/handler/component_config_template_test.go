@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"paap/internal/database"
+	"paap/internal/middleware"
 	"paap/internal/model"
 
 	"github.com/gin-gonic/gin"
@@ -16,10 +17,11 @@ import (
 )
 
 func TestComponentConfigTemplatesSeedBuiltInsAndList(t *testing.T) {
-	router := setupComponentConfigTemplateTest(t)
+	router, token := setupComponentConfigTemplateTest(t)
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/component-config-templates", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
 	router.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
@@ -62,10 +64,11 @@ func TestComponentConfigTemplatesSeedBuiltInsAndList(t *testing.T) {
 }
 
 func TestBuiltInNginxTemplateDoesNotAssumeBusinessRoute(t *testing.T) {
-	router := setupComponentConfigTemplateTest(t)
+	router, token := setupComponentConfigTemplateTest(t)
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/component-config-templates", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
 	router.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
@@ -149,7 +152,7 @@ func TestParseNativeComponentConfigTemplate(t *testing.T) {
 }
 
 func TestComponentConfigTemplatesCreateAndDeleteCustom(t *testing.T) {
-	router := setupComponentConfigTemplateTest(t)
+	router, token := setupComponentConfigTemplateTest(t)
 
 	payload := []byte(`{
 		"name":"Custom Gin Runtime",
@@ -161,6 +164,7 @@ func TestComponentConfigTemplatesCreateAndDeleteCustom(t *testing.T) {
 	}`)
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/component-config-templates", bytes.NewReader(payload))
+	req.Header.Set("Authorization", "Bearer "+token)
 	router.ServeHTTP(rec, req)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
@@ -183,6 +187,7 @@ func TestComponentConfigTemplatesCreateAndDeleteCustom(t *testing.T) {
 
 	rec = httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodDelete, "/api/v1/component-config-templates/1", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
 	router.ServeHTTP(rec, req)
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("built-in delete status = %d, body=%s", rec.Code, rec.Body.String())
@@ -190,6 +195,7 @@ func TestComponentConfigTemplatesCreateAndDeleteCustom(t *testing.T) {
 
 	rec = httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodDelete, "/api/v1/component-config-templates/"+stringID(created.Data.ID), nil)
+	req.Header.Set("Authorization", "Bearer "+token)
 	router.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("custom delete status = %d, body=%s", rec.Code, rec.Body.String())
@@ -201,7 +207,7 @@ func stringID(id uint) string {
 	return string(data)
 }
 
-func setupComponentConfigTemplateTest(t *testing.T) *gin.Engine {
+func setupComponentConfigTemplateTest(t *testing.T) (*gin.Engine, string) {
 	t.Helper()
 	previousDB := database.DB
 	t.Cleanup(func() { database.DB = previousDB })
@@ -210,14 +216,28 @@ func setupComponentConfigTemplateTest(t *testing.T) *gin.Engine {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := db.AutoMigrate(&model.ComponentConfigTemplate{}); err != nil {
+	if err := db.AutoMigrate(&model.User{}, &model.ComponentConfigTemplate{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	database.DB = db
+
+	passwordHash, err := hashPassword("admin123")
+	if err != nil {
+		t.Fatalf("hash password: %v", err)
+	}
+	user := model.User{Username: "admin", Email: "admin@example.test", Password: passwordHash, Role: "admin"}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	token, err := middleware.GenerateToken(user.ID)
+	if err != nil {
+		t.Fatalf("generate token: %v", err)
+	}
+
 	SeedComponentConfigTemplates()
 
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	SetupRouter(router)
-	return router
+	return router, token
 }

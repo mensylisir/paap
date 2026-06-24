@@ -255,7 +255,7 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 
 ### Task 6.1: 认证、鉴权与应用成员权限
 - [x] 前端登录页接入真实 `/api/v1/auth/login`，保存 token 和用户信息，并处理登录失败状态
-- [ ] API 路由增加统一认证中间件，除登录/注册/健康检查外默认要求登录
+- [x] API 路由增加统一认证中间件，除登录/注册/健康检查外默认要求登录
 - [x] 将内存 token 替换为签名 JWT 或可持久化会话机制
 - [ ] 应用创建、列表、详情、更新、删除改为基于当前用户和 `AppMember` 判断权限
 - [ ] 移除 `OwnerID=1`、`UserID=1` 等硬编码
@@ -455,7 +455,7 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 
 ### Task 7.8: 认证鉴权体系升级
 - [x] 内存 token 替换为签名 JWT（`auth.go`）
-- [ ] 增加集中式 auth 中间件（当前 `internal/middleware/` 仅 `cors.go`）
+- [x] 增加集中式 auth 中间件（`internal/middleware/auth.go`），除登录/注册/健康检查外保护默认 API 路由
 - [ ] 应用操作基于 `AppMember` 判断权限
 - [ ] 移除 `OwnerID=1`、`UserID=1` 等硬编码
 - [ ] 补齐应用成员管理页面和 API
@@ -463,6 +463,9 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 - [x] 前端 API client 自动为已有 token 请求添加 `Authorization: Bearer <jwt>`
 - [x] Docker 镜像 `v0.1.441` 构建并部署到 kind 集群
 - [x] CDP 验证：错误密码停留 `/login` 且显示 `登录失败：invalid credentials`；正确 `admin/admin123` 登录后写入三段式 JWT 并进入应用主界面
+- [x] 前端路由守卫：未登录访问业务页先进入 `/login`，登录后恢复主界面访问
+- [x] Docker 镜像 `v0.1.442` 构建并部署到 kind 集群
+- [x] CDP 验证：未登录访问 `/apps` 自动到 `/login`；登录后 `/api/v1/applications` 使用 Bearer token 返回 200
 - [ ] 工作量：1 周
 
 ### Task 7.9: KubeVirt 虚拟机

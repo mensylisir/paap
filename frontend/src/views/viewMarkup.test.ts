@@ -33,6 +33,15 @@ describe('Vue view markup', () => {
     expect(loginView.default).not.toContain('setTimeout')
   })
 
+  it('keeps unauthenticated users on the login page before loading app data', async () => {
+    const routerSource = await import('../router/index.ts?raw')
+
+    expect(routerSource.default).toContain('router.beforeEach')
+    expect(routerSource.default).toContain("localStorage.getItem('paap_token')")
+    expect(routerSource.default).toContain("to.path !== '/login'")
+    expect(routerSource.default).toContain("return '/login'")
+  })
+
   it('does not contain nested style tags inside a style block', () => {
     const viewSources = import.meta.glob('./*.vue', { query: '?raw', import: 'default', eager: true }) as Record<string, string>
     const offenders = Object.entries(viewSources).flatMap(([file, content]) => {

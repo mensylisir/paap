@@ -155,7 +155,7 @@ spec:
       serviceAccountName: paap-server
       containers:
         - name: paap-server
-          image: paap-server:v0.1.441
+          image: paap-server:v0.1.442
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 9090

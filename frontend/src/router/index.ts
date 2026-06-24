@@ -87,4 +87,10 @@ const router = createRouter({
   routes,
 })
 
+router.beforeEach((to) => {
+  const token = typeof localStorage === 'undefined' ? '' : localStorage.getItem('paap_token')
+  if (to.path !== '/login' && !token) return '/login'
+  if (to.path === '/login' && token) return '/apps?auto=true'
+})
+
 export default router
