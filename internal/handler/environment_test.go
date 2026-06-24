@@ -1495,7 +1495,7 @@ func TestSetServiceExternalAccessPatchesLiveServiceWithoutChangingHelmValues(t *
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&model.Application{}, &model.Environment{}, &model.ServiceInstallation{}); err != nil {
+	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.ServiceInstallation{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	database.DB = db
@@ -1507,6 +1507,9 @@ func TestSetServiceExternalAccessPatchesLiveServiceWithoutChangingHelmValues(t *
 	env := model.Environment{ApplicationID: app.ID, Name: "Dev", Identifier: "dev", Status: "running", Namespace: "billing-dev"}
 	if err := db.Create(&env).Error; err != nil {
 		t.Fatalf("create env: %v", err)
+	}
+	if err := db.Create(&model.AppMember{ApplicationID: app.ID, UserID: 2, Role: "member"}).Error; err != nil {
+		t.Fatalf("create member: %v", err)
 	}
 	inst := model.ServiceInstallation{
 		EnvironmentID: env.ID,
@@ -1544,7 +1547,7 @@ func TestSetServiceExternalAccessPatchesLiveServiceWithoutChangingHelmValues(t *
 
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	router.PUT("/api/v1/environments/:id/services/:serviceId/external-access", SetServiceExternalAccess)
+	router.PUT("/api/v1/environments/:id/services/:serviceId/external-access", withTestAuthUser(2, SetServiceExternalAccess))
 	path := fmt.Sprintf("/api/v1/environments/%d/services/%d/external-access", env.ID, inst.ID)
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPut, path, strings.NewReader(`{"enabled":true}`))
@@ -1585,6 +1588,133 @@ func TestSetServiceExternalAccessPatchesLiveServiceWithoutChangingHelmValues(t *
 	}
 	if liveService.Spec.Type != corev1.ServiceTypeClusterIP || liveService.Spec.Ports[0].NodePort != 0 {
 		t.Fatalf("expected ClusterIP with cleared NodePort, got type=%s nodePort=%d", liveService.Spec.Type, liveService.Spec.Ports[0].NodePort)
+	}
+}
+
+func TestSetServiceExternalAccessRejectsNonMembers(t *testing.T) {
+	previousDB := database.DB
+	previousClient := k8s.GetClient()
+	t.Cleanup(func() {
+		database.DB = previousDB
+		k8s.SetClient(previousClient)
+	})
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.ServiceInstallation{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	database.DB = db
+	k8s.SetClient(fake.NewClientBuilder().Build())
+
+	app := model.Application{Name: "隐藏应用", Identifier: "hidden", OwnerID: 1}
+	if err := db.Create(&app).Error; err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	env := model.Environment{ApplicationID: app.ID, Name: "生产", Identifier: "prod", Status: "running", Namespace: "hidden-prod"}
+	if err := db.Create(&env).Error; err != nil {
+		t.Fatalf("create env: %v", err)
+	}
+	inst := model.ServiceInstallation{EnvironmentID: env.ID, ServiceType: "redis", ServiceName: "redis", Status: "running", Namespace: "hidden-prod-redis"}
+	if err := db.Create(&inst).Error; err != nil {
+		t.Fatalf("create service installation: %v", err)
+	}
+
+	path := fmt.Sprintf("/api/v1/environments/%d/services/%d/external-access", env.ID, inst.ID)
+	req := httptest.NewRequest(http.MethodPut, path, strings.NewReader(`{"enabled":true}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.PUT("/api/v1/environments/:id/services/:serviceId/external-access", withTestAuthUser(2, SetServiceExternalAccess))
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusForbidden, rec.Body.String())
+	}
+}
+
+func TestSetServiceExternalAccessChecksNamespaceAfterMemberAccess(t *testing.T) {
+	previousDB := database.DB
+	t.Cleanup(func() { database.DB = previousDB })
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.ServiceInstallation{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	database.DB = db
+
+	app := model.Application{Name: "测试应用", Identifier: "test", OwnerID: 1}
+	if err := db.Create(&app).Error; err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	env := model.Environment{ApplicationID: app.ID, Name: "测试环境", Identifier: "staging", Status: "running", Namespace: "test-staging"}
+	if err := db.Create(&env).Error; err != nil {
+		t.Fatalf("create env: %v", err)
+	}
+	if err := db.Create(&model.AppMember{ApplicationID: app.ID, UserID: 2, Role: "member"}).Error; err != nil {
+		t.Fatalf("create member: %v", err)
+	}
+	inst := model.ServiceInstallation{EnvironmentID: env.ID, ServiceType: "redis", ServiceName: "redis", Status: "running"}
+	if err := db.Create(&inst).Error; err != nil {
+		t.Fatalf("create service installation: %v", err)
+	}
+
+	path := fmt.Sprintf("/api/v1/environments/%d/services/%d/external-access", env.ID, inst.ID)
+	req := httptest.NewRequest(http.MethodPut, path, strings.NewReader(`{"enabled":true}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.PUT("/api/v1/environments/:id/services/:serviceId/external-access", withTestAuthUser(2, SetServiceExternalAccess))
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusConflict, rec.Body.String())
+	}
+}
+
+func TestSetServiceExternalAccessRejectsNonMembersBeforeServiceLookup(t *testing.T) {
+	previousDB := database.DB
+	t.Cleanup(func() { database.DB = previousDB })
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.ServiceInstallation{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	database.DB = db
+
+	app := model.Application{Name: "隐藏应用", Identifier: "hidden", OwnerID: 1}
+	if err := db.Create(&app).Error; err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	env := model.Environment{ApplicationID: app.ID, Name: "生产", Identifier: "prod", Status: "running", Namespace: "hidden-prod"}
+	if err := db.Create(&env).Error; err != nil {
+		t.Fatalf("create env: %v", err)
+	}
+
+	path := fmt.Sprintf("/api/v1/environments/%d/services/999/external-access", env.ID)
+	req := httptest.NewRequest(http.MethodPut, path, strings.NewReader(`{"enabled":true}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.PUT("/api/v1/environments/:id/services/:serviceId/external-access", withTestAuthUser(2, SetServiceExternalAccess))
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusForbidden, rec.Body.String())
 	}
 }
 
