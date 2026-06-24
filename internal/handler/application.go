@@ -331,6 +331,9 @@ func DeleteApplication(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "application not found"})
 		return
 	}
+	if !requireApplicationAccess(c, app.ID) {
+		return
+	}
 
 	ctx := context.Background()
 	warn := func(prefix string, err error) {

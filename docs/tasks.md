@@ -539,6 +539,20 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 - [x] 对应文件：`internal/handler/application.go`、`internal/handler/application_test.go`
 - [x] 工作量：S（半天）
 
+### Task 7.8f: 应用删除按成员鉴权 ✅
+> 普通用户删除应用前必须具备该应用访问权限，避免非成员按 ID 删除应用及其环境资源。
+
+- [x] `DeleteApplication` 查到应用后立即复用 `requireApplicationAccess`
+- [x] 非成员删除返回 403，并且不会执行环境/集群资源清理和数据库删除
+- [x] 后端目标测试：`go test ./internal/handler -run TestDeleteApplicationRejectsNonMembers -count=1` 先红后绿
+- [x] 后端 handler 测试：`go test ./internal/handler -count=1` 通过
+- [x] 后端全量测试：`make test` 通过
+- [x] Docker 镜像 `v0.1.462` 构建并部署到 kind 集群
+- [x] kind 验证：显式使用 `--context kind-rbac-governance-test` 检查 `paap-server:v0.1.462`，Deployment `1/1 ready`，Pod `paap-server-6d754b95dd-6zcr7` Running
+- [x] API/数据库验证：临时普通用户 ID=7 删除非成员应用 1 返回 403 和 `application access denied`；应用仍存在；临时用户已清理，残留计数 0
+- [x] 对应文件：`internal/handler/application.go`、`internal/handler/application_test.go`
+- [x] 工作量：S（半天）
+
 ### Task 7.9: KubeVirt 虚拟机
 - [ ] 将 VM 作为新服务类型纳入 `ServiceCatalog`
 - [ ] 用 KubeVirt CRD（`VirtualMachine`）而非 Helm chart 部署

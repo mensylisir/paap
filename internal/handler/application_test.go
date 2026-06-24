@@ -395,6 +395,52 @@ func TestUpdateApplicationRejectsNonMembers(t *testing.T) {
 	}
 }
 
+func TestDeleteApplicationRejectsNonMembers(t *testing.T) {
+	previousDB := database.DB
+	t.Cleanup(func() { database.DB = previousDB })
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(
+		&model.Application{},
+		&model.AppMember{},
+		&model.Environment{},
+		&model.ServiceInstallation{},
+		&model.InfraInstallation{},
+		&model.Component{},
+		&model.EnvironmentCanvasState{},
+	); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	database.DB = db
+
+	app := model.Application{Name: "隐藏应用", Identifier: "hidden", OwnerID: 1}
+	if err := db.Create(&app).Error; err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/applications/1", nil)
+	rec := httptest.NewRecorder()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.DELETE("/api/v1/applications/:id", withTestAuthUser(2, DeleteApplication))
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusForbidden, rec.Body.String())
+	}
+	var count int64
+	if err := db.Model(&model.Application{}).Where("id = ?", app.ID).Count(&count).Error; err != nil {
+		t.Fatalf("count app: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("app count = %d, want unchanged", count)
+	}
+}
+
 func TestBuiltInTemplateOrderingPrefersLightweightRegistry(t *testing.T) {
 	if builtInInstallOrder("registry") >= builtInInstallOrder("harbor") {
 		t.Fatalf("lightweight registry should be ordered before Harbor")
