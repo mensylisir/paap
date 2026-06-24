@@ -495,6 +495,21 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 - [x] 对应文件：`internal/service/cluster_sync.go`、`internal/service/cluster_sync_test.go`
 - [x] 工作量：S（半天）
 
+### Task 7.8c: 应用列表按成员过滤 ✅
+> 普通用户调用应用列表时只返回自己是成员的应用，平台管理员保留全量视图。
+
+- [x] `ListApplications` 对普通用户通过 `app_members` 过滤应用列表
+- [x] `admin` / `platform_admin` 角色保留全量应用列表
+- [x] 缺少认证上下文时返回 401，避免未受保护路由误用
+- [x] 后端目标测试：`go test ./internal/handler -run TestListApplicationsFiltersByAppMemberForRegularUsers -count=1` 先红后绿
+- [x] 后端 handler 测试：`go test ./internal/handler -count=1` 通过
+- [x] 后端全量测试：`make test` 通过
+- [x] Docker 镜像 `v0.1.459` 构建并部署到 kind 集群
+- [x] kind 验证：显式使用 `--context kind-rbac-governance-test` 检查 `paap-server:v0.1.459`，Deployment `1/1 ready`，Pod `paap-server-86584986db-l4gg9` Running
+- [x] API/数据库验证：临时普通用户 ID=4 创建应用后，`GET /api/v1/applications` 只返回 `list-auth-1782304105` 1 个应用；临时应用和用户已清理，残留计数 0
+- [x] 对应文件：`internal/handler/application.go`、`internal/handler/application_test.go`
+- [x] 工作量：S（半天）
+
 ### Task 7.9: KubeVirt 虚拟机
 - [ ] 将 VM 作为新服务类型纳入 `ServiceCatalog`
 - [ ] 用 KubeVirt CRD（`VirtualMachine`）而非 Helm chart 部署

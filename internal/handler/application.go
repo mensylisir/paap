@@ -49,8 +49,21 @@ type ServiceStatusListItem struct {
 func ListApplications(c *gin.Context) {
 	syncClusterStateIfPossible()
 
+	query := database.DB.Model(&model.Application{})
+	if !authenticatedUserIsPlatformAdmin(c) {
+		userID, ok := authenticatedUserID(c)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid or missing authenticated user"})
+			return
+		}
+		query = query.Joins(
+			"JOIN app_members ON app_members.application_id = applications.id AND app_members.user_id = ? AND app_members.deleted_at IS NULL",
+			userID,
+		)
+	}
+
 	var apps []model.Application
-	if err := database.DB.Find(&apps).Error; err != nil {
+	if err := query.Order("applications.id").Find(&apps).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -150,6 +163,18 @@ func authenticatedUserID(c *gin.Context) (uint, bool) {
 		}
 	}
 	return 0, false
+}
+
+func authenticatedUserIsPlatformAdmin(c *gin.Context) bool {
+	value, exists := c.Get(middleware.ContextUserRoleKey)
+	if !exists {
+		return false
+	}
+	role, ok := value.(string)
+	if !ok {
+		return false
+	}
+	return role == "admin" || role == "platform_admin"
 }
 
 // GetApplication returns application details with environments

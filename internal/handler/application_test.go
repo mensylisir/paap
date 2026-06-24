@@ -18,8 +18,13 @@ import (
 )
 
 func withTestAuthUser(userID uint, next gin.HandlerFunc) gin.HandlerFunc {
+	return withTestAuthUserRole(userID, "user", next)
+}
+
+func withTestAuthUserRole(userID uint, role string, next gin.HandlerFunc) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.Set(middleware.ContextUserIDKey, userID)
+		c.Set(middleware.ContextUserRoleKey, role)
 		next(c)
 	}
 }
@@ -59,7 +64,7 @@ func TestListApplicationsIncludesEnvironmentCounts(t *testing.T) {
 
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	router.GET("/api/v1/applications", ListApplications)
+	router.GET("/api/v1/applications", withTestAuthUserRole(1, "admin", ListApplications))
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/applications", nil)
 	router.ServeHTTP(rec, req)
@@ -106,6 +111,61 @@ func TestListApplicationsIncludesEnvironmentCounts(t *testing.T) {
 	}
 	if body.Data[0].Environments[0].Services[0].ServiceType != "deploy" || body.Data[0].Environments[0].Services[0].Status != "running" {
 		t.Fatalf("service summary = %#v", body.Data[0].Environments[0].Services[0])
+	}
+}
+
+func TestListApplicationsFiltersByAppMemberForRegularUsers(t *testing.T) {
+	previousDB := database.DB
+	t.Cleanup(func() { database.DB = previousDB })
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(
+		&model.Application{},
+		&model.AppMember{},
+		&model.Environment{},
+		&model.ServiceInstallation{},
+		&model.Component{},
+	); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	database.DB = db
+
+	hidden := model.Application{Name: "隐藏应用", Identifier: "hidden", OwnerID: 1}
+	visible := model.Application{Name: "可见应用", Identifier: "visible", OwnerID: 2}
+	if err := db.Create(&hidden).Error; err != nil {
+		t.Fatalf("create hidden app: %v", err)
+	}
+	if err := db.Create(&visible).Error; err != nil {
+		t.Fatalf("create visible app: %v", err)
+	}
+	if err := db.Create(&model.AppMember{ApplicationID: visible.ID, UserID: 2, Role: "member"}).Error; err != nil {
+		t.Fatalf("create member: %v", err)
+	}
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.GET("/api/v1/applications", withTestAuthUser(2, ListApplications))
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/applications", nil)
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var body struct {
+		Data []struct {
+			ID         uint   `json:"id"`
+			Identifier string `json:"identifier"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(body.Data) != 1 || body.Data[0].Identifier != "visible" {
+		t.Fatalf("applications = %#v, want only visible", body.Data)
 	}
 }
 
