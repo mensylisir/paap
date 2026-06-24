@@ -918,6 +918,21 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 - [x] 对应文件：`internal/handler/environment.go`、`internal/handler/environment_test.go`
 - [x] 工作量：S（半天）
 
+### Task 7.8ae: 组件运行日志按成员鉴权 ✅
+> 普通用户读取组件运行日志前必须具备组件所属应用访问权限，避免非成员通过组件 ID 探测部署环境、运行实例和日志状态。
+
+- [x] `GetComponentRuntimeLogs` 先读取环境并复用 `requireApplicationAccess(env.ApplicationID)`，通过后才触发集群同步、查找组件和查询 Kubernetes 日志
+- [x] 非成员读取存在组件日志返回 403，不进入 K8s 日志查询
+- [x] 非成员读取不存在组件日志也先返回 403，避免通过 404 探测组件
+- [x] 成员读取不存在组件日志返回 404 和 `component not found`，证明鉴权通过后才进入组件查找
+- [x] 后端目标测试：`go test ./internal/handler -run 'TestGetComponentRuntimeLogs(RejectsNonMembers|RejectsNonMembersBeforeComponentLookup|ChecksComponentAfterMemberAccess)' -count=1` 先红后绿
+- [x] 后端全量测试：`go test ./internal/handler -count=1`、`make test` 通过
+- [x] Docker 镜像 `v0.1.488` 构建并部署到 kind 集群
+- [x] kind 验证：显式使用 `--context kind-rbac-governance-test` 检查 `paap-server:v0.1.488`，Deployment `1/1 ready`，Pod `paap-server-d9dfd8596-b94kf` Running；`paap-system` 与 `kpack` Pod 均 Running，节点 Ready
+- [x] CDP 验证：复用 Chrome tab `http://172.18.0.2:30091/catalog`，临时 app/env/component 为 16/15/58、临时普通用户 ID=32 GET `/api/v1/environments/15/components/58/runtime-logs?tail=10` 返回 403 和 `application access denied`，请求不存在组件 `/components/999999/runtime-logs?tail=10` 同样返回 403；临时加入应用 16 成员后，不存在组件请求返回 404 和 `component not found`；临时 app/env/component、用户和成员关系已清理，残留计数 `0|0|0|0|0`
+- [x] 对应文件：`internal/handler/environment.go`、`internal/handler/environment_test.go`
+- [x] 工作量：S（半天）
+
 ### Task 7.9: KubeVirt 虚拟机
 - [ ] 将 VM 作为新服务类型纳入 `ServiceCatalog`
 - [ ] 用 KubeVirt CRD（`VirtualMachine`）而非 Helm chart 部署
