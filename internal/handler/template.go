@@ -297,10 +297,12 @@ func DeleteTemplate(c *gin.Context) {
 
 // --- Service Catalog ---
 
+var unsupportedServiceCatalogTypes = []string{"kingbase", "nacos"}
+
 // ListServiceCatalog returns all available service types
 func ListServiceCatalog(c *gin.Context) {
 	var services []model.ServiceCatalog
-	if err := database.DB.Where("enabled = ?", true).Find(&services).Error; err != nil {
+	if err := database.DB.Where("enabled = ?", true).Not("type IN ?", unsupportedServiceCatalogTypes).Find(&services).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -311,27 +313,27 @@ func ListServiceCatalog(c *gin.Context) {
 func SeedServiceCatalog() {
 	services := []model.ServiceCatalog{
 		// Tools
-		{Type: "deploy", Name: "部署服务", Category: "tool", Description: "ArgoCD: 管理应用的部署、版本、回滚", Icon: "rocket"},
-		{Type: "ci", Name: "CI 服务", Category: "tool", Description: "Tekton/Jenkins: 自动构建和测试代码", Icon: "flow"},
-		{Type: "monitor", Name: "监控服务", Category: "tool", Description: "Prometheus+Grafana: 资源监控与告警", Icon: "chart-line"},
-		{Type: "log", Name: "日志服务", Category: "tool", Description: "Loki: 日志收集与查询", Icon: "document"},
-		{Type: "registry", Name: "轻量镜像仓库", Category: "tool", Description: "Docker Registry v2: 轻量 OCI 镜像仓库", Icon: "cube"},
-		{Type: "harbor", Name: "企业镜像仓库", Category: "tool", Description: "Harbor: 企业级容器镜像管理", Icon: "cube"},
-		{Type: "git", Name: "代码仓库", Category: "tool", Description: "Gitea: 轻量 Git 代码仓库", Icon: "document"},
+		{Type: "deploy", Name: "部署服务", Category: "tool", Description: "ArgoCD: 管理应用的部署、版本、回滚", Icon: "rocket", Enabled: true},
+		{Type: "ci", Name: "CI 服务", Category: "tool", Description: "Tekton/Jenkins: 自动构建和测试代码", Icon: "flow", Enabled: true},
+		{Type: "monitor", Name: "监控服务", Category: "tool", Description: "Prometheus+Grafana: 资源监控与告警", Icon: "chart-line", Enabled: true},
+		{Type: "log", Name: "日志服务", Category: "tool", Description: "Loki: 日志收集与查询", Icon: "document", Enabled: true},
+		{Type: "registry", Name: "轻量镜像仓库", Category: "tool", Description: "Docker Registry v2: 轻量 OCI 镜像仓库", Icon: "cube", Enabled: true},
+		{Type: "harbor", Name: "企业镜像仓库", Category: "tool", Description: "Harbor: 企业级容器镜像管理", Icon: "cube", Enabled: true},
+		{Type: "git", Name: "代码仓库", Category: "tool", Description: "Gitea: 轻量 Git 代码仓库", Icon: "document", Enabled: true},
 		// Infra - Database
-		{Type: "postgresql", Name: "PostgreSQL", Category: "infra", Description: "关系型数据库", Icon: "database"},
-		{Type: "mysql", Name: "MySQL", Category: "infra", Description: "关系型数据库", Icon: "database"},
-		{Type: "kingbase", Name: "人大金仓", Category: "infra", Description: "国产关系型数据库", Icon: "database"},
-		{Type: "mongodb", Name: "MongoDB", Category: "infra", Description: "文档型数据库", Icon: "database"},
+		{Type: "postgresql", Name: "PostgreSQL", Category: "infra", Description: "关系型数据库", Icon: "database", Enabled: true},
+		{Type: "mysql", Name: "MySQL", Category: "infra", Description: "关系型数据库", Icon: "database", Enabled: true},
+		{Type: "kingbase", Name: "人大金仓", Category: "infra", Description: "国产关系型数据库", Icon: "database", Enabled: false},
+		{Type: "mongodb", Name: "MongoDB", Category: "infra", Description: "文档型数据库", Icon: "database", Enabled: true},
 		// Infra - Cache
-		{Type: "redis", Name: "Redis", Category: "infra", Description: "缓存服务", Icon: "cloud"},
+		{Type: "redis", Name: "Redis", Category: "infra", Description: "缓存服务", Icon: "cloud", Enabled: true},
 		// Infra - MQ
-		{Type: "rabbitmq", Name: "RabbitMQ", Category: "infra", Description: "消息队列", Icon: "network"},
-		{Type: "kafka", Name: "Kafka", Category: "infra", Description: "消息队列", Icon: "network"},
+		{Type: "rabbitmq", Name: "RabbitMQ", Category: "infra", Description: "消息队列", Icon: "network", Enabled: true},
+		{Type: "kafka", Name: "Kafka", Category: "infra", Description: "消息队列", Icon: "network", Enabled: true},
 		// Infra - Storage
-		{Type: "minio", Name: "MinIO", Category: "infra", Description: "对象存储", Icon: "data-base"},
+		{Type: "minio", Name: "MinIO", Category: "infra", Description: "对象存储", Icon: "data-base", Enabled: true},
 		// Infra - Service Discovery
-		{Type: "nacos", Name: "Nacos", Category: "infra", Description: "注册中心与配置中心", Icon: "server"},
+		{Type: "nacos", Name: "Nacos", Category: "infra", Description: "注册中心与配置中心", Icon: "server", Enabled: false},
 	}
 
 	for _, s := range services {
@@ -339,6 +341,9 @@ func SeedServiceCatalog() {
 		if err := database.DB.Where("type = ?", s.Type).Assign(s).FirstOrCreate(&existing).Error; err != nil {
 			log.Printf("[SeedServiceCatalog] failed to seed %s: %v", s.Type, err)
 		}
+	}
+	if err := database.DB.Model(&model.ServiceCatalog{}).Where("type IN ?", unsupportedServiceCatalogTypes).Update("enabled", false).Error; err != nil {
+		log.Printf("[SeedServiceCatalog] failed to disable unsupported catalog entries: %v", err)
 	}
 	if err := database.DB.Where("type = ?", "docker-registry").Delete(&model.ServiceCatalog{}).Error; err != nil {
 		log.Printf("[SeedServiceCatalog] failed to remove obsolete docker-registry catalog: %v", err)

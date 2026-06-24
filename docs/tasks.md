@@ -272,7 +272,7 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 ### Task 6.3: 服务目录占位项落地
 - [ ] 为 `kingbase` 补齐服务模板、安装参数、连接发现、工作台和测试
 - [ ] 为 `nacos` 补齐服务模板、安装参数、连接发现、工作台和测试
-- [ ] 未落地前从可安装服务列表隐藏占位项，避免用户选择后安装失败
+- [x] 未落地前从可安装服务列表隐藏占位项，避免用户选择后安装失败
 
 ### Task 6.4: 模板体系收口
 - [ ] 将内置模板完全统一到 `Helm Chart + platform-manifest.yaml + preset-values.yaml` 路径
@@ -652,6 +652,19 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 - [x] CDP 验证：副标题显示 "（共 14 个）"
 - [x] 对应文件：`frontend/src/views/CatalogView.vue`
 - [x] 工作量：S（15 分钟）
+
+### Task 7.28: 隐藏未落地服务目录占位项 ✅
+> kingbase 和 nacos 尚未完成 chart、安装参数、连接发现、工作台和测试前，不对用户展示为可选能力。
+
+- [x] `ListServiceCatalog` 排除 `kingbase` / `nacos` 占位项，即使数据库里遗留为 enabled 也不会返回
+- [x] `SeedServiceCatalog` 将 `kingbase` / `nacos` 默认写为 disabled，并显式修正旧数据
+- [x] 增加后端回归测试，覆盖 enabled 遗留占位项不会出现在 catalog 响应中
+- [x] Docker 镜像 `v0.1.449` 构建并部署到 kind 集群
+- [x] kind 验证：显式使用 `--context kind-rbac-governance-test` 检查 `paap-server:v0.1.449`，Deployment `1/1 ready`，Pod `paap-server-797495ddd9-bscfj` Running
+- [x] CDP/API 验证：`/api/v1/service-templates` 返回 14 个服务模板，`kingbase` / `nacos` 均不存在
+- [x] 数据库验证：`service_catalogs` 中 `kingbase|f`、`nacos|f`
+- [x] 对应文件：`internal/handler/template.go`、`internal/handler/template_test.go`
+- [x] 工作量：S（半天）
 
 ### Task 7.21: `docs/配置示例.md` → 内置配置模板
 > 将 20 个配置示例转为 PAAP 内置配置模板（Go template），供组件配置 Tab 使用
