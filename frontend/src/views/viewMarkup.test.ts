@@ -103,6 +103,25 @@ describe('Vue view markup', () => {
     }
   })
 
+  it('adds application member management controls to the app overview', async () => {
+    const appOverview = await import('./AppOverviewView.vue?raw')
+    const client = await import('../api/client.ts?raw')
+
+    expect(appOverview.default).toContain('应用成员')
+    expect(appOverview.default).toContain('memberForm.username')
+    expect(appOverview.default).toContain('member-role-select')
+    expect(appOverview.default).toContain('api.listAppMembers')
+    expect(appOverview.default).toContain('api.inviteAppMember')
+    expect(appOverview.default).toContain('api.updateAppMember')
+    expect(appOverview.default).toContain('api.removeAppMember')
+    expect(appOverview.default).toContain('移除')
+
+    expect(client.default).toContain('listAppMembers')
+    expect(client.default).toContain('inviteAppMember')
+    expect(client.default).toContain('updateAppMember')
+    expect(client.default).toContain('removeAppMember')
+  })
+
   it('runs embedded workspace form actions in the environment page instead of opening the old service detail page', async () => {
     const envDetail = await import('./EnvDetailView.vue?raw')
 

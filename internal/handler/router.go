@@ -72,6 +72,10 @@ func SetupRouter(r *gin.Engine) {
 		protected.GET("/applications/:id", GetApplication)
 		protected.PUT("/applications/:id", UpdateApplication)
 		protected.DELETE("/applications/:id", DeleteApplication)
+		protected.GET("/applications/:id/members", ListApplicationMembers)
+		protected.POST("/applications/:id/members", InviteApplicationMember)
+		protected.PUT("/applications/:id/members/:memberId", UpdateApplicationMemberRole)
+		protected.DELETE("/applications/:id/members/:memberId", RemoveApplicationMember)
 
 		// Application Environments
 		protected.GET("/applications/:id/environments", ListApplicationEnvironments)

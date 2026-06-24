@@ -263,7 +263,11 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
   - 测试覆盖：`TestGetApplicationRejectsNonMembers`、`TestUpdateApplicationRejectsNonMembers`、`TestDeleteApplicationRejectsNonMembers`、`TestListApplicationEnvironmentsRejectsNonMembers`、`TestCreateEnvironmentRejectsNonMembers`
 - [x] 移除 `OwnerID=1`、`UserID=1` 等硬编码
   - `CreateApplication` 使用认证上下文中的用户作为 owner 并创建 `AppMember` 记录；非测试代码未再检出 `OwnerID: 1` / `UserID: 1` / `owner_id = 1` / `user_id = 1`
-- [ ] 补齐应用成员管理页面和 API，包括邀请、角色变更、移除成员
+- [x] 补齐应用成员管理页面和 API，包括邀请、角色变更、移除成员
+  - 后端新增 `GET/POST/PUT/DELETE /api/v1/applications/:id/members`，支持成员列表、邀请已有用户、角色变更和移除成员，并保留至少一个应用管理员
+  - 前端应用概览页新增“应用成员”区域，可输入用户名邀请、下拉调整 `admin/member/viewer` 角色、移除非最后管理员成员
+  - 测试覆盖：`go test ./internal/handler -run 'Test(ListApplicationMembers|InviteApplicationMember|UpdateApplicationMemberRole|RemoveApplicationMember)'`、`npm --prefix frontend run test -- src/api/client.test.ts -t 'application member management'`、`npm --prefix frontend run test -- src/views/viewMarkup.test.ts -t 'application member management'` 先红后绿
+  - 部署验证：`paap-server:v0.1.495` 已加载到 `kind-rbac-governance-test` 并完成 `paap-system/paap-server` 滚动更新；CDP 验证应用概览成员区可见，成员列表 API 返回 admin，并完成临时用户注册、邀请、角色更新、移除闭环
 
 ### Task 6.2: 环境模板管理与高级环境配置
 - [ ] 挂载环境模板创建、更新、删除 API 路由
@@ -460,7 +464,7 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 - [x] 增加集中式 auth 中间件（`internal/middleware/auth.go`），除登录/注册/健康检查外保护默认 API 路由
 - [x] 应用操作基于 `AppMember` 判断权限
 - [x] 移除 `OwnerID=1`、`UserID=1` 等硬编码
-- [ ] 补齐应用成员管理页面和 API
+- [x] 补齐应用成员管理页面和 API
 - [x] 前端登录页调用真实 `/api/v1/auth/login`，保存 `paap_token` / `paap_user`，失败时展示错误状态
 - [x] 前端 API client 自动为已有 token 请求添加 `Authorization: Bearer <jwt>`
 - [x] Docker 镜像 `v0.1.441` 构建并部署到 kind 集群

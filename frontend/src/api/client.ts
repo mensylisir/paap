@@ -91,6 +91,10 @@ export const api = {
   getApp: (id: number) => request(`/applications/${id}`),
   updateApp: (id: number, data: any) => request(`/applications/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteApp: (id: number) => request(`/applications/${id}`, { method: 'DELETE' }),
+  listAppMembers: (appId: number) => request(`/applications/${appId}/members`),
+  inviteAppMember: (appId: number, data: any) => request(`/applications/${appId}/members`, { method: 'POST', body: JSON.stringify(data) }),
+  updateAppMember: (appId: number, memberId: number, data: any) => request(`/applications/${appId}/members/${memberId}`, { method: 'PUT', body: JSON.stringify(data) }),
+  removeAppMember: (appId: number, memberId: number) => request(`/applications/${appId}/members/${memberId}`, { method: 'DELETE' }),
 
   // Environments
   listEnvs: (appId: number) => request(`/applications/${appId}/environments`),

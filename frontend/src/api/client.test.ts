@@ -76,6 +76,29 @@ describe('api client', () => {
     }))
   })
 
+  it('calls application member management endpoints', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => ({ data: [] }),
+    } as Response)
+
+    await api.listAppMembers(7)
+    await api.inviteAppMember(7, { username: 'alice', role: 'member' })
+    await api.updateAppMember(7, 3, { role: 'viewer' })
+    await api.removeAppMember(7, 3)
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/v1/applications/7/members', expect.objectContaining({ method: 'GET' }))
+    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/v1/applications/7/members', expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({ username: 'alice', role: 'member' }),
+    }))
+    expect(fetchMock).toHaveBeenNthCalledWith(3, '/api/v1/applications/7/members/3', expect.objectContaining({
+      method: 'PUT',
+      body: JSON.stringify({ role: 'viewer' }),
+    }))
+    expect(fetchMock).toHaveBeenNthCalledWith(4, '/api/v1/applications/7/members/3', expect.objectContaining({ method: 'DELETE' }))
+  })
+
   it('sends the stored auth token as a bearer header', async () => {
     localStorage.setItem('paap_token', 'signed.jwt.token')
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
