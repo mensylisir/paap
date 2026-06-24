@@ -2391,6 +2391,90 @@ func TestGetServiceWorkspaceRejectsNonMembersBeforeServiceLookup(t *testing.T) {
 	}
 }
 
+func TestGetServiceRuntimeMetricsRejectsNonMembers(t *testing.T) {
+	previousDB := database.DB
+	previousK8sClient := k8s.GetClient()
+	t.Cleanup(func() {
+		database.DB = previousDB
+		k8s.SetClient(previousK8sClient)
+	})
+	k8s.SetClient(nil)
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.ServiceInstallation{}, &model.Component{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	database.DB = db
+
+	app := model.Application{Name: "隐藏应用", Identifier: "hidden", OwnerID: 1}
+	if err := db.Create(&app).Error; err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	env := model.Environment{ApplicationID: app.ID, Name: "生产", Identifier: "prod", Namespace: "hidden-prod"}
+	if err := db.Create(&env).Error; err != nil {
+		t.Fatalf("create env: %v", err)
+	}
+	service := model.ServiceInstallation{EnvironmentID: env.ID, ServiceType: "git", Status: "running", Namespace: "hidden-prod-git"}
+	if err := db.Create(&service).Error; err != nil {
+		t.Fatalf("create service: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/v1/environments/%d/services/%d/runtime-metrics", env.ID, service.ID), nil)
+	rec := httptest.NewRecorder()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.GET("/api/v1/environments/:id/services/:serviceId/runtime-metrics", withTestAuthUser(2, GetServiceRuntimeMetrics))
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusForbidden, rec.Body.String())
+	}
+}
+
+func TestGetServiceRuntimeMetricsRejectsNonMembersBeforeServiceLookup(t *testing.T) {
+	previousDB := database.DB
+	previousK8sClient := k8s.GetClient()
+	t.Cleanup(func() {
+		database.DB = previousDB
+		k8s.SetClient(previousK8sClient)
+	})
+	k8s.SetClient(nil)
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.ServiceInstallation{}, &model.Component{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	database.DB = db
+
+	app := model.Application{Name: "隐藏应用", Identifier: "hidden", OwnerID: 1}
+	if err := db.Create(&app).Error; err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	env := model.Environment{ApplicationID: app.ID, Name: "生产", Identifier: "prod", Namespace: "hidden-prod"}
+	if err := db.Create(&env).Error; err != nil {
+		t.Fatalf("create env: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/v1/environments/%d/services/999/runtime-metrics", env.ID), nil)
+	rec := httptest.NewRecorder()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.GET("/api/v1/environments/:id/services/:serviceId/runtime-metrics", withTestAuthUser(2, GetServiceRuntimeMetrics))
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusForbidden, rec.Body.String())
+	}
+}
+
 func TestDeleteEnvironmentRemovesClusterCRsNamespacesAndDatabaseRows(t *testing.T) {
 	previousDB := database.DB
 	previousK8sClient := k8s.GetClient()

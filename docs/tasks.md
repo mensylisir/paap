@@ -688,6 +688,20 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 - [x] 对应文件：`internal/handler/environment.go`、`internal/handler/environment_test.go`
 - [x] 工作量：S（半天）
 
+### Task 7.8p: 服务运行指标按成员鉴权 ✅
+> 普通用户读取服务实例运行指标前必须具备所属应用访问权限，避免非成员通过服务 ID 探测命名空间、Pod、容器和资源用量。
+
+- [x] `GetServiceRuntimeMetrics` 先读取环境并复用 `requireApplicationAccess(env.ApplicationID)`，通过后才加载服务实例和查询 Kubernetes/Prometheus 指标
+- [x] 非成员访问存在或不存在的服务运行指标均先返回 403，避免通过 404/424 判断服务实例或 K8s 指标状态
+- [x] 后端目标测试：`go test ./internal/handler -run 'TestGetServiceRuntimeMetricsRejectsNonMembers|TestGetServiceRuntimeMetricsRejectsNonMembersBeforeServiceLookup' -count=1` 先红后绿
+- [x] 后端 handler 测试：`go test ./internal/handler -count=1` 通过
+- [x] 后端全量测试：`make test` 通过
+- [x] Docker 镜像 `v0.1.473` 构建并部署到 kind 集群
+- [x] kind 验证：显式使用 `--context kind-rbac-governance-test` 检查 `paap-server:v0.1.473`，Deployment `1/1 ready`，Pod `paap-server-5984f9f46b-gxb2s` Running；`paap-system` 与 `kpack` Pod 均 Running，节点 Ready
+- [x] CDP 验证：复用 Chrome tab `http://172.18.0.2:30091/catalog`，临时普通用户 ID=17 读取 `/api/v1/environments/5/services/22/runtime-metrics` 返回 403 和 `application access denied`；临时加入应用 5 成员后同一接口返回 200，`available: true`，样本包含 `real-fullstack-prod-gitea` Pod；临时用户和成员关系已清理，残留计数 0
+- [x] 对应文件：`internal/handler/environment.go`、`internal/handler/environment_test.go`
+- [x] 工作量：S（半天）
+
 ### Task 7.9: KubeVirt 虚拟机
 - [ ] 将 VM 作为新服务类型纳入 `ServiceCatalog`
 - [ ] 用 KubeVirt CRD（`VirtualMachine`）而非 Helm chart 部署
