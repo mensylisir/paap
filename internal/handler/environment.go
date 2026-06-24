@@ -7927,8 +7927,6 @@ func CreateServiceDraft(c *gin.Context) {
 
 // InstallService installs a service (tool) in an environment via CR
 func InstallService(c *gin.Context) {
-	syncClusterStateIfPossible()
-
 	envID, _ := strconv.Atoi(c.Param("id"))
 
 	var req InstallServiceRequest
@@ -7942,6 +7940,11 @@ func InstallService(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "environment not found"})
 		return
 	}
+	if !requireApplicationAccess(c, env.ApplicationID) {
+		return
+	}
+
+	syncClusterStateIfPossible()
 
 	var app model.Application
 	if err := database.DB.First(&app, env.ApplicationID).Error; err != nil {

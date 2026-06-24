@@ -888,6 +888,21 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 - [x] 对应文件：`internal/handler/environment.go`、`internal/handler/environment_test.go`
 - [x] 工作量：S（半天）
 
+### Task 7.8ac: 服务安装按成员鉴权 ✅
+> 普通用户安装环境服务前必须具备服务所属应用访问权限，避免非成员触发服务安装、创建失败安装记录或通过模板查询结果探测环境内容。
+
+- [x] `InstallService` 先读取环境并复用 `requireApplicationAccess(env.ApplicationID)`，通过后才触发集群同步、读取应用、查找服务模板和创建/更新 ServiceInstance
+- [x] 非成员安装存在模板返回 403，不创建 `service_installations`
+- [x] 非成员安装不存在模板也先返回 403，避免通过 404 探测服务模板
+- [x] 成员安装不存在模板返回 404 和 `service template not found`，证明鉴权通过后才进入模板校验
+- [x] 后端目标测试：`go test ./internal/handler -run 'TestInstallService(DeploysExistingDraft|RejectsNonMembers|RejectsNonMembersBeforeTemplateLookup|ChecksTemplateAfterMemberAccess)' -count=1` 先红后绿
+- [x] 后端 handler 测试：`go test ./internal/handler -count=1` 通过
+- [x] Docker 镜像 `v0.1.486` 构建并部署到 kind 集群
+- [x] kind 验证：显式使用 `--context kind-rbac-governance-test` 检查 `paap-server:v0.1.486`，Deployment `1/1 ready`，Pod `paap-server-56dc9f8b46-2zzxf` Running；`paap-system` 与 `kpack` Pod 均 Running，节点 Ready
+- [x] CDP 验证：复用 Chrome tab `http://172.18.0.2:30091/catalog`，临时 app/env/template 为 14/13/17、临时普通用户 ID=30 POST `/api/v1/environments/13/services` + `{"serviceType":"ins8985"}` 返回 403 和 `application access denied`，请求不存在模板 `missing-ins-1782328985775668` 同样返回 403；临时加入应用 14 成员后，不存在模板请求返回 404 和 `service template not found`；临时 template、app/env、用户和成员关系已清理，残留计数 `0|0|0|0|0|0`
+- [x] 对应文件：`internal/handler/environment.go`、`internal/handler/environment_test.go`
+- [x] 工作量：S（半天）
+
 ### Task 7.9: KubeVirt 虚拟机
 - [ ] 将 VM 作为新服务类型纳入 `ServiceCatalog`
 - [ ] 用 KubeVirt CRD（`VirtualMachine`）而非 Helm chart 部署
