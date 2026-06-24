@@ -948,6 +948,21 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 - [x] 对应文件：`internal/handler/environment.go`、`internal/handler/environment_test.go`
 - [x] 工作量：S（半天）
 
+### Task 7.8ag: 组件控制台按成员鉴权 ✅
+> 普通用户打开组件运行控制台前必须具备组件所属应用访问权限，避免非成员通过控制台入口探测组件存在性或运行 Pod 状态。
+
+- [x] `HandleComponentConsole` 先读取环境并复用 `requireApplicationAccess(env.ApplicationID)`，通过后才查找组件、解析运行目标并尝试 WebSocket 升级
+- [x] 非成员打开存在组件控制台返回 403，不进入 K8s 运行目标解析
+- [x] 非成员打开不存在组件控制台也先返回 403，避免通过 404 探测组件
+- [x] 成员打开不存在组件控制台返回 404 和 `component not found`，证明鉴权通过后才进入组件查找
+- [x] 后端目标测试：`go test ./internal/handler -run 'TestHandleComponentConsole(RejectsNonMembers|RejectsNonMembersBeforeComponentLookup|ChecksComponentAfterMemberAccess)' -count=1` 先红后绿
+- [x] 后端全量测试：`go test ./internal/handler -count=1`、`make test` 通过
+- [x] Docker 镜像 `v0.1.490` 构建并部署到 kind 集群
+- [x] kind 验证：显式使用 `--context kind-rbac-governance-test` 检查 `paap-server:v0.1.490`，Deployment `1/1 ready`，Pod `paap-server-7558b7786c-jwsks` Running；`paap-system` 与 `kpack` Pod 均 Running，节点 Ready
+- [x] CDP 验证：复用 Chrome tab `http://172.18.0.2:30091/catalog`，临时 app/env/component 为 18/17/60、临时普通用户 ID=34 GET `/api/v1/environments/17/components/60/console` 返回 403 和 `application access denied`，请求不存在组件 `/components/999999/console` 同样返回 403；临时加入应用 18 成员后，不存在组件请求返回 404 和 `component not found`；临时 app/env/component、用户和成员关系已清理，残留计数 `0|0|0|0|0`
+- [x] 对应文件：`internal/handler/runtime_console.go`、`internal/handler/environment_test.go`
+- [x] 工作量：S（半天）
+
 ### Task 7.9: KubeVirt 虚拟机
 - [ ] 将 VM 作为新服务类型纳入 `ServiceCatalog`
 - [ ] 用 KubeVirt CRD（`VirtualMachine`）而非 Helm chart 部署

@@ -30,6 +30,10 @@ func HandleComponentConsole(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "environment not found"})
 		return
 	}
+	if !requireApplicationAccess(c, env.ApplicationID) {
+		return
+	}
+
 	var comp model.Component
 	if err := database.DB.Where("id = ? AND environment_id = ?", componentID, envID).First(&comp).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
