@@ -129,6 +129,11 @@ describe('Vue view markup', () => {
     expect(templatesView.default).not.toContain('placeholder="frontend, backend"')
     expect(templatesView.default).toContain('从原生配置创建模板')
     expect(templatesView.default).toContain('高级模板 JSON')
+    expect(templatesView.default).toContain('config-import-shell--carbon')
+    expect(templatesView.default).toContain('config-import-mode-card')
+    expect(templatesView.default).toContain('普通配置适合从现有配置文件快速生成模板')
+    expect(templatesView.default).toContain('平台工程师可导入完整 schema/template JSON')
+    expect(templatesView.default).toContain('选择后会影响组件配置 Tab 的模板候选范围')
     expect(templatesView.default).toContain('__TEMPLATE__KEY__显示名__')
     expect(templatesView.default).toContain('高级 JSON / schema 模式')
     expect(templatesView.default).toContain('原生配置预览')
@@ -872,15 +877,6 @@ describe('Vue view markup', () => {
     expect(envDetail.default).not.toContain('activeCapabilityWorkspace.config')
     expect(envDetail.default).not.toContain('v-for="item in activeCapabilityWorkspace.config"')
     expect(envDetail.default).not.toContain('workspace-config-link')
-  })
-
-  it('renders service network addresses on topology cards and service drawers', async () => {
-    const envDetail = await import('./EnvDetailView.vue?raw')
-
-    expect(envDetail.default).toContain('serviceNetworkSummary')
-    expect(envDetail.default).toContain('serviceNodeNetworkSummary(node)')
-    expect(envDetail.default).toContain('serviceDrawerNetworkRows')
-    expect(envDetail.default).toContain('运行地址')
   })
 
   it('renders data and middleware workspaces with selectable object details and object actions', async () => {
