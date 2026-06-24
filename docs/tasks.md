@@ -583,6 +583,22 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 - [x] 对应文件：`internal/handler/environment.go`、`internal/handler/environment_test.go`
 - [x] 工作量：S（半天）
 
+### Task 7.8i: 环境画布状态按成员鉴权 ✅
+> 普通用户读取或保存环境画布状态前必须具备所属应用访问权限，避免非成员读取/篡改卡片位置、连线和显示名。
+
+- [x] `GetEnvironmentCanvasState` 查到环境后立即复用 `requireApplicationAccess(env.ApplicationID)`
+- [x] `SaveEnvironmentCanvasState` 在解析请求和写库前复用 `requireApplicationAccess(env.ApplicationID)`
+- [x] 非成员读取/保存均返回 403，并且保存请求不会创建或修改画布状态
+- [x] 后端目标测试：`go test ./internal/handler -run 'Test(GetEnvironmentCanvasStateRejectsNonMembers|SaveEnvironmentCanvasStateRejectsNonMembers)' -count=1` 先红后绿
+- [x] 后端相关测试：`go test ./internal/handler -run 'Test(EnvironmentCanvasStatePersists(PositionsAndEdges|DisplayNames)|GetEnvironmentCanvasStateRejectsNonMembers|SaveEnvironmentCanvasStateRejectsNonMembers)' -count=1` 通过
+- [x] 后端 handler 测试：`go test ./internal/handler -count=1` 通过
+- [x] 后端全量测试：`make test` 通过
+- [x] Docker 镜像 `v0.1.465` 构建并部署到 kind 集群
+- [x] kind 验证：显式使用 `--context kind-rbac-governance-test` 检查 `paap-server:v0.1.465`，Deployment `1/1 ready`，Pod `paap-server-9f7cff44c-xv9rl` Running
+- [x] API/数据库验证：临时普通用户 ID=10 读取/保存非成员环境 1 的画布状态均返回 403 和 `application access denied`；画布状态 hash 保持 `94cf0e248dbb3e3f4bd9e03f8540dfc2`；临时用户已清理，残留计数 0
+- [x] 对应文件：`internal/handler/environment.go`、`internal/handler/environment_test.go`
+- [x] 工作量：S（半天）
+
 ### Task 7.9: KubeVirt 虚拟机
 - [ ] 将 VM 作为新服务类型纳入 `ServiceCatalog`
 - [ ] 用 KubeVirt CRD（`VirtualMachine`）而非 Helm chart 部署

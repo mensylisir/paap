@@ -3955,8 +3955,8 @@ func TestEnvironmentCanvasStatePersistsPositionsAndEdges(t *testing.T) {
 	}`)
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	router.PUT("/api/v1/environments/:id/canvas-state", SaveEnvironmentCanvasState)
-	router.GET("/api/v1/environments/:id/canvas-state", GetEnvironmentCanvasState)
+	router.PUT("/api/v1/environments/:id/canvas-state", withTestAuthUserRole(1, "admin", SaveEnvironmentCanvasState))
+	router.GET("/api/v1/environments/:id/canvas-state", withTestAuthUserRole(1, "admin", GetEnvironmentCanvasState))
 
 	saveReq := httptest.NewRequest(http.MethodPut, "/api/v1/environments/1/canvas-state", bytes.NewReader(body))
 	saveReq.Header.Set("Content-Type", "application/json")
@@ -4035,8 +4035,8 @@ func TestEnvironmentCanvasStatePersistsDisplayNames(t *testing.T) {
 	}`)
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	router.PUT("/api/v1/environments/:id/canvas-state", SaveEnvironmentCanvasState)
-	router.GET("/api/v1/environments/:id/canvas-state", GetEnvironmentCanvasState)
+	router.PUT("/api/v1/environments/:id/canvas-state", withTestAuthUserRole(1, "admin", SaveEnvironmentCanvasState))
+	router.GET("/api/v1/environments/:id/canvas-state", withTestAuthUserRole(1, "admin", GetEnvironmentCanvasState))
 
 	saveReq := httptest.NewRequest(http.MethodPut, "/api/v1/environments/1/canvas-state", bytes.NewReader(body))
 	saveReq.Header.Set("Content-Type", "application/json")
@@ -4071,6 +4071,88 @@ func TestEnvironmentCanvasStatePersistsDisplayNames(t *testing.T) {
 	}
 	if _, ok := response.Data.Names["component:999"]; !ok {
 		t.Fatalf("display names are not cleaned by valid keys (unlike positions): %#v", response.Data.Names)
+	}
+}
+
+func TestGetEnvironmentCanvasStateRejectsNonMembers(t *testing.T) {
+	previousDB := database.DB
+	t.Cleanup(func() { database.DB = previousDB })
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.EnvironmentCanvasState{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	database.DB = db
+
+	app := model.Application{Name: "隐藏应用", Identifier: "hidden", OwnerID: 1}
+	if err := db.Create(&app).Error; err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	env := model.Environment{ApplicationID: app.ID, Name: "生产", Identifier: "prod", Namespace: "hidden-prod"}
+	if err := db.Create(&env).Error; err != nil {
+		t.Fatalf("create env: %v", err)
+	}
+	if err := db.Create(&model.EnvironmentCanvasState{EnvironmentID: env.ID, Positions: `{"component:1":{"x":10,"y":20}}`, Edges: `[]`, Names: `{"component:1":"隐藏组件"}`}).Error; err != nil {
+		t.Fatalf("create canvas state: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/environments/1/canvas-state", nil)
+	rec := httptest.NewRecorder()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.GET("/api/v1/environments/:id/canvas-state", withTestAuthUser(2, GetEnvironmentCanvasState))
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusForbidden, rec.Body.String())
+	}
+}
+
+func TestSaveEnvironmentCanvasStateRejectsNonMembers(t *testing.T) {
+	previousDB := database.DB
+	t.Cleanup(func() { database.DB = previousDB })
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.EnvironmentCanvasState{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	database.DB = db
+
+	app := model.Application{Name: "隐藏应用", Identifier: "hidden", OwnerID: 1}
+	if err := db.Create(&app).Error; err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	env := model.Environment{ApplicationID: app.ID, Name: "生产", Identifier: "prod", Namespace: "hidden-prod"}
+	if err := db.Create(&env).Error; err != nil {
+		t.Fatalf("create env: %v", err)
+	}
+
+	body := []byte(`{"positions":{"component:1":{"x":10,"y":20}},"edges":[],"names":{"component:1":"被改名"}}`)
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/environments/1/canvas-state", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.PUT("/api/v1/environments/:id/canvas-state", withTestAuthUser(2, SaveEnvironmentCanvasState))
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusForbidden, rec.Body.String())
+	}
+	var count int64
+	if err := db.Model(&model.EnvironmentCanvasState{}).Where("environment_id = ?", env.ID).Count(&count).Error; err != nil {
+		t.Fatalf("count canvas state: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("canvas state count = %d, want none created", count)
 	}
 }
 

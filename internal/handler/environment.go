@@ -1313,6 +1313,9 @@ func GetEnvironmentCanvasState(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "environment not found"})
 		return
 	}
+	if !requireApplicationAccess(c, env.ApplicationID) {
+		return
+	}
 	var state model.EnvironmentCanvasState
 	if err := database.DB.Where("environment_id = ?", env.ID).First(&state).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -1344,6 +1347,9 @@ func SaveEnvironmentCanvasState(c *gin.Context) {
 	var env model.Environment
 	if err := database.DB.First(&env, envID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "environment not found"})
+		return
+	}
+	if !requireApplicationAccess(c, env.ApplicationID) {
 		return
 	}
 	var req EnvironmentCanvasStateRequest
