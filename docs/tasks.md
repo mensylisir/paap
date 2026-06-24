@@ -695,6 +695,21 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 - [x] 对应文件：`frontend/src/views/CatalogView.vue`、`frontend/src/views/viewMarkup.test.ts`、`frontend/src/utils/catalogVersions.ts`、`frontend/src/utils/catalogVersions.test.ts`
 - [x] 工作量：S（15 分钟）
 
+### Task 7.31: 目录页按产品类型细分分组 ✅
+> 将原来的工具 / 中间件两组细化为工具、数据库、缓存、消息队列、对象存储，贴合 Task 6.14 的目录浏览要求。
+
+- [x] 新增 `catalogGroupForTemplate` / `compareCatalogGroupMeta`，按服务类型映射目录产品分组
+- [x] 数据库：PostgreSQL / MySQL / MongoDB；缓存：Redis；消息队列：RabbitMQ / Kafka；对象存储：MinIO；工具类保持原分组
+- [x] 目录 tab 按固定产品顺序展示，并保留每组数量
+- [x] 前端目标测试：`npm run test -- src/utils/catalogGroups.test.ts src/views/viewMarkup.test.ts`，2 files / 79 tests passed
+- [x] 前端全量测试：`npm run test`，26 files / 214 tests passed
+- [x] 前端构建：`npm run build` 通过
+- [x] Docker 镜像 `v0.1.453` 构建并部署到 kind 集群
+- [x] kind 验证：显式使用 `--context kind-rbac-governance-test` 检查 `paap-server:v0.1.453`，Deployment `1/1 ready`，Pod `paap-server-6bfff5b996-8lqsp` Running
+- [x] CDP 验证：`http://172.18.0.2:30091/catalog` 逐 tab 切换通过，工具类 7、数据库 3、缓存 1、消息队列 2、对象存储 1，卡片类型分别匹配预期
+- [x] 对应文件：`frontend/src/views/CatalogView.vue`、`frontend/src/views/viewMarkup.test.ts`、`frontend/src/utils/catalogGroups.ts`、`frontend/src/utils/catalogGroups.test.ts`
+- [x] 工作量：S（半天）
+
 ### Task 7.21: `docs/配置示例.md` → 内置配置模板
 > 将 20 个配置示例转为 PAAP 内置配置模板（Go template），供组件配置 Tab 使用
 

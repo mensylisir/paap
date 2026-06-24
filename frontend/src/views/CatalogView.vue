@@ -103,6 +103,7 @@
 <script setup lang="ts">
 import { ref, computed, watchEffect, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { api } from '../api/client'
+import { catalogGroupForTemplate, compareCatalogGroupMeta, type CatalogGroupMeta } from '../utils/catalogGroups'
 import { compareCatalogVersions, stripCatalogVersionPrefix } from '../utils/catalogVersions'
 
 interface CatalogItem {
@@ -111,10 +112,7 @@ interface CatalogItem {
   description: string
   versions: string[]
 }
-interface CatalogGroup {
-  category: string
-  label: string
-  icon: string
+interface CatalogGroup extends CatalogGroupMeta {
   items: CatalogItem[]
 }
 
@@ -175,21 +173,16 @@ const catalogGroups = computed<CatalogGroup[]>(() => {
   for (const item of items.values()) {
     item.versions.sort(compareCatalogVersions)
     const t = source.find((x: any) => x.type === item.type)
-    const cat = String(t?.category || 'other')
+    const groupMeta = catalogGroupForTemplate(t || item)
+    const cat = groupMeta.category
 
     if (!groups.has(cat)) {
-      let label = cat
-      let icon = '📦'
-      if (cat === 'tool') { label = '工具类'; icon = '🔧' }
-      else if (cat === 'infra') { label = '中间件 / 数据库'; icon = '🗄️' }
-      else if (cat === 'middleware') { label = '中间件 / 数据库'; icon = '🗄️' }
-
-      groups.set(cat, { category: cat, label, icon, items: [] })
+      groups.set(cat, { ...groupMeta, items: [] })
     }
     groups.get(cat)!.items.push(item)
   }
 
-  return Array.from(groups.values())
+  return Array.from(groups.values()).sort(compareCatalogGroupMeta)
 })
 
 // Auto-select first tab when data loads, or if current tab becomes invalid

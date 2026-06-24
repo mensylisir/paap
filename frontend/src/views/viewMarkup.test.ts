@@ -284,6 +284,14 @@ describe('Vue view markup', () => {
     expect(catalogView.default).not.toContain('item.versions.sort()')
   })
 
+  it('groups catalog entries by product category instead of a single infra bucket', async () => {
+    const catalogView = await import('./CatalogView.vue?raw')
+
+    expect(catalogView.default).toContain('catalogGroupForTemplate')
+    expect(catalogView.default).toContain('compareCatalogGroupMeta')
+    expect(catalogView.default).not.toContain("label = '中间件 / 数据库'")
+  })
+
   it('uses a wide working canvas for dense operational pages', () => {
     const globalStyles = readFileSync(new URL('../style.scss', import.meta.url), 'utf8')
     const mainEntry = readFileSync(new URL('../main.ts', import.meta.url), 'utf8')
