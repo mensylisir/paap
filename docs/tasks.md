@@ -810,6 +810,22 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 - [x] 对应文件：`internal/handler/environment.go`、`internal/handler/environment_test.go`
 - [x] 工作量：S（半天）
 
+### Task 7.8x: 组件外部访问开关按成员鉴权 ✅
+> 普通用户开启或关闭组件外部访问前必须具备组件所属应用访问权限，避免非成员触发 K8s Service 暴露变更或探测组件存在性。
+
+- [x] `SetComponentExternalAccess` 先读取环境并复用 `requireApplicationAccess(env.ApplicationID)`，通过后才检查 namespace、查找组件和调用 K8s 外部访问开关
+- [x] 非成员开关存在组件返回 403，不进入 K8s 操作
+- [x] 非成员访问不存在组件也先返回 403，避免通过 404 探测组件
+- [x] 成员访问 namespace 未就绪环境返回 409 和 `environment namespace is not ready`，证明鉴权通过后才进入业务校验
+- [x] 后端目标测试：`go test ./internal/handler -run 'TestSetComponentExternalAccess(RejectsNonMembers|ChecksNamespaceAfterMemberAccess)' -count=1` 先红后绿
+- [x] 后端 handler 测试：`go test ./internal/handler -count=1` 通过
+- [x] 后端全量测试：`make test` 通过
+- [x] Docker 镜像 `v0.1.481` 构建并部署到 kind 集群
+- [x] kind 验证：显式使用 `--context kind-rbac-governance-test` 检查 `paap-server:v0.1.481`，Deployment `1/1 ready`，Pod `paap-server-7f97dcd6df-8z4gk` Running；`paap-system` 与 `kpack` Pod 均 Running，节点 Ready
+- [x] CDP 验证：复用 Chrome tab `http://172.18.0.2:30091/catalog`，临时 app/env/component 为 9/7/55、临时普通用户 ID=25 PUT `/api/v1/environments/7/components/55/external-access` 返回 403 和 `application access denied`，请求不存在组件 `/components/99999/external-access` 同样返回 403；临时加入应用 9 成员后，同一组件请求返回 409 和 `environment namespace is not ready`；临时 app/env/component、用户和成员关系已清理，残留计数 0
+- [x] 对应文件：`internal/handler/environment.go`、`internal/handler/environment_test.go`
+- [x] 工作量：S（半天）
+
 ### Task 7.9: KubeVirt 虚拟机
 - [ ] 将 VM 作为新服务类型纳入 `ServiceCatalog`
 - [ ] 用 KubeVirt CRD（`VirtualMachine`）而非 Helm chart 部署
