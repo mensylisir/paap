@@ -21,6 +21,18 @@ const cssRule = (source: string, selector: string) => {
 }
 
 describe('Vue view markup', () => {
+  it('wires the login page to the real auth API and failure state', async () => {
+    const loginView = await import('./LoginView.vue?raw')
+
+    expect(loginView.default).toContain("import { api } from '../api/client'")
+    expect(loginView.default).toContain('await api.login')
+    expect(loginView.default).toContain("localStorage.setItem('paap_token'")
+    expect(loginView.default).toContain("localStorage.setItem('paap_user'")
+    expect(loginView.default).toContain('login-error')
+    expect(loginView.default).toContain('登录失败')
+    expect(loginView.default).not.toContain('setTimeout')
+  })
+
   it('does not contain nested style tags inside a style block', () => {
     const viewSources = import.meta.glob('./*.vue', { query: '?raw', import: 'default', eager: true }) as Record<string, string>
     const offenders = Object.entries(viewSources).flatMap(([file, content]) => {

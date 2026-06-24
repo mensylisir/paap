@@ -1,9 +1,15 @@
 package handler
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
-	"sync"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -14,11 +20,6 @@ import (
 	"paap/internal/model"
 )
 
-// In-memory token storage for the local development server.
-var tokenStore = make(map[string]uint)
-var tokenMu sync.RWMutex
-
-// For production JWT, use signed tokens; the local server uses opaque tokens.
 type LoginRequest struct {
 	Username string `json:"username" binding:"required"`
 	Password string `json:"password" binding:"required"`
@@ -28,6 +29,18 @@ type RegisterRequest struct {
 	Username string `json:"username" binding:"required"`
 	Password string `json:"password" binding:"required"`
 	Email    string `json:"email"`
+}
+
+type jwtHeader struct {
+	Algorithm string `json:"alg"`
+	Type      string `json:"typ"`
+}
+
+type jwtClaims struct {
+	UserID    uint   `json:"uid"`
+	Subject   string `json:"sub"`
+	IssuedAt  int64  `json:"iat"`
+	ExpiresAt int64  `json:"exp"`
 }
 
 func hashPassword(password string) (string, error) {
@@ -40,9 +53,89 @@ func checkPasswordHash(password, hash string) bool {
 	return err == nil
 }
 
-func generateToken(userID uint) string {
-	// Simple token: timestamp + userID
-	return strconv.FormatInt(time.Now().UnixNano(), 10) + "-" + strconv.Itoa(int(userID))
+func generateToken(userID uint) (string, error) {
+	now := time.Now().Unix()
+	header := jwtHeader{Algorithm: "HS256", Type: "JWT"}
+	claims := jwtClaims{
+		UserID:    userID,
+		Subject:   strconv.Itoa(int(userID)),
+		IssuedAt:  now,
+		ExpiresAt: now + int64(24*time.Hour/time.Second),
+	}
+
+	headerSegment, err := encodeJWTPart(header)
+	if err != nil {
+		return "", err
+	}
+	claimsSegment, err := encodeJWTPart(claims)
+	if err != nil {
+		return "", err
+	}
+	signingInput := headerSegment + "." + claimsSegment
+	return signingInput + "." + signJWT(signingInput), nil
+}
+
+func encodeJWTPart(value interface{}) (string, error) {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(data), nil
+}
+
+func signJWT(signingInput string) string {
+	mac := hmac.New(sha256.New, []byte(config.Load().JWTSecret))
+	mac.Write([]byte(signingInput))
+	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+}
+
+func parseBearerToken(header string) string {
+	value := strings.TrimSpace(header)
+	if len(value) >= 7 && strings.EqualFold(value[:7], "Bearer ") {
+		return strings.TrimSpace(value[7:])
+	}
+	return value
+}
+
+func verifyToken(token string) (uint, error) {
+	parts := strings.Split(token, ".")
+	if len(parts) != 3 {
+		return 0, errors.New("invalid token format")
+	}
+
+	signingInput := parts[0] + "." + parts[1]
+	expectedSignature := signJWT(signingInput)
+	if !hmac.Equal([]byte(parts[2]), []byte(expectedSignature)) {
+		return 0, errors.New("invalid token signature")
+	}
+
+	headerData, err := base64.RawURLEncoding.DecodeString(parts[0])
+	if err != nil {
+		return 0, fmt.Errorf("decode header: %w", err)
+	}
+	var header jwtHeader
+	if err := json.Unmarshal(headerData, &header); err != nil {
+		return 0, fmt.Errorf("decode header json: %w", err)
+	}
+	if header.Algorithm != "HS256" || header.Type != "JWT" {
+		return 0, errors.New("unsupported token header")
+	}
+
+	claimsData, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return 0, fmt.Errorf("decode claims: %w", err)
+	}
+	var claims jwtClaims
+	if err := json.Unmarshal(claimsData, &claims); err != nil {
+		return 0, fmt.Errorf("decode claims json: %w", err)
+	}
+	if claims.UserID == 0 {
+		return 0, errors.New("missing user id")
+	}
+	if claims.ExpiresAt < time.Now().Unix() {
+		return 0, errors.New("token expired")
+	}
+	return claims.UserID, nil
 }
 
 // Register creates a new user
@@ -100,8 +193,11 @@ func Login(c *gin.Context) {
 		return
 	}
 
-	token := generateToken(user.ID)
-	tokenStore[token] = user.ID
+	token, err := generateToken(user.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"data": gin.H{
@@ -121,8 +217,8 @@ func GetCurrentUser(c *gin.Context) {
 		return
 	}
 
-	userID, ok := tokenStore[token]
-	if !ok {
+	userID, err := verifyToken(parseBearerToken(token))
+	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid token"})
 		return
 	}

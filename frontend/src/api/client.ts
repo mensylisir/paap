@@ -3,20 +3,44 @@ const inflightGetRequests = new Map<string, Promise<any>>()
 const completedGetRequests = new Map<string, { expiresAt: number; value: any }>()
 const GET_CACHE_TTL_MS = 1500
 
+function headersToRecord(headers?: HeadersInit): Record<string, string> {
+  if (!headers) return {}
+  if (headers instanceof Headers) {
+    const result: Record<string, string> = {}
+    headers.forEach((value, key) => { result[key] = value })
+    return result
+  }
+  if (Array.isArray(headers)) {
+    return Object.fromEntries(headers.map(([key, value]) => [key, value]))
+  }
+  return { ...headers }
+}
+
+function storedAuthToken() {
+  if (typeof localStorage === 'undefined') return ''
+  return localStorage.getItem('paap_token') || ''
+}
+
 async function request(path: string, options: RequestInit = {}) {
   const url = `${API_BASE}${path}`
   const method = String(options.method || 'GET').toUpperCase()
+  const token = storedAuthToken()
+  const cacheKey = token ? `${url}::auth=${token}` : url
   const canDedupe = method === 'GET' && !options.body
   if (canDedupe) {
-    const completed = completedGetRequests.get(url)
+    const completed = completedGetRequests.get(cacheKey)
     if (completed && completed.expiresAt > Date.now()) return completed.value
-    if (completed) completedGetRequests.delete(url)
-    const existing = inflightGetRequests.get(url)
+    if (completed) completedGetRequests.delete(cacheKey)
+    const existing = inflightGetRequests.get(cacheKey)
     if (existing) return existing
   }
-  const headers = options.body instanceof FormData
-    ? options.headers
-    : { 'Content-Type': 'application/json', ...(options.headers || {}) }
+  const headers = headersToRecord(options.headers)
+  if (!(options.body instanceof FormData) && !headers['Content-Type']) {
+    headers['Content-Type'] = 'application/json'
+  }
+  if (token && !headers.Authorization) {
+    headers.Authorization = `Bearer ${token}`
+  }
   const promise = fetch(url, {
     ...options,
     method,
@@ -28,18 +52,18 @@ async function request(path: string, options: RequestInit = {}) {
     }
     return res.json()
   })
-  if (canDedupe) inflightGetRequests.set(url, promise)
+  if (canDedupe) inflightGetRequests.set(cacheKey, promise)
   try {
     const value = await promise
     if (canDedupe) {
-      completedGetRequests.set(url, { expiresAt: Date.now() + GET_CACHE_TTL_MS, value })
+      completedGetRequests.set(cacheKey, { expiresAt: Date.now() + GET_CACHE_TTL_MS, value })
     } else {
       completedGetRequests.clear()
     }
     return value
   } finally {
-    if (canDedupe && inflightGetRequests.get(url) === promise) {
-      inflightGetRequests.delete(url)
+    if (canDedupe && inflightGetRequests.get(cacheKey) === promise) {
+      inflightGetRequests.delete(cacheKey)
     }
   }
 }

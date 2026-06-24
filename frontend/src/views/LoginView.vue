@@ -23,6 +23,7 @@
             <label class="form-label">密码</label>
             <input v-model.trim="password" type="password" class="form-input" placeholder="请输入密码" required />
           </div>
+          <p v-if="errorMessage" class="login-error" role="alert">登录失败：{{ errorMessage }}</p>
           <button type="submit" class="btn btn--primary" :disabled="loading">
             {{ loading ? '登录中...' : '登录' }}
           </button>
@@ -35,18 +36,35 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { api } from '../api/client'
 
 const router = useRouter()
 const username = ref('')
 const password = ref('')
 const loading = ref(false)
+const errorMessage = ref('')
 
 const handleLogin = async () => {
+  errorMessage.value = ''
   loading.value = true
-  setTimeout(() => {
-    loading.value = false
+  try {
+    const response = await api.login(username.value, password.value)
+    const user = response?.data || {}
+    if (!user.token) {
+      throw new Error('登录响应缺少 token')
+    }
+    localStorage.setItem('paap_token', user.token)
+    localStorage.setItem('paap_user', JSON.stringify({
+      id: user.id,
+      username: user.username,
+      role: user.role,
+    }))
     router.push('/apps?auto=true')
-  }, 500)
+  } catch (err) {
+    errorMessage.value = err instanceof Error ? err.message : '请检查用户名和密码'
+  } finally {
+    loading.value = false
+  }
 }
 </script>
 
@@ -64,13 +82,12 @@ const handleLogin = async () => {
   width: 820px;
   max-width: 95vw;
   min-height: 460px;
-  background: var(--paap-panel);
-  border: 1px solid var(--paap-border);
-  border-radius: var(--paap-radius);
+  background: var(--cds-layer-01);
+  border: 1px solid var(--cds-border-subtle-01);
+  border-radius: 0;
   overflow: hidden;
 }
 
-/* Brand panel */
 .brand-panel {
   flex: 1;
   display: flex;
@@ -78,8 +95,9 @@ const handleLogin = async () => {
   justify-content: center;
   align-items: flex-start;
   padding: var(--paap-space-12);
-  background: var(--paap-text);
-  color: #ffffff;
+  background: var(--cds-layer-accent-01);
+  color: var(--cds-text-primary);
+  border-right: 1px solid var(--cds-border-subtle-01);
 }
 
 .brand-icon {
@@ -88,28 +106,27 @@ const handleLogin = async () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: var(--paap-radius-sm);
-  color: #ffffff;
+  background: var(--cds-interactive-01);
+  border-radius: 0;
+  color: var(--cds-text-on-color);
   margin-bottom: var(--paap-space-6);
 }
 
 .brand-title {
   font-family: var(--paap-mono);
   font-size: 28px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  color: #ffffff;
+  font-weight: 400;
+  letter-spacing: 0;
+  color: var(--cds-text-primary);
   margin: 0 0 var(--paap-space-2);
 }
 
 .brand-desc {
   font-size: 15px;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--cds-text-secondary);
   line-height: 1.5;
 }
 
-/* Form panel */
 .form-panel {
   flex: 1;
   display: flex;
@@ -120,9 +137,9 @@ const handleLogin = async () => {
 
 .form-title {
   font-size: 24px;
-  font-weight: 600;
-  color: var(--paap-text);
-  letter-spacing: -0.02em;
+  font-weight: 400;
+  color: var(--cds-text-primary);
+  letter-spacing: 0;
   margin: 0 0 var(--paap-space-8);
 }
 
@@ -139,27 +156,36 @@ const handleLogin = async () => {
 }
 .form-label {
   font-size: 13px;
-  font-weight: 500;
-  color: var(--paap-muted);
+  font-weight: 400;
+  color: var(--cds-text-secondary);
 }
 .form-input {
   width: 100%;
   padding: 10px 12px;
   font-size: 14px;
-  border: 1px solid var(--paap-border);
-  border-radius: var(--paap-radius-sm);
-  background: var(--paap-panel);
-  color: var(--paap-text);
+  border: 0;
+  border-bottom: 1px solid var(--cds-border-strong-01);
+  border-radius: 0;
+  background: var(--cds-field-01);
+  color: var(--cds-text-primary);
   outline: none;
   font-family: inherit;
-  transition: border-color 0.15s, box-shadow 0.15s;
+  transition: box-shadow 0.15s;
 }
 .form-input:focus {
-  border-color: var(--paap-accent);
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+  box-shadow: inset 0 0 0 2px var(--cds-border-interactive);
 }
 .form-input::placeholder {
-  color: var(--paap-muted-2);
+  color: var(--cds-text-placeholder);
+}
+
+.login-error {
+  margin: 0;
+  padding: 10px 12px;
+  background: var(--cds-support-error-inverse, #da1e28);
+  color: var(--cds-text-on-color);
+  font-size: 13px;
+  line-height: 1.4;
 }
 
 .btn {
@@ -168,13 +194,13 @@ const handleLogin = async () => {
   justify-content: center;
   font-family: inherit;
   font-size: 14px;
-  font-weight: 500;
+  font-weight: 400;
   cursor: pointer;
   outline: none;
   border: none;
   height: 44px;
   padding: 0 20px;
-  border-radius: var(--paap-radius-sm);
+  border-radius: 0;
   transition: all 0.15s;
   margin-top: var(--paap-space-2);
 }
