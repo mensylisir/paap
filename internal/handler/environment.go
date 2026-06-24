@@ -2151,6 +2151,9 @@ func CreateComponent(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "environment not found"})
 		return
 	}
+	if !requireApplicationAccess(c, env.ApplicationID) {
+		return
+	}
 
 	var app model.Application
 	if err := database.DB.First(&app, env.ApplicationID).Error; err != nil {

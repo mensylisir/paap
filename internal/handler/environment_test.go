@@ -4597,7 +4597,7 @@ func TestCreateComponentRejectsImplicitLatestBeforeCreatingRecord(t *testing.T) 
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&model.Application{}, &model.Environment{}, &model.Component{}); err != nil {
+	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.Component{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	database.DB = db
@@ -4609,6 +4609,9 @@ func TestCreateComponentRejectsImplicitLatestBeforeCreatingRecord(t *testing.T) 
 	env := model.Environment{ApplicationID: app.ID, Name: "测试环境", Identifier: "staging", Status: "running", Namespace: "test-staging"}
 	if err := db.Create(&env).Error; err != nil {
 		t.Fatalf("create env: %v", err)
+	}
+	if err := db.Create(&model.AppMember{ApplicationID: app.ID, UserID: 2, Role: "member"}).Error; err != nil {
+		t.Fatalf("create member: %v", err)
 	}
 
 	body, _ := json.Marshal(CreateComponentRequest{
@@ -4624,7 +4627,7 @@ func TestCreateComponentRejectsImplicitLatestBeforeCreatingRecord(t *testing.T) 
 
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	router.POST("/api/v1/environments/:id/components", CreateComponent)
+	router.POST("/api/v1/environments/:id/components", withTestAuthUser(2, CreateComponent))
 	router.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusBadRequest {
@@ -4636,6 +4639,99 @@ func TestCreateComponentRejectsImplicitLatestBeforeCreatingRecord(t *testing.T) 
 	}
 	if count != 0 {
 		t.Fatalf("expected no component to be created, got %d", count)
+	}
+}
+
+func TestCreateComponentRejectsNonMembers(t *testing.T) {
+	previousDB := database.DB
+	t.Cleanup(func() { database.DB = previousDB })
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.Component{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	database.DB = db
+
+	app := model.Application{Name: "隐藏应用", Identifier: "hidden", OwnerID: 1}
+	if err := db.Create(&app).Error; err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	env := model.Environment{ApplicationID: app.ID, Name: "生产", Identifier: "prod", Status: "running", Namespace: "hidden-prod"}
+	if err := db.Create(&env).Error; err != nil {
+		t.Fatalf("create env: %v", err)
+	}
+
+	body, _ := json.Marshal(CreateComponentRequest{
+		Name:         "订单服务",
+		Type:         "backend",
+		Image:        "registry.local:5000/order:v1.0.0",
+		DeliveryMode: "image",
+		Replicas:     1,
+	})
+	req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/environments/%d/components", env.ID), bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.POST("/api/v1/environments/:id/components", withTestAuthUser(2, CreateComponent))
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusForbidden, rec.Body.String())
+	}
+	var count int64
+	if err := db.Model(&model.Component{}).Count(&count).Error; err != nil {
+		t.Fatalf("count components: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("component records = %d, want 0", count)
+	}
+}
+
+func TestCreateComponentRejectsNonMembersBeforePayloadValidation(t *testing.T) {
+	previousDB := database.DB
+	t.Cleanup(func() { database.DB = previousDB })
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.Component{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	database.DB = db
+
+	app := model.Application{Name: "隐藏应用", Identifier: "hidden", OwnerID: 1}
+	if err := db.Create(&app).Error; err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	env := model.Environment{ApplicationID: app.ID, Name: "生产", Identifier: "prod", Status: "running", Namespace: "hidden-prod"}
+	if err := db.Create(&env).Error; err != nil {
+		t.Fatalf("create env: %v", err)
+	}
+
+	body, _ := json.Marshal(CreateComponentRequest{
+		Name:     "订单服务",
+		Type:     "backend",
+		Image:    "registry.local:5000/order:latest",
+		Version:  "v1.0.0",
+		Replicas: 1,
+	})
+	req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/environments/%d/components", env.ID), bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.POST("/api/v1/environments/:id/components", withTestAuthUser(2, CreateComponent))
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusForbidden, rec.Body.String())
 	}
 }
 
@@ -4651,7 +4747,7 @@ func TestCreateComponentCreatesDraftWithoutDeploying(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&model.Application{}, &model.Environment{}, &model.Component{}, &model.ServiceInstallation{}); err != nil {
+	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.Component{}, &model.ServiceInstallation{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	database.DB = db
@@ -4664,6 +4760,9 @@ func TestCreateComponentCreatesDraftWithoutDeploying(t *testing.T) {
 	env := model.Environment{ApplicationID: app.ID, Name: "测试环境", Identifier: "staging", Status: "running", Namespace: "test-staging"}
 	if err := db.Create(&env).Error; err != nil {
 		t.Fatalf("create env: %v", err)
+	}
+	if err := db.Create(&model.AppMember{ApplicationID: app.ID, UserID: 2, Role: "member"}).Error; err != nil {
+		t.Fatalf("create member: %v", err)
 	}
 
 	body, _ := json.Marshal(CreateComponentRequest{
@@ -4681,7 +4780,7 @@ func TestCreateComponentCreatesDraftWithoutDeploying(t *testing.T) {
 
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	router.POST("/api/v1/environments/:id/components", CreateComponent)
+	router.POST("/api/v1/environments/:id/components", withTestAuthUser(2, CreateComponent))
 	router.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusCreated {
@@ -4716,7 +4815,7 @@ func TestCreateComponentAllowsCanvasDraftWithoutImage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&model.Application{}, &model.Environment{}, &model.Component{}); err != nil {
+	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.Component{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	database.DB = db
@@ -4728,6 +4827,9 @@ func TestCreateComponentAllowsCanvasDraftWithoutImage(t *testing.T) {
 	env := model.Environment{ApplicationID: app.ID, Name: "测试环境", Identifier: "staging", Status: "running", Namespace: "test-staging"}
 	if err := db.Create(&env).Error; err != nil {
 		t.Fatalf("create env: %v", err)
+	}
+	if err := db.Create(&model.AppMember{ApplicationID: app.ID, UserID: 2, Role: "member"}).Error; err != nil {
+		t.Fatalf("create member: %v", err)
 	}
 
 	body, _ := json.Marshal(CreateComponentRequest{
@@ -4742,7 +4844,7 @@ func TestCreateComponentAllowsCanvasDraftWithoutImage(t *testing.T) {
 
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	router.POST("/api/v1/environments/:id/components", CreateComponent)
+	router.POST("/api/v1/environments/:id/components", withTestAuthUser(2, CreateComponent))
 	router.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusCreated {

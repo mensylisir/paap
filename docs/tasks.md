@@ -762,6 +762,22 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 - [x] 对应文件：`internal/handler/environment.go`、`internal/handler/environment_test.go`
 - [x] 工作量：S（半天）
 
+### Task 7.8u: 组件草稿创建按成员鉴权 ✅
+> 普通用户创建环境组件草稿前必须具备所属应用访问权限，避免非成员向他人环境写入组件草稿或通过 payload 校验结果探测环境状态。
+
+- [x] `CreateComponent` 在读取环境后复用 `requireApplicationAccess(env.ApplicationID)`，通过后才读取应用、校验请求体和创建组件草稿
+- [x] 非成员创建组件草稿返回 403，并且不会创建 `components` 记录
+- [x] 非成员即使提交本应触发 `latest` 镜像校验的 payload，也先返回 403，避免泄露后续校验路径
+- [x] 既有组件草稿正向测试补齐真实受保护路由上下文：创建 app/env/member 后以成员用户创建或校验组件草稿
+- [x] 后端目标测试：`go test ./internal/handler -run 'TestCreateComponent(RejectsImplicitLatestBeforeCreatingRecord|RejectsNonMembers|RejectsNonMembersBeforePayloadValidation|CreatesDraftWithoutDeploying|AllowsCanvasDraftWithoutImage)' -count=1` 先红后绿
+- [x] 后端 handler 测试：`go test ./internal/handler -count=1` 通过
+- [x] 后端全量测试：`make test` 通过
+- [x] Docker 镜像 `v0.1.478` 构建并部署到 kind 集群
+- [x] kind 验证：显式使用 `--context kind-rbac-governance-test` 检查 `paap-server:v0.1.478`，Deployment `1/1 ready`，Pod `paap-server-85bd544cc-hc7bv` Running；`paap-system` 与 `kpack` Pod 均 Running，节点 Ready
+- [x] CDP 验证：复用 Chrome tab `http://172.18.0.2:30091/catalog`，临时普通用户 ID=22 POST `/api/v1/environments/5/components` 创建 `auth-draft-1782320211408` 返回 403 和 `application access denied`；临时加入应用 5 成员后，`latest` 镜像 payload 返回 400 和 `component image tag must be explicit; latest is not allowed`，正常 payload 返回 201、组件 ID=52、状态 `draft`；临时组件、用户和成员关系已清理，残留计数 0
+- [x] 对应文件：`internal/handler/environment.go`、`internal/handler/environment_test.go`
+- [x] 工作量：S（半天）
+
 ### Task 7.9: KubeVirt 虚拟机
 - [ ] 将 VM 作为新服务类型纳入 `ServiceCatalog`
 - [ ] 用 KubeVirt CRD（`VirtualMachine`）而非 Helm chart 部署
