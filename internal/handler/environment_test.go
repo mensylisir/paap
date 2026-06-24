@@ -2643,6 +2643,90 @@ func TestRunServiceWorkspaceActionRejectsNonMembersBeforeServiceLookup(t *testin
 	}
 }
 
+func TestDownloadRegistryCACertificateRejectsNonMembers(t *testing.T) {
+	previousDB := database.DB
+	previousK8sClient := k8s.GetClient()
+	t.Cleanup(func() {
+		database.DB = previousDB
+		k8s.SetClient(previousK8sClient)
+	})
+	k8s.SetClient(nil)
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.ServiceInstallation{}, &model.Component{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	database.DB = db
+
+	app := model.Application{Name: "隐藏应用", Identifier: "hidden", OwnerID: 1}
+	if err := db.Create(&app).Error; err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	env := model.Environment{ApplicationID: app.ID, Name: "生产", Identifier: "prod", Namespace: "hidden-prod"}
+	if err := db.Create(&env).Error; err != nil {
+		t.Fatalf("create env: %v", err)
+	}
+	service := model.ServiceInstallation{EnvironmentID: env.ID, ServiceType: "registry", Status: "running", Namespace: "hidden-prod-registry", ReleaseName: "hidden-prod-registry"}
+	if err := db.Create(&service).Error; err != nil {
+		t.Fatalf("create service: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/v1/environments/%d/services/%d/registry-ca.crt", env.ID, service.ID), nil)
+	rec := httptest.NewRecorder()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.GET("/api/v1/environments/:id/services/:serviceId/registry-ca.crt", withTestAuthUser(2, DownloadRegistryCACertificate))
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusForbidden, rec.Body.String())
+	}
+}
+
+func TestDownloadRegistryCACertificateRejectsNonMembersBeforeServiceLookup(t *testing.T) {
+	previousDB := database.DB
+	previousK8sClient := k8s.GetClient()
+	t.Cleanup(func() {
+		database.DB = previousDB
+		k8s.SetClient(previousK8sClient)
+	})
+	k8s.SetClient(nil)
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.ServiceInstallation{}, &model.Component{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	database.DB = db
+
+	app := model.Application{Name: "隐藏应用", Identifier: "hidden", OwnerID: 1}
+	if err := db.Create(&app).Error; err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	env := model.Environment{ApplicationID: app.ID, Name: "生产", Identifier: "prod", Namespace: "hidden-prod"}
+	if err := db.Create(&env).Error; err != nil {
+		t.Fatalf("create env: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/v1/environments/%d/services/999/registry-ca.crt", env.ID), nil)
+	rec := httptest.NewRecorder()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.GET("/api/v1/environments/:id/services/:serviceId/registry-ca.crt", withTestAuthUser(2, DownloadRegistryCACertificate))
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusForbidden, rec.Body.String())
+	}
+}
+
 func TestDeleteEnvironmentRemovesClusterCRsNamespacesAndDatabaseRows(t *testing.T) {
 	previousDB := database.DB
 	previousK8sClient := k8s.GetClient()
@@ -3458,7 +3542,7 @@ func TestDownloadRegistryCACertificateReturnsPublicCA(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&model.Application{}, &model.Environment{}, &model.ServiceInstallation{}, &model.Component{}); err != nil {
+	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.ServiceInstallation{}, &model.Component{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	database.DB = db
@@ -3470,6 +3554,9 @@ func TestDownloadRegistryCACertificateReturnsPublicCA(t *testing.T) {
 	env := model.Environment{ApplicationID: app.ID, Name: "开发", Identifier: "dev", Namespace: "billing-dev"}
 	if err := db.Create(&env).Error; err != nil {
 		t.Fatalf("create env: %v", err)
+	}
+	if err := db.Create(&model.AppMember{ApplicationID: app.ID, UserID: 2, Role: "member"}).Error; err != nil {
+		t.Fatalf("create member: %v", err)
 	}
 	inst := model.ServiceInstallation{EnvironmentID: env.ID, ServiceType: "registry", Status: "running", Namespace: "billing-dev-registry", ReleaseName: "billing-dev-registry"}
 	if err := db.Create(&inst).Error; err != nil {
@@ -3486,7 +3573,7 @@ func TestDownloadRegistryCACertificateReturnsPublicCA(t *testing.T) {
 
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	router.GET("/api/v1/environments/:id/services/:serviceId/registry-ca.crt", DownloadRegistryCACertificate)
+	router.GET("/api/v1/environments/:id/services/:serviceId/registry-ca.crt", withTestAuthUser(2, DownloadRegistryCACertificate))
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/environments/1/services/1/registry-ca.crt", nil)
 	router.ServeHTTP(rec, req)

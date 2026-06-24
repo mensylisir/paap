@@ -3623,6 +3623,19 @@ func DownloadRegistryCACertificate(c *gin.Context) {
 	envID, _ := strconv.Atoi(c.Param("id"))
 	serviceID, _ := strconv.Atoi(c.Param("serviceId"))
 
+	var accessEnv model.Environment
+	if err := database.DB.First(&accessEnv, envID).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "service not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if !requireApplicationAccess(c, accessEnv.ApplicationID) {
+		return
+	}
+
 	_, _, inst, _, err := loadServiceWorkspaceContext(envID, serviceID)
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
