@@ -509,6 +509,17 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 - [x] 对应文件：`frontend/src/views/CatalogView.vue`
 - [x] 工作量：S（半小时）
 
+### Task 7.26: 目录页骨架屏加载状态
+> 数据加载时显示 Carbon 风格骨架卡片（灰色块 + shimmer 动画），替代旧的"加载中..."文字
+
+- [x] 骨架屏模板：6 个骨架卡片（图标行 + 描述行 + 标签行）
+- [x] Carbon 风格 CSS：`background-size` shimmer 动画，`#f4f4f4` / `#e8e8e8` 灰底
+- [x] `nextTick()` 确保骨架渲染在 API 调用前生效
+- [x] CDP 验证：拦截 API 延迟 2.5s，800ms 时骨架可见、搜索栏隐藏，数据加载后 14 卡正常
+- [x] 对应文件：`frontend/src/views/CatalogView.vue`
+- [x] 工作量：S（半天）
+- [x] 提交：待 Cycle 6 提交
+
 ### Task 7.25: 目录页总数展示
 > 目录页副标题显示 "平台支持的中间件与工具一览（共 N 个）"
 

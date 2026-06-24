@@ -8,7 +8,30 @@
     </header>
 
     <div v-if="pageError" class="page-error" role="alert">{{ pageError }}</div>
-    <div v-if="loading" class="loading-text">加载中...</div>
+
+    <!-- Skeleton loading -->
+    <div v-if="loading" class="catalog-skeleton">
+      <div class="catalog-skeleton-bar"></div>
+      <div class="catalog-skeleton-grid">
+        <div v-for="n in 6" :key="n" class="catalog-skeleton-card">
+          <div class="catalog-skeleton-row">
+            <div class="catalog-skeleton-icon"></div>
+            <div class="catalog-skeleton-texts">
+              <div class="catalog-skeleton-line skeleton-line--long"></div>
+              <div class="catalog-skeleton-line skeleton-line--short"></div>
+            </div>
+          </div>
+          <div class="catalog-skeleton-desc">
+            <div class="catalog-skeleton-line skeleton-line--full"></div>
+            <div class="catalog-skeleton-line skeleton-line--medium"></div>
+          </div>
+          <div class="catalog-skeleton-tags">
+            <div class="catalog-skeleton-tag"></div>
+            <div class="catalog-skeleton-tag"></div>
+          </div>
+        </div>
+      </div>
+    </div>
 
     <!-- Search bar -->
     <div v-if="availableTabs.length" class="catalog-search">
@@ -72,7 +95,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watchEffect, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, watchEffect, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { api } from '../api/client'
 
 interface CatalogItem {
@@ -175,6 +198,7 @@ watchEffect(() => {
 onMounted(async () => {
   loading.value = true
   pageError.value = ''
+  await nextTick() // ensure skeleton renders before api call
   try {
     const data = await api.listServiceTemplates()
     templates.value = Array.isArray(data) ? data : (data?.data ? (Array.isArray(data.data) ? data.data : []) : [])
@@ -237,10 +261,84 @@ onMounted(async () => {
   margin-bottom: 16px;
 }
 
-.loading-text {
-  padding: 2rem 0;
-  color: #6f6f6f;
-  font-size: 0.875rem;
+/* ===== Skeleton loading ===== */
+@keyframes cds-skeleton-shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.catalog-skeleton {
+  margin-bottom: 2rem;
+}
+.catalog-skeleton-bar {
+  height: 40px;
+  margin-bottom: 1rem;
+  border-radius: 0;
+  background: linear-gradient(90deg, #f4f4f4 25%, #e8e8e8 50%, #f4f4f4 75%);
+  background-size: 200% 100%;
+  animation: cds-skeleton-shimmer 1.5s ease-in-out infinite;
+}
+.catalog-skeleton-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 0.75rem;
+}
+.catalog-skeleton-card {
+  background: #fff;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.catalog-skeleton-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+.catalog-skeleton-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 0;
+  flex-shrink: 0;
+  background: linear-gradient(90deg, #f4f4f4 25%, #e8e8e8 50%, #f4f4f4 75%);
+  background-size: 200% 100%;
+  animation: cds-skeleton-shimmer 1.5s ease-in-out infinite;
+}
+.catalog-skeleton-texts {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+.catalog-skeleton-line {
+  height: 12px;
+  border-radius: 0;
+  background: linear-gradient(90deg, #f4f4f4 25%, #e8e8e8 50%, #f4f4f4 75%);
+  background-size: 200% 100%;
+  animation: cds-skeleton-shimmer 1.5s ease-in-out infinite;
+}
+.catalog-skeleton-desc {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+.skeleton-line--long { width: 80%; }
+.skeleton-line--short { width: 45%; }
+.skeleton-line--full { width: 100%; }
+.skeleton-line--medium { width: 65%; }
+.catalog-skeleton-tags {
+  display: flex;
+  gap: 0.375rem;
+  margin-top: auto;
+}
+.catalog-skeleton-tag {
+  width: 56px;
+  height: 20px;
+  border-radius: 3px;
+  background: linear-gradient(90deg, #f4f4f4 25%, #e8e8e8 50%, #f4f4f4 75%);
+  background-size: 200% 100%;
+  animation: cds-skeleton-shimmer 1.5s ease-in-out infinite;
 }
 
 /* ===== Search bar ===== */
