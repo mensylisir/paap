@@ -629,6 +629,21 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 - [x] 对应文件：`internal/handler/environment.go`、`internal/handler/environment_test.go`
 - [x] 工作量：S（半天）
 
+### Task 7.8l: 环境可接入资源按成员鉴权 ✅
+> 普通用户查看或接入环境内可纳管资源前必须具备所属应用访问权限，避免非成员扫描环境命名空间或创建接入组件草稿。
+
+- [x] `loadEnvironmentAndApp` 查到环境和应用后复用 `requireApplicationAccess(app.ID)`，保护 `ListAdoptableResources` 与 `AdoptResource`
+- [x] 非成员可接入资源列表/接入请求均返回 403，并且不会继续进入 K8s 发现或创建组件草稿
+- [x] 后端目标测试：`go test ./internal/handler -run 'Test(ListAdoptableResourcesRejectsNonMembers|AdoptResourceRejectsNonMembers)' -count=1` 先红后绿
+- [x] 后端相关测试：`go test ./internal/handler -run 'Test(AdoptResourceDiscoversAndCreatesDraftFromRealWorkload|ListAdoptableResourcesRejectsNonMembers|AdoptResourceRejectsNonMembers)' -count=1` 通过
+- [x] 后端 handler 测试：`go test ./internal/handler -count=1` 通过
+- [x] 后端全量测试：`make test` 通过
+- [x] Docker 镜像 `v0.1.468` 构建并部署到 kind 集群
+- [x] kind 验证：显式使用 `--context kind-rbac-governance-test` 检查 `paap-server:v0.1.468`，Deployment `1/1 ready`，Pod `paap-server-d56d8646-vw7sv` Running；`paap-system` 与 `kpack` Pod 均 Running，节点 Ready
+- [x] CDP 验证：复用 Chrome tab `http://172.18.0.2:30091/catalog`，临时普通用户 ID=13 读取/接入 `/api/v1/environments/1/adoptable-resources` 均返回 403 和 `application access denied`；临时加入应用 1 成员后列表返回 200 且 `data: []`；临时用户和成员关系已清理，残留计数 0
+- [x] 对应文件：`internal/handler/environment.go`、`internal/handler/environment_test.go`
+- [x] 工作量：S（半天）
+
 ### Task 7.9: KubeVirt 虚拟机
 - [ ] 将 VM 作为新服务类型纳入 `ServiceCatalog`
 - [ ] 用 KubeVirt CRD（`VirtualMachine`）而非 Helm chart 部署

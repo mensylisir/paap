@@ -4943,8 +4943,8 @@ func TestAdoptResourceDiscoversAndCreatesDraftFromRealWorkload(t *testing.T) {
 
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	router.GET("/api/v1/environments/:id/adoptable-resources", ListAdoptableResources)
-	router.POST("/api/v1/environments/:id/adoptable-resources", AdoptResource)
+	router.GET("/api/v1/environments/:id/adoptable-resources", withTestAuthUserRole(1, "admin", ListAdoptableResources))
+	router.POST("/api/v1/environments/:id/adoptable-resources", withTestAuthUserRole(1, "admin", AdoptResource))
 
 	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/environments/1/adoptable-resources", nil)
 	listRec := httptest.NewRecorder()
@@ -4989,6 +4989,95 @@ func TestAdoptResourceDiscoversAndCreatesDraftFromRealWorkload(t *testing.T) {
 	}
 	if len(cfg.Command) != 1 || cfg.Command[0] != "/server" || len(cfg.Args) != 1 || cfg.Args[0] != "--listen=:8080" {
 		t.Fatalf("adopted command/args not preserved: %#v", cfg)
+	}
+}
+
+func TestListAdoptableResourcesRejectsNonMembers(t *testing.T) {
+	previousDB := database.DB
+	previousClient := k8s.GetClient()
+	t.Cleanup(func() {
+		database.DB = previousDB
+		k8s.SetClient(previousClient)
+	})
+	k8s.SetClient(nil)
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.ServiceInstallation{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	database.DB = db
+
+	app := model.Application{Name: "隐藏应用", Identifier: "hidden", OwnerID: 1}
+	if err := db.Create(&app).Error; err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	env := model.Environment{ApplicationID: app.ID, Name: "生产", Identifier: "prod", Namespace: "hidden-prod"}
+	if err := db.Create(&env).Error; err != nil {
+		t.Fatalf("create env: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/environments/1/adoptable-resources", nil)
+	rec := httptest.NewRecorder()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.GET("/api/v1/environments/:id/adoptable-resources", withTestAuthUser(2, ListAdoptableResources))
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusForbidden, rec.Body.String())
+	}
+}
+
+func TestAdoptResourceRejectsNonMembers(t *testing.T) {
+	previousDB := database.DB
+	previousClient := k8s.GetClient()
+	t.Cleanup(func() {
+		database.DB = previousDB
+		k8s.SetClient(previousClient)
+	})
+	k8s.SetClient(nil)
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.Component{}, &model.ServiceInstallation{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	database.DB = db
+
+	app := model.Application{Name: "隐藏应用", Identifier: "hidden", OwnerID: 1}
+	if err := db.Create(&app).Error; err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	env := model.Environment{ApplicationID: app.ID, Name: "生产", Identifier: "prod", Namespace: "hidden-prod"}
+	if err := db.Create(&env).Error; err != nil {
+		t.Fatalf("create env: %v", err)
+	}
+
+	body, _ := json.Marshal(AdoptResourceRequest{Key: "hidden-prod/deployment/external-api"})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/environments/1/adoptable-resources", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.POST("/api/v1/environments/:id/adoptable-resources", withTestAuthUser(2, AdoptResource))
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusForbidden, rec.Body.String())
+	}
+	var count int64
+	if err := db.Model(&model.Component{}).Where("environment_id = ?", env.ID).Count(&count).Error; err != nil {
+		t.Fatalf("count components: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("component count = %d, want none created", count)
 	}
 }
 

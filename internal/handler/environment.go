@@ -1712,6 +1712,9 @@ func loadEnvironmentAndApp(c *gin.Context, envID uint) (model.Environment, model
 		c.JSON(http.StatusNotFound, gin.H{"error": "application not found"})
 		return model.Environment{}, model.Application{}, false
 	}
+	if !requireApplicationAccess(c, app.ID) {
+		return model.Environment{}, model.Application{}, false
+	}
 	return env, app, true
 }
 
