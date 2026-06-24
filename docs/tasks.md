@@ -555,7 +555,8 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 - [ ] CDP 测试覆盖：每次 UI 变更后用可见 Chrome 测试
 
 ### Task 7.19: Keycloak 部署 + 用户认证集成
-- [ ] 新增 Keycloak 到 `deploy/k8s/` 部署文件（keycloak.yaml + 配置）
+- [x] 新增 Keycloak 到 `deploy/k8s/` 部署文件（`keycloak.yaml` + `deploy.sh` + `deploy-remote.sh` + 离线镜像清单）
+- [x] kind 验证：显式使用 `--context kind-rbac-governance-test` 检查 `paap-keycloak`，Deployment `1/1 Available`，NodePort `30080`，健康口 `/health/ready` 返回 `UP`
 - [ ] 用户认证对接 Keycloak：登录/注册/OAuth2/OIDC 流程
 - [ ] 替换或并存当前简单 JWT 认证
 - [ ] 用户管理（同步/创建/角色映射 Keycloak ←→ PAAP User）

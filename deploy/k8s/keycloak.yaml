@@ -1,0 +1,85 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: keycloak-config
+  namespace: paap-system
+data:
+  KC_DB: postgres
+  KC_DB_URL: jdbc:postgresql://paap-postgres.paap-system.svc.cluster.local:5432/keycloak
+  KC_DB_USERNAME: paap
+  KC_DB_PASSWORD: paap
+  KC_HOSTNAME: localhost
+  KC_HTTP_ENABLED: "true"
+  KC_HEALTH_ENABLED: "true"
+  KC_METRICS_ENABLED: "true"
+  KEYCLOAK_ADMIN: admin
+  KEYCLOAK_ADMIN_PASSWORD: admin
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: paap-keycloak
+  namespace: paap-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: paap-keycloak
+  template:
+    metadata:
+      labels:
+        app: paap-keycloak
+    spec:
+      initContainers:
+        - name: init-db
+          image: postgres:15-alpine
+          command:
+            - sh
+            - -c
+            - |
+              psql "$DATABASE_URL" -tc "SELECT 1 FROM pg_database WHERE datname = 'keycloak'" | grep -q 1 \
+                || psql "$DATABASE_URL" -c "CREATE DATABASE keycloak"
+          env:
+            - name: DATABASE_URL
+              value: postgresql://paap:paap@paap-postgres.paap-system.svc.cluster.local:5432/paap
+      containers:
+        - name: keycloak
+          image: quay.io/keycloak/keycloak:25.0.0
+          args:
+            - start-dev
+          ports:
+            - containerPort: 8080
+            - containerPort: 9000
+          envFrom:
+            - configMapRef:
+                name: keycloak-config
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: 9000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: 9000
+            initialDelaySeconds: 60
+            periodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: paap-keycloak
+  namespace: paap-system
+spec:
+  selector:
+    app: paap-keycloak
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+      nodePort: 30080
+    - name: health
+      port: 9000
+      targetPort: 9000
+  type: NodePort

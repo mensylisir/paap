@@ -50,6 +50,10 @@ kubectl apply -f "$SCRIPT_DIR/postgres.yaml"
 echo "7. Deploying MinIO..."
 kubectl apply -f "$SCRIPT_DIR/minio.yaml"
 
+# 7.5 部署 Keycloak（PAAP 身份认证组件）
+echo "7.5 Deploying Keycloak..."
+kubectl apply -f "$SCRIPT_DIR/keycloak.yaml"
+
 # 等待 MinIO 就绪
 inspect_namespace paap-system
 
@@ -78,6 +82,7 @@ echo "=== PAAP Deployed Successfully ==="
 echo ""
 echo "Services:"
 echo "  PAAP Server:    http://localhost:30091"
+echo "  Keycloak:       http://localhost:30080 (admin/admin)"
 echo "  MinIO Console:  http://localhost:30901 (minioadmin/minioadmin123)"
 echo "  PostgreSQL:     paap-postgres.paap-system.svc.cluster.local:5432"
 echo ""

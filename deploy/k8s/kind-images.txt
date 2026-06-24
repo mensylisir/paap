@@ -9,6 +9,9 @@ minio/minio:RELEASE.2025-09-07T16-13-09Z
 busybox:1.36
 minio/mc:RELEASE.2024-05-09T17-04-24Z
 
+# PAAP system identity provider
+quay.io/keycloak/keycloak:25.0.0
+
 # Lightweight tool templates
 gitea/gitea:1.23.8
 registry:2.8.3
