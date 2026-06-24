@@ -386,7 +386,9 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 
 ### Task 6.14: 平台目录、版本选择与服务暴露
 - [ ] 安装/编辑中间件时提供版本下拉，数据来自同 `ServiceType` 下的 `ServiceTemplate.ChartVersion`
-- [ ] 增加“平台支持的中间件/工具目录”只读浏览页，按工具/数据库/缓存/消息队列/对象存储分组
+- [x] 增加“平台支持的中间件/工具目录”只读浏览页，按工具/数据库/缓存/消息队列/对象存储分组
+  - 已提供 `/catalog` 只读目录页，读取 `api.listServiceTemplates()`，按工具类、数据库、缓存、消息队列、对象存储分组展示服务类型、描述和版本标签，并支持名称、类型、分组、描述搜索
+  - 验证：`npm --prefix frontend run test -- src/utils/catalogGroups.test.ts src/utils/catalogVersions.test.ts src/views/viewMarkup.test.ts` 通过；CDP 验证当前部署 `/catalog` 展示 14 张卡片，分组为工具类 7、数据库 3、缓存 1、消息队列 2、对象存储 1
 - [ ] 平台管理员支持维护 `ServiceCatalog` 和 `ServiceTemplate`，包括新增类型、上传 chart、维护版本列表
 - [ ] 组件和服务增加 Ingress/Gateway 暴露配置：域名、路径、TLS 和状态回读
 - [ ] 对共享工具 namespace 和外部 endpoint 补齐 NetworkPolicy ingress/egress 放行策略
