@@ -177,6 +177,29 @@ func authenticatedUserIsPlatformAdmin(c *gin.Context) bool {
 	return role == "admin" || role == "platform_admin"
 }
 
+func requireApplicationAccess(c *gin.Context, appID uint) bool {
+	if authenticatedUserIsPlatformAdmin(c) {
+		return true
+	}
+	userID, ok := authenticatedUserID(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid or missing authenticated user"})
+		return false
+	}
+	var count int64
+	if err := database.DB.Model(&model.AppMember{}).
+		Where("application_id = ? AND user_id = ?", appID, userID).
+		Count(&count).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return false
+	}
+	if count == 0 {
+		c.JSON(http.StatusForbidden, gin.H{"error": "application access denied"})
+		return false
+	}
+	return true
+}
+
 // GetApplication returns application details with environments
 func GetApplication(c *gin.Context) {
 	syncClusterStateIfPossible()
@@ -189,6 +212,9 @@ func GetApplication(c *gin.Context) {
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if !requireApplicationAccess(c, app.ID) {
 		return
 	}
 

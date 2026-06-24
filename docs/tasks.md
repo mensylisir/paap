@@ -510,6 +510,21 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 - [x] 对应文件：`internal/handler/application.go`、`internal/handler/application_test.go`
 - [x] 工作量：S（半天）
 
+### Task 7.8d: 应用详情按成员鉴权 ✅
+> 普通用户按 ID 查看应用详情时必须是该应用成员，平台管理员保留全量访问。
+
+- [x] 新增 `requireApplicationAccess`，普通用户按 `app_members` 检查应用访问权限
+- [x] `GetApplication` 查到应用后执行成员鉴权，非成员返回 403
+- [x] 缺少认证上下文时返回 401，避免未受保护路由误用
+- [x] 后端目标测试：`go test ./internal/handler -run TestGetApplicationRejectsNonMembers -count=1` 先红后绿
+- [x] 后端 handler 测试：`go test ./internal/handler -count=1` 通过
+- [x] 后端全量测试：`make test` 通过
+- [x] Docker 镜像 `v0.1.460` 构建并部署到 kind 集群
+- [x] kind 验证：显式使用 `--context kind-rbac-governance-test` 检查 `paap-server:v0.1.460`，Deployment `1/1 ready`，Pod `paap-server-97cbb674b-jk4m2` Running
+- [x] API/数据库验证：临时普通用户 ID=5 访问非成员应用 1 返回 403 和 `application access denied`；临时用户已清理，残留计数 0
+- [x] 对应文件：`internal/handler/application.go`、`internal/handler/application_test.go`
+- [x] 工作量：S（半天）
+
 ### Task 7.9: KubeVirt 虚拟机
 - [ ] 将 VM 作为新服务类型纳入 `ServiceCatalog`
 - [ ] 用 KubeVirt CRD（`VirtualMachine`）而非 Helm chart 部署

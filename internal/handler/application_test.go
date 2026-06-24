@@ -287,7 +287,7 @@ func TestGetApplicationIncludesEnvironmentCounts(t *testing.T) {
 
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	router.GET("/api/v1/applications/:id", GetApplication)
+	router.GET("/api/v1/applications/:id", withTestAuthUserRole(1, "admin", GetApplication))
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/applications/1", nil)
 	router.ServeHTTP(rec, req)
@@ -322,6 +322,36 @@ func TestGetApplicationIncludesEnvironmentCounts(t *testing.T) {
 	}
 	if len(body.Data.Environments[0].Services) != 1 {
 		t.Fatalf("expected service summary, got %#v", body.Data.Environments[0].Services)
+	}
+}
+
+func TestGetApplicationRejectsNonMembers(t *testing.T) {
+	previousDB := database.DB
+	t.Cleanup(func() { database.DB = previousDB })
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&model.Application{}, &model.Environment{}, &model.AppMember{}, &model.User{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	database.DB = db
+
+	hidden := model.Application{Name: "隐藏应用", Identifier: "hidden", OwnerID: 1}
+	if err := db.Create(&hidden).Error; err != nil {
+		t.Fatalf("create hidden app: %v", err)
+	}
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.GET("/api/v1/applications/:id", withTestAuthUser(2, GetApplication))
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/applications/1", nil)
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusForbidden, rec.Body.String())
 	}
 }
 
