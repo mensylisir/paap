@@ -292,6 +292,13 @@ describe('Vue view markup', () => {
     expect(catalogView.default).not.toContain("label = '中间件 / 数据库'")
   })
 
+  it('matches catalog search queries against product group names', async () => {
+    const catalogView = await import('./CatalogView.vue?raw')
+
+    expect(catalogView.default).toContain('catalogTemplateMatchesQuery')
+    expect(catalogView.default).toContain('catalogTemplateMatchesQuery(t, q)')
+  })
+
   it('uses a wide working canvas for dense operational pages', () => {
     const globalStyles = readFileSync(new URL('../style.scss', import.meta.url), 'utf8')
     const mainEntry = readFileSync(new URL('../main.ts', import.meta.url), 'utf8')

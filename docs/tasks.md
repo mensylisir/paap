@@ -710,6 +710,20 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 - [x] 对应文件：`frontend/src/views/CatalogView.vue`、`frontend/src/views/viewMarkup.test.ts`、`frontend/src/utils/catalogGroups.ts`、`frontend/src/utils/catalogGroups.test.ts`
 - [x] 工作量：S（半天）
 
+### Task 7.32: 目录页支持按产品分组名搜索 ✅
+> 搜索框支持输入“数据库”“缓存”“消息队列”“对象存储”等分组名，直接定位对应能力。
+
+- [x] 新增 `catalogTemplateMatchesQuery`，搜索匹配范围覆盖名称、类型、描述、原始分类和产品分组名
+- [x] 目录页过滤逻辑复用统一 helper，保留原有名称/类型/描述搜索能力
+- [x] 前端目标测试：`npm run test -- src/utils/catalogGroups.test.ts src/views/viewMarkup.test.ts`，2 files / 81 tests passed
+- [x] 前端全量测试：`npm run test`，26 files / 216 tests passed
+- [x] 前端构建：`npm run build` 通过
+- [x] Docker 镜像 `v0.1.454` 构建并部署到 kind 集群
+- [x] kind 验证：显式使用 `--context kind-rbac-governance-test` 检查 `paap-server:v0.1.454`，Deployment `1/1 ready`，Pod `paap-server-5db8fbd86c-fzxwl` Running
+- [x] CDP 验证：`http://172.18.0.2:30091/catalog` 搜索“缓存”显示 Redis；“消息队列”显示 RabbitMQ/Kafka；“对象存储”显示 MinIO；“数据库”显示 PostgreSQL/MySQL/MongoDB；清空后 5 个分组恢复
+- [x] 对应文件：`frontend/src/views/CatalogView.vue`、`frontend/src/views/viewMarkup.test.ts`、`frontend/src/utils/catalogGroups.ts`、`frontend/src/utils/catalogGroups.test.ts`
+- [x] 工作量：S（15 分钟）
+
 ### Task 7.21: `docs/配置示例.md` → 内置配置模板
 > 将 20 个配置示例转为 PAAP 内置配置模板（Go template），供组件配置 Tab 使用
 

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import * as catalogGroups from './catalogGroups'
 import { catalogGroupForTemplate, compareCatalogGroupMeta } from './catalogGroups'
 
 describe('catalog group helpers', () => {
@@ -28,5 +29,16 @@ describe('catalog group helpers', () => {
       'mq',
       'objectStorage',
     ])
+  })
+
+  it('matches search queries against product group labels', () => {
+    const matchesQuery = (catalogGroups as any).catalogTemplateMatchesQuery
+
+    expect(matchesQuery).toBeTypeOf('function')
+    expect(matchesQuery({ category: 'infra', type: 'redis', name: 'Redis' }, '缓存')).toBe(true)
+    expect(matchesQuery({ category: 'infra', type: 'rabbitmq', name: 'RabbitMQ' }, '消息队列')).toBe(true)
+    expect(matchesQuery({ category: 'infra', type: 'postgresql', name: 'PostgreSQL' }, '数据库')).toBe(true)
+    expect(matchesQuery({ category: 'infra', type: 'minio', name: 'MinIO' }, '对象存储')).toBe(true)
+    expect(matchesQuery({ category: 'infra', type: 'redis', name: 'Redis' }, '数据库')).toBe(false)
   })
 })

@@ -1,5 +1,7 @@
 export interface CatalogTemplateLike {
   category?: unknown
+  description?: unknown
+  name?: unknown
   type?: unknown
 }
 
@@ -42,3 +44,20 @@ export const catalogGroupForTemplate = (template: CatalogTemplateLike): CatalogG
 
 export const compareCatalogGroupMeta = (left: CatalogGroupMeta, right: CatalogGroupMeta) =>
   left.rank - right.rank || left.label.localeCompare(right.label)
+
+const searchableText = (value: unknown) => String(value || '').toLowerCase()
+
+export const catalogTemplateMatchesQuery = (template: CatalogTemplateLike, query: string) => {
+  const q = searchableText(query).trim()
+  if (!q) return true
+
+  const group = catalogGroupForTemplate(template)
+  return [
+    template.name,
+    template.type,
+    template.description,
+    template.category,
+    group.label,
+    group.category,
+  ].some(value => searchableText(value).includes(q))
+}

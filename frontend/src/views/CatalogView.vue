@@ -103,7 +103,7 @@
 <script setup lang="ts">
 import { ref, computed, watchEffect, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { api } from '../api/client'
-import { catalogGroupForTemplate, compareCatalogGroupMeta, type CatalogGroupMeta } from '../utils/catalogGroups'
+import { catalogGroupForTemplate, catalogTemplateMatchesQuery, compareCatalogGroupMeta, type CatalogGroupMeta } from '../utils/catalogGroups'
 import { compareCatalogVersions, stripCatalogVersionPrefix } from '../utils/catalogVersions'
 
 interface CatalogItem {
@@ -137,11 +137,7 @@ const availableTabs = computed(() =>
 const filteredTemplates = computed(() => {
   const q = filterQuery.value.trim().toLowerCase()
   if (!q) return templates.value
-  return templates.value.filter((t: any) =>
-    String(t.name || '').toLowerCase().includes(q) ||
-    String(t.type || '').toLowerCase().includes(q) ||
-    String(t.description || '').toLowerCase().includes(q)
-  )
+  return templates.value.filter((t: any) => catalogTemplateMatchesQuery(t, q))
 })
 const hasCatalogItems = computed(() => templates.value.length > 0)
 const totalItems = computed(() => filteredTemplates.value.length)
