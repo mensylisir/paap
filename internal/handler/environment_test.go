@@ -909,6 +909,84 @@ func TestInstallServiceDeploysExistingDraft(t *testing.T) {
 	}
 }
 
+func TestInstallServiceSelectsTemplateByChartVersion(t *testing.T) {
+	previousDB := database.DB
+	previousClient := k8s.GetClient()
+	previousSync := syncClusterState
+	t.Cleanup(func() {
+		database.DB = previousDB
+		k8s.SetClient(previousClient)
+		syncClusterState = previousSync
+	})
+	syncClusterState = func(context.Context, *gorm.DB, ctrlclient.Client) error { return nil }
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("sqlite db handle: %v", err)
+	}
+	sqlDB.SetMaxOpenConns(1)
+	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.ServiceTemplate{}, &model.ServiceInstallation{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	database.DB = db
+
+	app := model.Application{Name: "Billing", Identifier: "billing", OwnerID: 1}
+	if err := db.Create(&app).Error; err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	env := model.Environment{ApplicationID: app.ID, Name: "Dev", Identifier: "dev", Namespace: "billing-dev", Status: "running"}
+	if err := db.Create(&env).Error; err != nil {
+		t.Fatalf("create env: %v", err)
+	}
+	if err := db.Create(&model.AppMember{ApplicationID: app.ID, UserID: 2, Role: "member"}).Error; err != nil {
+		t.Fatalf("create member: %v", err)
+	}
+	for _, tmpl := range []model.ServiceTemplate{
+		{Type: "redis", Name: "Redis old", Installer: "helm", Category: "infra", ChartName: "redis-old", ChartVersion: "1.0.0", AppVersion: "6.0.0", PlatformManifestJSON: `{"name":"redis","version":"v1"}`},
+		{Type: "redis", Name: "Redis new", Installer: "helm", Category: "infra", ChartName: "redis-new", ChartVersion: "2.0.0", AppVersion: "7.0.0", PlatformManifestJSON: `{"name":"redis","version":"v1"}`},
+	} {
+		if err := db.Create(&tmpl).Error; err != nil {
+			t.Fatalf("create template %s: %v", tmpl.ChartVersion, err)
+		}
+	}
+
+	testScheme := runtime.NewScheme()
+	if err := clientgoscheme.AddToScheme(testScheme); err != nil {
+		t.Fatalf("add core scheme: %v", err)
+	}
+	if err := paapv1.AddToScheme(testScheme); err != nil {
+		t.Fatalf("add paap scheme: %v", err)
+	}
+	k8s.SetClient(fake.NewClientBuilder().WithScheme(testScheme).Build())
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.POST("/api/v1/environments/:id/services", withTestAuthUser(2, InstallService))
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/environments/1/services", strings.NewReader(`{"serviceType":"redis","chartVersion":"2.0.0"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+
+	var svc paapv1.ServiceInstance
+	if err := k8s.GetClient().Get(t.Context(), ctrlclient.ObjectKey{Name: "dev-redis", Namespace: "paap-app-billing"}, &svc); err != nil {
+		t.Fatalf("get service instance: %v", err)
+	}
+	if svc.Spec.Helm == nil {
+		t.Fatalf("service instance helm spec is nil")
+	}
+	if svc.Spec.Helm.ChartVersion != "2.0.0" || svc.Spec.Helm.ChartName != "redis-new" {
+		t.Fatalf("helm template = %s/%s, want redis-new/2.0.0", svc.Spec.Helm.ChartName, svc.Spec.Helm.ChartVersion)
+	}
+}
+
 func TestInstallServiceRejectsNonMembers(t *testing.T) {
 	previousDB := database.DB
 	previousClient := k8s.GetClient()

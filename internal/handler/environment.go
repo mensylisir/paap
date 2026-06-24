@@ -180,9 +180,10 @@ type AdoptResourceRequest struct {
 }
 
 type InstallServiceRequest struct {
-	ServiceType string            `json:"serviceType" binding:"required"`
-	AppVersion  string            `json:"appVersion"`
-	Values      map[string]string `json:"values"`
+	ServiceType  string            `json:"serviceType" binding:"required"`
+	AppVersion   string            `json:"appVersion"`
+	ChartVersion string            `json:"chartVersion"`
+	Values       map[string]string `json:"values"`
 }
 
 type UpdateServiceRequest struct {
@@ -8025,6 +8026,9 @@ func InstallService(c *gin.Context) {
 	// 查找模板获取安装方式
 	var svcTmpl model.ServiceTemplate
 	query := database.DB.Where("type = ? AND enabled = ?", req.ServiceType, true)
+	if strings.TrimSpace(req.ChartVersion) != "" {
+		query = query.Where("chart_version = ?", strings.TrimSpace(req.ChartVersion))
+	}
 	if req.AppVersion != "" {
 		query = query.Where("app_version = ?", req.AppVersion)
 	}

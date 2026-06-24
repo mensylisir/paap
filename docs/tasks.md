@@ -387,7 +387,11 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 - [ ] external 来源删除只移除 PAAP 连接记录和本地凭据，不能删除真实外部资源
 
 ### Task 6.14: 平台目录、版本选择与服务暴露
-- [ ] 安装/编辑中间件时提供版本下拉，数据来自同 `ServiceType` 下的 `ServiceTemplate.ChartVersion`
+- [x] 安装/编辑中间件时提供版本下拉，数据来自同 `ServiceType` 下的 `ServiceTemplate.ChartVersion`
+  - 服务部署抽屉的版本下拉改为按同 `serviceType` 的 `ServiceTemplate.chartVersion` 取值，选项展示 Chart 版本和应用版本；安装请求新增 `chartVersion`，后端按 `chart_version` 精确选择模板，并保留旧 `appVersion` 兼容路径
+  - 测试覆盖：`go test -count=1 ./internal/handler -run TestInstallServiceSelectsTemplateByChartVersion` 先红后绿；`npm --prefix frontend run test -- src/views/viewMarkup.test.ts -t "chart version"` 先红后绿；`go test -count=1 ./internal/handler ./internal/k8s`、`npm --prefix frontend run test`、`npm --prefix frontend run build`、完整 `make test` 通过
+  - 部署验证：`paap-server:v0.1.500` 已构建、加载到 `kind-rbac-governance-test` 并完成 `paap-system/paap-server` 滚动更新；实际 Deployment 镜像为 `paap-server:v0.1.500`，PAAP/kpack 相关 Pod Running，节点 Ready
+  - CDP/API/kubectl 验证：复用 Chrome tab，在应用 1 下创建临时环境 `chart-cdp-136303`，读取 Redis 模板 `chartVersion=18.6.0` 后用 `chartVersion` 安装 Redis；kubectl 读取 `serviceinstance chart-cdp-136303-redis` 得到 `.spec.helm.chartVersion=18.6.0`、`.spec.helm.s3Key=charts/redis.tar.gz`、`architecture=standalone`；前端服务抽屉显示 `Chart v18.6.0 / 应用 v7.2.3`；删除临时环境后 Environment、ServiceInstance 和临时 namespace 均返回 NotFound
 - [x] 增加“平台支持的中间件/工具目录”只读浏览页，按工具/数据库/缓存/消息队列/对象存储分组
   - 已提供 `/catalog` 只读目录页，读取 `api.listServiceTemplates()`，按工具类、数据库、缓存、消息队列、对象存储分组展示服务类型、描述和版本标签，并支持名称、类型、分组、描述搜索
   - 验证：`npm --prefix frontend run test -- src/utils/catalogGroups.test.ts src/utils/catalogVersions.test.ts src/views/viewMarkup.test.ts` 通过；CDP 验证当前部署 `/catalog` 展示 14 张卡片，分组为工具类 7、数据库 3、缓存 1、消息队列 2、对象存储 1

@@ -1405,6 +1405,15 @@ describe('Vue view markup', () => {
     expect(envDetail.default).not.toContain('<span>工作负载</span>')
   })
 
+  it('selects middleware install versions by chart version', async () => {
+    const envDetail = await import('./EnvDetailView.vue?raw')
+
+    expect(envDetail.default).toContain('selectedChartVersion')
+    expect(envDetail.default).toContain('t.chartVersion')
+    expect(envDetail.default).toContain(':value="tv.chartVersion"')
+    expect(envDetail.default).toContain('chartVersion: selectedChartVersion.value || undefined')
+  })
+
   it('keeps tool and middleware drawer edits in deploy while marking runtime and access tabs as read-only', async () => {
     const envDetail = await import('./EnvDetailView.vue?raw')
 

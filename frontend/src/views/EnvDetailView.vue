@@ -907,13 +907,13 @@
               </div>
               <div class="config-form-grid">
                 <label class="service-config-field">
-                  <span>{{ serviceStatusHasRuntime(drawerService) ? '当前版本' : '选择版本' }}</span>
-                  <select v-if="!serviceStatusHasRuntime(drawerService)" v-model="selectedAppVersion" class="bx--select-input">
-                    <option v-for="tv in serviceTypeVersions" :key="tv.appVersion" :value="tv.appVersion">
-                      v{{ (tv.appVersion || '').replace(/^v/, '') }}
+                  <span>{{ serviceStatusHasRuntime(drawerService) ? '当前 Chart 版本' : '选择 Chart 版本' }}</span>
+                  <select v-if="!serviceStatusHasRuntime(drawerService)" v-model="selectedChartVersion" class="bx--select-input">
+                    <option v-for="tv in serviceTypeVersions" :key="tv.chartVersion" :value="tv.chartVersion">
+                      {{ serviceVersionOptionLabel(tv) }}
                     </option>
                   </select>
-                  <strong v-else class="service-version-installed">v{{ (serviceAppVersion(drawerService) || '').replace(/^v/, '') }}</strong>
+                  <strong v-else class="service-version-installed">{{ serviceVersionOptionLabel(serviceTemplateForInstallation(drawerService)) }}</strong>
                 </label>
               </div>
             </section>
@@ -3543,18 +3543,26 @@ const serviceTemplateForInstallation = (svc:any) => {
   }
   return templateFor(String(svc?.serviceType || svc?.type || '')) || svc?.template || null
 }
-const serviceAppVersion = (svc:any) => {
+const serviceChartVersion = (svc:any) => {
   const tmpl = serviceTemplateForInstallation(svc)
-  const ver = tmpl?.appVersion || ''
+  const ver = tmpl?.chartVersion || ''
   return ver.startsWith('v') ? ver.slice(1) : ver
+}
+const serviceVersionOptionLabel = (tmpl:any) => {
+  const chart = String(tmpl?.chartVersion || '').replace(/^v/, '')
+  const app = String(tmpl?.appVersion || '').replace(/^v/, '')
+  if (chart && app) return `Chart v${chart} / 应用 v${app}`
+  if (chart) return `Chart v${chart}`
+  if (app) return `应用 v${app}`
+  return '未标注版本'
 }
 const serviceTypeVersions = computed(() => {
   const svc = drawerService.value
   if (!svc) return []
   const type = svc.serviceType || svc.type || ''
-  return templates.value.filter((t:any) => t.type === type && t.appVersion)
+  return templates.value.filter((t:any) => t.type === type && t.chartVersion)
 })
-const selectedAppVersion = ref('')
+const selectedChartVersion = ref('')
 const normalizeServiceProductKey = (value:any) => {
   const text = String(value || '').toLowerCase()
   if (!text) return ''
@@ -5119,9 +5127,9 @@ const openServiceConfigDrawer = (svc:any) => {
   selectedComponentConfigTemplateId.value = ''
   componentTemplateFieldValues.value = {}
   // Pre-select current version if installed, else pick first available
-  const curVer = serviceAppVersion(actual)
-  const versions = templates.value.filter((t:any) => t.type === (actual.serviceType || actual.type || '') && t.appVersion)
-  selectedAppVersion.value = curVer || versions[0]?.appVersion || ''
+  const curVer = serviceChartVersion(actual)
+  const versions = templates.value.filter((t:any) => t.type === (actual.serviceType || actual.type || '') && t.chartVersion)
+  selectedChartVersion.value = curVer || versions[0]?.chartVersion || ''
   void loadServiceDrawerWorkspace(actual)
 }
 const closeConfigDrawer = () => {
@@ -6452,7 +6460,7 @@ const deployServiceFromDrawer = async () => {
     const values = serviceDrawerProfile.value.showDeploymentConfig
       ? serviceConfigValuesFromForm(serviceDrawerConfigType.value, serviceConfigForm.value)
       : {}
-    const res = await api.installService(envId.value, { serviceType: svc.serviceType, values, appVersion: selectedAppVersion.value || undefined })
+    const res = await api.installService(envId.value, { serviceType: svc.serviceType, values, chartVersion: selectedChartVersion.value || undefined })
     const updated = res.data
     if (updated?.id) {
       services.value = services.value.map((item:any) => Number(item.id) === Number(updated.id) ? { ...item, ...updated } : item)
