@@ -992,8 +992,17 @@ func ListApplicationEnvironments(c *gin.Context) {
 	syncClusterStateIfPossible()
 
 	appID, _ := strconv.Atoi(c.Param("id"))
+	var app model.Application
+	if err := database.DB.First(&app, appID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "application not found"})
+		return
+	}
+	if !requireApplicationAccess(c, app.ID) {
+		return
+	}
+
 	var envs []model.Environment
-	if err := database.DB.Where("application_id = ?", appID).Find(&envs).Error; err != nil {
+	if err := database.DB.Where("application_id = ?", app.ID).Find(&envs).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -1014,6 +1023,9 @@ func CreateEnvironment(c *gin.Context) {
 	var app model.Application
 	if err := database.DB.First(&app, appID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "application not found"})
+		return
+	}
+	if !requireApplicationAccess(c, app.ID) {
 		return
 	}
 	identifier, err := uniqueIdentifierWithFallback(database.DB, firstNonEmpty(req.Identifier, req.Name), "env", 50, func(db *gorm.DB, candidate string) (bool, error) {

@@ -1168,7 +1168,7 @@ func TestCreateEnvironmentGeneratesIdentifierWhenMissing(t *testing.T) {
 
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	router.POST("/api/v1/applications/:id/environments", CreateEnvironment)
+	router.POST("/api/v1/applications/:id/environments", withTestAuthUserRole(1, "admin", CreateEnvironment))
 	router.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusCreated {
@@ -1185,6 +1185,80 @@ func TestCreateEnvironmentGeneratesIdentifierWhenMissing(t *testing.T) {
 	}
 	if got.Data.Namespace != "test-env" {
 		t.Fatalf("namespace = %q, want test-env", got.Data.Namespace)
+	}
+}
+
+func TestListApplicationEnvironmentsRejectsNonMembers(t *testing.T) {
+	previousDB := database.DB
+	t.Cleanup(func() { database.DB = previousDB })
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	database.DB = db
+
+	app := model.Application{Name: "隐藏应用", Identifier: "hidden", OwnerID: 1}
+	if err := db.Create(&app).Error; err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	if err := db.Create(&model.Environment{ApplicationID: app.ID, Name: "生产", Identifier: "prod"}).Error; err != nil {
+		t.Fatalf("create env: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/applications/1/environments", nil)
+	rec := httptest.NewRecorder()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.GET("/api/v1/applications/:id/environments", withTestAuthUser(2, ListApplicationEnvironments))
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusForbidden, rec.Body.String())
+	}
+}
+
+func TestCreateEnvironmentRejectsNonMembers(t *testing.T) {
+	previousDB := database.DB
+	t.Cleanup(func() { database.DB = previousDB })
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	database.DB = db
+
+	app := model.Application{Name: "隐藏应用", Identifier: "hidden", OwnerID: 1}
+	if err := db.Create(&app).Error; err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+
+	body, _ := json.Marshal(CreateEnvRequest{Name: "生产环境", FromEmpty: true})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/applications/1/environments", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.POST("/api/v1/applications/:id/environments", withTestAuthUser(2, CreateEnvironment))
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusForbidden, rec.Body.String())
+	}
+	var count int64
+	if err := db.Model(&model.Environment{}).Where("application_id = ?", app.ID).Count(&count).Error; err != nil {
+		t.Fatalf("count envs: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("env count = %d, want none created", count)
 	}
 }
 
