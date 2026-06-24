@@ -3,7 +3,7 @@
     <header class="page-header">
       <div class="header-text">
         <h1 class="page-title">中间件目录</h1>
-        <p class="page-desc">平台支持的中间件与工具一览<template v-if="totalItems">（共 {{ totalItems }} 个）</template></p>
+        <p class="page-desc">平台支持的中间件与工具一览<template v-if="hasCatalogItems">（共 {{ totalItems }} 个）</template></p>
       </div>
     </header>
 
@@ -34,7 +34,7 @@
     </div>
 
     <!-- Search bar -->
-    <div v-if="availableTabs.length" class="catalog-search">
+    <div v-if="hasCatalogItems" class="catalog-search">
       <div class="catalog-search-icon">
         <svg width="14" height="14" viewBox="0 0 32 32" fill="currentColor"><path d="M30 28.6L22.4 21c1.2-1.5 1.9-3.4 1.9-5.4 0-4.8-3.9-8.7-8.7-8.7S6.9 10.9 6.9 15.7s3.9 8.7 8.7 8.7c2 0 3.9-.7 5.4-1.9l7.6 7.6 1.4-1.5zM9 15.7c0-3.7 3-6.7 6.7-6.7s6.7 3 6.7 6.7-3 6.7-6.7 6.7S9 19.4 9 15.7z"/></svg>
       </div>
@@ -45,7 +45,7 @@
         type="text"
         placeholder="搜索中间件或工具名称..."
       />
-      <button v-if="filterQuery" class="catalog-search-clear" @click="filterQuery = ''" title="清除搜索">
+      <button v-if="filterQuery" class="catalog-search-clear" @click="clearCatalogSearch" title="清除搜索">
         <svg width="12" height="12" viewBox="0 0 32 32" fill="currentColor"><path d="M24 9.4L22.6 8 16 14.6 9.4 8 8 9.4l6.6 6.6L8 22.6 9.4 24l6.6-6.6 6.6 6.6 1.4-1.4-6.6-6.6L24 9.4z"/></svg>
       </button>
     </div>
@@ -90,7 +90,13 @@
       </section>
     </template>
 
-    <p v-if="!loading && catalogGroups.length === 0 && !pageError" class="no-data">没有找到中间件数据</p>
+    <div v-if="!loading && hasCatalogItems && filterQuery.trim() && catalogGroups.length === 0" class="catalog-empty-search">
+      <strong>没有匹配的中间件或工具</strong>
+      <span>当前目录中没有包含“{{ filterQuery.trim() }}”的名称、类型或描述。</span>
+      <button type="button" class="catalog-empty-clear" @click="clearCatalogSearch">清除搜索</button>
+    </div>
+
+    <p v-if="!loading && !hasCatalogItems && !pageError" class="no-data">没有找到中间件数据</p>
   </div>
 </template>
 
@@ -138,6 +144,7 @@ const filteredTemplates = computed(() => {
     String(t.description || '').toLowerCase().includes(q)
   )
 })
+const hasCatalogItems = computed(() => templates.value.length > 0)
 const totalItems = computed(() => filteredTemplates.value.length)
 
 const catalogGroups = computed<CatalogGroup[]>(() => {
@@ -194,6 +201,11 @@ watchEffect(() => {
     }
   }
 })
+
+const clearCatalogSearch = () => {
+  filterQuery.value = ''
+  void nextTick(() => searchInputRef.value?.focus())
+}
 
 onMounted(async () => {
   loading.value = true
@@ -545,6 +557,36 @@ onMounted(async () => {
   padding: 2rem 0;
   color: #6f6f6f;
   font-size: 0.875rem;
+}
+.catalog-empty-search {
+  display: grid;
+  gap: 0.5rem;
+  padding: 1.25rem;
+  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  background: var(--cds-layer-01, #ffffff);
+  color: var(--cds-text-secondary, #525252);
+  font-size: 0.875rem;
+  line-height: 1.45;
+}
+.catalog-empty-search strong {
+  color: var(--cds-text-primary, #161616);
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+.catalog-empty-clear {
+  justify-self: start;
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--cds-border-strong-01, #8d8d8d);
+  border-radius: 0;
+  background: var(--cds-layer-01, #ffffff);
+  color: var(--cds-text-primary, #161616);
+  font: inherit;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+.catalog-empty-clear:hover {
+  background: var(--cds-background-hover, rgba(141, 141, 141, 0.12));
 }
 
 @media (max-width: 672px) {

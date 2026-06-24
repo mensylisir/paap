@@ -265,6 +265,17 @@ describe('Vue view markup', () => {
     expect(appLayout.default).not.toContain("active === 'monitor'")
   })
 
+  it('keeps catalog search usable when a query has no matches', async () => {
+    const catalogView = await import('./CatalogView.vue?raw')
+
+    expect(catalogView.default).toContain('hasCatalogItems')
+    expect(catalogView.default).toContain('v-if="hasCatalogItems" class="catalog-search"')
+    expect(catalogView.default).toContain('catalog-empty-search')
+    expect(catalogView.default).toContain('没有匹配的中间件或工具')
+    expect(catalogView.default).toContain('clearCatalogSearch')
+    expect(catalogView.default).not.toContain('v-if="availableTabs.length" class="catalog-search"')
+  })
+
   it('uses a wide working canvas for dense operational pages', () => {
     const globalStyles = readFileSync(new URL('../style.scss', import.meta.url), 'utf8')
     const mainEntry = readFileSync(new URL('../main.ts', import.meta.url), 'utf8')

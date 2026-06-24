@@ -666,6 +666,21 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 - [x] 对应文件：`internal/handler/template.go`、`internal/handler/template_test.go`
 - [x] 工作量：S（半天）
 
+### Task 7.29: 目录页无结果搜索空状态 ✅
+> 搜索没有匹配项时保持搜索框可用，并提供清除入口，避免用户被困在空结果页。
+
+- [x] 搜索栏展示条件从过滤后的 tab 数量改为原始目录数据存在，搜索无结果时搜索框不消失
+- [x] 增加 Carbon white 风格空状态，展示当前搜索词和“清除搜索”按钮
+- [x] 清除搜索后恢复全部目录卡片，并将焦点留在搜索框，便于继续输入
+- [x] 前端测试：`npm run test -- src/views/viewMarkup.test.ts`，75 passed
+- [x] 前端全量测试：`npm run test`，24 files / 208 tests passed
+- [x] 前端构建：`npm run build` 通过
+- [x] Docker 镜像 `v0.1.450` 构建并部署到 kind 集群
+- [x] kind 验证：显式使用 `--context kind-rbac-governance-test` 检查 `paap-server:v0.1.450`，Deployment `1/1 ready`，Pod `paap-server-679f4647bc-k42lf` Running
+- [x] CDP 验证：使用正确 kind 地址 `http://172.18.0.2:30091/catalog`；搜索 `zzzz-no-result` 后卡片数为 0、搜索框仍可见、显示“没有匹配的中间件或工具”和清除按钮；点击清除后恢复 14 张卡片且搜索框保持焦点
+- [x] 对应文件：`frontend/src/views/CatalogView.vue`、`frontend/src/views/viewMarkup.test.ts`
+- [x] 工作量：S（半天）
+
 ### Task 7.21: `docs/配置示例.md` → 内置配置模板
 > 将 20 个配置示例转为 PAAP 内置配置模板（Go template），供组件配置 Tab 使用
 
