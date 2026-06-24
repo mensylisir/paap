@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -15,6 +16,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+const legacyClusterSyncOwnerID uint = 1
+
 // SyncClusterState restores the server database from PAAP custom resources.
 // The Kubernetes CRs are the durable control-plane state; the DB is the UI/API index.
 func SyncClusterState(ctx context.Context, db *gorm.DB, k8sClient client.Client) error {
@@ -25,22 +28,27 @@ func SyncClusterState(ctx context.Context, db *gorm.DB, k8sClient client.Client)
 		return fmt.Errorf("k8s client is nil")
 	}
 
-	appsByIdentifier, err := syncApplications(ctx, db, k8sClient)
+	ownerID, err := clusterSyncOwnerID(db)
 	if err != nil {
 		return err
 	}
 
-	envsByKey, err := syncEnvironments(ctx, db, k8sClient, appsByIdentifier)
+	appsByIdentifier, err := syncApplications(ctx, db, k8sClient, ownerID)
 	if err != nil {
 		return err
 	}
 
-	serviceKeys, err := syncServiceInstances(ctx, db, k8sClient, appsByIdentifier, envsByKey)
+	envsByKey, err := syncEnvironments(ctx, db, k8sClient, appsByIdentifier, ownerID)
 	if err != nil {
 		return err
 	}
 
-	componentKeys, err := syncComponents(ctx, db, k8sClient, appsByIdentifier, envsByKey)
+	serviceKeys, err := syncServiceInstances(ctx, db, k8sClient, appsByIdentifier, envsByKey, ownerID)
+	if err != nil {
+		return err
+	}
+
+	componentKeys, err := syncComponents(ctx, db, k8sClient, appsByIdentifier, envsByKey, ownerID)
 	if err != nil {
 		return err
 	}
@@ -52,7 +60,28 @@ func SyncClusterState(ctx context.Context, db *gorm.DB, k8sClient client.Client)
 	return pruneMissingClusterState(db, appsByIdentifier, envsByKey, serviceKeys, componentKeys)
 }
 
-func syncApplications(ctx context.Context, db *gorm.DB, k8sClient client.Client) (map[string]model.Application, error) {
+func clusterSyncOwnerID(db *gorm.DB) (uint, error) {
+	if !db.Migrator().HasTable(&model.User{}) {
+		return legacyClusterSyncOwnerID, nil
+	}
+
+	var user model.User
+	if err := db.Where("username = ?", "admin").First(&user).Error; err == nil {
+		return user.ID, nil
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return 0, fmt.Errorf("find platform admin user: %w", err)
+	}
+
+	if err := db.Where("role IN ?", []string{"platform_admin", "admin"}).Order("id").First(&user).Error; err == nil {
+		return user.ID, nil
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return 0, fmt.Errorf("find admin role user: %w", err)
+	}
+
+	return legacyClusterSyncOwnerID, nil
+}
+
+func syncApplications(ctx context.Context, db *gorm.DB, k8sClient client.Client, ownerID uint) (map[string]model.Application, error) {
 	var appList paapv1.ApplicationList
 	if err := k8sClient.List(ctx, &appList); err != nil {
 		return nil, fmt.Errorf("list application CRs: %w", err)
@@ -69,12 +98,12 @@ func syncApplications(ctx context.Context, db *gorm.DB, k8sClient client.Client)
 			Name:        firstNonEmpty(appCR.Spec.Name, identifier),
 			Identifier:  identifier,
 			Description: appCR.Spec.Description,
-			OwnerID:     1,
+			OwnerID:     ownerID,
 		}
 		if err := upsertApplication(db, &app); err != nil {
 			return nil, err
 		}
-		if err := ensureOwnerMember(db, app.ID); err != nil {
+		if err := ensureOwnerMember(db, app.ID, ownerID); err != nil {
 			return nil, err
 		}
 		appsByIdentifier[identifier] = app
@@ -83,7 +112,7 @@ func syncApplications(ctx context.Context, db *gorm.DB, k8sClient client.Client)
 	return appsByIdentifier, nil
 }
 
-func syncEnvironments(ctx context.Context, db *gorm.DB, k8sClient client.Client, appsByIdentifier map[string]model.Application) (map[string]model.Environment, error) {
+func syncEnvironments(ctx context.Context, db *gorm.DB, k8sClient client.Client, appsByIdentifier map[string]model.Application, ownerID uint) (map[string]model.Environment, error) {
 	var envList paapv1.EnvironmentList
 	if err := k8sClient.List(ctx, &envList); err != nil {
 		return nil, fmt.Errorf("list environment CRs: %w", err)
@@ -97,7 +126,7 @@ func syncEnvironments(ctx context.Context, db *gorm.DB, k8sClient client.Client,
 			continue
 		}
 
-		app, err := ensureApplication(db, appsByIdentifier, appIdentifier)
+		app, err := ensureApplication(db, appsByIdentifier, appIdentifier, ownerID)
 		if err != nil {
 			return nil, err
 		}
@@ -121,7 +150,7 @@ func syncEnvironments(ctx context.Context, db *gorm.DB, k8sClient client.Client,
 	return envsByKey, nil
 }
 
-func syncServiceInstances(ctx context.Context, db *gorm.DB, k8sClient client.Client, appsByIdentifier map[string]model.Application, envsByKey map[string]model.Environment) (map[string]struct{}, error) {
+func syncServiceInstances(ctx context.Context, db *gorm.DB, k8sClient client.Client, appsByIdentifier map[string]model.Application, envsByKey map[string]model.Environment, ownerID uint) (map[string]struct{}, error) {
 	var svcList paapv1.ServiceInstanceList
 	if err := k8sClient.List(ctx, &svcList); err != nil {
 		return nil, fmt.Errorf("list serviceinstance CRs: %w", err)
@@ -145,7 +174,7 @@ func syncServiceInstances(ctx context.Context, db *gorm.DB, k8sClient client.Cli
 			continue
 		}
 
-		if _, err := ensureApplication(db, appsByIdentifier, appIdentifier); err != nil {
+		if _, err := ensureApplication(db, appsByIdentifier, appIdentifier, ownerID); err != nil {
 			return nil, err
 		}
 		env, err := ensureEnvironment(db, envsByKey, appIdentifier, envIdentifier)
@@ -244,7 +273,7 @@ func serviceInstanceStoredValues(svcCR paapv1.ServiceInstance) map[string]string
 	return svcCR.Spec.Parameters
 }
 
-func syncComponents(ctx context.Context, db *gorm.DB, k8sClient client.Client, appsByIdentifier map[string]model.Application, envsByKey map[string]model.Environment) (map[string]struct{}, error) {
+func syncComponents(ctx context.Context, db *gorm.DB, k8sClient client.Client, appsByIdentifier map[string]model.Application, envsByKey map[string]model.Environment, ownerID uint) (map[string]struct{}, error) {
 	var compList paapv1.ComponentList
 	if err := k8sClient.List(ctx, &compList); err != nil {
 		return nil, fmt.Errorf("list component CRs: %w", err)
@@ -259,7 +288,7 @@ func syncComponents(ctx context.Context, db *gorm.DB, k8sClient client.Client, a
 			continue
 		}
 
-		if _, err := ensureApplication(db, appsByIdentifier, appIdentifier); err != nil {
+		if _, err := ensureApplication(db, appsByIdentifier, appIdentifier, ownerID); err != nil {
 			return nil, err
 		}
 		env, err := ensureEnvironment(db, envsByKey, appIdentifier, envIdentifier)
@@ -297,19 +326,19 @@ func syncComponents(ctx context.Context, db *gorm.DB, k8sClient client.Client, a
 	return componentKeys, nil
 }
 
-func ensureApplication(db *gorm.DB, appsByIdentifier map[string]model.Application, identifier string) (model.Application, error) {
+func ensureApplication(db *gorm.DB, appsByIdentifier map[string]model.Application, identifier string, ownerID uint) (model.Application, error) {
 	if app, ok := appsByIdentifier[identifier]; ok {
 		return app, nil
 	}
 	app := model.Application{
 		Name:       identifier,
 		Identifier: identifier,
-		OwnerID:    1,
+		OwnerID:    ownerID,
 	}
 	if err := upsertApplication(db, &app); err != nil {
 		return model.Application{}, err
 	}
-	if err := ensureOwnerMember(db, app.ID); err != nil {
+	if err := ensureOwnerMember(db, app.ID, ownerID); err != nil {
 		return model.Application{}, err
 	}
 	appsByIdentifier[identifier] = app
@@ -542,13 +571,13 @@ func environmentHasSyncedResources(environmentID uint, serviceKeys map[string]st
 	return false
 }
 
-func ensureOwnerMember(db *gorm.DB, appID uint) error {
+func ensureOwnerMember(db *gorm.DB, appID uint, ownerID uint) error {
 	member := model.AppMember{
 		ApplicationID: appID,
-		UserID:        1,
+		UserID:        ownerID,
 		Role:          "admin",
 	}
-	return db.Where("application_id = ? AND user_id = ?", appID, 1).FirstOrCreate(&member).Error
+	return db.Where("application_id = ? AND user_id = ?", appID, ownerID).FirstOrCreate(&member).Error
 }
 
 func pruneMissingClusterState(db *gorm.DB, appsByIdentifier map[string]model.Application, envsByKey map[string]model.Environment, serviceKeys map[string]struct{}, componentKeys map[string]struct{}) error {

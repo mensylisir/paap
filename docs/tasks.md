@@ -480,6 +480,21 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 - [x] 对应文件：`internal/handler/application.go`、`internal/handler/application_test.go`、`internal/handler/environment_test.go`
 - [x] 工作量：S（半天）
 
+### Task 7.8b: 集群同步应用归属平台管理员 ✅
+> 从 Kubernetes CR 同步回数据库的应用不再直接写死 owner/member 为 `1`，改为解析数据库中的平台管理员用户 ID。
+
+- [x] `SyncClusterState` 启动时解析 cluster sync owner：优先 `username=admin`，其次 `platform_admin/admin` 角色用户
+- [x] `syncApplications`、`ensureApplication`、`ensureOwnerMember` 显式传递解析出的 owner ID
+- [x] 移除 `cluster_sync.go` 中直接写入 `OwnerID: 1` / `UserID: 1` 的路径
+- [x] 后端目标测试：`go test ./internal/service -run TestSyncClusterStateRestoresDBFromExistingCRs -count=1` 先红后绿，覆盖 admin ID 非 1 场景
+- [x] 后端 service 测试：`go test ./internal/service -count=1` 通过
+- [x] 后端全量测试：`make test` 通过
+- [x] Docker 镜像 `v0.1.458` 构建并部署到 kind 集群
+- [x] kind 验证：显式使用 `--context kind-rbac-governance-test` 检查 `paap-server:v0.1.458`，Deployment `1/1 ready`，Pod `paap-server-5c5c5d647f-qc9wh` Running
+- [x] API 验证：`admin/Def@u1tpwd` 登录后调用 `GET /api/v1/applications` 返回 200，当前返回 3 个应用，cluster sync 路径正常
+- [x] 对应文件：`internal/service/cluster_sync.go`、`internal/service/cluster_sync_test.go`
+- [x] 工作量：S（半天）
+
 ### Task 7.9: KubeVirt 虚拟机
 - [ ] 将 VM 作为新服务类型纳入 `ServiceCatalog`
 - [ ] 用 KubeVirt CRD（`VirtualMachine`）而非 Helm chart 部署

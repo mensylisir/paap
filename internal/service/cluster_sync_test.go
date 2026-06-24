@@ -23,6 +23,7 @@ func TestSyncClusterStateRestoresDBFromExistingCRs(t *testing.T) {
 		t.Fatalf("open db: %v", err)
 	}
 	if err := db.AutoMigrate(
+		&model.User{},
 		&model.Application{},
 		&model.AppMember{},
 		&model.Environment{},
@@ -30,6 +31,13 @@ func TestSyncClusterStateRestoresDBFromExistingCRs(t *testing.T) {
 		&model.Component{},
 	); err != nil {
 		t.Fatalf("migrate db: %v", err)
+	}
+	if err := db.Create(&model.User{Username: "developer", Email: "developer@example.local", Password: "x", Role: "user"}).Error; err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+	admin := model.User{Username: "admin", Email: "admin@example.local", Password: "x", Role: "admin"}
+	if err := db.Create(&admin).Error; err != nil {
+		t.Fatalf("seed admin: %v", err)
 	}
 
 	scheme := runtime.NewScheme()
@@ -135,12 +143,12 @@ func TestSyncClusterStateRestoresDBFromExistingCRs(t *testing.T) {
 	if err := db.Where("identifier = ?", "test").First(&app).Error; err != nil {
 		t.Fatalf("application not restored: %v", err)
 	}
-	if app.Name != "测试服务" || app.Description != "from cr" || app.OwnerID != 1 {
+	if app.Name != "测试服务" || app.Description != "from cr" || app.OwnerID != admin.ID {
 		t.Fatalf("unexpected application: %#v", app)
 	}
 
 	var member model.AppMember
-	if err := db.Where("application_id = ? AND user_id = ?", app.ID, 1).First(&member).Error; err != nil {
+	if err := db.Where("application_id = ? AND user_id = ?", app.ID, admin.ID).First(&member).Error; err != nil {
 		t.Fatalf("owner member not restored: %v", err)
 	}
 
