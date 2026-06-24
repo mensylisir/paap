@@ -306,6 +306,12 @@ describe('Vue view markup', () => {
     expect(catalogView.default).toContain('名称、类型、分组或描述')
   })
 
+  it('clears catalog search from the keyboard with Escape', async () => {
+    const catalogView = await import('./CatalogView.vue?raw')
+
+    expect(catalogView.default).toContain('@keydown.esc="clearCatalogSearch"')
+  })
+
   it('uses a wide working canvas for dense operational pages', () => {
     const globalStyles = readFileSync(new URL('../style.scss', import.meta.url), 'utf8')
     const mainEntry = readFileSync(new URL('../main.ts', import.meta.url), 'utf8')

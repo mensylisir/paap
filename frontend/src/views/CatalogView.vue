@@ -44,6 +44,7 @@
         class="catalog-search-input"
         type="text"
         placeholder="搜索名称、类型、分组或描述..."
+        @keydown.esc="clearCatalogSearch"
       />
       <button v-if="filterQuery" class="catalog-search-clear" @click="clearCatalogSearch" title="清除搜索">
         <svg width="12" height="12" viewBox="0 0 32 32" fill="currentColor"><path d="M24 9.4L22.6 8 16 14.6 9.4 8 8 9.4l6.6 6.6L8 22.6 9.4 24l6.6-6.6 6.6 6.6 1.4-1.4-6.6-6.6L24 9.4z"/></svg>

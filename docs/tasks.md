@@ -738,6 +738,20 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 - [x] 对应文件：`frontend/src/views/CatalogView.vue`、`frontend/src/views/viewMarkup.test.ts`
 - [x] 工作量：S（15 分钟）
 
+### Task 7.34: 目录页 Escape 清空搜索 ✅
+> 搜索框获得焦点时按 Escape 直接清空当前查询，并保持焦点，匹配 "/" 快捷聚焦和清除按钮的操作习惯。
+
+- [x] 搜索输入框绑定 `@keydown.esc="clearCatalogSearch"`，复用现有清除逻辑
+- [x] 清空后通过 `nextTick` 保持搜索框焦点，便于继续输入
+- [x] 前端目标测试：`npm run test -- src/views/viewMarkup.test.ts`，1 file / 80 tests passed
+- [x] 前端全量测试：`npm run test`，26 files / 218 tests passed
+- [x] 前端构建：`npm run build` 通过
+- [x] Docker 镜像 `v0.1.456` 构建并部署到 kind 集群
+- [x] kind 验证：显式使用 `--context kind-rbac-governance-test` 检查 `paap-server:v0.1.456`，Deployment `1/1 ready`，Pod `paap-server-784f69bbf7-d958t` Running
+- [x] CDP 验证：`http://172.18.0.2:30091/catalog` 输入 `zzzz-no-result` 后显示空状态；按 Escape 后输入框清空且保持焦点，恢复 14 张目录卡片和 5 个分组
+- [x] 对应文件：`frontend/src/views/CatalogView.vue`、`frontend/src/views/viewMarkup.test.ts`
+- [x] 工作量：S（15 分钟）
+
 ### Task 7.21: `docs/配置示例.md` → 内置配置模板
 > 将 20 个配置示例转为 PAAP 内置配置模板（Go template），供组件配置 Tab 使用
 
