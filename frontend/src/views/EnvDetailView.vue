@@ -888,6 +888,15 @@
                   <code v-if="componentDrawerNodePortUrl">{{ componentDrawerNodePortUrl }}</code>
                   <strong v-else>未启用</strong>
                   <a v-if="componentDrawerNodePortUrl" :href="componentDrawerNodePortUrl" target="_blank" rel="noreferrer" class="text-btn">打开</a>
+                  <button
+                    v-if="componentDrawerExternalAccessToggleVisible"
+                    type="button"
+                    class="bx--btn bx--btn--secondary bx--btn--sm"
+                    :disabled="componentNodePortLoading"
+                    @click="toggleComponentNodePortAccess"
+                  >
+                    {{ componentDrawerNodePortEnabled ? '关闭 NodePort' : '开启 NodePort' }}
+                  </button>
                 </div>
               </div>
             </section>
@@ -2340,6 +2349,7 @@ const componentDrawerRole = ref('custom')
 const serviceDrawerWorkspaceLoading = ref(false)
 const serviceExternalAccessLoading = ref(false)
 const componentExternalAccessLoading = ref(false)
+const componentNodePortLoading = ref(false)
 const serviceDrawerRevealedSecrets = ref<Set<string>>(new Set())
 const serviceDrawerSecretValues = ref<Record<string, string>>({})
 const serviceDrawerSecretLoadingKey = ref('')
@@ -4590,6 +4600,7 @@ const componentDrawerExternalAccessToggleVisible = computed(() => {
 const componentDrawerNodePortUrl = computed(() => {
   return configDrawer.value.component?.nodePortUrl || ''
 })
+const componentDrawerNodePortEnabled = computed(() => Boolean(componentDrawerNodePortUrl.value))
 const componentDrawerExternalAccessEnabled = computed(() => Boolean(componentDrawerIngressUrl.value))
 const componentDrawerExternalAccessLabel = computed(() => {
   if (componentExternalAccessLoading.value) return componentDrawerExternalAccessEnabled.value ? '关闭中...' : '开启中...'
@@ -6517,6 +6528,32 @@ const toggleComponentExternalAccess = async () => {
     configDrawer.value.error = '外部访问切换失败：' + (e?.message || '未知错误')
   } finally {
     componentExternalAccessLoading.value = false
+  }
+}
+const toggleComponentNodePortAccess = async () => {
+  const comp = configDrawer.value.component
+  if (!comp?.id || componentNodePortLoading.value) return
+  componentNodePortLoading.value = true
+  configDrawer.value.error = ''
+  configDrawer.value.message = ''
+  try {
+    const nextEnabled = !componentDrawerNodePortEnabled.value
+    const res = await api.setComponentNodePortAccess(envId.value, Number(comp.id), nextEnabled)
+    if (Array.isArray(res.externalAccess)) {
+      externalAccess.value = res.externalAccess
+    }
+    const updated = res.data
+    if (updated?.id) {
+      components.value = components.value.map((item:any) => Number(item.id) === Number(updated.id) ? { ...item, ...updated } : item)
+    }
+    const next = components.value.find((item:any) => Number(item.id) === Number(comp.id)) || updated || comp
+    configDrawer.value.component = next
+    notifyEnvUpdated()
+    configDrawer.value.message = nextEnabled ? 'NodePort 已开启。' : 'NodePort 已关闭。'
+  } catch (e:any) {
+    configDrawer.value.error = 'NodePort 切换失败：' + (e?.message || '未知错误')
+  } finally {
+    componentNodePortLoading.value = false
   }
 }
 const deployDrawerComponent = async () => {
