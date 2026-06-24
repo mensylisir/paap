@@ -53,6 +53,10 @@ func SetupRouter(r *gin.Engine) {
 
 		// Templates
 		protected.GET("/templates", ListTemplates)
+		protected.GET("/templates/:id", GetTemplate)
+		protected.POST("/templates", CreateTemplate)
+		protected.PUT("/templates/:id", UpdateTemplate)
+		protected.DELETE("/templates/:id", DeleteTemplate)
 		protected.GET("/service-templates", ListServiceTemplates)
 		protected.POST("/service-templates/upload", UploadTemplate)     // BYO custom template upload
 		protected.POST("/service-templates/sync", SyncBuiltinTemplates) // Force re-sync built-in templates to S3 + DB

@@ -270,7 +270,10 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
   - 部署验证：`paap-server:v0.1.495` 已加载到 `kind-rbac-governance-test` 并完成 `paap-system/paap-server` 滚动更新；CDP 验证应用概览成员区可见，成员列表 API 返回 admin，并完成临时用户注册、邀请、角色更新、移除闭环
 
 ### Task 6.2: 环境模板管理与高级环境配置
-- [ ] 挂载环境模板创建、更新、删除 API 路由
+- [x] 挂载环境模板创建、更新、删除 API 路由
+  - 已挂载 `GET /api/v1/templates/:id`、`POST /api/v1/templates`、`PUT /api/v1/templates/:id`、`DELETE /api/v1/templates/:id`，复用已有环境模板 handler
+  - 测试覆盖：`go test ./internal/handler -run TestEnvironmentTemplateCRUDRoutesAreMounted` 先红后绿
+  - 部署验证：`paap-server:v0.1.496` 已加载到 `kind-rbac-governance-test` 并完成 `paap-system/paap-server` 滚动更新；CDP 验证环境模板创建 201、详情 200、更新 200、列表可见更新值、删除 200、删除后详情 404
 - [ ] 在前端补齐环境模板管理 UI，而不只是读取模板列表
 - [ ] 创建环境时支持从模板写入 CPU、内存、存储配额到 `Environment.spec.resourceQuota`
 - [ ] 创建环境时支持模板或表单配置附加 namespace，而不是固定只创建 `app` namespace
