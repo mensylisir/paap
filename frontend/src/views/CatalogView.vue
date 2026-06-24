@@ -464,6 +464,13 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+  will-change: transform;
+  cursor: pointer;
+}
+.catalog-card:hover {
+  box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+  transform: translateY(-2px);
 }
 .catalog-card-header {
   display: flex;

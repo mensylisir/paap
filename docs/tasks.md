@@ -520,6 +520,16 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 - [x] 工作量：S（半天）
 - [x] 提交：待 Cycle 6 提交
 
+### Task 7.27: 目录页卡片 hover 效果
+> 中间件目录卡片添加 Carbon 风格的鼠标悬停效果（阴影上浮 + 微抬起）
+
+- [x] 添加 `transition` 过度动画（box-shadow + transform，0.2s ease）
+- [x] hover 时 `box-shadow: 0 2px 6px rgba(0,0,0,0.1)` + `translateY(-2px)`
+- [x] 光标改为 `pointer` 提示可点击
+- [x] CDP 验证：hover 后 shadow 从 `none` 变为 `rgba(0,0,0,0.1) 0px 2px 6px`，transform 为 `translateY(-2px)`
+- [x] 对应文件：`frontend/src/views/CatalogView.vue`
+- [x] 工作量：S（15 分钟）
+
 ### Task 7.25: 目录页总数展示
 > 目录页副标题显示 "平台支持的中间件与工具一览（共 N 个）"
 
