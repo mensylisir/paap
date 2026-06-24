@@ -354,7 +354,6 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 - [ ] 增加“平台支持的中间件/工具目录”只读浏览页，按工具/数据库/缓存/消息队列/对象存储分组
 - [ ] 平台管理员支持维护 `ServiceCatalog` 和 `ServiceTemplate`，包括新增类型、上传 chart、维护版本列表
 - [ ] 组件和服务增加 Ingress/Gateway 暴露配置：域名、路径、TLS 和状态回读
-- [ ] 组件和服务展示 `clusterIP`、LoadBalancer IP 等 ServiceIP 信息，并明确是否可编辑
 - [ ] 对共享工具 namespace 和外部 endpoint 补齐 NetworkPolicy ingress/egress 放行策略
 
 ### Task 6.15: 弹性、多集群与虚拟化路线图
@@ -443,15 +442,10 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 - [ ] 当前状态：`external_access.go` 可读取，`component_types.go` 有 `IngressSpec`，画布有分组卡片
 - [ ] 工作量：1-1.5 周
 
-### Task 7.7: ServiceIP 展示 ✅
-- [x] 从 K8s 读回 `Service.spec.clusterIP` / `LoadBalancer IP`
-- [x] 在拓扑卡片和服务 drawer 的“运行地址”区块展示运行服务名、集群内 IP、负载均衡 IP
-- [x] 后端 `ServiceInstallationView` 增加 `runtimeServiceName`、`runtimeServiceType`、`clusterIP`、`loadBalancerIP`
-- [x] `ListServiceInstances`、`GetEnvironment`、`GetServiceInstance` 返回同一套增强 service view
-- [x] Docker 镜像 `v0.1.440` 构建并部署到 kind 集群
-- [x] CDP 验证：`prod-redis` 画布卡片显示 `集群内 10.96.180.125`，drawer 显示 `运行地址 / 集群内 IP 10.96.180.125`
-- [x] 对应文件：`internal/k8s/runtime_resources.go`、`internal/handler/environment.go`、`frontend/src/views/componentTopology.ts`、`frontend/src/views/EnvDetailView.vue`
-- [x] 工作量：S（半天）
+### Task 7.7: Service FQDN 展示 ✅
+- [x] 以 `<service>.<namespace>.svc.cluster.local` 替代 ClusterIP / LoadBalancer IP 作为默认运行地址
+- [x] 组件和服务 drawer 展示 Service DNS 全名，避免用户依赖不稳定 ClusterIP
+- [x] ServiceIP 展示需求已从路线图移除，不再作为独立任务
 
 ### Task 7.8: 认证鉴权体系升级
 - [x] 内存 token 替换为签名 JWT（`auth.go`）
@@ -652,7 +646,7 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 Week 0  : ~~Task 7.1(版本号)~~ ✅ → Task 7.2(目录页)
 Week 1-2: Task 7.3+7.4(平台管理+角色) → Task 7.8(认证鉴权)
 Week 3-4: Task 7.5a~7.5c(Capability 模型地基)
-Week 5-7: Task 7.5d~7.5g(画布分区+外部接入) → Task 7.6+7.7(Ingress+ServiceIP)
+Week 5-7: Task 7.5d~7.5g(画布分区+外部接入) → Task 7.6(Ingress)
 Week 8+  : Task 7.13~7.15(配置模板) 并行 Task 7.9+7.10(KubeVirt+KEDA)
 季度级   : Task 7.11(多集群) → Task 7.12(VM纳管)
 穿插     : Task 7.17~7.18(验证与审计)
