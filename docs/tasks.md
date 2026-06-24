@@ -328,7 +328,9 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 - [ ] 清理或标记仍描述旧方案的文档，尤其是 Tekton、raw-yaml、生命周期钩子相关内容
 - [ ] 将 `docs/DEPLOYMENT-STATUS.md` 中旧镜像、RBAC、模板上传问题重新验证并更新
 - [ ] 增加端到端测试覆盖：登录鉴权、环境模板、服务安装、组件 image/source 两条部署链路
-- [ ] 增加模板包校验测试，确保所有 `data/charts/*.tar.gz` 包含 `chart/`、`platform-manifest.yaml`、`preset-values.yaml`
+- [x] 增加模板包校验测试，确保所有 `data/charts/*.tar.gz` 包含 `chart/`、`platform-manifest.yaml`、`preset-values.yaml`
+  - 新增 `TestBuiltInChartArchivesContainRequiredTemplateFiles`，逐个解压 `data/charts/*.tar.gz`，校验内置模板包必须包含 Helm `chart/`、`platform-manifest.yaml` 和 `preset-values.yaml`
+  - 验证：`go test -count=1 ./internal/handler -run TestBuiltInChartArchivesContainRequiredTemplateFiles` 通过
 - [ ] 增加权限隔离测试，验证工具权限不会外溢到其他环境或应用
 
 ### Task 6.8: 产品化抽屉与运行态证据审计
