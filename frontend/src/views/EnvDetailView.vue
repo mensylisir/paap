@@ -865,14 +865,14 @@
               </div>
               <div v-else class="service-access-stack">
                 <div class="service-access-row">
-                  <span>Service 地址</span>
+                  <span>内部地址</span>
                   <code>{{ componentDrawerServiceEndpoint || '等待生成' }}</code>
                 </div>
                 <div class="service-access-row service-access-row--action">
-                  <span>Ingress 入口</span>
-                  <code v-if="componentDrawerIngressUrl">{{ componentDrawerIngressUrl }}</code>
-                  <strong v-else>未启用</strong>
-                  <a v-if="componentDrawerIngressUrl" :href="componentDrawerIngressUrl" target="_blank" rel="noreferrer" class="text-btn">打开</a>
+                  <span>外部访问</span>
+                  <code v-if="configDrawerExternalUrl">{{ configDrawerExternalUrl }}</code>
+                  <strong v-else>未开启</strong>
+                  <a v-if="configDrawerExternalUrl" :href="configDrawerExternalUrl" target="_blank" rel="noreferrer" class="text-btn">打开</a>
                   <button
                     v-if="componentDrawerExternalAccessToggleVisible"
                     type="button"
@@ -881,21 +881,6 @@
                     @click="toggleComponentExternalAccess"
                   >
                     {{ componentDrawerExternalAccessLabel }}
-                  </button>
-                </div>
-                <div class="service-access-row service-access-row--action">
-                  <span>NodePort 端口</span>
-                  <code v-if="componentDrawerNodePortUrl">{{ componentDrawerNodePortUrl }}</code>
-                  <strong v-else>未启用</strong>
-                  <a v-if="componentDrawerNodePortUrl" :href="componentDrawerNodePortUrl" target="_blank" rel="noreferrer" class="text-btn">打开</a>
-                  <button
-                    v-if="componentDrawerNodePortToggleVisible"
-                    type="button"
-                    class="bx--btn bx--btn--secondary bx--btn--sm"
-                    :disabled="componentNodePortLoading"
-                    @click="toggleComponentNodePortAccess"
-                  >
-                    {{ componentDrawerNodePortLabel }}
                   </button>
                 </div>
               </div>
@@ -946,12 +931,6 @@
                 </label>
               </div>
               <div v-else class="config-empty">当前服务类型暂未开放可编辑部署参数。</div>
-              <div class="config-kv-grid service-summary-grid">
-                <div v-for="row in serviceDrawerPrimaryRows" :key="row.label">
-                  <span>{{ row.label }}</span>
-                  <strong>{{ row.value }}</strong>
-                </div>
-              </div>
             </section>
 
             <section v-if="configDrawerTab === 'deploy' && configDrawer.kind === 'service' && serviceDrawerVolumeFields.length" class="config-section">
@@ -2049,7 +2028,6 @@ import {
   serviceConfigFieldVisible,
   serviceConfigFormFromInstallation,
   serviceConfigProfile,
-  serviceConfigPrimaryRows,
   serviceConfigType,
   serviceInternalEndpoint,
   serviceTopologyFromWorkspace,
@@ -2356,7 +2334,6 @@ const componentDrawerRole = ref('custom')
 const serviceDrawerWorkspaceLoading = ref(false)
 const serviceExternalAccessLoading = ref(false)
 const componentExternalAccessLoading = ref(false)
-const componentNodePortLoading = ref(false)
 const serviceDrawerRevealedSecrets = ref<Set<string>>(new Set())
 const serviceDrawerSecretValues = ref<Record<string, string>>({})
 const serviceDrawerSecretLoadingKey = ref('')
@@ -4514,7 +4491,6 @@ const serviceDrawerPreviewService = computed(() => {
     values: serviceDrawerPreviewValues.value,
   }
 })
-const serviceDrawerPrimaryRows = computed(() => drawerService.value ? serviceConfigPrimaryRows(drawerService.value, serviceConfigForm.value) : [])
 const serviceDrawerRuntimeRows = computed(() => drawerService.value || configDrawer.value.component
   ? serviceRuntimeDetailRows(drawerService.value || configDrawer.value.component)
   : [])
@@ -4609,18 +4585,6 @@ const componentDrawerExternalAccessEnabled = computed(() => Boolean(componentDra
 const componentDrawerExternalAccessLabel = computed(() => {
   if (componentExternalAccessLoading.value) return componentDrawerExternalAccessEnabled.value ? '关闭中...' : '开启中...'
   return componentDrawerExternalAccessEnabled.value ? '关闭 Ingress' : '开启 Ingress'
-})
-const componentDrawerNodePortUrl = computed(() => {
-  return configDrawer.value.component?.nodePortUrl || ''
-})
-const componentDrawerNodePortToggleVisible = computed(() => {
-  const comp = configDrawer.value.component
-  return configDrawer.value.kind === 'component' && comp?.runtimeConfig?.serviceName
-})
-const componentDrawerNodePortEnabled = computed(() => Boolean(componentDrawerNodePortUrl.value))
-const componentDrawerNodePortLabel = computed(() => {
-  if (componentNodePortLoading.value) return componentDrawerNodePortEnabled.value ? '关闭中...' : '开启中...'
-  return componentDrawerNodePortEnabled.value ? '关闭 NodePort' : '开启 NodePort'
 })
 const serviceDrawerExternalAccessEnabled = computed(() => Boolean(configDrawer.value.kind === 'service' && configDrawerExternalUrl.value))
 const serviceDrawerExternalAccessToggleVisible = computed(() => configDrawer.value.kind === 'service' && serviceStatusHasRuntime(drawerService.value) && serviceDrawerProfile.value.showConnectionBindings)
@@ -6546,32 +6510,6 @@ const toggleComponentExternalAccess = async () => {
     componentExternalAccessLoading.value = false
   }
 }
-const toggleComponentNodePortAccess = async () => {
-  const comp = configDrawer.value.component
-  if (!comp?.id || componentNodePortLoading.value) return
-  componentNodePortLoading.value = true
-  configDrawer.value.error = ''
-  configDrawer.value.message = ''
-  try {
-    const nextEnabled = !componentDrawerNodePortEnabled.value
-    const res = await api.setComponentNodePortAccess(envId.value, Number(comp.id), nextEnabled)
-    if (Array.isArray(res.externalAccess)) {
-      externalAccess.value = res.externalAccess
-    }
-    const updated = res.data
-    if (updated?.id) {
-      components.value = components.value.map((item:any) => Number(item.id) === Number(updated.id) ? { ...item, ...updated } : item)
-    }
-    const next = components.value.find((item:any) => Number(item.id) === Number(comp.id)) || updated || comp
-    configDrawer.value.component = next
-    notifyEnvUpdated()
-    configDrawer.value.message = nextEnabled ? 'NodePort 已开启。' : 'NodePort 已关闭。'
-  } catch (e:any) {
-    configDrawer.value.error = 'NodePort 切换失败：' + (e?.message || '未知错误')
-  } finally {
-    componentNodePortLoading.value = false
-  }
-}
 const deployDrawerComponent = async () => {
   const comp = configDrawer.value.component
   if (!comp?.id) return
@@ -8334,22 +8272,25 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   position: relative;
   flex: 0 0 auto;
   height: 48px;
-  padding: 0 12px;
+  padding: 0 16px;
   border: 0;
   background: transparent;
   color: var(--cds-text-secondary, #525252);
-  font-family: inherit;
-  font-size: 13px;
-  font-weight: 560;
-  letter-spacing: 0;
+  font-family: var(--cds-font-family-sans, 'IBM Plex Sans', sans-serif);
+  font-size: 14px;
+  font-weight: 400;
+  letter-spacing: 0.16px;
   line-height: 48px;
   white-space: nowrap;
   cursor: pointer;
+  transition: color 0.15s ease;
 }
-.config-drawer-tabs button:hover,
+.config-drawer-tabs button:hover {
+  color: var(--cds-text-primary, #161616);
+}
 .config-drawer-tabs button.active {
   color: var(--cds-text-primary, #161616);
-  background: var(--cds-layer-01, #ffffff);
+  font-weight: 600;
 }
 .config-drawer-tabs button.active::after {
   content: "";
@@ -8372,14 +8313,17 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 .config-section {
   display: grid;
   gap: var(--paap-space-3);
-  padding: 0 0 26px;
+  padding: 20px 24px 26px;
   border: 0;
-  border-bottom: 1px solid var(--paap-border);
+  border-bottom: 1px solid var(--cds-border-subtle-01, #e0e0e0);
   border-radius: 0;
   background: var(--cds-layer-01, #ffffff);
 }
+.config-section:nth-child(even) {
+  background: var(--cds-gray-10, #f4f4f4);
+}
 .config-section + .config-section {
-  padding-top: 26px;
+  padding-top: 20px;
 }
 .config-section:last-of-type {
   border-bottom: 0;
