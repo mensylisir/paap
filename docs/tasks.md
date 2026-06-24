@@ -514,10 +514,13 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 - [ ] 工作量：2-3 周
 
 ### Task 7.15: 配置模板导入 UI 重设计
-- [ ] 导入对话框改为 Carbon Design System 白色风格
-- [ ] "适用组件"字段改为 select/combobox 控件
-- [ ] 区分普通模板（表单）和高级模板（JSON schema 上传）两种导入模式
-- [ ] 工作量：1-2 周
+- [x] 导入对话框改为 Carbon Design System 白色风格
+- [x] "适用组件"字段改为 select/combobox 控件
+- [x] 区分普通模板（表单）和高级模板（JSON schema 上传）两种导入模式
+- [x] Docker 镜像 `v0.1.445` 构建并部署到 kind 集群
+- [x] CDP 验证：配置模板导入弹窗为白色 Carbon shell；普通/高级模式卡片切换正常；适用组件 select 显示 6 个候选项并带帮助文案
+- [x] 对应文件：`frontend/src/views/TemplatesView.vue`
+- [x] 工作量：1-2 周
 
 ### Task 7.16: 模板体系收口
 - [ ] 废弃旧 `installer/rawYaml/chartRepo/chartName` 创建入口

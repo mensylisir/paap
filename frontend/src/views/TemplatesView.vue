@@ -197,13 +197,19 @@
               <svg width="20" height="20" viewBox="0 0 32 32" fill="currentColor"><path d="M24 9.4L22.6 8 16 14.6 9.4 8 8 9.4l6.6 6.6L8 22.6 9.4 24l6.6-6.6 6.6 6.6 1.4-1.4-6.6-6.6L24 9.4z"/></svg>
             </button>
           </div>
-          <div class="modal-body">
+          <div class="modal-body config-import-shell--carbon">
             <div class="config-import-grid">
               <div class="form-item config-import-mode">
                 <label class="form-label">导入模式</label>
                 <div class="template-mode-switch" role="group" aria-label="导入模式">
-                  <button type="button" :class="{ active: configImportMode === 'native' }" @click="configImportMode = 'native'">普通配置</button>
-                  <button type="button" :class="{ active: configImportMode === 'advanced' }" @click="configImportMode = 'advanced'">高级模板 JSON</button>
+                  <button type="button" class="config-import-mode-card" :class="{ active: configImportMode === 'native' }" @click="configImportMode = 'native'">
+                    <span>普通配置</span>
+                    <small>普通配置适合从现有配置文件快速生成模板</small>
+                  </button>
+                  <button type="button" class="config-import-mode-card" :class="{ active: configImportMode === 'advanced' }" @click="configImportMode = 'advanced'">
+                    <span>高级模板 JSON</span>
+                    <small>平台工程师可导入完整 schema/template JSON</small>
+                  </button>
                 </div>
               </div>
               <div class="form-item">
@@ -231,6 +237,7 @@
                 <select id="config-template-component-type-select" v-model="configImportForm.componentTypes" class="rail-select">
                   <option v-for="option in configTemplateComponentTypeOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
                 </select>
+                <div class="form-helper">选择后会影响组件配置 Tab 的模板候选范围。</div>
               </div>
             </div>
             <div class="form-item">
@@ -1400,6 +1407,9 @@ function isHeavyTemplate(tmpl: any) {
 .rail-select {
   background: var(--cds-layer-01, #ffffff);
 }
+.config-import-shell--carbon {
+  background: var(--cds-layer-01, #ffffff);
+}
 .template-mode-switch {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1407,7 +1417,7 @@ function isHeavyTemplate(tmpl: any) {
   background: var(--cds-layer-01, #ffffff);
 }
 .template-mode-switch button {
-  min-height: 38px;
+  min-height: 72px;
   border: 0;
   border-right: 1px solid var(--cds-border-subtle-01, #e0e0e0);
   background: var(--cds-layer-01, #ffffff);
@@ -1415,13 +1425,38 @@ function isHeavyTemplate(tmpl: any) {
   font: inherit;
   font-size: 13px;
   cursor: pointer;
+  text-align: left;
+  padding: 12px 14px;
+  transition: background-color 110ms, box-shadow 110ms, color 110ms;
 }
 .template-mode-switch button:last-child {
   border-right: 0;
 }
+.template-mode-switch button:hover {
+  background: var(--cds-background-hover, rgba(141, 141, 141, 0.12));
+  color: var(--cds-text-primary, #161616);
+}
 .template-mode-switch button.active {
-  background: var(--cds-blue-60, #0f62fe);
-  color: var(--cds-text-on-color, #ffffff);
+  background: var(--cds-layer-01, #ffffff);
+  color: var(--cds-text-primary, #161616);
+  box-shadow: inset 0 -3px 0 var(--cds-border-interactive, #0f62fe);
+}
+.config-import-mode-card {
+  display: grid;
+  align-content: center;
+  gap: 4px;
+}
+.config-import-mode-card span {
+  font-size: var(--cds-heading-01-font-size, 14px);
+  font-weight: var(--cds-heading-01-font-weight, 600);
+  line-height: var(--cds-heading-01-line-height, 1.42857);
+  letter-spacing: var(--cds-heading-01-letter-spacing, 0.16px);
+}
+.config-import-mode-card small {
+  color: var(--cds-text-helper, #6f6f6f);
+  font-size: var(--cds-helper-text-01-font-size, 12px);
+  line-height: var(--cds-helper-text-01-line-height, 1.33333);
+  letter-spacing: var(--cds-helper-text-01-letter-spacing, 0.32px);
 }
 .config-import-mode {
   grid-column: 1 / -1;
