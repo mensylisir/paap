@@ -8328,15 +8328,22 @@ func UninstallService(c *gin.Context) {
 	envID, _ := strconv.Atoi(c.Param("id"))
 	serviceID, _ := strconv.Atoi(c.Param("serviceId"))
 
-	var inst model.ServiceInstallation
-	if err := database.DB.First(&inst, serviceID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "service installation not found"})
-		return
-	}
-
 	var env model.Environment
 	if err := database.DB.First(&env, envID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "environment not found"})
+		return
+	}
+	if !requireApplicationAccess(c, env.ApplicationID) {
+		return
+	}
+
+	var inst model.ServiceInstallation
+	if err := database.DB.Where("id = ? AND environment_id = ?", serviceID, envID).First(&inst).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "service installation not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 

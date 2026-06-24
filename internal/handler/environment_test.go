@@ -1277,6 +1277,155 @@ func TestUpdateRunningServiceReconcilesServiceInstanceCR(t *testing.T) {
 	}
 }
 
+func TestUninstallServiceRejectsNonMembers(t *testing.T) {
+	previousDB := database.DB
+	previousClient := k8s.GetClient()
+	t.Cleanup(func() {
+		database.DB = previousDB
+		k8s.SetClient(previousClient)
+	})
+	t.Setenv("PATH", "/nonexistent")
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.ServiceInstallation{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	database.DB = db
+	k8s.SetClient(nil)
+
+	app := model.Application{Name: "隐藏应用", Identifier: "hidden", OwnerID: 1}
+	if err := db.Create(&app).Error; err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	env := model.Environment{ApplicationID: app.ID, Name: "生产", Identifier: "prod", Namespace: "hidden-prod", Status: "running"}
+	if err := db.Create(&env).Error; err != nil {
+		t.Fatalf("create env: %v", err)
+	}
+	inst := model.ServiceInstallation{EnvironmentID: env.ID, ServiceType: "redis", ServiceName: "redis", Status: "running", Namespace: "hidden-prod-redis"}
+	if err := db.Create(&inst).Error; err != nil {
+		t.Fatalf("create service installation: %v", err)
+	}
+
+	path := fmt.Sprintf("/api/v1/environments/%d/services/%d", env.ID, inst.ID)
+	req := httptest.NewRequest(http.MethodDelete, path, nil)
+	rec := httptest.NewRecorder()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.DELETE("/api/v1/environments/:id/services/:serviceId", withTestAuthUser(2, UninstallService))
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusForbidden, rec.Body.String())
+	}
+	var count int64
+	if err := db.Model(&model.ServiceInstallation{}).Where("id = ?", inst.ID).Count(&count).Error; err != nil {
+		t.Fatalf("count service installation: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("service installation count = %d, want still present", count)
+	}
+}
+
+func TestUninstallServiceRejectsNonMembersBeforeServiceLookup(t *testing.T) {
+	previousDB := database.DB
+	t.Cleanup(func() { database.DB = previousDB })
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.ServiceInstallation{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	database.DB = db
+
+	app := model.Application{Name: "隐藏应用", Identifier: "hidden", OwnerID: 1}
+	if err := db.Create(&app).Error; err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	env := model.Environment{ApplicationID: app.ID, Name: "生产", Identifier: "prod", Namespace: "hidden-prod", Status: "running"}
+	if err := db.Create(&env).Error; err != nil {
+		t.Fatalf("create env: %v", err)
+	}
+
+	path := fmt.Sprintf("/api/v1/environments/%d/services/999", env.ID)
+	req := httptest.NewRequest(http.MethodDelete, path, nil)
+	rec := httptest.NewRecorder()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.DELETE("/api/v1/environments/:id/services/:serviceId", withTestAuthUser(2, UninstallService))
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusForbidden, rec.Body.String())
+	}
+}
+
+func TestUninstallServiceScopesServiceToEnvironmentAfterMemberAccess(t *testing.T) {
+	previousDB := database.DB
+	previousClient := k8s.GetClient()
+	t.Cleanup(func() {
+		database.DB = previousDB
+		k8s.SetClient(previousClient)
+	})
+	t.Setenv("PATH", "/nonexistent")
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.ServiceInstallation{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	database.DB = db
+	k8s.SetClient(nil)
+
+	app := model.Application{Name: "测试应用", Identifier: "test", OwnerID: 1}
+	if err := db.Create(&app).Error; err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	if err := db.Create(&model.AppMember{ApplicationID: app.ID, UserID: 2, Role: "member"}).Error; err != nil {
+		t.Fatalf("create member: %v", err)
+	}
+	envA := model.Environment{ApplicationID: app.ID, Name: "A", Identifier: "a", Namespace: "test-a", Status: "running"}
+	if err := db.Create(&envA).Error; err != nil {
+		t.Fatalf("create env a: %v", err)
+	}
+	envB := model.Environment{ApplicationID: app.ID, Name: "B", Identifier: "b", Namespace: "test-b", Status: "running"}
+	if err := db.Create(&envB).Error; err != nil {
+		t.Fatalf("create env b: %v", err)
+	}
+	inst := model.ServiceInstallation{EnvironmentID: envB.ID, ServiceType: "redis", ServiceName: "redis", Status: "running", Namespace: "test-b-redis"}
+	if err := db.Create(&inst).Error; err != nil {
+		t.Fatalf("create service installation: %v", err)
+	}
+
+	path := fmt.Sprintf("/api/v1/environments/%d/services/%d", envA.ID, inst.ID)
+	req := httptest.NewRequest(http.MethodDelete, path, nil)
+	rec := httptest.NewRecorder()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.DELETE("/api/v1/environments/:id/services/:serviceId", withTestAuthUser(2, UninstallService))
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusNotFound, rec.Body.String())
+	}
+	var count int64
+	if err := db.Model(&model.ServiceInstallation{}).Where("id = ?", inst.ID).Count(&count).Error; err != nil {
+		t.Fatalf("count service installation: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("foreign service installation count = %d, want still present", count)
+	}
+}
+
 func TestComponentDeleteIdentifierMatchesCreateIdentifier(t *testing.T) {
 	comp := model.Component{ID: 42, Name: "订单服务", Type: "backend"}
 
