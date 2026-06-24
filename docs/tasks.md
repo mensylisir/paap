@@ -724,6 +724,20 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 - [x] 对应文件：`frontend/src/views/CatalogView.vue`、`frontend/src/views/viewMarkup.test.ts`、`frontend/src/utils/catalogGroups.ts`、`frontend/src/utils/catalogGroups.test.ts`
 - [x] 工作量：S（15 分钟）
 
+### Task 7.33: 目录页搜索文案同步分组搜索能力 ✅
+> 搜索框和空结果说明同步提示“名称、类型、分组或描述”，避免用户不知道可以按产品分组名搜索。
+
+- [x] 搜索框 placeholder 从“搜索中间件或工具名称...”改为“搜索名称、类型、分组或描述...”
+- [x] 无结果说明同步包含“名称、类型、分组或描述”
+- [x] 前端目标测试：`npm run test -- src/views/viewMarkup.test.ts`，1 file / 79 tests passed
+- [x] 前端全量测试：`npm run test`，26 files / 217 tests passed
+- [x] 前端构建：`npm run build` 通过
+- [x] Docker 镜像 `v0.1.455` 构建并部署到 kind 集群
+- [x] kind 验证：显式使用 `--context kind-rbac-governance-test` 检查 `paap-server:v0.1.455`，Deployment `1/1 ready`，Pod `paap-server-75dd899886-b5w2h` Running
+- [x] CDP 验证：`http://172.18.0.2:30091/catalog` 搜索框 placeholder 显示“搜索名称、类型、分组或描述...”；搜索 `zzzz-no-result` 后空结果说明显示“名称、类型、分组或描述”，卡片数为 0
+- [x] 对应文件：`frontend/src/views/CatalogView.vue`、`frontend/src/views/viewMarkup.test.ts`
+- [x] 工作量：S（15 分钟）
+
 ### Task 7.21: `docs/配置示例.md` → 内置配置模板
 > 将 20 个配置示例转为 PAAP 内置配置模板（Go template），供组件配置 Tab 使用
 

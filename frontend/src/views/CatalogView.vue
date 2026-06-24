@@ -43,7 +43,7 @@
         v-model="filterQuery"
         class="catalog-search-input"
         type="text"
-        placeholder="搜索中间件或工具名称..."
+        placeholder="搜索名称、类型、分组或描述..."
       />
       <button v-if="filterQuery" class="catalog-search-clear" @click="clearCatalogSearch" title="清除搜索">
         <svg width="12" height="12" viewBox="0 0 32 32" fill="currentColor"><path d="M24 9.4L22.6 8 16 14.6 9.4 8 8 9.4l6.6 6.6L8 22.6 9.4 24l6.6-6.6 6.6 6.6 1.4-1.4-6.6-6.6L24 9.4z"/></svg>
@@ -92,7 +92,7 @@
 
     <div v-if="!loading && hasCatalogItems && filterQuery.trim() && catalogGroups.length === 0" class="catalog-empty-search">
       <strong>没有匹配的中间件或工具</strong>
-      <span>当前目录中没有包含“{{ filterQuery.trim() }}”的名称、类型或描述。</span>
+      <span>当前目录中没有包含“{{ filterQuery.trim() }}”的名称、类型、分组或描述。</span>
       <button type="button" class="catalog-empty-clear" @click="clearCatalogSearch">清除搜索</button>
     </div>
 
