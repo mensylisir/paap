@@ -702,6 +702,20 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 - [x] 对应文件：`internal/handler/environment.go`、`internal/handler/environment_test.go`
 - [x] 工作量：S（半天）
 
+### Task 7.8q: 服务运行日志按成员鉴权 ✅
+> 普通用户读取服务实例运行日志前必须具备所属应用访问权限，避免非成员通过服务 ID 查看 Pod、容器和应用日志内容。
+
+- [x] `GetServiceRuntimeLogs` 先读取环境并复用 `requireApplicationAccess(env.ApplicationID)`，通过后才加载服务实例和查询 Kubernetes 日志
+- [x] 非成员访问存在或不存在的服务运行日志均先返回 403，避免通过 404/424 判断服务实例或 K8s 日志状态
+- [x] 后端目标测试：`go test ./internal/handler -run 'TestGetServiceRuntimeLogsRejectsNonMembers|TestGetServiceRuntimeLogsRejectsNonMembersBeforeServiceLookup' -count=1` 先红后绿
+- [x] 后端 handler 测试：`go test ./internal/handler -count=1` 通过
+- [x] 后端全量测试：`make test` 通过
+- [x] Docker 镜像 `v0.1.474` 构建并部署到 kind 集群
+- [x] kind 验证：显式使用 `--context kind-rbac-governance-test` 检查 `paap-server:v0.1.474`，Deployment `1/1 ready`，Pod `paap-server-768597bb45-nnprh` Running；`paap-system` 与 `kpack` Pod 均 Running，节点 Ready
+- [x] CDP 验证：复用 Chrome tab `http://172.18.0.2:30091/catalog`，临时普通用户 ID=18 读取 `/api/v1/environments/5/services/22/runtime-logs?tail=10` 返回 403 和 `application access denied`；临时加入应用 5 成员后同一接口返回 200，`available: true`，目标为 `real-fullstack-prod-gitea`，返回 10 行日志样本；临时用户和成员关系已清理，残留计数 0
+- [x] 对应文件：`internal/handler/environment.go`、`internal/handler/environment_test.go`
+- [x] 工作量：S（半天）
+
 ### Task 7.9: KubeVirt 虚拟机
 - [ ] 将 VM 作为新服务类型纳入 `ServiceCatalog`
 - [ ] 用 KubeVirt CRD（`VirtualMachine`）而非 Helm chart 部署
