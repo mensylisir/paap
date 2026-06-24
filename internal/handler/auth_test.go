@@ -31,7 +31,7 @@ func TestLoginReturnsSignedJWTAndMeAcceptsBearerToken(t *testing.T) {
 	}
 	database.DB = db
 
-	passwordHash, err := hashPassword("admin123")
+	passwordHash, err := hashPassword("Def@u1tpwd")
 	if err != nil {
 		t.Fatalf("hash password: %v", err)
 	}
@@ -44,7 +44,7 @@ func TestLoginReturnsSignedJWTAndMeAcceptsBearerToken(t *testing.T) {
 	router.POST("/api/v1/auth/login", Login)
 	router.GET("/api/v1/auth/me", GetCurrentUser)
 
-	loginBody := bytes.NewBufferString(`{"username":"admin","password":"admin123"}`)
+	loginBody := bytes.NewBufferString(`{"username":"admin","password":"Def@u1tpwd"}`)
 	loginReq := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", loginBody)
 	loginReq.Header.Set("Content-Type", "application/json")
 	loginRec := httptest.NewRecorder()
@@ -86,5 +86,80 @@ func TestLoginReturnsSignedJWTAndMeAcceptsBearerToken(t *testing.T) {
 	}
 	if meResponse.Data.Username != "admin" || meResponse.Data.Role != "admin" {
 		t.Fatalf("current user = %#v, want admin/admin", meResponse.Data)
+	}
+}
+
+func TestPlatformAdminMigrationUpdatesSeededAdminPassword(t *testing.T) {
+	previousDB := database.DB
+	t.Cleanup(func() { database.DB = previousDB })
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&model.User{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	database.DB = db
+
+	SeedDefaultUsers()
+	var seededAdmin model.User
+	if err := db.Where("username = ?", "admin").First(&seededAdmin).Error; err != nil {
+		t.Fatalf("find seeded admin: %v", err)
+	}
+	if checkPasswordHash("admin123", seededAdmin.Password) {
+		t.Fatalf("seeded admin password must not accept legacy default before migrations")
+	}
+
+	if err := database.RunSQLMigrations(); err != nil {
+		t.Fatalf("run sql migrations: %v", err)
+	}
+
+	var admin model.User
+	if err := db.Where("username = ?", "admin").First(&admin).Error; err != nil {
+		t.Fatalf("find admin: %v", err)
+	}
+	if !checkPasswordHash("Def@u1tpwd", admin.Password) {
+		t.Fatalf("seeded admin password must match hardened default")
+	}
+	if checkPasswordHash("admin123", admin.Password) {
+		t.Fatalf("seeded admin password must not accept legacy default")
+	}
+}
+
+func TestPlatformAdminMigrationUpdatesExistingAdminPassword(t *testing.T) {
+	previousDB := database.DB
+	t.Cleanup(func() { database.DB = previousDB })
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&model.User{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	database.DB = db
+
+	legacyHash, err := hashPassword("admin123")
+	if err != nil {
+		t.Fatalf("hash legacy password: %v", err)
+	}
+	if err := db.Create(&model.User{Username: "admin", Email: "admin@paap.local", Password: legacyHash, Role: "admin"}).Error; err != nil {
+		t.Fatalf("create legacy admin: %v", err)
+	}
+
+	if err := database.RunSQLMigrations(); err != nil {
+		t.Fatalf("run sql migrations: %v", err)
+	}
+
+	var admin model.User
+	if err := db.Where("username = ?", "admin").First(&admin).Error; err != nil {
+		t.Fatalf("find admin: %v", err)
+	}
+	if !checkPasswordHash("Def@u1tpwd", admin.Password) {
+		t.Fatalf("legacy admin password must be rotated to hardened default")
+	}
+	if checkPasswordHash("admin123", admin.Password) {
+		t.Fatalf("legacy admin password must stop working after seed rotation")
 	}
 }

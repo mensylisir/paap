@@ -462,10 +462,13 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 - [x] 前端登录页调用真实 `/api/v1/auth/login`，保存 `paap_token` / `paap_user`，失败时展示错误状态
 - [x] 前端 API client 自动为已有 token 请求添加 `Authorization: Bearer <jwt>`
 - [x] Docker 镜像 `v0.1.441` 构建并部署到 kind 集群
-- [x] CDP 验证：错误密码停留 `/login` 且显示 `登录失败：invalid credentials`；正确 `admin/admin123` 登录后写入三段式 JWT 并进入应用主界面
+- [x] 平台 admin 登录密码通过 `migration/20260624_001_update_platform_admin_password.sql` 更新为 `Def@u1tpwd`，数据库保存 bcrypt 哈希
+- [x] CDP 验证：错误密码停留 `/login` 且显示 `登录失败：invalid credentials`；正确 `admin/Def@u1tpwd` 登录后写入三段式 JWT 并进入应用主界面
 - [x] 前端路由守卫：未登录访问业务页先进入 `/login`，登录后恢复主界面访问
 - [x] Docker 镜像 `v0.1.442` 构建并部署到 kind 集群
 - [x] CDP 验证：未登录访问 `/apps` 自动到 `/login`；登录后 `/api/v1/applications` 使用 Bearer token 返回 200
+- [x] Docker 镜像 `v0.1.443` 构建并部署到 kind 集群，验证 PostgreSQL `schema_migrations` 已记录 admin 密码迁移
+- [x] API/CDP 验证：`admin/admin123` 返回 401；`admin/Def@u1tpwd` 登录成功并可访问受保护 API
 - [ ] 工作量：1 周
 
 ### Task 7.9: KubeVirt 虚拟机

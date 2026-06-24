@@ -54,7 +54,7 @@ func TestAPIRoutesRequireAuthExceptLogin(t *testing.T) {
 	}
 	database.DB = db
 
-	passwordHash, err := hashPassword("admin123")
+	passwordHash, err := hashPassword("Def@u1tpwd")
 	if err != nil {
 		t.Fatalf("hash password: %v", err)
 	}
@@ -74,7 +74,7 @@ func TestAPIRoutesRequireAuthExceptLogin(t *testing.T) {
 	}
 
 	loginRec := httptest.NewRecorder()
-	loginReq := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", bytes.NewBufferString(`{"username":"admin","password":"admin123"}`))
+	loginReq := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", bytes.NewBufferString(`{"username":"admin","password":"Def@u1tpwd"}`))
 	loginReq.Header.Set("Content-Type", "application/json")
 	router.ServeHTTP(loginRec, loginReq)
 	if loginRec.Code != http.StatusOK {

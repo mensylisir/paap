@@ -1,0 +1,5 @@
+-- Update the PAAP platform admin login password to Def@u1tpwd.
+UPDATE users
+SET password = '$2a$10$NyVh8MbDEoNYb0q1uX69xeWP144iBpnxX5odXF4NeA662qFY7muc6',
+    updated_at = CURRENT_TIMESTAMP
+WHERE username = 'admin';

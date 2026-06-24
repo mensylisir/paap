@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -142,7 +144,9 @@ func SeedDefaultUsers() {
 		return
 	}
 
-	hash, _ := hashPassword("admin123")
+	// The SQL migration owns the real platform admin password. Seed with a random
+	// locked value so no legacy default works before migrations run.
+	hash := randomInitialPasswordHash()
 	admin := model.User{
 		Username: "admin",
 		Email:    "admin@paap.local",
@@ -159,6 +163,18 @@ func SeedDefaultUsers() {
 		Role:     "user",
 	}
 	database.DB.Create(&user)
+}
+
+func randomInitialPasswordHash() string {
+	seed := make([]byte, 32)
+	if _, err := rand.Read(seed); err != nil {
+		panic(err)
+	}
+	hash, err := hashPassword(hex.EncodeToString(seed))
+	if err != nil {
+		panic(err)
+	}
+	return hash
 }
 
 func init() {
