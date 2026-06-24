@@ -2668,6 +2668,9 @@ func DeleteComponent(c *gin.Context) {
 	var env model.Environment
 	var app model.Application
 	if err := database.DB.First(&env, comp.EnvironmentID).Error; err == nil {
+		if !requireApplicationAccess(c, env.ApplicationID) {
+			return
+		}
 		if err := database.DB.First(&app, env.ApplicationID).Error; err == nil {
 			ctx := context.Background()
 			identifier := componentDeleteIdentifier(app, env, comp)

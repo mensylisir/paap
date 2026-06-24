@@ -993,6 +993,21 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 - [x] 对应文件：`internal/handler/runtime_console.go`、`internal/handler/environment_test.go`
 - [x] 工作量：S（半天）
 
+### Task 7.8aj: 组件删除按成员鉴权 ✅
+> 普通用户删除组件前必须具备组件所属应用访问权限，避免非成员通过组件 ID 触发 ArgoCD、Component CR 和运行态资源清理。
+
+- [x] `DeleteComponent` 读取组件所属环境后复用 `requireApplicationAccess(env.ApplicationID)`，通过后才执行 ArgoCD、Component CR、运行态资源和数据库删除
+- [x] 非成员删除存在组件返回 403，不进入 K8s 删除路径
+- [x] 非成员删除存在组件不会删除 `components` 数据库记录
+- [x] 既有成功删除测试补齐真实受保护路由上下文：以平台管理员角色执行删除，继续校验 ArgoCD Application、Component CR、运行态资源和画布引用清理
+- [x] 后端目标测试：`go test ./internal/handler -run 'TestDeleteComponent(RejectsNonMembers|RemovesArgoCDApplicationAndRuntimeResources|UsesArgoCDApplicationIdentifierForRuntimeCleanup)' -count=1` 先红后绿
+- [x] 后端全量测试：`go test ./internal/handler -count=1`、`make test` 通过
+- [x] Docker 镜像 `v0.1.493` 构建并部署到 kind 集群
+- [x] kind 验证：显式使用 `--context kind-rbac-governance-test` 检查 `paap-server:v0.1.493`，Deployment `1/1 ready`，Pod `paap-server-7b8576f496-j4h62` Running；`paap-system` 与 `kpack` Pod 均 Running，节点 Ready
+- [x] CDP 验证：复用 Chrome tab `http://172.18.0.2:30091/catalog`，临时 app/env/component 为 21/20/61、临时普通用户 ID=37 DELETE `/api/v1/components/61` 返回 403 和 `application access denied`；删除后组件记录计数保持 `1`；临时 app/env/component、用户和成员关系已清理，残留计数 `0|0|0|0|0`
+- [x] 对应文件：`internal/handler/environment.go`、`internal/handler/environment_test.go`
+- [x] 工作量：S（半天）
+
 ### Task 7.9: KubeVirt 虚拟机
 - [ ] 将 VM 作为新服务类型纳入 `ServiceCatalog`
 - [ ] 用 KubeVirt CRD（`VirtualMachine`）而非 Helm chart 部署

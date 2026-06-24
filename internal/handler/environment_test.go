@@ -2583,6 +2583,57 @@ func TestGetServiceWorkspaceReturnsBackendWorkspace(t *testing.T) {
 	}
 }
 
+func TestDeleteComponentRejectsNonMembers(t *testing.T) {
+	previousDB := database.DB
+	previousK8sClient := k8s.GetClient()
+	t.Cleanup(func() {
+		database.DB = previousDB
+		k8s.SetClient(previousK8sClient)
+	})
+	k8s.SetClient(nil)
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.Component{}, &model.EnvironmentCanvasState{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	database.DB = db
+
+	app := model.Application{Name: "隐藏应用", Identifier: "hidden", OwnerID: 1}
+	if err := db.Create(&app).Error; err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	env := model.Environment{ApplicationID: app.ID, Name: "生产", Identifier: "prod", Namespace: "hidden-prod"}
+	if err := db.Create(&env).Error; err != nil {
+		t.Fatalf("create env: %v", err)
+	}
+	comp := model.Component{EnvironmentID: env.ID, Name: "api", Type: "backend", Status: "running"}
+	if err := db.Create(&comp).Error; err != nil {
+		t.Fatalf("create component: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodDelete, fmt.Sprintf("/api/v1/components/%d", comp.ID), nil)
+	rec := httptest.NewRecorder()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.DELETE("/api/v1/components/:id", withTestAuthUser(2, DeleteComponent))
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusForbidden, rec.Body.String())
+	}
+	var count int64
+	if err := db.Model(&model.Component{}).Where("id = ?", comp.ID).Count(&count).Error; err != nil {
+		t.Fatalf("count component: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("component count = %d, want 1", count)
+	}
+}
+
 func TestDeleteComponentRemovesArgoCDApplicationAndRuntimeResources(t *testing.T) {
 	previousDB := database.DB
 	previousK8sClient := k8s.GetClient()
@@ -2716,7 +2767,7 @@ func TestDeleteComponentRemovesArgoCDApplicationAndRuntimeResources(t *testing.T
 
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	router.DELETE("/api/v1/components/:id", DeleteComponent)
+	router.DELETE("/api/v1/components/:id", withTestAuthUserRole(1, "admin", DeleteComponent))
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodDelete, fmt.Sprintf("/api/v1/components/%d", comp.ID), nil)
 	router.ServeHTTP(rec, req)
@@ -2831,7 +2882,7 @@ func TestDeleteComponentUsesArgoCDApplicationIdentifierForRuntimeCleanup(t *test
 
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	router.DELETE("/api/v1/components/:id", DeleteComponent)
+	router.DELETE("/api/v1/components/:id", withTestAuthUserRole(1, "admin", DeleteComponent))
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodDelete, fmt.Sprintf("/api/v1/components/%d", comp.ID), nil)
 	router.ServeHTTP(rec, req)
