@@ -288,6 +288,12 @@
               <span>{{ configTemplateBindingLabel(selectedConfigTemplate.bindingMode) }}</span>
               <span>{{ selectedConfigTemplate.isBuiltin ? '内置模板' : '自定义模板' }}</span>
             </div>
+            <div class="template-preview-summary" aria-label="配置模板影响摘要">
+              <div v-for="item in configTemplatePreviewSummary(selectedConfigTemplate)" :key="item.label" class="template-preview-summary-item">
+                <span>{{ item.label }}</span>
+                <strong>{{ item.value }}</strong>
+              </div>
+            </div>
             <div class="template-preview-tabs">
               <button type="button" :class="{ active: configTemplatePreviewTab === 'native' }" @click="configTemplatePreviewTab = 'native'">原生配置预览</button>
               <button type="button" :class="{ active: configTemplatePreviewTab === 'advanced' }" @click="configTemplatePreviewTab = 'advanced'">高级 JSON / schema</button>
@@ -814,6 +820,59 @@ function configTemplateNativeBlockCount(tmpl: any) {
 function configTemplateEditableFieldCount(items: any[]) {
   const count = Array.isArray(items) ? items.length : 0
   return count ? `${count} 个可填写项` : '无需填写'
+}
+
+function configTemplatePreviewSummary(tmpl: any) {
+  return [
+    { label: '适用组件', value: configTemplateComponentTypeSummary(tmpl?.componentTypes) },
+    { label: '可填写项', value: configTemplateEditableFieldCount(tmpl?.fields) },
+    { label: '敏感配置', value: configTemplateSecretConfigCount(tmpl) },
+    { label: '生成文件', value: configTemplateGeneratedFileCount(tmpl) },
+  ]
+}
+
+function configTemplateSecretConfigCount(tmpl: any) {
+  const keys = new Set<string>()
+  for (const item of tmpl?.secrets || []) {
+    const objectName = String(item?.name || 'secret')
+    for (const key of Object.keys(item?.data || {})) {
+      keys.add(`${objectName}:${key}`)
+    }
+  }
+  for (const item of tmpl?.env || []) {
+    const source = String(item?.source || '')
+    const refName = String(item?.refName || '')
+    const refKey = String(item?.refKey || item?.name || '')
+    if (source === 'secret' || refName || refKey.toLowerCase().includes('password') || refKey.toLowerCase().includes('secret')) {
+      keys.add(`${refName || 'env'}:${refKey}`)
+    }
+  }
+  for (const field of tmpl?.fields || []) {
+    const key = String(field?.key || '')
+    const target = String(field?.target || field?.output || field?.type || '')
+    if (key && /secret|password|token|credential/i.test(`${key} ${target}`)) {
+      keys.add(`field:${key}`)
+    }
+  }
+  return keys.size ? `${keys.size} 项敏感配置` : '无敏感配置'
+}
+
+function configTemplateGeneratedFileCount(tmpl: any) {
+  const files = new Set<string>()
+  for (const item of tmpl?.nativeConfigs || []) {
+    const name = String(item?.name || '').trim()
+    if (name) files.add(name)
+  }
+  for (const item of tmpl?.files || []) {
+    const key = String(item?.key || item?.name || '').trim()
+    if (key) files.add(key)
+  }
+  for (const item of tmpl?.configMaps || []) {
+    for (const key of Object.keys(item?.data || {})) {
+      files.add(key)
+    }
+  }
+  return files.size ? `${files.size} 个生成文件` : '无文件输出'
 }
 
 function configTemplateNativePreviewBlocks(tmpl: any) {
@@ -1502,6 +1561,38 @@ function isHeavyTemplate(tmpl: any) {
   color: var(--cds-text-secondary, #525252);
   font-size: 12px;
 }
+.template-preview-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  background: var(--cds-layer-01, #ffffff);
+}
+.template-preview-summary-item {
+  display: grid;
+  gap: 4px;
+  min-height: 64px;
+  padding: 10px 12px;
+  border-right: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  align-content: center;
+  min-width: 0;
+}
+.template-preview-summary-item:last-child {
+  border-right: 0;
+}
+.template-preview-summary-item span {
+  color: var(--cds-text-secondary, #525252);
+  font-size: var(--cds-label-01-font-size, 12px);
+  line-height: var(--cds-label-01-line-height, 1.33333);
+  letter-spacing: var(--cds-label-01-letter-spacing, 0.32px);
+}
+.template-preview-summary-item strong {
+  color: var(--cds-text-primary, #161616);
+  font-size: var(--cds-body-01-font-size, 14px);
+  font-weight: var(--cds-heading-01-font-weight, 600);
+  line-height: var(--cds-body-01-line-height, 1.42857);
+  letter-spacing: var(--cds-body-01-letter-spacing, 0.16px);
+  overflow-wrap: anywhere;
+}
 .template-preview-section {
   display: grid;
   gap: 12px;
@@ -1628,8 +1719,16 @@ function isHeavyTemplate(tmpl: any) {
 
 @media (max-width: 672px) {
   .config-import-grid,
+  .template-preview-summary,
   .preview-row {
     grid-template-columns: 1fr;
+  }
+  .template-preview-summary-item {
+    border-right: 0;
+    border-bottom: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  }
+  .template-preview-summary-item:last-child {
+    border-bottom: 0;
   }
 }
 </style>

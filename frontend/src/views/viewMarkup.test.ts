@@ -148,6 +148,19 @@ describe('Vue view markup', () => {
     expect(envDetail.default).toContain('resolveTemplateObjectName')
   })
 
+  it('summarizes config template preview impact before showing raw template content', async () => {
+    const templatesView = await import('./TemplatesView.vue?raw')
+
+    expect(templatesView.default).toContain('template-preview-summary')
+    expect(templatesView.default).toContain('适用组件')
+    expect(templatesView.default).toContain('可填写项')
+    expect(templatesView.default).toContain('敏感配置')
+    expect(templatesView.default).toContain('生成文件')
+    expect(templatesView.default).toContain('configTemplatePreviewSummary')
+    expect(templatesView.default).toContain('configTemplateSecretConfigCount')
+    expect(templatesView.default).toContain('configTemplateGeneratedFileCount')
+  })
+
   it('uses Railway-like app and environment context switching with modal creation', async () => {
     const appList = await import('./AppListView.vue?raw')
     const environmentsView = await import('./AppEnvironmentsView.vue?raw')

@@ -516,6 +516,15 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 - [x] 对应文件：`frontend/src/views/TemplatesView.vue`
 - [x] 工作量：1-2 周
 
+### Task 7.15a: 配置模板预览摘要 ✅
+- [x] 配置模板预览弹窗顶部增加 4 项影响摘要：适用组件、可填写项、敏感配置、生成文件
+- [x] 摘要区使用 Carbon white 风格：白色 layer、细边框、0 圆角、无阴影，和模板预览弹窗一致
+- [x] Docker 镜像 `v0.1.446` 构建并部署到 kind 集群
+- [x] kind 验证：显式使用 `--context kind-rbac-governance-test` 检查 `paap-server:v0.1.446`，Deployment `1/1 ready`，Pod `paap-server-58f6f686db-kpgm4` Running
+- [x] CDP 验证：复用现有 Chrome `/templates` 标签；配置模板 API 返回 200 和 7 个模板；Nginx 预览显示 `适用 frontend / 2 个可填写项 / 无敏感配置 / 1 个生成文件`；Spring Boot 预览显示 `适用 backend / 6 个可填写项 / 4 项敏感配置 / 1 个生成文件`；高级 JSON tab 显示 `schema.json` 和 `template.json`
+- [x] 对应文件：`frontend/src/views/TemplatesView.vue`、`frontend/src/views/viewMarkup.test.ts`
+- [x] 工作量：S（半天）
+
 ### Task 7.16: 模板体系收口
 - [ ] 废弃旧 `installer/rawYaml/chartRepo/chartName` 创建入口
 - [ ] 将 `WorkloadRolePolicy` / `EnvironmentRolePolicy` 等旧权限字段收敛到 `platform-manifest.yaml`
