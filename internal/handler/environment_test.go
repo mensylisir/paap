@@ -5114,7 +5114,7 @@ func TestUpdateComponentPersistsRuntimeConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&model.Application{}, &model.Environment{}, &model.Component{}); err != nil {
+	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.Component{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	database.DB = db
@@ -5126,6 +5126,9 @@ func TestUpdateComponentPersistsRuntimeConfig(t *testing.T) {
 	env := model.Environment{ApplicationID: app.ID, Name: "测试环境", Identifier: "staging", Status: "running", Namespace: "test-staging"}
 	if err := db.Create(&env).Error; err != nil {
 		t.Fatalf("create env: %v", err)
+	}
+	if err := db.Create(&model.AppMember{ApplicationID: app.ID, UserID: 2, Role: "member"}).Error; err != nil {
+		t.Fatalf("create member: %v", err)
 	}
 	comp := model.Component{
 		EnvironmentID: env.ID,
@@ -5159,7 +5162,7 @@ func TestUpdateComponentPersistsRuntimeConfig(t *testing.T) {
 
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	router.PUT("/api/v1/components/:id", UpdateComponent)
+	router.PUT("/api/v1/components/:id", withTestAuthUser(2, UpdateComponent))
 	router.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
@@ -5193,6 +5196,93 @@ func TestUpdateComponentPersistsRuntimeConfig(t *testing.T) {
 	}
 }
 
+func TestUpdateComponentRejectsNonMembers(t *testing.T) {
+	previousDB := database.DB
+	t.Cleanup(func() { database.DB = previousDB })
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.Component{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	database.DB = db
+
+	app := model.Application{Name: "隐藏应用", Identifier: "hidden", OwnerID: 1}
+	if err := db.Create(&app).Error; err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	env := model.Environment{ApplicationID: app.ID, Name: "生产", Identifier: "prod", Status: "running", Namespace: "hidden-prod"}
+	if err := db.Create(&env).Error; err != nil {
+		t.Fatalf("create env: %v", err)
+	}
+	comp := model.Component{EnvironmentID: env.ID, Name: "orders", Type: "backend", Image: "registry.local/orders:v1", Version: "v1", Replicas: 1, CPU: "100m", Status: "draft"}
+	if err := db.Create(&comp).Error; err != nil {
+		t.Fatalf("create component: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPut, fmt.Sprintf("/api/v1/components/%d", comp.ID), strings.NewReader(`{"replicas":3,"cpu":"500m"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.PUT("/api/v1/components/:id", withTestAuthUser(2, UpdateComponent))
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusForbidden, rec.Body.String())
+	}
+	var saved model.Component
+	if err := db.First(&saved, comp.ID).Error; err != nil {
+		t.Fatalf("load component: %v", err)
+	}
+	if saved.Replicas != 1 || saved.CPU != "100m" {
+		t.Fatalf("component was updated for non-member: replicas=%d cpu=%q", saved.Replicas, saved.CPU)
+	}
+}
+
+func TestUpdateComponentRejectsNonMembersBeforePayloadValidation(t *testing.T) {
+	previousDB := database.DB
+	t.Cleanup(func() { database.DB = previousDB })
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.Component{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	database.DB = db
+
+	app := model.Application{Name: "隐藏应用", Identifier: "hidden", OwnerID: 1}
+	if err := db.Create(&app).Error; err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	env := model.Environment{ApplicationID: app.ID, Name: "生产", Identifier: "prod", Status: "running", Namespace: "hidden-prod"}
+	if err := db.Create(&env).Error; err != nil {
+		t.Fatalf("create env: %v", err)
+	}
+	comp := model.Component{EnvironmentID: env.ID, Name: "orders", Type: "backend", Image: "registry.local/orders:v1", Version: "v1", Replicas: 1, Status: "draft"}
+	if err := db.Create(&comp).Error; err != nil {
+		t.Fatalf("create component: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPut, fmt.Sprintf("/api/v1/components/%d", comp.ID), strings.NewReader(`{"image":"registry.local/orders:latest"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.PUT("/api/v1/components/:id", withTestAuthUser(2, UpdateComponent))
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusForbidden, rec.Body.String())
+	}
+}
+
 func TestUpdateComponentKeepsRegistryImageInSyncForImageDelivery(t *testing.T) {
 	previousDB := database.DB
 	t.Cleanup(func() { database.DB = previousDB })
@@ -5201,7 +5291,7 @@ func TestUpdateComponentKeepsRegistryImageInSyncForImageDelivery(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&model.Application{}, &model.Environment{}, &model.Component{}); err != nil {
+	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.Component{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	database.DB = db
@@ -5213,6 +5303,9 @@ func TestUpdateComponentKeepsRegistryImageInSyncForImageDelivery(t *testing.T) {
 	env := model.Environment{ApplicationID: app.ID, Name: "测试环境", Identifier: "staging", Status: "running", Namespace: "test-staging"}
 	if err := db.Create(&env).Error; err != nil {
 		t.Fatalf("create env: %v", err)
+	}
+	if err := db.Create(&model.AppMember{ApplicationID: app.ID, UserID: 2, Role: "member"}).Error; err != nil {
+		t.Fatalf("create member: %v", err)
 	}
 	comp := model.Component{
 		EnvironmentID:  env.ID,
@@ -5237,7 +5330,7 @@ func TestUpdateComponentKeepsRegistryImageInSyncForImageDelivery(t *testing.T) {
 
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	router.PUT("/api/v1/components/:id", UpdateComponent)
+	router.PUT("/api/v1/components/:id", withTestAuthUser(2, UpdateComponent))
 	router.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
@@ -5260,7 +5353,7 @@ func TestUpdateComponentCanSwitchDraftToSourceDelivery(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&model.Application{}, &model.Environment{}, &model.Component{}, &model.ServiceInstallation{}); err != nil {
+	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.Component{}, &model.ServiceInstallation{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	database.DB = db
@@ -5272,6 +5365,9 @@ func TestUpdateComponentCanSwitchDraftToSourceDelivery(t *testing.T) {
 	env := model.Environment{ApplicationID: app.ID, Name: "Dev", Identifier: "dev", Status: "running", Namespace: "shop-dev"}
 	if err := db.Create(&env).Error; err != nil {
 		t.Fatalf("create env: %v", err)
+	}
+	if err := db.Create(&model.AppMember{ApplicationID: app.ID, UserID: 2, Role: "member"}).Error; err != nil {
+		t.Fatalf("create member: %v", err)
 	}
 	comp := model.Component{
 		EnvironmentID: env.ID,
@@ -5302,7 +5398,7 @@ func TestUpdateComponentCanSwitchDraftToSourceDelivery(t *testing.T) {
 
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	router.PUT("/api/v1/components/:id", UpdateComponent)
+	router.PUT("/api/v1/components/:id", withTestAuthUser(2, UpdateComponent))
 	router.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
@@ -5334,7 +5430,7 @@ func TestUpdateComponentKeepsExistingConfigWhenConfigOmitted(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&model.Application{}, &model.Environment{}, &model.Component{}); err != nil {
+	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.Component{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	database.DB = db
@@ -5346,6 +5442,9 @@ func TestUpdateComponentKeepsExistingConfigWhenConfigOmitted(t *testing.T) {
 	env := model.Environment{ApplicationID: app.ID, Name: "测试环境", Identifier: "staging", Status: "running", Namespace: "test-staging"}
 	if err := db.Create(&env).Error; err != nil {
 		t.Fatalf("create env: %v", err)
+	}
+	if err := db.Create(&model.AppMember{ApplicationID: app.ID, UserID: 2, Role: "member"}).Error; err != nil {
+		t.Fatalf("create member: %v", err)
 	}
 	existingConfig, err := model.ComponentConfig{
 		Env: []model.ComponentEnvVar{{Name: "FEATURE_FLAG", Value: "on"}},
@@ -5373,7 +5472,7 @@ func TestUpdateComponentKeepsExistingConfigWhenConfigOmitted(t *testing.T) {
 
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	router.PUT("/api/v1/components/:id", UpdateComponent)
+	router.PUT("/api/v1/components/:id", withTestAuthUser(2, UpdateComponent))
 	router.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {

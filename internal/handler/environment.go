@@ -2217,6 +2217,20 @@ func UpdateComponent(c *gin.Context) {
 		return
 	}
 
+	var env model.Environment
+	if err := database.DB.First(&env, comp.EnvironmentID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "environment not found"})
+		return
+	}
+	if !requireApplicationAccess(c, env.ApplicationID) {
+		return
+	}
+	var app model.Application
+	if err := database.DB.First(&app, env.ApplicationID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "application not found"})
+		return
+	}
+
 	var req UpdateComponentRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -2243,16 +2257,6 @@ func UpdateComponent(c *gin.Context) {
 			comp.SourceBranch = valueOrDefaultString(req.SourceBranch, valueOrDefaultString(comp.SourceBranch, "main"))
 			comp.BuildContext = valueOrDefaultString(req.BuildContext, valueOrDefaultString(comp.BuildContext, "."))
 			comp.DockerfilePath = strings.TrimSpace(req.DockerfilePath)
-			var env model.Environment
-			if err := database.DB.First(&env, comp.EnvironmentID).Error; err != nil {
-				c.JSON(http.StatusNotFound, gin.H{"error": "environment not found"})
-				return
-			}
-			var app model.Application
-			if err := database.DB.First(&app, env.ApplicationID).Error; err != nil {
-				c.JSON(http.StatusNotFound, gin.H{"error": "application not found"})
-				return
-			}
 			identifier := service.ComponentIdentifier(comp.Name, comp.Type, comp.ID)
 			comp.JenkinsJob = fmt.Sprintf("%s-%s-%s-build", app.Identifier, env.Identifier, identifier)
 			comp.Image = ""

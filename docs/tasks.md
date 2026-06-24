@@ -778,6 +778,22 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 - [x] 对应文件：`internal/handler/environment.go`、`internal/handler/environment_test.go`
 - [x] 工作量：S（半天）
 
+### Task 7.8v: 组件更新按成员鉴权 ✅
+> 普通用户更新组件运行配置或交付配置前必须具备组件所属应用访问权限，避免非成员修改组件草稿、运行参数或通过 payload 校验结果探测组件状态。
+
+- [x] `UpdateComponent` 读取组件后先加载所属环境并复用 `requireApplicationAccess(env.ApplicationID)`，通过后才读取应用、解析请求体和保存组件
+- [x] 非成员更新组件返回 403，组件 `replicas/cpu` 等字段保持不变
+- [x] 非成员即使提交本应触发 `latest` 镜像校验的 payload，也先返回 403，避免泄露后续校验路径
+- [x] 既有组件更新正向测试补齐真实受保护路由上下文：创建 app/env/member 后以成员用户更新运行配置、镜像交付、源码交付和保留配置
+- [x] 后端目标测试：`go test ./internal/handler -run 'TestUpdateComponent(PersistsRuntimeConfig|RejectsNonMembers|RejectsNonMembersBeforePayloadValidation|KeepsRegistryImageInSyncForImageDelivery|CanSwitchDraftToSourceDelivery|KeepsExistingConfigWhenConfigOmitted)' -count=1` 先红后绿
+- [x] 后端 handler 测试：`go test ./internal/handler -count=1` 通过
+- [x] 后端全量测试：`make test` 通过
+- [x] Docker 镜像 `v0.1.479` 构建并部署到 kind 集群
+- [x] kind 验证：显式使用 `--context kind-rbac-governance-test` 检查 `paap-server:v0.1.479`，Deployment `1/1 ready`，Pod `paap-server-687945db96-l6m9v` Running；`paap-system` 与 `kpack` Pod 均 Running，节点 Ready
+- [x] CDP 验证：复用 Chrome tab `http://172.18.0.2:30091/catalog`，临时组件 ID=53、临时普通用户 ID=23 PUT `/api/v1/components/53` 更新 `replicas/cpu` 返回 403 和 `application access denied`，组件仍为 `replicas=1,cpu=100m`；临时加入应用 5 成员后，`latest` 镜像 payload 返回 400 和 `component image tag must be explicit; latest is not allowed`，正常 payload 返回 200、`replicas=3,cpu=500m,memory=384Mi,version=v2,status=draft`；临时组件、用户和成员关系已清理，残留计数 0
+- [x] 对应文件：`internal/handler/environment.go`、`internal/handler/environment_test.go`
+- [x] 工作量：S（半天）
+
 ### Task 7.9: KubeVirt 虚拟机
 - [ ] 将 VM 作为新服务类型纳入 `ServiceCatalog`
 - [ ] 用 KubeVirt CRD（`VirtualMachine`）而非 Helm chart 部署
