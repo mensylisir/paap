@@ -103,6 +103,20 @@ describe('Vue view markup', () => {
     }
   })
 
+  it('adds additional namespace inputs to both create environment dialogs', async () => {
+    const appOverview = await import('./AppOverviewView.vue?raw')
+    const appEnvironments = await import('./AppEnvironmentsView.vue?raw')
+
+    for (const source of [appOverview.default, appEnvironments.default]) {
+      expect(source).toContain('附加命名空间')
+      expect(source).toContain('additionalNamespacesInput')
+      expect(source).toContain('parseAdditionalNamespacesInput')
+      expect(source).toContain('additionalNamespaces: parseAdditionalNamespacesInput')
+      expect(source).toContain('database:database')
+      expect(source).toContain('cache:cache')
+    }
+  })
+
   it('adds application member management controls to the app overview', async () => {
     const appOverview = await import('./AppOverviewView.vue?raw')
     const client = await import('../api/client.ts?raw')

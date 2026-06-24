@@ -142,6 +142,11 @@
               </select>
             </div>
             <div class="form-item">
+              <label class="form-label" for="environments-additional-namespaces">附加命名空间</label>
+              <textarea id="environments-additional-namespaces" v-model.trim="envForm.additionalNamespacesInput" class="rail-textarea" rows="3" placeholder="database:database&#10;cache:cache"></textarea>
+              <div class="form-helper">每行一个后缀，可写成 suffix:purpose；默认保留 app 工作负载空间。</div>
+            </div>
+            <div class="form-item">
               <label class="form-label" for="environments-environment-ip-pool">网络地址池</label>
               <input id="environments-environment-ip-pool" class="rail-input environment-ip-pool-state" value="暂未启用" readonly disabled aria-describedby="environments-environment-ip-pool-helper" />
               <div id="environments-environment-ip-pool-helper" class="form-helper">当前环境创建使用平台默认网络规划，自定义 IP 池将在后续版本启用。</div>
@@ -207,7 +212,7 @@ const creating = ref(false)
 const deletingEnvId = ref<number | null>(null)
 const modalError = ref('')
 const deleteError = ref('')
-const envForm = ref({ name: '', identifier: '', mode: 'empty' as string, templateId: '1' })
+const envForm = ref({ name: '', identifier: '', mode: 'empty' as string, templateId: '1', additionalNamespacesInput: '' })
 const pendingDeleteEnv = ref<any | null>(null)
 
 const runningCount = computed(() => environments.value.filter(e => environmentCardStatus(e) === 'running').length)
@@ -255,7 +260,7 @@ async function loadEnvs() {
 }
 
 function openModal() {
-  envForm.value = { name: '', identifier: '', mode: 'empty', templateId: String(templates.value[0]?.id || 1) }
+  envForm.value = { name: '', identifier: '', mode: 'empty', templateId: String(templates.value[0]?.id || 1), additionalNamespacesInput: '' }
   modalError.value = ''
   showModal.value = true
 }
@@ -279,6 +284,7 @@ const submitEnv = async () => {
       identifier: envForm.value.identifier,
       templateId: envForm.value.mode === 'template' ? Number(envForm.value.templateId) : 0,
       fromEmpty: envForm.value.mode === 'empty',
+      additionalNamespaces: parseAdditionalNamespacesInput(envForm.value.additionalNamespacesInput),
     })
     showModal.value = false
     const envId = res.data?.id
@@ -286,6 +292,25 @@ const submitEnv = async () => {
     else await loadEnvs()
   } catch (e: any) { modalError.value = '创建失败：' + (e?.message || '未知错误') }
   finally { creating.value = false }
+}
+
+function parseAdditionalNamespacesInput(value: string) {
+  const seen = new Set<string>()
+  return String(value || '')
+    .split(/[\n,，]+/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .map((item) => {
+      const [rawSuffix, rawPurpose] = item.split(/[:：]/)
+      const suffix = toIdentifier(rawSuffix || '', 'ns')
+      const purpose = toIdentifier(rawPurpose || rawSuffix || '', 'workload')
+      return { suffix, purpose }
+    })
+    .filter((item) => {
+      if (!item.suffix || seen.has(item.suffix)) return false
+      seen.add(item.suffix)
+      return true
+    })
 }
 
 const goToEnv = (envId: number) => router.push(`/apps/${appId}/environments/${envId}`)

@@ -285,7 +285,12 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
   - 测试覆盖：`go test ./internal/handler -run TestCreateEnvironmentAppliesTemplateResourceQuota` 先红后绿；受影响包 `go test ./internal/handler ./internal/k8s` 和完整 `make test` 通过
   - 部署验证：`paap-server:v0.1.498` 已构建、加载到 `kind-rbac-governance-test` 并完成 `paap-system/paap-server` 滚动更新；实际 Deployment 镜像为 `paap-server:v0.1.498`，PAAP/kpack 相关 Pod Running，节点 Ready
   - CDP/API 验证：复用 Chrome tab 登录 token，在应用 1 下用模板 ID 4（轻量开发环境）创建临时环境 `quota-cdp-736204`，kubectl 读取 `paap-app-test/environment quota-cdp-736204` 得到 `{"cpu":"2核","memory":"4GB","storage":"20GB"}`；删除临时环境后 API 返回 404，CR 返回 NotFound
-- [ ] 创建环境时支持模板或表单配置附加 namespace，而不是固定只创建 `app` namespace
+- [x] 创建环境时支持模板或表单配置附加 namespace，而不是固定只创建 `app` namespace
+  - 创建环境 API 新增 `additionalNamespaces`，后端保留默认 `app/workload`，并对表单传入的 suffix/purpose 做规范化和去重后写入 `Environment.spec.additionalNamespaces`
+  - 应用概览和环境列表两个“创建环境”弹窗新增“附加命名空间”输入，支持每行 `suffix:purpose`，例如 `database:database`、`cache:cache`
+  - 测试覆盖：`go test ./internal/handler -run TestCreateEnvironmentAppliesAdditionalNamespaces` 先红后绿；`npm --prefix frontend run test -- src/views/viewMarkup.test.ts -t "additional namespace"`、`go test ./internal/handler ./internal/k8s`、`npm --prefix frontend run test`、`npm --prefix frontend run build`、完整 `make test` 通过
+  - 部署验证：`paap-server:v0.1.499` 已构建、加载到 `kind-rbac-governance-test` 并完成 `paap-system/paap-server` 滚动更新；实际 Deployment 镜像为 `paap-server:v0.1.499`，PAAP/kpack 相关 Pod Running，节点 Ready
+  - CDP/API/kubectl 验证：复用 Chrome tab，在应用 1 下创建临时环境 `ns-cdp-326016`，传入 `database/database` 与 `cache/cache`；kubectl 读取 CR 得到默认 `app/workload` 加两个自定义 namespace，operator 创建 `test-ns-cdp-326016-database`、`test-ns-cdp-326016-cache`；删除临时环境后 CR 和临时 namespace 均返回 NotFound
 - [x] 评估并实现 `ipPool` 调和逻辑；若暂不支持，需要从 UI 和文档中明确标记为未启用
   - 当前决策：暂不启用自定义 `ipPool`，环境创建仍使用平台默认网络规划
   - UI 标记：应用概览和环境列表两个“创建环境”弹窗均展示只读“网络地址池 / 暂未启用”状态，不向创建环境 API 发送 `ipPool`

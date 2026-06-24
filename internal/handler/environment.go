@@ -85,10 +85,11 @@ var (
 const giteaWorkspaceCacheTTL = 15 * time.Second
 
 type CreateEnvRequest struct {
-	Name       string `json:"name" binding:"required"`
-	Identifier string `json:"identifier"`
-	TemplateID uint   `json:"templateId"`
-	FromEmpty  bool   `json:"fromEmpty"`
+	Name                 string                       `json:"name" binding:"required"`
+	Identifier           string                       `json:"identifier"`
+	TemplateID           uint                         `json:"templateId"`
+	FromEmpty            bool                         `json:"fromEmpty"`
+	AdditionalNamespaces []paapv1.AdditionalNamespace `json:"additionalNamespaces"`
 }
 
 type EnvironmentExternalAccess struct {
@@ -1061,9 +1062,7 @@ func CreateEnvironment(c *gin.Context) {
 	// 1) 创建 K8s Environment CR（Operator 会自动创建 namespace + NetworkPolicy + Quota）
 	ctx := context.Background()
 	primaryNS := app.Identifier + "-" + identifier
-	additionalNS := []paapv1.AdditionalNamespace{
-		{Suffix: "app", Purpose: "workload"},
-	}
+	additionalNS := environmentAdditionalNamespaces(req.AdditionalNamespaces)
 	if err := k8s.CreateEnvironmentCR(ctx, app.Identifier, req.Name, identifier, primaryNS, additionalNS, resourceQuota); err != nil {
 		database.DB.Model(&env).Update("status", "error").Update("error_message", err.Error())
 		c.JSON(http.StatusCreated, gin.H{"data": env, "warning": "Environment CR creation failed: " + err.Error()})
@@ -1076,6 +1075,25 @@ func CreateEnvironment(c *gin.Context) {
 	database.DB.Model(&env).Update("status", "creating")
 
 	c.JSON(http.StatusCreated, gin.H{"data": env})
+}
+
+func environmentAdditionalNamespaces(requested []paapv1.AdditionalNamespace) []paapv1.AdditionalNamespace {
+	result := make([]paapv1.AdditionalNamespace, 0, len(requested)+1)
+	seen := map[string]bool{}
+	add := func(suffix, purpose string) {
+		suffix = normalizeIdentifier(suffix, "ns", 40)
+		if seen[suffix] {
+			return
+		}
+		purpose = normalizeIdentifier(firstNonEmpty(purpose, suffix), "workload", 40)
+		seen[suffix] = true
+		result = append(result, paapv1.AdditionalNamespace{Suffix: suffix, Purpose: purpose})
+	}
+	add("app", "workload")
+	for _, item := range requested {
+		add(item.Suffix, item.Purpose)
+	}
+	return result
 }
 
 func environmentTemplateResourceQuota(templateID uint) *paapv1.ResourceQuotaSpec {

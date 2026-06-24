@@ -204,6 +204,11 @@
               </select>
             </div>
             <div class="form-item">
+              <label class="form-label" for="overview-additional-namespaces">附加命名空间</label>
+              <textarea id="overview-additional-namespaces" v-model.trim="envForm.additionalNamespacesInput" class="rail-textarea" rows="3" placeholder="database:database&#10;cache:cache"></textarea>
+              <div class="form-helper">每行一个后缀，可写成 suffix:purpose；默认保留 app 工作负载空间。</div>
+            </div>
+            <div class="form-item">
               <label class="form-label" for="overview-environment-ip-pool">网络地址池</label>
               <input id="overview-environment-ip-pool" class="rail-input environment-ip-pool-state" value="暂未启用" readonly disabled aria-describedby="overview-environment-ip-pool-helper" />
               <div id="overview-environment-ip-pool-helper" class="form-helper">当前环境创建使用平台默认网络规划，自定义 IP 池将在后续版本启用。</div>
@@ -271,7 +276,7 @@ const removingMemberId = ref<number | null>(null)
 const modalError = ref('')
 const deleteError = ref('')
 const memberError = ref('')
-const envForm = ref({ name: '', identifier: '', mode: 'empty' as string, templateId: '1' })
+const envForm = ref({ name: '', identifier: '', mode: 'empty' as string, templateId: '1', additionalNamespacesInput: '' })
 const memberForm = ref({ username: '', role: 'member' })
 const pendingDeleteEnv = ref<any | null>(null)
 const memberRoles = [
@@ -341,7 +346,7 @@ onMounted(async () => {
 
 const goToEnv = (envId: number) => router.push(`/apps/${appId}/environments/${envId}`)
 const openCreateEnvironmentModal = () => {
-  envForm.value = { name: '', identifier: '', mode: 'empty', templateId: String(templates.value[0]?.id || 1) }
+  envForm.value = { name: '', identifier: '', mode: 'empty', templateId: String(templates.value[0]?.id || 1), additionalNamespacesInput: '' }
   modalError.value = ''
   showCreateEnvModal.value = true
 }
@@ -359,6 +364,7 @@ const submitEnvironment = async () => {
       identifier: envForm.value.identifier,
       templateId: envForm.value.mode === 'template' ? Number(envForm.value.templateId) : 0,
       fromEmpty: envForm.value.mode === 'empty',
+      additionalNamespaces: parseAdditionalNamespacesInput(envForm.value.additionalNamespacesInput),
     })
     showCreateEnvModal.value = false
     const envId = res.data?.id || res.data?.environment?.id
@@ -369,6 +375,25 @@ const submitEnvironment = async () => {
   } finally {
     creatingEnv.value = false
   }
+}
+
+function parseAdditionalNamespacesInput(value: string) {
+  const seen = new Set<string>()
+  return String(value || '')
+    .split(/[\n,，]+/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .map((item) => {
+      const [rawSuffix, rawPurpose] = item.split(/[:：]/)
+      const suffix = toIdentifier(rawSuffix || '', 'ns')
+      const purpose = toIdentifier(rawPurpose || rawSuffix || '', 'workload')
+      return { suffix, purpose }
+    })
+    .filter((item) => {
+      if (!item.suffix || seen.has(item.suffix)) return false
+      seen.add(item.suffix)
+      return true
+    })
 }
 
 const openDeleteEnvironmentDialog = (env: any) => {
