@@ -266,7 +266,11 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 - [ ] 在前端补齐环境模板管理 UI，而不只是读取模板列表
 - [ ] 创建环境时支持从模板写入 CPU、内存、存储配额到 `Environment.spec.resourceQuota`
 - [ ] 创建环境时支持模板或表单配置附加 namespace，而不是固定只创建 `app` namespace
-- [ ] 评估并实现 `ipPool` 调和逻辑；若暂不支持，需要从 UI 和文档中明确标记为未启用
+- [x] 评估并实现 `ipPool` 调和逻辑；若暂不支持，需要从 UI 和文档中明确标记为未启用
+  - 当前决策：暂不启用自定义 `ipPool`，环境创建仍使用平台默认网络规划
+  - UI 标记：应用概览和环境列表两个“创建环境”弹窗均展示只读“网络地址池 / 暂未启用”状态，不向创建环境 API 发送 `ipPool`
+  - 前端验证：`npm --prefix frontend run test -- src/views/viewMarkup.test.ts -t 'marks environment IP pool selection'` 先红后绿，`npm --prefix frontend run test`、`npm --prefix frontend run build` 通过
+  - 部署验证：`paap-server:v0.1.494` 已加载到 `kind-rbac-governance-test` 并完成 `paap-system/paap-server` 滚动更新；CDP 验证 `/apps/1/overview?createEnvironment=true` 和 `/apps/1/environments?create=true` 两个弹窗字段均为只读禁用状态
 - [ ] 支持创建环境后的 namespace 增删，并触发工具 RBAC 与 Helm values 动态同步
 
 ### Task 6.3: 服务目录占位项落地

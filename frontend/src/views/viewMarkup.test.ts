@@ -90,6 +90,19 @@ describe('Vue view markup', () => {
     expect(appOverview.default).not.toContain('environments?create=true')
   })
 
+  it('marks environment IP pool selection as unavailable in both create environment dialogs', async () => {
+    const appOverview = await import('./AppOverviewView.vue?raw')
+    const appEnvironments = await import('./AppEnvironmentsView.vue?raw')
+
+    for (const source of [appOverview.default, appEnvironments.default]) {
+      expect(source).toContain('网络地址池')
+      expect(source).toContain('暂未启用')
+      expect(source).toContain('environment-ip-pool-state')
+      expect(source).not.toContain('v-model="envForm.ipPool"')
+      expect(source).not.toContain('ipPool: envForm.value.ipPool')
+    }
+  })
+
   it('runs embedded workspace form actions in the environment page instead of opening the old service detail page', async () => {
     const envDetail = await import('./EnvDetailView.vue?raw')
 

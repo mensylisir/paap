@@ -141,6 +141,11 @@
                 <option v-for="t in templates" :key="t.id" :value="String(t.id)">{{ t.name }}</option>
               </select>
             </div>
+            <div class="form-item">
+              <label class="form-label" for="environments-environment-ip-pool">网络地址池</label>
+              <input id="environments-environment-ip-pool" class="rail-input environment-ip-pool-state" value="暂未启用" readonly disabled aria-describedby="environments-environment-ip-pool-helper" />
+              <div id="environments-environment-ip-pool-helper" class="form-helper">当前环境创建使用平台默认网络规划，自定义 IP 池将在后续版本启用。</div>
+            </div>
             <div v-if="modalError" class="form-error" role="alert">{{ modalError }}</div>
           </div>
           <div class="modal-footer">
