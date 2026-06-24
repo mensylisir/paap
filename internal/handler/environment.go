@@ -3121,8 +3121,6 @@ func GetServiceRuntimeLogs(c *gin.Context) {
 }
 
 func GetComponentRuntimeMetrics(c *gin.Context) {
-	syncClusterStateIfPossible()
-
 	envID, _ := strconv.Atoi(c.Param("id"))
 	componentID, _ := strconv.Atoi(c.Param("componentId"))
 
@@ -3131,6 +3129,12 @@ func GetComponentRuntimeMetrics(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "environment not found"})
 		return
 	}
+	if !requireApplicationAccess(c, env.ApplicationID) {
+		return
+	}
+
+	syncClusterStateIfPossible()
+
 	var comp model.Component
 	if err := database.DB.Where("id = ? AND environment_id = ?", componentID, envID).First(&comp).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
