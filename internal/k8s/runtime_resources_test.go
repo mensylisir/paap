@@ -39,6 +39,64 @@ func TestListNamespaceRuntimeResources(t *testing.T) {
 	}
 }
 
+func TestDiscoverNamespaceServiceNetworkReturnsPrimaryServiceIPs(t *testing.T) {
+	previous := GetClient()
+	t.Cleanup(func() { SetClient(previous) })
+
+	SetClient(fake.NewClientBuilder().WithObjects(
+		&corev1.Service{
+			ObjectMeta: metav1.ObjectMeta{Name: "redis-headless", Namespace: "billing-dev-redis"},
+			Spec: corev1.ServiceSpec{
+				Type:      corev1.ServiceTypeClusterIP,
+				ClusterIP: corev1.ClusterIPNone,
+				Ports:     []corev1.ServicePort{{Name: "tcp", Port: 6379}},
+			},
+		},
+		&corev1.Service{
+			ObjectMeta: metav1.ObjectMeta{Name: "redis-metrics", Namespace: "billing-dev-redis"},
+			Spec: corev1.ServiceSpec{
+				Type:      corev1.ServiceTypeClusterIP,
+				ClusterIP: "10.96.0.99",
+				Ports:     []corev1.ServicePort{{Name: "metrics", Port: 9121}},
+			},
+		},
+		&corev1.Service{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "redis-master",
+				Namespace: "billing-dev-redis",
+				Labels: map[string]string{
+					"app.kubernetes.io/name":      "redis",
+					"app.kubernetes.io/component": "master",
+				},
+			},
+			Spec: corev1.ServiceSpec{
+				Type:      corev1.ServiceTypeLoadBalancer,
+				ClusterIP: "10.96.0.12",
+				Ports:     []corev1.ServicePort{{Name: "tcp", Port: 6379}},
+			},
+			Status: corev1.ServiceStatus{
+				LoadBalancer: corev1.LoadBalancerStatus{
+					Ingress: []corev1.LoadBalancerIngress{{IP: "172.18.0.240"}},
+				},
+			},
+		},
+	).Build())
+
+	got, err := DiscoverNamespaceServiceNetwork(t.Context(), "billing-dev-redis", "redis")
+	if err != nil {
+		t.Fatalf("discover service network: %v", err)
+	}
+	if got.ServiceName != "redis-master" {
+		t.Fatalf("service name = %q, want redis-master", got.ServiceName)
+	}
+	if got.ClusterIP != "10.96.0.12" {
+		t.Fatalf("cluster IP = %q, want 10.96.0.12", got.ClusterIP)
+	}
+	if got.LoadBalancerIP != "172.18.0.240" {
+		t.Fatalf("load balancer IP = %q, want 172.18.0.240", got.LoadBalancerIP)
+	}
+}
+
 func TestListNamespaceAdoptableResourcesDiscoversRealWorkloads(t *testing.T) {
 	previous := GetClient()
 	t.Cleanup(func() { SetClient(previous) })

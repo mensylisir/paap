@@ -120,6 +120,7 @@
                   />
                   <strong v-else>{{ node.name }}</strong>
                   <small>{{ environmentTopologyNodeSubtitle(node) }}</small>
+                  <span v-if="serviceNodeNetworkSummary(node)" class="node-external-url" :title="serviceNodeNetworkSummary(node)">{{ serviceNodeNetworkSummary(node) }}</span>
                   <span
                     class="node-delete-action"
                     role="button"
@@ -572,6 +573,7 @@
                   />
                   <strong v-else>{{ node.name }}</strong>
                   <small>{{ topologyNodeSubtitle(node) }}</small>
+                  <span v-if="serviceNodeNetworkSummary(node)" class="node-external-url" :title="serviceNodeNetworkSummary(node)">{{ serviceNodeNetworkSummary(node) }}</span>
                   <span
                     class="node-delete-action"
                     role="button"
@@ -846,6 +848,12 @@
                 <div class="service-access-row">
                   <span>环境内</span>
                   <code>{{ serviceDrawerInternalEndpoint || '等待生成' }}</code>
+                </div>
+                <div v-if="serviceDrawerNetworkRows.length" class="service-access-row service-access-row--network">
+                  <span>运行地址</span>
+                  <div class="service-access-values">
+                    <code v-for="row in serviceDrawerNetworkRows" :key="row.label" :title="`${row.label}: ${row.value}`">{{ row.label }} {{ row.value }}</code>
+                  </div>
                 </div>
                 <div class="service-access-row service-access-row--action">
                   <span>外部访问</span>
@@ -2098,6 +2106,7 @@ import {
   serializeComponentTopologyDisplayNames,
   serializeComponentTopologyManualEdges,
   serializeComponentTopologyPositions,
+  serviceNetworkSummary,
 } from './componentTopology'
 import {
   buildComponentProfile,
@@ -4510,6 +4519,16 @@ const serviceDrawerPreviewService = computed(() => {
 const serviceDrawerRuntimeRows = computed(() => drawerService.value || configDrawer.value.component
   ? serviceRuntimeDetailRows(drawerService.value || configDrawer.value.component)
   : [])
+const serviceNodeNetworkSummary = (node:any) => serviceNetworkSummary(node)
+const serviceDrawerNetworkRows = computed(() => {
+  const svc = drawerService.value
+  if (!svc) return []
+  return [
+    { label: '运行服务', value: String(svc.runtimeServiceName || '').trim() },
+    { label: '集群内 IP', value: String(svc.clusterIP || '').trim() },
+    { label: '负载均衡 IP', value: String(svc.loadBalancerIP || '').trim() },
+  ].filter(row => row.value)
+})
 const serviceDrawerConnectionPreview = computed(() => connectionBindingPreview({ env: [] }, serviceDrawerPreviewService.value || drawerService.value || {}))
 const serviceDrawerTopology = computed(() => serviceTopologyFromWorkspace(drawerService.value || {}, serviceDrawerWorkspace.value?.resources || []))
 const serviceDrawerConfigurable = computed(() => serviceDrawerProfile.value.showDeploymentConfig && serviceDrawerConfigFields.value.length > 0)
@@ -8620,6 +8639,13 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 .service-access-row strong {
   color: var(--paap-muted);
   font-family: inherit;
+}
+.service-access-values {
+  display: flex;
+  flex-wrap: wrap;
+  grid-column: 2 / -1;
+  gap: 6px;
+  min-width: 0;
 }
 .service-access-row .text-btn {
   white-space: nowrap;

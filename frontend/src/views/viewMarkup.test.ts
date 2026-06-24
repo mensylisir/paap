@@ -356,7 +356,7 @@ describe('Vue view markup', () => {
     expect(registryWorkspace.default).toContain('配置节点运行时信任')
     expect(registryWorkspace.default).toContain('证书下载地址')
     expect(registryWorkspace.default).toContain('内网默认按自签或企业 CA 处理')
-    expect(registryWorkspace.default).toContain('kpack build pod')
+    expect(registryWorkspace.default).toContain('构建服务')
   })
 
   it('counts registry overview resources using the real workspace resource types', async () => {
@@ -628,7 +628,7 @@ describe('Vue view markup', () => {
     expect(componentDetail.default).toContain('selectResourceNode')
     expect(componentDetail.default).toContain('resourceDetailRows')
     expect(componentDetail.default).toContain('资源详情')
-    expect(componentDetail.default).toContain('不会根据状态推断未返回的 Pod 或 ReplicaSet')
+    expect(componentDetail.default).toContain('不会根据状态推断未返回的运行实例或副本集')
   })
 
   it('lets component detail configure runtime env before explicit deploy', async () => {
@@ -637,8 +637,8 @@ describe('Vue view markup', () => {
 
     expect(componentDetail.default).toContain('运行配置')
     expect(componentDetail.default).toContain('保存配置不会部署')
-    expect(componentDetail.default).toContain('SecretKeyRef')
-    expect(componentDetail.default).toContain('ConfigMapKeyRef')
+    expect(componentDetail.default).toContain('凭据引用')
+    expect(componentDetail.default).toContain('配置引用')
     expect(componentDetail.default).toContain('saveComponentConfig')
     expect(componentDetail.default).toContain('deployCurrentComponent')
     expect(componentDetail.default).toContain('api.updateComponent')
@@ -851,6 +851,15 @@ describe('Vue view markup', () => {
     expect(envDetail.default).not.toContain('activeCapabilityWorkspace.config')
     expect(envDetail.default).not.toContain('v-for="item in activeCapabilityWorkspace.config"')
     expect(envDetail.default).not.toContain('workspace-config-link')
+  })
+
+  it('renders service network addresses on topology cards and service drawers', async () => {
+    const envDetail = await import('./EnvDetailView.vue?raw')
+
+    expect(envDetail.default).toContain('serviceNetworkSummary')
+    expect(envDetail.default).toContain('serviceNodeNetworkSummary(node)')
+    expect(envDetail.default).toContain('serviceDrawerNetworkRows')
+    expect(envDetail.default).toContain('运行地址')
   })
 
   it('renders data and middleware workspaces with selectable object details and object actions', async () => {
@@ -1233,9 +1242,10 @@ describe('Vue view markup', () => {
     expect(envDetail.default).toContain('service-config-field')
     expect(envDetail.default).toContain('部署参数可编辑')
     expect(envDetail.default).toContain('接入变量只读')
-    expect(envDetail.default).toContain('运行态只读')
+    expect(envDetail.default).toContain('实例拓扑')
+    expect(envDetail.default).toContain('运行详情')
     expect(envDetail.default).toContain('保存后写入服务部署参数')
-    expect(envDetail.default).toContain('服务接入变量由模板、Secret 和运行态发现生成')
+    expect(envDetail.default).toContain('服务接入变量由模板、敏感配置和运行态发现生成')
     expect(envDetail.default).not.toContain('showServiceNewVariableHint')
     expect(envDetail.default).not.toContain('新增参数')
   })

@@ -118,8 +118,12 @@ type ComponentView struct {
 
 type ServiceInstallationView struct {
 	model.ServiceInstallation
-	RuntimeConfig *k8s.RuntimeConfig `json:"runtimeConfig,omitempty"`
-	ExternalURL   string             `json:"externalUrl,omitempty"`
+	RuntimeConfig      *k8s.RuntimeConfig `json:"runtimeConfig,omitempty"`
+	ExternalURL        string             `json:"externalUrl,omitempty"`
+	RuntimeServiceName string             `json:"runtimeServiceName,omitempty"`
+	RuntimeServiceType string             `json:"runtimeServiceType,omitempty"`
+	ClusterIP          string             `json:"clusterIP,omitempty"`
+	LoadBalancerIP     string             `json:"loadBalancerIP,omitempty"`
 }
 
 type CreateComponentRequest struct {
@@ -1567,6 +1571,14 @@ func enrichServiceInstallationViews(ctx context.Context, services []model.Servic
 		} else if err != nil {
 			log.Printf("[GetEnvironment] discover service runtime config failed service=%s namespace=%s: %v", inst.ServiceType, inst.Namespace, err)
 		}
+		if network, err := k8s.DiscoverNamespaceServiceNetwork(ctx, inst.Namespace, inst.ServiceType); err == nil && network != nil {
+			view.RuntimeServiceName = network.ServiceName
+			view.RuntimeServiceType = network.ServiceType
+			view.ClusterIP = network.ClusterIP
+			view.LoadBalancerIP = network.LoadBalancerIP
+		} else if err != nil {
+			log.Printf("[GetEnvironment] discover service network failed service=%s namespace=%s: %v", inst.ServiceType, inst.Namespace, err)
+		}
 		view.ExternalURL = serviceExternalURL(inst, access)
 		views = append(views, view)
 	}
@@ -2655,8 +2667,15 @@ func ListServiceInstances(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	enrichServiceInstallationsWithCRStatus(c.Request.Context(), envID, services)
-	c.JSON(http.StatusOK, gin.H{"data": services})
+	ctx := c.Request.Context()
+	enrichServiceInstallationsWithCRStatus(ctx, envID, services)
+	var env model.Environment
+	if err := database.DB.First(&env, envID).Error; err != nil {
+		c.JSON(http.StatusOK, gin.H{"data": enrichServiceInstallationViews(ctx, services, nil)})
+		return
+	}
+	access := collectEnvironmentExternalAccess(ctx, env)
+	c.JSON(http.StatusOK, gin.H{"data": enrichServiceInstallationViews(ctx, services, access)})
 }
 
 func enrichServiceInstallationsWithCRStatus(ctx context.Context, envID int, services []model.ServiceInstallation) {
@@ -2748,10 +2767,12 @@ func GetServiceInstance(c *gin.Context) {
 	if err != nil {
 		log.Printf("[GetServiceInstance] CR status query warning: %v", err)
 	}
+	access := collectEnvironmentExternalAccess(context.Background(), env)
+	view := enrichServiceInstallationViews(context.Background(), []model.ServiceInstallation{inst}, access)[0]
 
 	c.JSON(http.StatusOK, gin.H{
 		"data": gin.H{
-			"installation": inst,
+			"installation": view,
 			"crStatus":     crStatus,
 		},
 	})

@@ -20,6 +20,13 @@ type RuntimeResource struct {
 	Description string
 }
 
+type ServiceNetworkInfo struct {
+	ServiceName    string `json:"serviceName,omitempty"`
+	ServiceType    string `json:"serviceType,omitempty"`
+	ClusterIP      string `json:"clusterIP,omitempty"`
+	LoadBalancerIP string `json:"loadBalancerIP,omitempty"`
+}
+
 type AdoptableResource struct {
 	Key           string         `json:"key"`
 	Name          string         `json:"name"`
@@ -130,6 +137,54 @@ func ListNamespaceRuntimeResources(ctx context.Context, namespace string) ([]Run
 		})
 	}
 	return resources, nil
+}
+
+func DiscoverNamespaceServiceNetwork(ctx context.Context, namespace, serviceType string) (*ServiceNetworkInfo, error) {
+	namespace = strings.TrimSpace(namespace)
+	if namespace == "" {
+		return nil, nil
+	}
+	cl, err := requireClient()
+	if err != nil {
+		return nil, err
+	}
+	services := &corev1.ServiceList{}
+	if err := cl.List(ctx, services, client.InNamespace(namespace)); err != nil {
+		return nil, fmt.Errorf("list services: %w", err)
+	}
+	target := externalAccessTargetService(services.Items, serviceType)
+	if target == nil {
+		return nil, nil
+	}
+	info := &ServiceNetworkInfo{
+		ServiceName: target.Name,
+		ServiceType: string(target.Spec.Type),
+		ClusterIP:   serviceClusterIP(target.Spec.ClusterIP),
+	}
+	info.LoadBalancerIP = serviceLoadBalancerIP(target.Status.LoadBalancer.Ingress)
+	return info, nil
+}
+
+func serviceClusterIP(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" || value == corev1.ClusterIPNone {
+		return ""
+	}
+	return value
+}
+
+func serviceLoadBalancerIP(ingresses []corev1.LoadBalancerIngress) string {
+	for _, ingress := range ingresses {
+		if ip := strings.TrimSpace(ingress.IP); ip != "" {
+			return ip
+		}
+	}
+	for _, ingress := range ingresses {
+		if host := strings.TrimSpace(ingress.Hostname); host != "" {
+			return host
+		}
+	}
+	return ""
 }
 
 func ListNamespaceAdoptableResources(ctx context.Context, namespace string) ([]AdoptableResource, error) {

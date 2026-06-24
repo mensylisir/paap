@@ -1289,8 +1289,9 @@ func TestGetEnvironmentReturnsApplicationAndServiceExternalAccess(t *testing.T) 
 		&corev1.Service{
 			ObjectMeta: metav1.ObjectMeta{Name: "gitea-http", Namespace: "billing-dev-git"},
 			Spec: corev1.ServiceSpec{
-				Type:  corev1.ServiceTypeNodePort,
-				Ports: []corev1.ServicePort{{Name: "http", Port: 3000, NodePort: 30091}},
+				Type:      corev1.ServiceTypeNodePort,
+				ClusterIP: "10.96.0.31",
+				Ports:     []corev1.ServicePort{{Name: "http", Port: 3000, NodePort: 30091}},
 			},
 		},
 	).Build())
@@ -1316,10 +1317,25 @@ func TestGetEnvironmentReturnsApplicationAndServiceExternalAccess(t *testing.T) 
 				ServiceID   uint   `json:"serviceId"`
 				ServiceType string `json:"serviceType"`
 			} `json:"externalAccess"`
+			Services []struct {
+				ServiceType        string `json:"serviceType"`
+				RuntimeServiceName string `json:"runtimeServiceName"`
+				ClusterIP          string `json:"clusterIP"`
+				LoadBalancerIP     string `json:"loadBalancerIP"`
+			} `json:"services"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode response: %v", err)
+	}
+	if len(body.Data.Services) != 1 {
+		t.Fatalf("services length = %d, want 1: %#v", len(body.Data.Services), body.Data.Services)
+	}
+	if body.Data.Services[0].RuntimeServiceName != "gitea-http" {
+		t.Fatalf("runtime service name = %q, want gitea-http", body.Data.Services[0].RuntimeServiceName)
+	}
+	if body.Data.Services[0].ClusterIP != "10.96.0.31" {
+		t.Fatalf("cluster IP = %q, want 10.96.0.31", body.Data.Services[0].ClusterIP)
 	}
 	gotURLs := map[string]struct{}{}
 	for _, endpoint := range body.Data.ExternalAccess {

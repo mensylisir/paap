@@ -16,6 +16,10 @@ export type ComponentTopologyComponent = {
   serviceId?: string | number
   componentId?: string | number
   externalUrl?: string
+  runtimeServiceName?: string
+  runtimeServiceType?: string
+  clusterIP?: string
+  loadBalancerIP?: string
 }
 
 export type ComponentTopologyEdge = {
@@ -167,6 +171,17 @@ export const buildComponentTopologyLanes = (components: ComponentTopologyCompone
       nodes: components.filter((comp) => componentLaneKey(comp) === key),
     }))
     .filter((lane) => lane.nodes.length > 0)
+
+export const serviceNetworkSummary = (node: ComponentTopologyComponent) => {
+  const runtimeServiceName = String(node?.runtimeServiceName || '').trim()
+  const clusterIP = String(node?.clusterIP || '').trim()
+  const loadBalancerIP = String(node?.loadBalancerIP || '').trim()
+  return [
+    runtimeServiceName,
+    clusterIP ? `集群内 ${clusterIP}` : '',
+    loadBalancerIP ? `负载均衡 ${loadBalancerIP}` : '',
+  ].filter(Boolean).join(' · ')
+}
 
 export const explicitComponentDependencies = (comp: ComponentTopologyComponent) => {
   const config = parseComponentConfig(comp?.config)

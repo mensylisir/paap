@@ -372,76 +372,6 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 - [ ] 镜像密集操作前后检查磁盘空间，避免 Docker/kind 占满磁盘
 - [ ] 将当前路线图拆到 Plane/Gitea，用于后续任务分配和 CI/CD 协作
 
-### Task 6.8: 产品化抽屉与运行态证据审计
-- [ ] 对 Gitea、Registry、Harbor、Argo CD、Jenkins、Prometheus/Grafana、Loki、PostgreSQL、MySQL、MongoDB、Redis、RabbitMQ、Kafka、MinIO 做逐项 CDP 抽屉审计
-- [ ] 对每个组件、工具、中间件卡片验证真实指标、空状态、时间范围、图表比例和无误导占位值
-- [ ] 对每个组件、工具、中间件卡片验证真实日志，消除 `no such host`、假数据和占位日志
-- [ ] 对每个常见工具/中间件 Pod 验证控制台连接，包括无 shell 镜像和禁用 ephemeral container 的场景
-- [ ] 对所有 workspace resource、metric、log、backup、key、queue、topic、bucket、deployment 行建立真实后端/API/集群来源证明
-- [ ] 对每次重要 UI 改动使用可见 Chrome CDP 回归测试，不只依赖 headless smoke
-
-### Task 6.9: 数据库、中间件与存储工作台补证
-- [ ] PostgreSQL 工作台重新 CDP 验证 database/table/row create、insert、update、delete 和 backup 输出
-- [ ] MySQL 工作台重新 CDP 验证 database/table/row create、insert、update、delete 和 backup 输出
-- [ ] MySQL replica、dual-master、Galera 模式分别验证 Helm values、Pod、Service、PVC 与工作台行为
-- [ ] MongoDB、Kafka、MinIO 补充对象级、失败状态和边界输入验证
-- [ ] RabbitMQ 补充失败状态、边界输入和权限不足场景验证
-- [ ] 数据库备份补齐 list、download、restore 的产品决策、实现和 CDP 证据
-
-### Task 6.10: 服务配置更新与拓扑模式验证
-- [ ] 对每个支持持久卷的服务逐 chart 验证 PV size values 映射、Helm 输出、PVC 创建和运行实例状态
-- [ ] 对不支持在线扩容或受 Kubernetes PVC expansion 限制的场景展示清晰用户提示
-- [ ] 验证 Redis standalone、replication、Sentinel、cluster 模式的部署结果和工作台状态
-- [ ] 验证 PostgreSQL standalone、replica、HA 模式的部署结果和工作台状态
-- [ ] 验证 MySQL standalone、replica、dual-master、Galera 模式的部署结果和工作台状态
-- [ ] 对运行中 ServiceInstance 的高风险 values 更新执行 Helm/operator 调和验证，避免 stale UI 状态
-
-### Task 6.11: 组件配置模板与关系自动识别
-- [ ] 扩充内置组件配置模板：nginx 多后端路由、Spring Boot datasource/cache/mq profiles、Gin/Go 配置、Node/Vite API 配置、配置文件型应用
-- [ ] 重设计配置模板导入 UI，使用白色 Carbon 表单视觉，避免重灰输入块
-- [ ] 将配置模板导入的“适用组件”改为 select/combobox 控件
-- [ ] 导入流程同时支持普通原生配置模板和高级 template/schema JSON，并清晰区分两种模式
-- [ ] 模板预览展示原始内容、抽取字段、敏感字段、生成文件和校验错误，不要求用户理解 Kubernetes 对象名
-- [ ] 增强 configmap、secret、file-based config 解析，让后端到数据库/缓存/消息队列关系能安全自动连线
-
-### Task 6.12: 降低 Kubernetes 术语暴露
-- [ ] 全量检查页面、抽屉和工作台中的 namespace、service、pod、configmap、secret、pvc、helm 等术语
-- [ ] 默认视图用产品语言替换 Kubernetes 术语，仅在高级/调试视图保留底层字段
-- [ ] 为必须展示的底层概念补充上下文，避免应用管理员理解成本过高
-
-### Task 6.13: 外部能力与共享能力模型
-- [ ] 新增统一 `EnvironmentCapability` 模型，覆盖 `git`、`registry`、`ci`、`cd`、`monitor`、`logging`、`database`、`cache`、`mq`、`objectStorage`
-- [ ] 每个 capability 支持 `managed`、`shared`、`external` 来源，并记录 provider、连接配置、验证结果和标准输出
-- [ ] 环境模板声明 required capabilities，而不是硬编码必须安装 PAAP 管理实例
-- [ ] 创建环境时支持 `platform install`、`use shared`、`external connection`、`configure later`
-- [ ] default 共享环境只允许安装工具/中间件，不允许部署业务组件，且不可被普通用户删除
-- [ ] 卡片和抽屉明确展示 `platform managed`、`shared`、`external` 来源和断开/卸载语义
-- [ ] 对 external Git、Registry、Argo CD、Jenkins、Prometheus、Loki、PostgreSQL、Redis、RabbitMQ、Kafka、MinIO 做真实连接与权限验证
-- [ ] external 来源删除只移除 PAAP 连接记录和本地凭据，不能删除真实外部资源
-
-### Task 6.14: 平台目录、版本选择与服务暴露
-- [ ] 安装/编辑中间件时提供版本下拉，数据来自同 `ServiceType` 下的 `ServiceTemplate.ChartVersion`
-- [ ] 增加“平台支持的中间件/工具目录”只读浏览页，按工具/数据库/缓存/消息队列/对象存储分组
-- [ ] 平台管理员支持维护 `ServiceCatalog` 和 `ServiceTemplate`，包括新增类型、上传 chart、维护版本列表
-- [ ] 组件和服务增加 Ingress/Gateway 暴露配置：域名、路径、TLS 和状态回读
-- [ ] 组件和服务展示 `clusterIP`、LoadBalancer IP 等 ServiceIP 信息，并明确是否可编辑
-- [ ] 对共享工具 namespace 和外部 endpoint 补齐 NetworkPolicy ingress/egress 放行策略
-
-### Task 6.15: 弹性、多集群与虚拟化路线图
-- [ ] 引入 KEDA 伸缩配置：最小/最大副本、触发器、生成 `ScaledObject` 和状态展示
-- [ ] 评估并接入 KubeVirt，将 VM 数据库作为服务类型纳入生命周期和备份管理
-- [ ] 引入 `Cluster` 模型，支持注册集群、存储 kubeconfig、按标签选择部署目标
-- [ ] 为环境增加 `ClusterID`，让 Application/Environment/ServiceInstance/Component 能面向多集群调和
-- [ ] 规划双集群 Argo CD 主从或主控多集群模式，并验证跨集群部署链路
-- [ ] 评估 Submariner、VXLAN、WireGuard 等跨集群/虚拟机网络方案，形成可执行专项设计
-
-### Task 6.16: 本地 kind 发布与运维约束
-- [ ] 建立镜像 tag 自动递增流程，构建后同步更新部署清单并部署到 `kind-rbac-governance-test`
-- [ ] 对所有新增镜像执行本地 pull/build 和 `kind load docker-image --name rbac-governance-test`
-- [ ] 浏览器访问 kind 服务时固定使用 kind node/container IP，避免误用 `127.0.0.1`
-- [ ] 镜像密集操作前后检查磁盘空间，避免 Docker/kind 占满磁盘
-- [ ] 将当前路线图拆到 Plane/Gitea，用于后续任务分配和 CI/CD 协作
-
 ---
 
 ## 阶段七：领导需求与产品化补齐（2026-06-23 扫描）
@@ -513,11 +443,15 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 - [ ] 当前状态：`external_access.go` 可读取，`component_types.go` 有 `IngressSpec`，画布有分组卡片
 - [ ] 工作量：1-1.5 周
 
-### Task 7.7: ServiceIP 展示
-- [ ] 从 K8s 读回 `Service.spec.clusterIP` / `LoadBalancer IP`
-- [ ] 在卡片和 drawer 展示
-- [ ] 当前状态：无展示/分配
-- [ ] 工作量：0.5-1 周
+### Task 7.7: ServiceIP 展示 ✅
+- [x] 从 K8s 读回 `Service.spec.clusterIP` / `LoadBalancer IP`
+- [x] 在拓扑卡片和服务 drawer 的“运行地址”区块展示运行服务名、集群内 IP、负载均衡 IP
+- [x] 后端 `ServiceInstallationView` 增加 `runtimeServiceName`、`runtimeServiceType`、`clusterIP`、`loadBalancerIP`
+- [x] `ListServiceInstances`、`GetEnvironment`、`GetServiceInstance` 返回同一套增强 service view
+- [x] Docker 镜像 `v0.1.440` 构建并部署到 kind 集群
+- [x] CDP 验证：`prod-redis` 画布卡片显示 `集群内 10.96.180.125`，drawer 显示 `运行地址 / 集群内 IP 10.96.180.125`
+- [x] 对应文件：`internal/k8s/runtime_resources.go`、`internal/handler/environment.go`、`frontend/src/views/componentTopology.ts`、`frontend/src/views/EnvDetailView.vue`
+- [x] 工作量：S（半天）
 
 ### Task 7.8: 认证鉴权体系升级
 - [ ] 内存 token 替换为签名 JWT（`auth.go:18`）
@@ -691,7 +625,7 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 - [ ] **Go/Gin 系列 (3 个)**: YAML / TOML / INI 格式
 - [ ] **Python 系列 (2 个)**: FastAPI + PG+Redis / Django + PG+Redis
 - [ ] **Node/TS 系列 (2 个)**: NestJS + PG+Redis (.env) / Vue/React Vite (.env.production)
-- [ ] 每个模板提取为 Go template，变量部分标记为 `{{ .VarName }}` 占位符
+- [ ] 每个模板只提取关键字段为模板变量
 - [ ] 前端组件配置 Tab 中的"模板"下拉菜单选择后填充配置编辑区
 - [ ] 当前状态：`docs/配置示例.md` 含 20 个纯文本示例，未被模板系统收录
 - [ ] 对应文件：`data/config-templates/`（新建）、`internal/service/renderer.go`、`frontend/src/views/ComponentDetailView.vue`（配置 Tab）

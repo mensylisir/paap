@@ -16,6 +16,7 @@ import {
   serializeComponentTopologyDisplayNames,
   serializeComponentTopologyManualEdges,
   serializeComponentTopologyPositions,
+  serviceNetworkSummary,
   shouldSuppressComponentTopologyClick,
 } from './componentTopology'
 
@@ -69,6 +70,15 @@ describe('componentTopology', () => {
       { topologyId: 'service:10', topologyKind: 'service', name: 'redis-cache' },
     ])
     expect(buildComponentDependencyEdges(nodes)).toEqual([])
+  })
+
+  it('formats service network addresses for canvas cards', () => {
+    expect(serviceNetworkSummary({
+      topologyKind: 'service',
+      runtimeServiceName: 'redis-master',
+      clusterIP: '10.96.0.12',
+      loadBalancerIP: '172.18.0.240',
+    })).toBe('redis-master · 集群内 10.96.0.12 · 负载均衡 172.18.0.240')
   })
 
   it('keeps installed tools as canvas nodes in the platform tools lane', () => {
