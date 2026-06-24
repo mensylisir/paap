@@ -1682,6 +1682,7 @@ func TestGetServiceWorkspaceReturnsBackendWorkspace(t *testing.T) {
 	}
 	if err := db.AutoMigrate(
 		&model.Application{},
+		&model.AppMember{},
 		&model.Environment{},
 		&model.ServiceInstallation{},
 		&model.Component{},
@@ -1698,6 +1699,9 @@ func TestGetServiceWorkspaceReturnsBackendWorkspace(t *testing.T) {
 	if err := db.Create(&env).Error; err != nil {
 		t.Fatalf("create env: %v", err)
 	}
+	if err := db.Create(&model.AppMember{ApplicationID: app.ID, UserID: 2, Role: "member"}).Error; err != nil {
+		t.Fatalf("create member: %v", err)
+	}
 	inst := model.ServiceInstallation{EnvironmentID: env.ID, ServiceType: "deploy", Status: "running", Namespace: "billing-dev-deploy"}
 	if err := db.Create(&inst).Error; err != nil {
 		t.Fatalf("create service: %v", err)
@@ -1708,9 +1712,9 @@ func TestGetServiceWorkspaceReturnsBackendWorkspace(t *testing.T) {
 
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	router.GET("/api/v1/environments/:id/services/:serviceId/workspace", GetServiceWorkspace)
+	router.GET("/api/v1/environments/:id/services/:serviceId/workspace", withTestAuthUser(2, GetServiceWorkspace))
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/environments/1/services/1/workspace", nil)
+	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/v1/environments/%d/services/%d/workspace", env.ID, inst.ID), nil)
 	router.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
@@ -2306,6 +2310,80 @@ func TestGetServiceCredentialsRejectsNonMembersBeforeServiceLookup(t *testing.T)
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	router.GET("/api/v1/environments/:id/services/:serviceId/credentials", withTestAuthUser(2, GetServiceCredentials))
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusForbidden, rec.Body.String())
+	}
+}
+
+func TestGetServiceWorkspaceRejectsNonMembers(t *testing.T) {
+	previousDB := database.DB
+	t.Cleanup(func() { database.DB = previousDB })
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.ServiceInstallation{}, &model.Component{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	database.DB = db
+
+	app := model.Application{Name: "隐藏应用", Identifier: "hidden", OwnerID: 1}
+	if err := db.Create(&app).Error; err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	env := model.Environment{ApplicationID: app.ID, Name: "生产", Identifier: "prod", Namespace: "hidden-prod"}
+	if err := db.Create(&env).Error; err != nil {
+		t.Fatalf("create env: %v", err)
+	}
+	service := model.ServiceInstallation{EnvironmentID: env.ID, ServiceType: "deploy", Status: "running", Namespace: "hidden-prod-deploy"}
+	if err := db.Create(&service).Error; err != nil {
+		t.Fatalf("create service: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/v1/environments/%d/services/%d/workspace", env.ID, service.ID), nil)
+	rec := httptest.NewRecorder()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.GET("/api/v1/environments/:id/services/:serviceId/workspace", withTestAuthUser(2, GetServiceWorkspace))
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusForbidden, rec.Body.String())
+	}
+}
+
+func TestGetServiceWorkspaceRejectsNonMembersBeforeServiceLookup(t *testing.T) {
+	previousDB := database.DB
+	t.Cleanup(func() { database.DB = previousDB })
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.ServiceInstallation{}, &model.Component{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	database.DB = db
+
+	app := model.Application{Name: "隐藏应用", Identifier: "hidden", OwnerID: 1}
+	if err := db.Create(&app).Error; err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	env := model.Environment{ApplicationID: app.ID, Name: "生产", Identifier: "prod", Namespace: "hidden-prod"}
+	if err := db.Create(&env).Error; err != nil {
+		t.Fatalf("create env: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/v1/environments/%d/services/999/workspace", env.ID), nil)
+	rec := httptest.NewRecorder()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.GET("/api/v1/environments/:id/services/:serviceId/workspace", withTestAuthUser(2, GetServiceWorkspace))
 	router.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusForbidden {

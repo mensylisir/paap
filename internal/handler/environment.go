@@ -2995,6 +2995,19 @@ func GetServiceWorkspace(c *gin.Context) {
 	envID, _ := strconv.Atoi(c.Param("id"))
 	serviceID, _ := strconv.Atoi(c.Param("serviceId"))
 
+	var env model.Environment
+	if err := database.DB.First(&env, envID).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "service workspace not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if !requireApplicationAccess(c, env.ApplicationID) {
+		return
+	}
+
 	app, env, inst, components, err := loadServiceWorkspaceContext(envID, serviceID)
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
