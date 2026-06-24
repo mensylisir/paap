@@ -8,6 +8,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -84,6 +85,102 @@ func SetNamespaceServiceExternalAccess(ctx context.Context, namespace, serviceTy
 		return nil, fmt.Errorf("update service %s/%s: %w", next.Namespace, next.Name, err)
 	}
 	return next, nil
+}
+
+// SetComponentExternalAccess creates or removes an Ingress for a component's Service.
+func SetComponentExternalAccess(ctx context.Context, namespace, componentIdentifier string, enabled bool) error {
+	cl, err := requireClient()
+	if err != nil {
+		return err
+	}
+
+	// Find the component's Service by label selector
+	services := &corev1.ServiceList{}
+	selector := []client.ListOption{
+		client.InNamespace(namespace),
+		client.MatchingLabels{"paap.io/component": componentIdentifier},
+	}
+	if err := cl.List(ctx, services, selector...); err != nil {
+		return fmt.Errorf("list services: %w", err)
+	}
+	if len(services.Items) == 0 {
+		fallback := []client.ListOption{
+			client.InNamespace(namespace),
+			client.MatchingLabels{"app": componentIdentifier},
+		}
+		if err := cl.List(ctx, services, fallback...); err != nil {
+			return fmt.Errorf("list services (fallback): %w", err)
+		}
+	}
+	if len(services.Items) == 0 {
+		return fmt.Errorf("no service found for component %s in namespace %s", componentIdentifier, namespace)
+	}
+	target := &services.Items[0]
+	if len(target.Spec.Ports) == 0 {
+		return fmt.Errorf("service %s/%s has no ports", namespace, target.Name)
+	}
+
+	ingressName := "comp-" + componentIdentifier
+	servicePort := target.Spec.Ports[0]
+
+	if enabled {
+		pathType := networkingv1.PathTypePrefix
+		ingress := &networkingv1.Ingress{
+			ObjectMeta: ingressObjectMeta(namespace, ingressName, componentIdentifier),
+			Spec: networkingv1.IngressSpec{
+				Rules: []networkingv1.IngressRule{
+					{
+						Host: componentIdentifier + "." + namespace + ".paap.local",
+						IngressRuleValue: networkingv1.IngressRuleValue{
+							HTTP: &networkingv1.HTTPIngressRuleValue{
+								Paths: []networkingv1.HTTPIngressPath{
+									{
+										Path:     "/",
+										PathType: &pathType,
+										Backend: networkingv1.IngressBackend{
+											Service: &networkingv1.IngressServiceBackend{
+												Name: target.Name,
+												Port: networkingv1.ServiceBackendPort{Number: servicePort.Port},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		}
+		existing := &networkingv1.Ingress{}
+		if err := cl.Get(ctx, client.ObjectKey{Namespace: namespace, Name: ingressName}, existing); err == nil {
+			existing.Spec = ingress.Spec
+			existing.SetLabels(ingress.GetLabels())
+			existing.SetAnnotations(ingress.GetAnnotations())
+			return cl.Update(ctx, existing)
+		}
+		return cl.Create(ctx, ingress)
+	}
+	ingress := &networkingv1.Ingress{
+		ObjectMeta: ingressObjectMeta(namespace, ingressName, componentIdentifier),
+	}
+	if err := cl.Delete(ctx, ingress); err != nil {
+		return client.IgnoreNotFound(err)
+	}
+	return nil
+}
+
+func ingressObjectMeta(namespace, name, componentIdentifier string) metav1.ObjectMeta {
+	return metav1.ObjectMeta{
+		Name:      name,
+		Namespace: namespace,
+		Labels: map[string]string{
+			"paap.io/component": componentIdentifier,
+			"paap.io/managed":   "true",
+		},
+		Annotations: map[string]string{
+			"paap.io/ingress-purpose": "component-external-access",
+		},
+	}
 }
 
 func endpointPriority(kind string) int {

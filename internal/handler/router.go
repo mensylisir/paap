@@ -107,6 +107,8 @@ func SetupRouter(r *gin.Engine) {
 		// Component deploy / version bump (used by CI callback)
 		api.PUT("/components/:id", UpdateComponent)
 		api.POST("/components/:id/deploy", DeployComponent)
+		// Component external access toggle
+		api.PUT("/environments/:id/components/:componentId/external-access", SetComponentExternalAccess)
 		// Component delete
 		api.DELETE("/components/:id", DeleteComponent)
 	}

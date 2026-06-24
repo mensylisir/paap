@@ -98,7 +98,9 @@ export const api = {
   createServiceDraft: (envId: number, data: any) => request(`/environments/${envId}/services/drafts`, { method: 'POST', body: JSON.stringify(data) }),
   installService: (envId: number, data: any) => request(`/environments/${envId}/services`, { method: 'POST', body: JSON.stringify(data) }),
   updateService: (envId: number, serviceId: number, data: any) => request(`/environments/${envId}/services/${serviceId}`, { method: 'PUT', body: JSON.stringify(data) }),
-  setServiceExternalAccess: (envId: number, serviceId: number, enabled: boolean) =>
-    request(`/environments/${envId}/services/${serviceId}/external-access`, { method: 'PUT', body: JSON.stringify({ enabled }) }),
-  uninstallService: (envId: number, serviceId: number) => request(`/environments/${envId}/services/${serviceId}`, { method: 'DELETE' }),
+   setServiceExternalAccess: (envId: number, serviceId: number, enabled: boolean) =>
+     request(`/environments/${envId}/services/${serviceId}/external-access`, { method: 'PUT', body: JSON.stringify({ enabled }) }),
+   setComponentExternalAccess: (envId: number, componentId: number, enabled: boolean) =>
+     request(`/environments/${envId}/components/${componentId}/external-access`, { method: 'PUT', body: JSON.stringify({ enabled }) }),
+   uninstallService: (envId: number, serviceId: number) => request(`/environments/${envId}/services/${serviceId}`, { method: 'DELETE' }),
 }

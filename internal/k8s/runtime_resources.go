@@ -35,6 +35,7 @@ type RuntimeConfig struct {
 	Namespace    string                  `json:"namespace,omitempty"`
 	WorkloadName string                  `json:"workloadName,omitempty"`
 	WorkloadKind string                  `json:"workloadKind,omitempty"`
+	ServiceName  string                  `json:"serviceName,omitempty"`
 	Container    string                  `json:"container,omitempty"`
 	Image        string                  `json:"image,omitempty"`
 	Ports        []int32                 `json:"ports,omitempty"`
@@ -332,6 +333,7 @@ func discoverDeploymentRuntimeConfig(ctx context.Context, opts ...client.ListOpt
 		}
 		cfg := runtimeConfigFromPodTemplate(deploy.Namespace, "Deployment", deploy.Name, deploy.Spec.Replicas, deploy.Spec.Template.Spec, deploy.Spec.Template.Spec.Containers[0])
 		enrichRuntimeConfigObjects(ctx, cfg)
+		enrichServiceName(ctx, cfg, deploy.Spec.Selector.MatchLabels)
 		return cfg, nil
 	}
 	return nil, nil
@@ -353,6 +355,7 @@ func discoverStatefulSetRuntimeConfig(ctx context.Context, opts ...client.ListOp
 		}
 		cfg := runtimeConfigFromPodTemplate(sts.Namespace, "StatefulSet", sts.Name, sts.Spec.Replicas, sts.Spec.Template.Spec, sts.Spec.Template.Spec.Containers[0])
 		enrichRuntimeConfigObjects(ctx, cfg)
+		enrichServiceName(ctx, cfg, sts.Spec.Selector.MatchLabels)
 		return cfg, nil
 	}
 	return nil, nil
@@ -399,6 +402,36 @@ func runtimeConfigFromPodTemplate(namespace, kind, workloadName string, replicas
 		},
 	}
 	return cfg
+}
+
+func enrichServiceName(ctx context.Context, cfg *RuntimeConfig, matchLabels map[string]string) {
+	if cfg == nil || cfg.Namespace == "" || len(matchLabels) == 0 {
+		return
+	}
+	cl, err := requireClient()
+	if err != nil {
+		return
+	}
+	svcs := &corev1.ServiceList{}
+	if err := cl.List(ctx, svcs, client.InNamespace(cfg.Namespace)); err != nil {
+		return
+	}
+	for _, svc := range svcs.Items {
+		if svc.Spec.Selector == nil {
+			continue
+		}
+		matches := true
+		for k, v := range matchLabels {
+			if svc.Spec.Selector[k] != v {
+				matches = false
+				break
+			}
+		}
+		if matches {
+			cfg.ServiceName = svc.Name
+			return
+		}
+	}
 }
 
 func runtimeContainerPorts(ports []corev1.ContainerPort) []int32 {

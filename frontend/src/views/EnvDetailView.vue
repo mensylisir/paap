@@ -865,11 +865,26 @@
                   </button>
                 </div>
               </div>
-              <div v-else class="service-access-row">
-                <span>外部入口</span>
-                <code v-if="configDrawerExternalUrl">{{ configDrawerExternalUrl }}</code>
-                <strong v-else>未暴露</strong>
-                <a v-if="configDrawerExternalUrl" :href="configDrawerExternalUrl" target="_blank" rel="noreferrer" class="text-btn">打开</a>
+              <div v-else class="service-access-stack">
+                <div class="service-access-row">
+                  <span>Service 地址</span>
+                  <code>{{ componentDrawerServiceEndpoint || '等待生成' }}</code>
+                </div>
+                <div class="service-access-row service-access-row--action">
+                  <span>外部入口</span>
+                  <code v-if="configDrawerExternalUrl">{{ configDrawerExternalUrl }}</code>
+                  <strong v-else>未暴露</strong>
+                  <a v-if="configDrawerExternalUrl" :href="configDrawerExternalUrl" target="_blank" rel="noreferrer" class="text-btn">打开</a>
+                  <button
+                    v-if="componentDrawerExternalAccessToggleVisible"
+                    type="button"
+                    class="bx--btn bx--btn--secondary bx--btn--sm"
+                    :disabled="componentExternalAccessLoading"
+                    @click="toggleComponentExternalAccess"
+                  >
+                    {{ componentDrawerExternalAccessLabel }}
+                  </button>
+                </div>
               </div>
             </section>
 
@@ -2364,6 +2379,7 @@ const serviceConfigForm = ref<ServiceConfigForm>(defaultServiceConfigForm())
 const componentDrawerRole = ref('custom')
 const serviceDrawerWorkspaceLoading = ref(false)
 const serviceExternalAccessLoading = ref(false)
+const componentExternalAccessLoading = ref(false)
 const serviceDrawerRevealedSecrets = ref<Set<string>>(new Set())
 const serviceDrawerSecretValues = ref<Record<string, string>>({})
 const serviceDrawerSecretLoadingKey = ref('')
@@ -4626,6 +4642,21 @@ const configDrawerSubtitle = computed(() => {
 })
 const configDrawerExternalUrl = computed(() => configDrawer.value.component?.externalUrl || configDrawer.value.service?.externalUrl || '')
 const serviceDrawerInternalEndpoint = computed(() => drawerService.value && serviceStatusHasRuntime(drawerService.value) ? serviceInternalEndpoint(serviceDrawerPreviewService.value || drawerService.value) : '')
+const componentDrawerServiceEndpoint = computed(() => {
+  const comp = configDrawer.value.component
+  const rc = comp?.runtimeConfig
+  if (!rc?.serviceName || !rc?.namespace) return ''
+  return `${rc.serviceName}.${rc.namespace}.svc.cluster.local`
+})
+const componentDrawerExternalAccessToggleVisible = computed(() => {
+  const comp = configDrawer.value.component
+  return configDrawer.value.kind === 'component' && comp?.runtimeConfig?.serviceName
+})
+const componentDrawerExternalAccessEnabled = computed(() => Boolean(configDrawerExternalUrl.value && configDrawer.value.kind === 'component'))
+const componentDrawerExternalAccessLabel = computed(() => {
+  if (componentExternalAccessLoading.value) return componentDrawerExternalAccessEnabled.value ? '关闭中...' : '开启中...'
+  return componentDrawerExternalAccessEnabled.value ? '关闭外部访问' : '开启外部访问'
+})
 const serviceDrawerExternalAccessEnabled = computed(() => Boolean(configDrawer.value.kind === 'service' && configDrawerExternalUrl.value))
 const serviceDrawerExternalAccessToggleVisible = computed(() => configDrawer.value.kind === 'service' && serviceStatusHasRuntime(drawerService.value) && serviceDrawerProfile.value.showConnectionBindings)
 const serviceDrawerExternalAccessLabel = computed(() => {
@@ -6522,6 +6553,32 @@ const toggleServiceExternalAccess = async () => {
     configDrawer.value.error = '外部访问切换失败：' + (e?.message || '未知错误')
   } finally {
     serviceExternalAccessLoading.value = false
+  }
+}
+const toggleComponentExternalAccess = async () => {
+  const comp = configDrawer.value.component
+  if (!comp?.id || componentExternalAccessLoading.value) return
+  componentExternalAccessLoading.value = true
+  configDrawer.value.error = ''
+  configDrawer.value.message = ''
+  try {
+    const nextEnabled = !componentDrawerExternalAccessEnabled.value
+    const res = await api.setComponentExternalAccess(envId.value, Number(comp.id), nextEnabled)
+    if (Array.isArray(res.externalAccess)) {
+      externalAccess.value = res.externalAccess
+    }
+    const updated = res.data
+    if (updated?.id) {
+      components.value = components.value.map((item:any) => Number(item.id) === Number(updated.id) ? { ...item, ...updated } : item)
+    }
+    const next = components.value.find((item:any) => Number(item.id) === Number(comp.id)) || updated || comp
+    configDrawer.value.component = next
+    notifyEnvUpdated()
+    configDrawer.value.message = nextEnabled ? '外部访问已开启。' : '外部访问已关闭。'
+  } catch (e:any) {
+    configDrawer.value.error = '外部访问切换失败：' + (e?.message || '未知错误')
+  } finally {
+    componentExternalAccessLoading.value = false
   }
 }
 const deployDrawerComponent = async () => {
