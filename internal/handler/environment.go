@@ -2824,6 +2824,15 @@ func GetServiceCredentials(c *gin.Context) {
 	envID, _ := strconv.Atoi(c.Param("id"))
 	serviceID, _ := strconv.Atoi(c.Param("serviceId"))
 
+	var env model.Environment
+	if err := database.DB.First(&env, envID).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "environment not found"})
+		return
+	}
+	if !requireApplicationAccess(c, env.ApplicationID) {
+		return
+	}
+
 	var inst model.ServiceInstallation
 	if err := database.DB.Where("id = ? AND environment_id = ?", serviceID, envID).First(&inst).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {

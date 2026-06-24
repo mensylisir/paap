@@ -1600,11 +1600,24 @@ func TestGetServiceCredentialsReadsRealSecrets(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&model.ServiceInstallation{}); err != nil {
+	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.ServiceInstallation{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	database.DB = db
-	if err := db.Create(&model.ServiceInstallation{EnvironmentID: 1, ServiceType: "postgresql", Status: "running", Namespace: "billing-dev-postgresql"}).Error; err != nil {
+
+	app := model.Application{Name: "Billing", Identifier: "billing", OwnerID: 1}
+	if err := db.Create(&app).Error; err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	env := model.Environment{ApplicationID: app.ID, Name: "开发", Identifier: "dev", Namespace: "billing-dev"}
+	if err := db.Create(&env).Error; err != nil {
+		t.Fatalf("create env: %v", err)
+	}
+	if err := db.Create(&model.AppMember{ApplicationID: app.ID, UserID: 2, Role: "member"}).Error; err != nil {
+		t.Fatalf("create member: %v", err)
+	}
+	service := model.ServiceInstallation{EnvironmentID: env.ID, ServiceType: "postgresql", Status: "running", Namespace: "billing-dev-postgresql"}
+	if err := db.Create(&service).Error; err != nil {
 		t.Fatalf("create service: %v", err)
 	}
 
@@ -1631,9 +1644,9 @@ func TestGetServiceCredentialsReadsRealSecrets(t *testing.T) {
 
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	router.GET("/api/v1/environments/:id/services/:serviceId/credentials", GetServiceCredentials)
+	router.GET("/api/v1/environments/:id/services/:serviceId/credentials", withTestAuthUser(2, GetServiceCredentials))
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/environments/1/services/1/credentials", nil)
+	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/v1/environments/%d/services/%d/credentials", env.ID, service.ID), nil)
 	router.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
@@ -2209,6 +2222,90 @@ func TestGetServiceInstanceRejectsNonMembersBeforeServiceLookup(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	router.GET("/api/v1/environments/:id/services/:serviceId", withTestAuthUser(2, GetServiceInstance))
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusForbidden, rec.Body.String())
+	}
+}
+
+func TestGetServiceCredentialsRejectsNonMembers(t *testing.T) {
+	previousDB := database.DB
+	previousK8sClient := k8s.GetClient()
+	t.Cleanup(func() {
+		database.DB = previousDB
+		k8s.SetClient(previousK8sClient)
+	})
+	k8s.SetClient(nil)
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.ServiceInstallation{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	database.DB = db
+
+	app := model.Application{Name: "隐藏应用", Identifier: "hidden", OwnerID: 1}
+	if err := db.Create(&app).Error; err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	env := model.Environment{ApplicationID: app.ID, Name: "生产", Identifier: "prod", Namespace: "hidden-prod"}
+	if err := db.Create(&env).Error; err != nil {
+		t.Fatalf("create env: %v", err)
+	}
+	service := model.ServiceInstallation{EnvironmentID: env.ID, ServiceType: "redis", Status: "running", Namespace: "hidden-prod-redis"}
+	if err := db.Create(&service).Error; err != nil {
+		t.Fatalf("create service: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/v1/environments/%d/services/%d/credentials", env.ID, service.ID), nil)
+	rec := httptest.NewRecorder()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.GET("/api/v1/environments/:id/services/:serviceId/credentials", withTestAuthUser(2, GetServiceCredentials))
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusForbidden, rec.Body.String())
+	}
+}
+
+func TestGetServiceCredentialsRejectsNonMembersBeforeServiceLookup(t *testing.T) {
+	previousDB := database.DB
+	previousK8sClient := k8s.GetClient()
+	t.Cleanup(func() {
+		database.DB = previousDB
+		k8s.SetClient(previousK8sClient)
+	})
+	k8s.SetClient(nil)
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.ServiceInstallation{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	database.DB = db
+
+	app := model.Application{Name: "隐藏应用", Identifier: "hidden", OwnerID: 1}
+	if err := db.Create(&app).Error; err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	env := model.Environment{ApplicationID: app.ID, Name: "生产", Identifier: "prod", Namespace: "hidden-prod"}
+	if err := db.Create(&env).Error; err != nil {
+		t.Fatalf("create env: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/v1/environments/%d/services/999/credentials", env.ID), nil)
+	rec := httptest.NewRecorder()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.GET("/api/v1/environments/:id/services/:serviceId/credentials", withTestAuthUser(2, GetServiceCredentials))
 	router.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusForbidden {
