@@ -8031,8 +8031,6 @@ func InstallService(c *gin.Context) {
 // remain database-only; services that already have runtime state reconcile the
 // ServiceInstance CR so Helm sees the new desired values.
 func UpdateService(c *gin.Context) {
-	syncClusterStateIfPossible()
-
 	envID, _ := strconv.Atoi(c.Param("id"))
 	serviceID, _ := strconv.Atoi(c.Param("serviceId"))
 
@@ -8042,6 +8040,17 @@ func UpdateService(c *gin.Context) {
 		return
 	}
 
+	var env model.Environment
+	if err := database.DB.First(&env, envID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "environment not found"})
+		return
+	}
+	if !requireApplicationAccess(c, env.ApplicationID) {
+		return
+	}
+
+	syncClusterStateIfPossible()
+
 	var inst model.ServiceInstallation
 	if err := database.DB.Where("id = ? AND environment_id = ?", serviceID, envID).First(&inst).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
@@ -8049,12 +8058,6 @@ func UpdateService(c *gin.Context) {
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	var env model.Environment
-	if err := database.DB.First(&env, envID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "environment not found"})
 		return
 	}
 

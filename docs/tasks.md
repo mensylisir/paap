@@ -858,6 +858,21 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 - [x] 对应文件：`internal/handler/environment.go`、`internal/handler/environment_test.go`
 - [x] 工作量：S（半天）
 
+### Task 7.8aa: 服务配置更新按成员鉴权 ✅
+> 普通用户更新服务配置前必须具备服务所属应用访问权限，避免非成员修改服务 Helm values 或通过服务 ID 探测服务安装。
+
+- [x] `UpdateService` 先读取环境并复用 `requireApplicationAccess(env.ApplicationID)`，通过后才触发集群同步、查找服务安装、查找服务模板和更新 DB/ServiceInstance CR
+- [x] 非成员更新存在服务返回 403，不修改 `service_installations.values`
+- [x] 非成员更新不存在服务也先返回 403，避免通过 404 探测服务安装
+- [x] 成员访问缺失模板服务返回 404 和 `service template not found`，证明鉴权通过后才进入业务校验
+- [x] 后端目标测试：`go test ./internal/handler -run 'TestUpdateService(DraftSavesValuesWithoutCreatingCR|RejectsNonMembers|RejectsNonMembersBeforeServiceLookup|ChecksTemplateAfterMemberAccess|RunningServiceReconcilesServiceInstanceCR)' -count=1` 先红后绿
+- [x] 后端 handler 测试：`go test ./internal/handler -count=1` 通过
+- [x] Docker 镜像 `v0.1.484` 构建并部署到 kind 集群
+- [x] kind 验证：显式使用 `--context kind-rbac-governance-test` 检查 `paap-server:v0.1.484`，Deployment `1/1 ready`，Pod `paap-server-6949b487b8-m6dhj` Running；`paap-system` 与 `kpack` Pod 均 Running，节点 Ready
+- [x] CDP 验证：复用 Chrome tab `http://172.18.0.2:30091/catalog`，临时 app/env/template/service 为 12/10/16/65、临时普通用户 ID=28 PUT `/api/v1/environments/10/services/65` 返回 403 和 `application access denied`，请求不存在服务 `/services/999999` 同样返回 403；临时加入应用 12 成员后，同一服务更新返回 200，values 保存 `mode=member-update` 与默认值合并；临时 template、service、app/env、用户和成员关系已清理，残留计数 `0|0|0|0|0|0`
+- [x] 对应文件：`internal/handler/environment.go`、`internal/handler/environment_test.go`
+- [x] 工作量：S（半天）
+
 ### Task 7.9: KubeVirt 虚拟机
 - [ ] 将 VM 作为新服务类型纳入 `ServiceCatalog`
 - [ ] 用 KubeVirt CRD（`VirtualMachine`）而非 Helm chart 部署

@@ -920,7 +920,7 @@ func TestUpdateServiceDraftSavesValuesWithoutCreatingCR(t *testing.T) {
 		t.Fatalf("sqlite db handle: %v", err)
 	}
 	sqlDB.SetMaxOpenConns(1)
-	if err := db.AutoMigrate(&model.Application{}, &model.Environment{}, &model.ServiceTemplate{}, &model.ServiceInstallation{}); err != nil {
+	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.ServiceTemplate{}, &model.ServiceInstallation{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	database.DB = db
@@ -932,6 +932,9 @@ func TestUpdateServiceDraftSavesValuesWithoutCreatingCR(t *testing.T) {
 	env := model.Environment{ApplicationID: app.ID, Name: "Dev", Identifier: "dev", Namespace: "billing-dev", Status: "running"}
 	if err := db.Create(&env).Error; err != nil {
 		t.Fatalf("create env: %v", err)
+	}
+	if err := db.Create(&model.AppMember{ApplicationID: app.ID, UserID: 2, Role: "member"}).Error; err != nil {
+		t.Fatalf("create member: %v", err)
 	}
 	tmpl := model.ServiceTemplate{Type: "redis", Name: "Redis", Installer: "helm", Category: "infra", PlatformManifestJSON: `{"name":"redis","version":"v1"}`}
 	if err := db.Create(&tmpl).Error; err != nil {
@@ -961,7 +964,7 @@ func TestUpdateServiceDraftSavesValuesWithoutCreatingCR(t *testing.T) {
 
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	router.PUT("/api/v1/environments/:id/services/:serviceId", UpdateService)
+	router.PUT("/api/v1/environments/:id/services/:serviceId", withTestAuthUser(2, UpdateService))
 
 	req := httptest.NewRequest(http.MethodPut, fmt.Sprintf("/api/v1/environments/1/services/%d", inst.ID), strings.NewReader(`{"values":{"architecture":"replication","replica.replicaCount":"2"}}`))
 	req.Header.Set("Content-Type", "application/json")
@@ -989,6 +992,154 @@ func TestUpdateServiceDraftSavesValuesWithoutCreatingCR(t *testing.T) {
 	}
 }
 
+func TestUpdateServiceRejectsNonMembers(t *testing.T) {
+	previousDB := database.DB
+	previousClient := k8s.GetClient()
+	t.Cleanup(func() {
+		database.DB = previousDB
+		k8s.SetClient(previousClient)
+	})
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.ServiceTemplate{}, &model.ServiceInstallation{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	database.DB = db
+	k8s.SetClient(nil)
+
+	app := model.Application{Name: "隐藏应用", Identifier: "hidden", OwnerID: 1}
+	if err := db.Create(&app).Error; err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	env := model.Environment{ApplicationID: app.ID, Name: "生产", Identifier: "prod", Namespace: "hidden-prod", Status: "running"}
+	if err := db.Create(&env).Error; err != nil {
+		t.Fatalf("create env: %v", err)
+	}
+	tmpl := model.ServiceTemplate{Type: "redis", Name: "Redis", Installer: "helm", Category: "infra", PlatformManifestJSON: `{"name":"redis","version":"v1"}`}
+	if err := db.Create(&tmpl).Error; err != nil {
+		t.Fatalf("create template: %v", err)
+	}
+	inst := model.ServiceInstallation{EnvironmentID: env.ID, ServiceType: "redis", ServiceName: "redis", Status: "draft", Values: `{"architecture":"standalone"}`}
+	if err := db.Create(&inst).Error; err != nil {
+		t.Fatalf("create service installation: %v", err)
+	}
+
+	path := fmt.Sprintf("/api/v1/environments/%d/services/%d", env.ID, inst.ID)
+	req := httptest.NewRequest(http.MethodPut, path, strings.NewReader(`{"values":{"architecture":"replication"}}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.PUT("/api/v1/environments/:id/services/:serviceId", withTestAuthUser(2, UpdateService))
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusForbidden, rec.Body.String())
+	}
+	var saved model.ServiceInstallation
+	if err := db.First(&saved, inst.ID).Error; err != nil {
+		t.Fatalf("load service installation: %v", err)
+	}
+	if saved.Values != inst.Values {
+		t.Fatalf("values changed for rejected update: got %s want %s", saved.Values, inst.Values)
+	}
+}
+
+func TestUpdateServiceRejectsNonMembersBeforeServiceLookup(t *testing.T) {
+	previousDB := database.DB
+	previousClient := k8s.GetClient()
+	t.Cleanup(func() {
+		database.DB = previousDB
+		k8s.SetClient(previousClient)
+	})
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.ServiceInstallation{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	database.DB = db
+	k8s.SetClient(nil)
+
+	app := model.Application{Name: "隐藏应用", Identifier: "hidden", OwnerID: 1}
+	if err := db.Create(&app).Error; err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	env := model.Environment{ApplicationID: app.ID, Name: "生产", Identifier: "prod", Namespace: "hidden-prod", Status: "running"}
+	if err := db.Create(&env).Error; err != nil {
+		t.Fatalf("create env: %v", err)
+	}
+
+	path := fmt.Sprintf("/api/v1/environments/%d/services/999", env.ID)
+	req := httptest.NewRequest(http.MethodPut, path, strings.NewReader(`{"values":{"architecture":"replication"}}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.PUT("/api/v1/environments/:id/services/:serviceId", withTestAuthUser(2, UpdateService))
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusForbidden, rec.Body.String())
+	}
+}
+
+func TestUpdateServiceChecksTemplateAfterMemberAccess(t *testing.T) {
+	previousDB := database.DB
+	previousClient := k8s.GetClient()
+	t.Cleanup(func() {
+		database.DB = previousDB
+		k8s.SetClient(previousClient)
+	})
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.ServiceTemplate{}, &model.ServiceInstallation{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	database.DB = db
+	k8s.SetClient(nil)
+
+	app := model.Application{Name: "测试应用", Identifier: "test", OwnerID: 1}
+	if err := db.Create(&app).Error; err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	env := model.Environment{ApplicationID: app.ID, Name: "测试环境", Identifier: "staging", Namespace: "test-staging", Status: "running"}
+	if err := db.Create(&env).Error; err != nil {
+		t.Fatalf("create env: %v", err)
+	}
+	if err := db.Create(&model.AppMember{ApplicationID: app.ID, UserID: 2, Role: "member"}).Error; err != nil {
+		t.Fatalf("create member: %v", err)
+	}
+	inst := model.ServiceInstallation{EnvironmentID: env.ID, ServiceType: "missing-template", ServiceName: "missing", Status: "draft"}
+	if err := db.Create(&inst).Error; err != nil {
+		t.Fatalf("create service installation: %v", err)
+	}
+
+	path := fmt.Sprintf("/api/v1/environments/%d/services/%d", env.ID, inst.ID)
+	req := httptest.NewRequest(http.MethodPut, path, strings.NewReader(`{"values":{"enabled":"true"}}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.PUT("/api/v1/environments/:id/services/:serviceId", withTestAuthUser(2, UpdateService))
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusNotFound, rec.Body.String())
+	}
+}
+
 func TestUpdateRunningServiceReconcilesServiceInstanceCR(t *testing.T) {
 	previousDB := database.DB
 	previousClient := k8s.GetClient()
@@ -1006,7 +1157,7 @@ func TestUpdateRunningServiceReconcilesServiceInstanceCR(t *testing.T) {
 		t.Fatalf("sqlite db handle: %v", err)
 	}
 	sqlDB.SetMaxOpenConns(1)
-	if err := db.AutoMigrate(&model.Application{}, &model.Environment{}, &model.ServiceTemplate{}, &model.ServiceInstallation{}); err != nil {
+	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.ServiceTemplate{}, &model.ServiceInstallation{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	database.DB = db
@@ -1018,6 +1169,9 @@ func TestUpdateRunningServiceReconcilesServiceInstanceCR(t *testing.T) {
 	env := model.Environment{ApplicationID: app.ID, Name: "Dev", Identifier: "dev", Namespace: "billing-dev", Status: "running"}
 	if err := db.Create(&env).Error; err != nil {
 		t.Fatalf("create env: %v", err)
+	}
+	if err := db.Create(&model.AppMember{ApplicationID: app.ID, UserID: 2, Role: "member"}).Error; err != nil {
+		t.Fatalf("create member: %v", err)
 	}
 	manifest := model.PlatformManifest{
 		Name:    "redis",
@@ -1083,7 +1237,7 @@ func TestUpdateRunningServiceReconcilesServiceInstanceCR(t *testing.T) {
 
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	router.PUT("/api/v1/environments/:id/services/:serviceId", UpdateService)
+	router.PUT("/api/v1/environments/:id/services/:serviceId", withTestAuthUser(2, UpdateService))
 
 	body := `{"values":{"architecture":"cluster","cluster.nodes":"6","cluster.replicas":"1"}}`
 	req := httptest.NewRequest(http.MethodPut, fmt.Sprintf("/api/v1/environments/1/services/%d", inst.ID), strings.NewReader(body))
