@@ -76,6 +76,10 @@ export const api = {
 
   // Templates
   templates: () => request('/templates'),
+  getTemplate: (id: number | string) => request(`/templates/${id}`),
+  createTemplate: (data: any) => request('/templates', { method: 'POST', body: JSON.stringify(data) }),
+  updateTemplate: (id: number | string, data: any) => request(`/templates/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteTemplate: (id: number | string) => request(`/templates/${id}`, { method: 'DELETE' }),
   listServiceTemplates: () => request('/service-templates'),
   uploadServiceTemplate: (data: FormData) => request('/service-templates/upload', { method: 'POST', body: data }),
   syncBuiltinServiceTemplates: () => request('/service-templates/sync', { method: 'POST' }),

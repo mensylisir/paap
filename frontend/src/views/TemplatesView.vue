@@ -4,19 +4,22 @@
     <header class="page-header">
       <div class="header-text">
         <h1 class="page-title">模板管理</h1>
-        <p class="page-desc">管理工具模板、中间件模板和组件运行配置模板</p>
+        <p class="page-desc">管理工具模板、中间件模板、环境模板和组件运行配置模板</p>
       </div>
       <div class="header-actions">
-        <button v-if="activeTemplateTab !== 'config'" class="rail-btn rail-btn--ghost" :disabled="syncing" @click="syncBuiltinTemplates">
+        <button v-if="isServiceTemplateTab" class="rail-btn rail-btn--ghost" :disabled="syncing" @click="syncBuiltinTemplates">
           {{ syncing ? '同步中...' : '同步内置模板' }}
         </button>
-        <button v-else class="rail-btn rail-btn--ghost" :disabled="syncing" @click="syncBuiltinConfigTemplates">
+        <button v-else-if="activeTemplateTab === 'config'" class="rail-btn rail-btn--ghost" :disabled="syncing" @click="syncBuiltinConfigTemplates">
           {{ syncing ? '同步中...' : '同步内置配置模板' }}
         </button>
         <button v-if="activeTemplateTab === 'config'" class="rail-btn rail-btn--primary" @click="openConfigTemplateImportModal">
           导入配置模板
         </button>
-        <button v-if="activeTemplateTab !== 'config'" class="rail-btn rail-btn--primary" @click="openUploadModal">
+        <button v-if="activeTemplateTab === 'environment'" class="rail-btn rail-btn--primary" @click="openEnvironmentTemplateModal()">
+          新建环境模板
+        </button>
+        <button v-if="isServiceTemplateTab" class="rail-btn rail-btn--primary" @click="openUploadModal">
           <svg width="16" height="16" viewBox="0 0 32 32" fill="currentColor"><path d="M11 18l-7 7 7 7v-5h12v-4H11v-5zM21 14V9H9v4h12v5l7-7-7-7v5z"/></svg>
           上传模板
         </button>
@@ -53,6 +56,10 @@
         <div class="kpi-label">中间件模板</div>
       </div>
       <div class="kpi-card">
+        <div class="kpi-number">{{ environmentTemplates.length }}</div>
+        <div class="kpi-label">环境模板</div>
+      </div>
+      <div class="kpi-card">
         <div class="kpi-number">{{ configTemplates.length }}</div>
         <div class="kpi-label">配置模板</div>
       </div>
@@ -75,11 +82,11 @@
         <div class="loading-spinner" />
       </div>
 
-      <div v-else-if="activeTemplateTab !== 'config' && activeServiceTemplates.length === 0" class="rail-empty">
+      <div v-else-if="isServiceTemplateTab && activeServiceTemplates.length === 0" class="rail-empty">
         <p class="rail-empty-desc">暂无{{ activeTemplateTitle }}，点击「同步内置模板」初始化。</p>
       </div>
 
-      <div v-else-if="activeTemplateTab !== 'config'" class="template-list">
+      <div v-else-if="isServiceTemplateTab" class="template-list">
         <div v-for="tmpl in activeServiceTemplates" :key="tmpl.id || tmpl.type" class="template-row">
           <div class="template-body">
             <div class="template-header">
@@ -96,6 +103,42 @@
               <span :class="{ uploaded: tmpl.s3Key || tmpl.chartArchivePath }">{{ (tmpl.s3Key || tmpl.chartArchivePath) ? '已上传' : '未上传' }}</span>
             </div>
             <p class="template-desc">{{ tmpl.description || '无描述' }}</p>
+          </div>
+        </div>
+      </div>
+
+      <div v-else-if="activeTemplateTab === 'environment' && environmentTemplates.length === 0" class="rail-empty">
+        <p class="rail-empty-desc">暂无环境模板。点击「新建环境模板」添加默认服务和资源配额。</p>
+      </div>
+
+      <div v-else-if="activeTemplateTab === 'environment'" class="template-list environment-template-list">
+        <div v-for="tmpl in environmentTemplates" :key="tmpl.id || tmpl.name" class="template-row environment-template-row">
+          <div class="template-body">
+            <div class="template-header">
+              <div class="template-name-group">
+                <span class="template-name">{{ tmpl.name }}</span>
+                <span class="tag config">环境</span>
+              </div>
+              <span class="policy">{{ environmentTemplateResourceSummary(tmpl) }}</span>
+            </div>
+            <div class="template-meta">
+              <span>{{ environmentTemplateListSummary(tmpl.services, '服务') }}</span>
+              <span>{{ environmentTemplateListSummary(tmpl.infra, '基础设施') }}</span>
+            </div>
+            <p class="template-desc">{{ tmpl.description || '无描述' }}</p>
+            <div class="config-template-plain-summary environment-template-summary">
+              <span>CPU {{ tmpl.resourceCpu || '未设置' }}</span>
+              <span>内存 {{ tmpl.resourceMem || '未设置' }}</span>
+              <span>存储 {{ tmpl.resourceDisk || '未设置' }}</span>
+            </div>
+            <div class="template-row-actions">
+              <button type="button" class="rail-btn rail-btn--ghost rail-btn--sm" @click="openEnvironmentTemplateModal(tmpl)">
+                编辑
+              </button>
+              <button type="button" class="rail-btn rail-btn--ghost rail-btn--sm danger" @click="pendingEnvironmentTemplateDelete = tmpl">
+                删除
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -179,6 +222,63 @@
             <button class="rail-btn rail-btn--ghost" @click="showUploadModal = false">取消</button>
             <button class="rail-btn rail-btn--primary" :disabled="uploading" @click="submitUpload">
               {{ uploading ? '上传中...' : '上传模板' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <Teleport to="body">
+      <div v-if="showEnvironmentTemplateModal" class="modal-overlay" role="dialog" aria-modal="true" @click.self="closeEnvironmentTemplateModal">
+        <div class="modal-container modal-container--wide">
+          <div class="modal-header">
+            <div>
+              <p class="modal-label">环境模板</p>
+              <p class="modal-heading">{{ environmentTemplateModalTitle }}</p>
+            </div>
+            <button class="modal-close" @click="closeEnvironmentTemplateModal">
+              <svg width="20" height="20" viewBox="0 0 32 32" fill="currentColor"><path d="M24 9.4L22.6 8 16 14.6 9.4 8 8 9.4l6.6 6.6L8 22.6 9.4 24l6.6-6.6 6.6 6.6 1.4-1.4-6.6-6.6L24 9.4z"/></svg>
+            </button>
+          </div>
+          <div class="modal-body environment-template-form">
+            <div class="environment-template-form-grid">
+              <div class="form-item form-item--full">
+                <label class="form-label" for="environment-template-name">模板名称</label>
+                <input id="environment-template-name" v-model.trim="environmentTemplateForm.name" class="rail-input" placeholder="例如：开发环境标准" />
+              </div>
+              <div class="form-item">
+                <label class="form-label" for="environment-template-cpu">CPU 配额</label>
+                <input id="environment-template-cpu" v-model.trim="environmentTemplateForm.resourceCpu" class="rail-input" placeholder="例如：4核" />
+              </div>
+              <div class="form-item">
+                <label class="form-label" for="environment-template-mem">内存配额</label>
+                <input id="environment-template-mem" v-model.trim="environmentTemplateForm.resourceMem" class="rail-input" placeholder="例如：8GB" />
+              </div>
+              <div class="form-item">
+                <label class="form-label" for="environment-template-disk">存储配额</label>
+                <input id="environment-template-disk" v-model.trim="environmentTemplateForm.resourceDisk" class="rail-input" placeholder="例如：50GB" />
+              </div>
+              <div class="form-item form-item--full">
+                <label class="form-label" for="environment-template-desc">描述</label>
+                <textarea id="environment-template-desc" v-model.trim="environmentTemplateForm.description" class="rail-textarea" rows="3" placeholder="说明模板适用场景"></textarea>
+              </div>
+              <div class="form-item">
+                <label class="form-label" for="environment-template-services">默认服务</label>
+                <textarea id="environment-template-services" v-model.trim="environmentTemplateForm.services" class="rail-textarea" rows="5" placeholder="gitlab, harbor, deploy"></textarea>
+                <div class="form-helper">每行一个或使用逗号分隔，值对应服务模板 type。</div>
+              </div>
+              <div class="form-item">
+                <label class="form-label" for="environment-template-infra">基础设施</label>
+                <textarea id="environment-template-infra" v-model.trim="environmentTemplateForm.infra" class="rail-textarea" rows="5" placeholder="postgresql, redis"></textarea>
+                <div class="form-helper">每行一个或使用逗号分隔，值对应服务模板 type。</div>
+              </div>
+            </div>
+            <div v-if="environmentTemplateError" class="form-error" role="alert">{{ environmentTemplateError }}</div>
+          </div>
+          <div class="modal-footer">
+            <button class="rail-btn rail-btn--ghost" @click="closeEnvironmentTemplateModal">取消</button>
+            <button class="rail-btn rail-btn--primary" :disabled="environmentTemplateSaving" @click="submitEnvironmentTemplate">
+              {{ environmentTemplateSaving ? '保存中...' : '保存模板' }}
             </button>
           </div>
         </div>
@@ -377,6 +477,30 @@
     </Teleport>
 
     <Teleport to="body">
+      <div v-if="pendingEnvironmentTemplateDelete" class="modal-overlay" role="dialog" aria-modal="true" @click.self="pendingEnvironmentTemplateDelete = null">
+        <div class="modal-container">
+          <div class="modal-header">
+            <div>
+              <p class="modal-label">删除环境模板</p>
+              <p class="modal-heading">{{ pendingEnvironmentTemplateDelete.name }}</p>
+            </div>
+            <button class="modal-close" @click="pendingEnvironmentTemplateDelete = null">
+              <svg width="20" height="20" viewBox="0 0 32 32" fill="currentColor"><path d="M24 9.4L22.6 8 16 14.6 9.4 8 8 9.4l6.6 6.6L8 22.6 9.4 24l6.6-6.6 6.6 6.6 1.4-1.4-6.6-6.6L24 9.4z"/></svg>
+            </button>
+          </div>
+          <div class="modal-body">
+            <p class="confirm-text">删除后，这个环境模板不会再出现在模板列表和创建环境候选项中。</p>
+            <div v-if="environmentTemplateError" class="form-error" role="alert">{{ environmentTemplateError }}</div>
+          </div>
+          <div class="modal-footer">
+            <button class="rail-btn rail-btn--ghost" @click="pendingEnvironmentTemplateDelete = null">取消</button>
+            <button class="rail-btn rail-btn--primary danger" @click="confirmDeleteEnvironmentTemplate">删除</button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <Teleport to="body">
       <div v-if="pendingConfigTemplateDelete" class="modal-overlay" role="dialog" aria-modal="true" @click.self="pendingConfigTemplateDelete = null">
         <div class="modal-container">
           <div class="modal-header">
@@ -409,27 +533,43 @@ import { nativeConfigTemplateSyntax, parseNativeConfigTemplate } from './configT
 import { normalizeComponentTemplateFiles } from './componentConfigTemplateFiles'
 
 const templates = ref<any[]>([])
+const environmentTemplates = ref<any[]>([])
 const configTemplates = ref<any[]>([])
 const loading = ref(false)
 const uploading = ref(false)
+const environmentTemplateSaving = ref(false)
 const configUploading = ref(false)
 const syncing = ref(false)
 const showUploadModal = ref(false)
+const showEnvironmentTemplateModal = ref(false)
 const showConfigTemplateImportModal = ref(false)
 const uploadFile = ref<File | null>(null)
 const pageError = ref('')
 const uploadError = ref('')
+const environmentTemplateError = ref('')
 const configUploadError = ref('')
 const selectedConfigTemplate = ref<any | null>(null)
 const configTemplatePreviewTab = ref<'native' | 'advanced'>('native')
 const configImportMode = ref<'native' | 'advanced'>('native')
+const environmentTemplateMode = ref<'create' | 'edit'>('create')
+const editingEnvironmentTemplateId = ref<number | string | null>(null)
+const pendingEnvironmentTemplateDelete = ref<any | null>(null)
 const pendingConfigTemplateDelete = ref<any | null>(null)
-const activeTemplateTab = ref<'tool' | 'middleware' | 'config'>('tool')
+const activeTemplateTab = ref<'tool' | 'middleware' | 'environment' | 'config'>('tool')
 const uploadForm = ref({
   type: '',
   name: '',
   category: 'tool',
   description: '',
+})
+const environmentTemplateForm = ref({
+  name: '',
+  description: '',
+  services: '',
+  infra: '',
+  resourceCpu: '4核',
+  resourceMem: '8GB',
+  resourceDisk: '50GB',
 })
 const configImportForm = ref({
   key: '',
@@ -475,21 +615,29 @@ const sortedTemplates = computed(() =>
 )
 const middlewareTemplates = computed(() => sortedTemplates.value.filter(isMiddlewareTemplate))
 const toolTemplates = computed(() => sortedTemplates.value.filter((tmpl) => !isMiddlewareTemplate(tmpl)))
-const activeServiceTemplates = computed(() => activeTemplateTab.value === 'middleware' ? middlewareTemplates.value : toolTemplates.value)
+const isServiceTemplateTab = computed(() => activeTemplateTab.value === 'tool' || activeTemplateTab.value === 'middleware')
+const activeServiceTemplates = computed(() => {
+  if (activeTemplateTab.value === 'middleware') return middlewareTemplates.value
+  if (activeTemplateTab.value === 'tool') return toolTemplates.value
+  return []
+})
 const templateTabs = computed(() => [
   { key: 'tool' as const, label: '工具模板', count: toolTemplates.value.length },
   { key: 'middleware' as const, label: '中间件模板', count: middlewareTemplates.value.length },
+  { key: 'environment' as const, label: '环境模板', count: environmentTemplates.value.length },
   { key: 'config' as const, label: '配置模板', count: configTemplates.value.length },
 ])
 const activeTemplateTitle = computed(() => templateTabs.value.find((tab) => tab.key === activeTemplateTab.value)?.label || '模板列表')
 const activeTemplateDescription = computed(() => {
   if (activeTemplateTab.value === 'config') return '组件运行配置模板，包含环境变量、普通配置、敏感配置、配置文件和启动参数。'
+  if (activeTemplateTab.value === 'environment') return '环境模板定义默认服务、基础设施和资源配额，供创建环境时复用。'
   if (activeTemplateTab.value === 'middleware') return '数据库、缓存、消息队列和对象存储等中间件的 Helm 部署模板。'
   return '代码仓库、镜像仓库、部署、监控、日志和 CI 等平台工具模板。'
 })
+const environmentTemplateModalTitle = computed(() => environmentTemplateMode.value === 'edit' ? '编辑环境模板' : '新建环境模板')
 
 onMounted(async () => {
-  await Promise.all([loadTemplates(), loadConfigTemplates()])
+  await Promise.all([loadTemplates(), loadEnvironmentTemplates(), loadConfigTemplates()])
 })
 
 async function loadTemplates() {
@@ -517,12 +665,174 @@ async function loadConfigTemplates() {
   }
 }
 
+async function loadEnvironmentTemplates() {
+  pageError.value = ''
+  try {
+    const res = await api.templates()
+    const parsed = res.data || []
+    environmentTemplates.value = Array.isArray(parsed) ? parsed.map(normalizeEnvironmentTemplate).filter(Boolean) : []
+  } catch (e: any) {
+    environmentTemplates.value = []
+    pageError.value = '加载环境模板失败：' + (e?.message || '未知错误')
+  }
+}
+
 async function refreshActiveTemplates() {
   if (activeTemplateTab.value === 'config') {
     await loadConfigTemplates()
     return
   }
+  if (activeTemplateTab.value === 'environment') {
+    loading.value = true
+    try {
+      await loadEnvironmentTemplates()
+    } finally {
+      loading.value = false
+    }
+    return
+  }
   void loadTemplates()
+}
+
+function normalizeEnvironmentTemplate(raw: any) {
+  const name = String(raw?.name || '').trim()
+  if (!name) return null
+  return {
+    id: raw?.id,
+    name,
+    description: String(raw?.description || '').trim(),
+    services: normalizeTemplateArray(raw?.services),
+    infra: normalizeTemplateArray(raw?.infra),
+    resourceCpu: String(raw?.resourceCpu || '').trim(),
+    resourceMem: String(raw?.resourceMem || '').trim(),
+    resourceDisk: String(raw?.resourceDisk || '').trim(),
+  }
+}
+
+function normalizeTemplateArray(value: any) {
+  if (Array.isArray(value)) return value.map((item) => String(item).trim()).filter(Boolean)
+  const text = String(value || '').trim()
+  if (!text || text === 'null') return []
+  try {
+    const parsed = JSON.parse(text)
+    if (Array.isArray(parsed)) return parsed.map((item) => String(item).trim()).filter(Boolean)
+  } catch {
+    // Older rows may contain comma-separated text instead of JSON.
+  }
+  return parseTemplateListInput(text)
+}
+
+function parseTemplateListInput(value: string) {
+  return String(value || '')
+    .split(/[\n,，]+/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+}
+
+function templateListInput(value: any) {
+  return normalizeTemplateArray(value).join('\n')
+}
+
+function environmentTemplateListSummary(value: any, label: string) {
+  const items = normalizeTemplateArray(value)
+  if (!items.length) return `${label}未配置`
+  const suffix = items.length > 3 ? ` 等 ${items.length} 项` : ''
+  return `${label} ${items.slice(0, 3).join(' / ')}${suffix}`
+}
+
+function environmentTemplateResourceSummary(tmpl: any) {
+  return [
+    tmpl?.resourceCpu || 'CPU 未设置',
+    tmpl?.resourceMem || '内存未设置',
+    tmpl?.resourceDisk || '存储未设置',
+  ].join(' / ')
+}
+
+function resetEnvironmentTemplateForm() {
+  environmentTemplateForm.value = {
+    name: '',
+    description: '',
+    services: '',
+    infra: '',
+    resourceCpu: '4核',
+    resourceMem: '8GB',
+    resourceDisk: '50GB',
+  }
+}
+
+function openEnvironmentTemplateModal(tmpl?: any) {
+  environmentTemplateError.value = ''
+  if (tmpl) {
+    environmentTemplateMode.value = 'edit'
+    editingEnvironmentTemplateId.value = tmpl.id
+    environmentTemplateForm.value = {
+      name: String(tmpl.name || '').trim(),
+      description: String(tmpl.description || '').trim(),
+      services: templateListInput(tmpl.services),
+      infra: templateListInput(tmpl.infra),
+      resourceCpu: String(tmpl.resourceCpu || '').trim(),
+      resourceMem: String(tmpl.resourceMem || '').trim(),
+      resourceDisk: String(tmpl.resourceDisk || '').trim(),
+    }
+  } else {
+    environmentTemplateMode.value = 'create'
+    editingEnvironmentTemplateId.value = null
+    resetEnvironmentTemplateForm()
+  }
+  showEnvironmentTemplateModal.value = true
+}
+
+function closeEnvironmentTemplateModal() {
+  showEnvironmentTemplateModal.value = false
+  environmentTemplateError.value = ''
+}
+
+function environmentTemplatePayload() {
+  return {
+    name: environmentTemplateForm.value.name.trim(),
+    description: environmentTemplateForm.value.description.trim(),
+    services: parseTemplateListInput(environmentTemplateForm.value.services),
+    infra: parseTemplateListInput(environmentTemplateForm.value.infra),
+    resourceCpu: environmentTemplateForm.value.resourceCpu.trim(),
+    resourceMem: environmentTemplateForm.value.resourceMem.trim(),
+    resourceDisk: environmentTemplateForm.value.resourceDisk.trim(),
+  }
+}
+
+async function submitEnvironmentTemplate() {
+  environmentTemplateError.value = ''
+  const payload = environmentTemplatePayload()
+  if (!payload.name) {
+    environmentTemplateError.value = '请填写模板名称'
+    return
+  }
+  environmentTemplateSaving.value = true
+  try {
+    if (environmentTemplateMode.value === 'edit' && editingEnvironmentTemplateId.value !== null) {
+      await api.updateTemplate(editingEnvironmentTemplateId.value, payload)
+    } else {
+      await api.createTemplate(payload)
+    }
+    closeEnvironmentTemplateModal()
+    await loadEnvironmentTemplates()
+  } catch (e: any) {
+    environmentTemplateError.value = '保存环境模板失败：' + (e?.message || '未知错误')
+  } finally {
+    environmentTemplateSaving.value = false
+  }
+}
+
+async function confirmDeleteEnvironmentTemplate() {
+  const tmpl = pendingEnvironmentTemplateDelete.value
+  if (!tmpl) return
+  environmentTemplateError.value = ''
+  try {
+    await api.deleteTemplate(tmpl.id)
+    environmentTemplates.value = environmentTemplates.value.filter((item) => String(item.id) !== String(tmpl.id))
+    pendingEnvironmentTemplateDelete.value = null
+  } catch (e: any) {
+    environmentTemplateError.value = '删除环境模板失败：' + (e?.message || '未知错误')
+  }
 }
 
 function normalizeConfigTemplate(raw: any) {
@@ -1380,6 +1690,26 @@ function isHeavyTemplate(tmpl: any) {
   line-height: 1.4;
   font-size: 13px;
 }
+.config-template-plain-summary,
+.environment-template-summary {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+.config-template-plain-summary span,
+.environment-template-summary span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  border-radius: 0;
+  background: var(--cds-layer-01, #ffffff);
+  color: var(--cds-text-secondary, #525252);
+  font-size: 12px;
+  line-height: 1.3;
+}
 .config-template-details {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1468,6 +1798,17 @@ function isHeavyTemplate(tmpl: any) {
 .text-btn:hover {
   text-decoration: underline;
 }
+.environment-template-form-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+.environment-template-form-grid .form-item {
+  margin-bottom: 0;
+}
+.environment-template-form-grid .form-item--full {
+  grid-column: 1 / -1;
+}
 
 /* ===== Responsive ===== */
 @media (max-width: 672px) {
@@ -1490,6 +1831,9 @@ function isHeavyTemplate(tmpl: any) {
     align-items: flex-start;
   }
   .config-template-details {
+    grid-template-columns: 1fr;
+  }
+  .environment-template-form-grid {
     grid-template-columns: 1fr;
   }
 }

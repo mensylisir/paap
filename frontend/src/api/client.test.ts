@@ -99,6 +99,39 @@ describe('api client', () => {
     expect(fetchMock).toHaveBeenNthCalledWith(4, '/api/v1/applications/7/members/3', expect.objectContaining({ method: 'DELETE' }))
   })
 
+  it('calls environment template management endpoints', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => ({ data: { id: 3 } }),
+    } as Response)
+
+    const payload = {
+      name: '开发环境',
+      description: '默认开发配额',
+      services: ['gitlab', 'harbor'],
+      infra: ['postgresql'],
+      resourceCpu: '2',
+      resourceMem: '4Gi',
+      resourceDisk: '20Gi',
+    }
+
+    await api.getTemplate(3)
+    await api.createTemplate(payload)
+    await api.updateTemplate(3, { ...payload, resourceMem: '6Gi' })
+    await api.deleteTemplate(3)
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/v1/templates/3', expect.objectContaining({ method: 'GET' }))
+    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/v1/templates', expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }))
+    expect(fetchMock).toHaveBeenNthCalledWith(3, '/api/v1/templates/3', expect.objectContaining({
+      method: 'PUT',
+      body: JSON.stringify({ ...payload, resourceMem: '6Gi' }),
+    }))
+    expect(fetchMock).toHaveBeenNthCalledWith(4, '/api/v1/templates/3', expect.objectContaining({ method: 'DELETE' }))
+  })
+
   it('sends the stored auth token as a bearer header', async () => {
     localStorage.setItem('paap_token', 'signed.jwt.token')
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue({

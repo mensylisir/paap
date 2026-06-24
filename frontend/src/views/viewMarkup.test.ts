@@ -193,6 +193,28 @@ describe('Vue view markup', () => {
     expect(templatesView.default).toContain('configTemplateGeneratedFileCount')
   })
 
+  it('adds environment template management to the templates page', async () => {
+    const templatesView = await import('./TemplatesView.vue?raw')
+    const client = await import('../api/client.ts?raw')
+
+    expect(templatesView.default).toContain('环境模板')
+    expect(templatesView.default).toContain('environmentTemplates')
+    expect(templatesView.default).toContain('environment-template-form')
+    expect(templatesView.default).toContain('openEnvironmentTemplateModal')
+    expect(templatesView.default).toContain('pendingEnvironmentTemplateDelete')
+    expect(templatesView.default).toContain('api.createTemplate')
+    expect(templatesView.default).toContain('api.updateTemplate')
+    expect(templatesView.default).toContain('api.deleteTemplate')
+    expect(templatesView.default).toContain('resourceCpu')
+    expect(templatesView.default).toContain('resourceMem')
+    expect(templatesView.default).toContain('resourceDisk')
+
+    expect(client.default).toContain('getTemplate')
+    expect(client.default).toContain('createTemplate')
+    expect(client.default).toContain('updateTemplate')
+    expect(client.default).toContain('deleteTemplate')
+  })
+
   it('shows extracted config template fields before raw preview content', async () => {
     const templatesView = await import('./TemplatesView.vue?raw')
 

@@ -146,6 +146,21 @@ func TestEnvironmentTemplateCRUDRoutesAreMounted(t *testing.T) {
 		t.Fatalf("updated template = %#v", updated)
 	}
 
+	clearRec := httptest.NewRecorder()
+	clearReq := httptest.NewRequest(http.MethodPut, "/api/v1/templates/1", bytes.NewBufferString(`{"services":[],"infra":[]}`))
+	clearReq.Header.Set("Content-Type", "application/json")
+	clearReq.Header.Set("Authorization", "Bearer "+token)
+	router.ServeHTTP(clearRec, clearReq)
+	if clearRec.Code != http.StatusOK {
+		t.Fatalf("clear lists status = %d, want %d; body=%s", clearRec.Code, http.StatusOK, clearRec.Body.String())
+	}
+	if err := db.First(&updated, createResponse.Data.ID).Error; err != nil {
+		t.Fatalf("find cleared template: %v", err)
+	}
+	if updated.Services != "[]" || updated.Infra != "[]" {
+		t.Fatalf("cleared template lists = services:%q infra:%q, want []", updated.Services, updated.Infra)
+	}
+
 	deleteRec := httptest.NewRecorder()
 	deleteReq := httptest.NewRequest(http.MethodDelete, "/api/v1/templates/1", nil)
 	deleteReq.Header.Set("Authorization", "Bearer "+token)

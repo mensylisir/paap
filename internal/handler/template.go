@@ -70,13 +70,13 @@ type CreateTemplateRequest struct {
 }
 
 type UpdateTemplateRequest struct {
-	Name         string   `json:"name"`
-	Description  string   `json:"description"`
-	Services     []string `json:"services"`
-	Infra        []string `json:"infra"`
-	ResourceCPU  string   `json:"resourceCpu"`
-	ResourceMem  string   `json:"resourceMem"`
-	ResourceDisk string   `json:"resourceDisk"`
+	Name         *string   `json:"name"`
+	Description  *string   `json:"description"`
+	Services     *[]string `json:"services"`
+	Infra        *[]string `json:"infra"`
+	ResourceCPU  *string   `json:"resourceCpu"`
+	ResourceMem  *string   `json:"resourceMem"`
+	ResourceDisk *string   `json:"resourceDisk"`
 }
 
 // ListTemplates returns all environment templates
@@ -256,26 +256,26 @@ func UpdateTemplate(c *gin.Context) {
 	}
 
 	updates := make(map[string]interface{})
-	if req.Name != "" {
-		updates["name"] = req.Name
+	if req.Name != nil && strings.TrimSpace(*req.Name) != "" {
+		updates["name"] = strings.TrimSpace(*req.Name)
 	}
-	if req.Description != "" {
-		updates["description"] = req.Description
+	if req.Description != nil {
+		updates["description"] = *req.Description
 	}
-	if req.ResourceCPU != "" {
-		updates["resource_cpu"] = req.ResourceCPU
+	if req.ResourceCPU != nil && strings.TrimSpace(*req.ResourceCPU) != "" {
+		updates["resource_cpu"] = strings.TrimSpace(*req.ResourceCPU)
 	}
-	if req.ResourceMem != "" {
-		updates["resource_mem"] = req.ResourceMem
+	if req.ResourceMem != nil && strings.TrimSpace(*req.ResourceMem) != "" {
+		updates["resource_mem"] = strings.TrimSpace(*req.ResourceMem)
 	}
-	if req.ResourceDisk != "" {
-		updates["resource_disk"] = req.ResourceDisk
+	if req.ResourceDisk != nil && strings.TrimSpace(*req.ResourceDisk) != "" {
+		updates["resource_disk"] = strings.TrimSpace(*req.ResourceDisk)
 	}
-	if len(req.Services) > 0 {
-		updates["services"] = toJSON(req.Services)
+	if req.Services != nil {
+		updates["services"] = toJSON(*req.Services)
 	}
-	if len(req.Infra) > 0 {
-		updates["infra"] = toJSON(req.Infra)
+	if req.Infra != nil {
+		updates["infra"] = toJSON(*req.Infra)
 	}
 
 	if err := database.DB.Model(&model.EnvTemplate{}).Where("id = ?", id).Updates(updates).Error; err != nil {
