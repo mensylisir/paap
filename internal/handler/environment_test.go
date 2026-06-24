@@ -1637,6 +1637,96 @@ func TestCreateEnvironmentGeneratesIdentifierWhenMissing(t *testing.T) {
 	}
 }
 
+func TestCreateEnvironmentAppliesTemplateResourceQuota(t *testing.T) {
+	previousDB := database.DB
+	previousClient := k8s.GetClient()
+	t.Cleanup(func() {
+		database.DB = previousDB
+		k8s.SetClient(previousClient)
+	})
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("db handle: %v", err)
+	}
+	sqlDB.SetMaxOpenConns(1)
+	if err := db.AutoMigrate(&model.Application{}, &model.Environment{}, &model.EnvTemplate{}, &model.ServiceTemplate{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	database.DB = db
+
+	testScheme := runtime.NewScheme()
+	if err := clientgoscheme.AddToScheme(testScheme); err != nil {
+		t.Fatalf("add client-go scheme: %v", err)
+	}
+	if err := paapv1.AddToScheme(testScheme); err != nil {
+		t.Fatalf("add paap scheme: %v", err)
+	}
+	fakeClient := fake.NewClientBuilder().WithScheme(testScheme).Build()
+	k8s.SetClient(fakeClient)
+
+	app := model.Application{Name: "测试应用", Identifier: "test", OwnerID: 1}
+	if err := db.Create(&app).Error; err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	tmpl := model.EnvTemplate{
+		Name:         "配额模板",
+		ResourceCPU:  "6核",
+		ResourceMem:  "12GB",
+		ResourceDisk: "80GB",
+	}
+	if err := db.Create(&tmpl).Error; err != nil {
+		t.Fatalf("create template: %v", err)
+	}
+
+	body, _ := json.Marshal(CreateEnvRequest{Name: "预发环境", Identifier: "stage", TemplateID: tmpl.ID})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/applications/1/environments", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.POST("/api/v1/applications/:id/environments", withTestAuthUserRole(1, "admin", CreateEnvironment))
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+	var got struct {
+		Data model.Environment `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+
+	var envCR paapv1.Environment
+	if err := fakeClient.Get(context.Background(), types.NamespacedName{Name: "stage", Namespace: "paap-app-test"}, &envCR); err != nil {
+		t.Fatalf("get environment cr: %v", err)
+	}
+	if envCR.Spec.ResourceQuota == nil {
+		t.Fatalf("resourceQuota is nil, want template quota")
+	}
+	if envCR.Spec.ResourceQuota.CPU != "6核" || envCR.Spec.ResourceQuota.Memory != "12GB" || envCR.Spec.ResourceQuota.Storage != "80GB" {
+		t.Fatalf("resourceQuota = %#v", envCR.Spec.ResourceQuota)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		var env model.Environment
+		if err := db.First(&env, got.Data.ID).Error; err != nil {
+			t.Fatalf("find created env: %v", err)
+		}
+		if env.Status == "running" || env.Status == "error" {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("background install did not settle before test cleanup")
+}
+
 func TestListApplicationEnvironmentsRejectsNonMembers(t *testing.T) {
 	previousDB := database.DB
 	t.Cleanup(func() { database.DB = previousDB })

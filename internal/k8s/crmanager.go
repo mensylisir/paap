@@ -235,7 +235,7 @@ func DeleteApplicationCR(ctx context.Context, identifier string) error {
 }
 
 // CreateEnvironmentCR creates an Environment CR in the app's CR namespace
-func CreateEnvironmentCR(ctx context.Context, appIdentifier, envName, envIdentifier, primaryNS string, additionalNS []paapv1.AdditionalNamespace) error {
+func CreateEnvironmentCR(ctx context.Context, appIdentifier, envName, envIdentifier, primaryNS string, additionalNS []paapv1.AdditionalNamespace, resourceQuota *paapv1.ResourceQuotaSpec) error {
 	cl, err := requireClient()
 	if err != nil {
 		return err
@@ -257,6 +257,7 @@ func CreateEnvironmentCR(ctx context.Context, appIdentifier, envName, envIdentif
 			Network: paapv1.NetworkSpec{
 				Isolation: "NetworkPolicy",
 			},
+			ResourceQuota: resourceQuota,
 		},
 	}
 	return cl.Create(ctx, env)

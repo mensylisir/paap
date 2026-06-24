@@ -280,7 +280,11 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
   - 测试覆盖：`npm --prefix frontend run test -- src/api/client.test.ts -t "environment template"`、`npm --prefix frontend run test -- src/views/viewMarkup.test.ts -t "environment template"`、`go test ./internal/handler -run TestEnvironmentTemplateCRUDRoutesAreMounted` 先红后绿；完整 `npm --prefix frontend run test`、`npm --prefix frontend run build`、`make test` 通过
   - 部署验证：`paap-server:v0.1.497` 已构建、加载到 `kind-rbac-governance-test` 并完成 `paap-system/paap-server` 滚动更新；实际 Deployment 镜像为 `paap-server:v0.1.497`，PAAP/kpack 相关 Pod Running，节点 Ready
   - CDP 验证：复用 Chrome tab `http://172.18.0.2:30091/templates`；环境模板 Tab 和“新建环境模板”可见；通过 UI 完成临时环境模板新建、编辑（内存 `4GB` -> `6GB`，服务/基础设施清空）、删除闭环；带 token 查询 `/api/v1/templates` 返回 200、5 条基准模板、临时 `CDP环境模板-*` 残留 0
-- [ ] 创建环境时支持从模板写入 CPU、内存、存储配额到 `Environment.spec.resourceQuota`
+- [x] 创建环境时支持从模板写入 CPU、内存、存储配额到 `Environment.spec.resourceQuota`
+  - `CreateEnvironment` 在非空模板创建路径读取 `EnvTemplate.resourceCpu/resourceMem/resourceDisk`，写入 Environment CR `spec.resourceQuota.cpu/memory/storage`
+  - 测试覆盖：`go test ./internal/handler -run TestCreateEnvironmentAppliesTemplateResourceQuota` 先红后绿；受影响包 `go test ./internal/handler ./internal/k8s` 和完整 `make test` 通过
+  - 部署验证：`paap-server:v0.1.498` 已构建、加载到 `kind-rbac-governance-test` 并完成 `paap-system/paap-server` 滚动更新；实际 Deployment 镜像为 `paap-server:v0.1.498`，PAAP/kpack 相关 Pod Running，节点 Ready
+  - CDP/API 验证：复用 Chrome tab 登录 token，在应用 1 下用模板 ID 4（轻量开发环境）创建临时环境 `quota-cdp-736204`，kubectl 读取 `paap-app-test/environment quota-cdp-736204` 得到 `{"cpu":"2核","memory":"4GB","storage":"20GB"}`；删除临时环境后 API 返回 404，CR 返回 NotFound
 - [ ] 创建环境时支持模板或表单配置附加 namespace，而不是固定只创建 `app` namespace
 - [x] 评估并实现 `ipPool` 调和逻辑；若暂不支持，需要从 UI 和文档中明确标记为未启用
   - 当前决策：暂不启用自定义 `ipPool`，环境创建仍使用平台默认网络规划

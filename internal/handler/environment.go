@@ -1051,6 +1051,7 @@ func CreateEnvironment(c *gin.Context) {
 	if req.FromEmpty {
 		env.TemplateID = 0
 	}
+	resourceQuota := environmentTemplateResourceQuota(env.TemplateID)
 
 	if err := database.DB.Create(&env).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -1063,7 +1064,7 @@ func CreateEnvironment(c *gin.Context) {
 	additionalNS := []paapv1.AdditionalNamespace{
 		{Suffix: "app", Purpose: "workload"},
 	}
-	if err := k8s.CreateEnvironmentCR(ctx, app.Identifier, req.Name, identifier, primaryNS, additionalNS); err != nil {
+	if err := k8s.CreateEnvironmentCR(ctx, app.Identifier, req.Name, identifier, primaryNS, additionalNS, resourceQuota); err != nil {
 		database.DB.Model(&env).Update("status", "error").Update("error_message", err.Error())
 		c.JSON(http.StatusCreated, gin.H{"data": env, "warning": "Environment CR creation failed: " + err.Error()})
 		return
@@ -1075,6 +1076,28 @@ func CreateEnvironment(c *gin.Context) {
 	database.DB.Model(&env).Update("status", "creating")
 
 	c.JSON(http.StatusCreated, gin.H{"data": env})
+}
+
+func environmentTemplateResourceQuota(templateID uint) *paapv1.ResourceQuotaSpec {
+	if templateID == 0 {
+		return nil
+	}
+	var tmpl model.EnvTemplate
+	if err := database.DB.First(&tmpl, templateID).Error; err != nil {
+		log.Printf("[CreateEnvironment] Template %d not found while resolving resource quota: %v", templateID, err)
+		return nil
+	}
+	cpu := strings.TrimSpace(tmpl.ResourceCPU)
+	memory := strings.TrimSpace(tmpl.ResourceMem)
+	storage := strings.TrimSpace(tmpl.ResourceDisk)
+	if cpu == "" && memory == "" && storage == "" {
+		return nil
+	}
+	return &paapv1.ResourceQuotaSpec{
+		CPU:     cpu,
+		Memory:  memory,
+		Storage: storage,
+	}
 }
 
 func foundationServiceTypes() []string {
