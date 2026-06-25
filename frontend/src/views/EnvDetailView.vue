@@ -32,7 +32,22 @@
                 </button>
                 <span class="topology-zoom-label">{{ Math.round(canvasZoom * 100) }}%</span>
               </div>
+              <div class="component-topology-zone-legend" aria-label="画布分区">
+                <span>本环境</span>
+                <span>平台公共</span>
+                <span>集群外部</span>
+              </div>
               <div class="component-canvas-stage" :style="{ width: `${environmentCanvasSize.width}px`, height: `${environmentCanvasSize.height}px`, transform: `scale(${canvasZoom})`, transformOrigin: 'top left' }" @pointerdown="startCanvasMarquee">
+                <div
+                  v-for="zone in environmentCanvasZones"
+                  :key="zone.key"
+                  class="component-topology-zone"
+                  :class="`component-topology-zone--${zone.key}`"
+                  :style="componentTopologyZoneStyle(zone)"
+                >
+                  <span>{{ zone.label }}</span>
+                  <small>{{ zone.nodes.length }} 个资源</small>
+                </div>
                 <svg class="component-canvas-links" :viewBox="environmentCanvasViewBox" aria-hidden="true">
                   <defs>
                     <marker id="environment-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
@@ -76,7 +91,7 @@
                 </svg>
                 <div v-if="environmentCanvasNodes.length === 0" class="component-canvas-empty-hint">
                   <strong>空环境</strong>
-                  <span>在画布空白处右键创建组件、工具、数据库或中间件。</span>
+                  <span>{{ isSystemSharedEnvironment ? '在画布空白处右键添加工具或中间件。' : '在画布空白处右键创建组件、工具、数据库或中间件。' }}</span>
                   <div v-if="missingRequiredEnvironmentCapabilities.length" class="component-canvas-empty-actions">
                     <button
                       v-for="item in missingRequiredEnvironmentCapabilities"
@@ -97,7 +112,7 @@
                   :style="componentNodeStyle(node)"
                   :data-node-key="node.topologyId || node.id"
                   @click="handleTopologyNodeClick($event, node)"
-                  @dblclick.stop.prevent="startRenameNode(node)"
+                  @dblclick.stop.prevent="node.topologyKind !== 'capability' && startRenameNode(node)"
                   @pointerdown="startComponentNodeDrag($event, node)"
                   @pointerup="finishComponentNodePointer($event, node)"
                   @contextmenu.stop.prevent="openTopologyContextMenu($event, node)"
@@ -538,7 +553,7 @@
                 </svg>
                 <div v-if="componentCanvasNodes.length === 0" class="component-canvas-empty-hint">
                   <strong>暂无组件</strong>
-                  <span>在画布空白处右键创建前端、后端、数据库或中间件。</span>
+                  <span>{{ isSystemSharedEnvironment ? '在画布空白处右键添加工具或中间件。' : '在画布空白处右键创建前端、后端、数据库或中间件。' }}</span>
                 </div>
                 <button
                   v-for="node in componentCanvasNodes"
@@ -549,7 +564,7 @@
                   :style="componentNodeStyle(node)"
                   :data-node-key="node.topologyId || node.id"
                   @click="handleTopologyNodeClick($event, node)"
-                  @dblclick.stop.prevent="startRenameNode(node)"
+                  @dblclick.stop.prevent="node.topologyKind !== 'capability' && startRenameNode(node)"
                   @pointerdown="startComponentNodeDrag($event, node)"
                   @pointerup="finishComponentNodePointer($event, node)"
                   @contextmenu.stop.prevent="openTopologyContextMenu($event, node)"
@@ -750,7 +765,7 @@
                 {{ configDrawerAvatarLabel }}
               </span>
               <div>
-              <p class="modal-label">{{ configDrawer.kind === 'service' ? '服务配置' : '组件配置' }}</p>
+              <p class="modal-label">{{ configDrawer.kind === 'capability' ? '能力配置' : (configDrawer.kind === 'service' ? '服务配置' : '组件配置') }}</p>
               <h3>{{ configDrawerTitle }}</h3>
               <small>{{ configDrawerSubtitle }}</small>
               </div>
@@ -837,12 +852,30 @@
                     <strong>{{ row.value }}</strong>
                   </div>
                 </div>
-                <div class="config-deployment-actions">
+                <div v-if="configDrawer.kind !== 'capability'" class="config-deployment-actions">
                   <button type="button" class="rail-btn rail-btn--secondary rail-btn--sm" @click="openDrawerLogs">查看日志</button>
                   <button type="button" class="rail-btn rail-btn--secondary rail-btn--sm" @click="openDrawerMonitoring">查看监控</button>
                 </div>
               </div>
-              <div v-if="configDrawer.kind === 'service'" class="service-access-stack">
+              <div v-if="configDrawer.kind === 'capability'" class="service-access-stack capability-access-stack">
+                <div class="service-access-row">
+                  <span>来源</span>
+                  <strong>{{ capabilitySourceLabel(drawerCapability?.source || '') }}</strong>
+                </div>
+                <div class="service-access-row">
+                  <span>能力</span>
+                  <code>{{ capabilityLabel(drawerCapability?.capability || '') }}</code>
+                </div>
+                <div v-if="drawerCapability?.source === 'shared'" class="service-access-row">
+                  <span>共享服务</span>
+                  <code>{{ drawerCapability?.refService?.serviceName || drawerCapability?.refService?.serviceType || drawerCapability?.serviceType || '未关联' }}</code>
+                </div>
+                <div v-if="drawerCapability?.source === 'external'" class="service-access-row">
+                  <span>外部地址</span>
+                  <code>{{ drawerCapability?.externalEndpoint || '未配置' }}</code>
+                </div>
+              </div>
+              <div v-else-if="configDrawer.kind === 'service'" class="service-access-stack">
                 <div class="service-access-row">
                   <span>环境内</span>
                   <code>{{ serviceDrawerInternalEndpoint || '等待生成' }}</code>
@@ -863,7 +896,7 @@
                   </button>
                 </div>
               </div>
-              <div v-else class="service-access-stack">
+              <div v-else-if="configDrawer.kind === 'component'" class="service-access-stack">
                 <div class="service-access-row">
                   <span>内部地址</span>
                   <code>{{ componentDrawerServiceEndpoint || '等待生成' }}</code>
@@ -901,13 +934,121 @@
               </div>
             </section>
 
+            <section v-if="configDrawerTab === 'deploy' && configDrawer.kind === 'capability'" class="config-section capability-config-section">
+              <div class="config-section-title">
+                <span>能力配置</span>
+                <small v-if="drawerCapability?.source === 'shared'">共享资源只读</small>
+              </div>
+              <div class="config-kv-grid service-summary-grid capability-summary-grid">
+                <div v-for="row in drawerCapabilityRows" :key="row.label">
+                  <span>{{ row.label }}</span>
+                  <strong>{{ row.value }}</strong>
+                </div>
+              </div>
+              <div v-if="drawerCapability?.source === 'shared'" class="config-inline-note">
+                共享资源只读。业务环境只能查看平台共享资源池中的服务信息，部署、编辑和删除由平台管理员在共享资源池画布完成。
+              </div>
+              <div v-if="drawerCapability?.source === 'external'" class="external-capability-form">
+                <div class="config-section-title">
+                  <span>外部资源配置</span>
+                  <small>连接信息保存到 Kubernetes Secret，数据库只保存 credentialSecretRef。</small>
+                </div>
+                <div class="config-form-grid">
+                  <label class="config-form-wide">
+                    <span>外部地址</span>
+                    <input v-model.trim="capabilityForm.externalEndpoint" class="bx--text-input" :placeholder="externalCapabilityPlaceholder(drawerCapability)" />
+                  </label>
+                  <label>
+                    <span>认证方式</span>
+                    <select v-model="capabilityForm.authType" class="bx--select-input">
+                      <option value="none">不需要认证</option>
+                      <option value="basic">用户名密码</option>
+                      <option value="token">Token</option>
+                      <option value="existingSecret">已有 Secret</option>
+                    </select>
+                  </label>
+                  <label v-if="capabilityForm.authType === 'basic'">
+                    <span>用户名</span>
+                    <input v-model.trim="capabilityForm.username" class="bx--text-input" autocomplete="username" />
+                  </label>
+                  <label v-if="capabilityForm.authType === 'basic'">
+                    <span>密码</span>
+                    <span class="password-field-wrap capability-secret-field">
+                      <input
+                        v-model="capabilityForm.password"
+                        class="bx--text-input password-field-input"
+                        :type="capabilitySecretVisible('password') ? 'text' : 'password'"
+                        autocomplete="new-password"
+                        placeholder="留空则沿用已保存 Secret"
+                      />
+                      <button
+                        type="button"
+                        class="password-visible-toggle"
+                        :aria-label="capabilitySecretVisible('password') ? '隐藏密码' : '显示密码'"
+                        :title="capabilitySecretVisible('password') ? '隐藏密码' : '显示密码'"
+                        :disabled="capabilityCredentialLoading"
+                        @click="toggleCapabilitySecret('password')"
+                      >
+                        <svg v-if="capabilitySecretVisible('password')" focusable="false" width="16" height="16" viewBox="0 0 32 32" fill="currentColor">
+                          <path d="M16 6C7 6 2 16 2 16s5 10 14 10 14-10 14-10S25 6 16 6zm0 18c-6.4 0-10.5-5.8-11.7-8C5.5 13.8 9.6 8 16 8s10.5 5.8 11.7 8c-1.2 2.2-5.3 8-11.7 8z"/>
+                          <path d="M16 10a6 6 0 1 0 0 12 6 6 0 0 0 0-12zm0 10a4 4 0 1 1 0-8 4 4 0 0 1 0 8z"/>
+                        </svg>
+                        <svg v-else focusable="false" width="16" height="16" viewBox="0 0 32 32" fill="currentColor">
+                          <path d="m3.3 2 26.7 26.7-1.4 1.4-5.1-5.1A15 15 0 0 1 16 26C7 26 2 16 2 16a25 25 0 0 1 6.2-7.5L1.9 3.4 3.3 2zm6.4 8A22.7 22.7 0 0 0 4.3 16C5.5 18.2 9.6 24 16 24c2.1 0 4-.6 5.7-1.5l-3-3A6 6 0 0 1 12.5 13l-2.8-3z"/>
+                          <path d="M16 6c9 0 14 10 14 10a24.9 24.9 0 0 1-4.6 6.1L24 20.7c1.7-1.6 3-3.5 3.7-4.7C26.5 13.8 22.4 8 16 8c-1.5 0-2.8.3-4.1.8L10.4 7.3A14 14 0 0 1 16 6z"/>
+                        </svg>
+                      </button>
+                    </span>
+                  </label>
+                  <label v-if="capabilityForm.authType === 'token'" class="config-form-wide">
+                    <span>Token</span>
+                    <span class="password-field-wrap capability-secret-field">
+                      <input
+                        v-model="capabilityForm.token"
+                        class="bx--text-input password-field-input"
+                        :type="capabilitySecretVisible('token') ? 'text' : 'password'"
+                        autocomplete="off"
+                        placeholder="留空则沿用已保存 Secret"
+                      />
+                      <button
+                        type="button"
+                        class="password-visible-toggle"
+                        :aria-label="capabilitySecretVisible('token') ? '隐藏 Token' : '显示 Token'"
+                        :title="capabilitySecretVisible('token') ? '隐藏 Token' : '显示 Token'"
+                        :disabled="capabilityCredentialLoading"
+                        @click="toggleCapabilitySecret('token')"
+                      >
+                        <svg v-if="capabilitySecretVisible('token')" focusable="false" width="16" height="16" viewBox="0 0 32 32" fill="currentColor">
+                          <path d="M16 6C7 6 2 16 2 16s5 10 14 10 14-10 14-10S25 6 16 6zm0 18c-6.4 0-10.5-5.8-11.7-8C5.5 13.8 9.6 8 16 8s10.5 5.8 11.7 8c-1.2 2.2-5.3 8-11.7 8z"/>
+                          <path d="M16 10a6 6 0 1 0 0 12 6 6 0 0 0 0-12zm0 10a4 4 0 1 1 0-8 4 4 0 0 1 0 8z"/>
+                        </svg>
+                        <svg v-else focusable="false" width="16" height="16" viewBox="0 0 32 32" fill="currentColor">
+                          <path d="m3.3 2 26.7 26.7-1.4 1.4-5.1-5.1A15 15 0 0 1 16 26C7 26 2 16 2 16a25 25 0 0 1 6.2-7.5L1.9 3.4 3.3 2zm6.4 8A22.7 22.7 0 0 0 4.3 16C5.5 18.2 9.6 24 16 24c2.1 0 4-.6 5.7-1.5l-3-3A6 6 0 0 1 12.5 13l-2.8-3z"/>
+                          <path d="M16 6c9 0 14 10 14 10a24.9 24.9 0 0 1-4.6 6.1L24 20.7c1.7-1.6 3-3.5 3.7-4.7C26.5 13.8 22.4 8 16 8c-1.5 0-2.8.3-4.1.8L10.4 7.3A14 14 0 0 1 16 6z"/>
+                        </svg>
+                      </button>
+                    </span>
+                  </label>
+                  <label v-if="capabilityForm.authType === 'existingSecret'" class="config-form-wide">
+                    <span>credentialSecretRef</span>
+                    <input v-model.trim="capabilityForm.credentialSecretRef" class="bx--text-input" placeholder="namespace/name" />
+                  </label>
+                  <label class="capability-checkbox-field">
+                    <input v-model="capabilityForm.tlsInsecureSkipVerify" type="checkbox" />
+                    <span>跳过 TLS 证书校验</span>
+                  </label>
+                </div>
+                <p v-if="capabilityCredentialError" class="modal-error" role="alert">{{ capabilityCredentialError }}</p>
+              </div>
+            </section>
+
             <section v-if="configDrawerTab === 'deploy' && configDrawer.kind === 'service' && serviceTypeVersions.length" class="config-section">
               <div class="config-section-title">
                 <span>版本</span>
               </div>
               <div class="config-form-grid">
                 <label class="service-config-field">
-                  <span>{{ serviceStatusHasRuntime(drawerService) ? '当前 Chart 版本' : '选择 Chart 版本' }}</span>
+                  <span>{{ serviceStatusHasRuntime(drawerService) ? '当前应用版本' : '选择应用版本' }}</span>
                   <select v-if="!serviceStatusHasRuntime(drawerService)" v-model="selectedChartVersion" class="bx--select-input">
                     <option v-for="tv in serviceTypeVersions" :key="tv.chartVersion" :value="tv.chartVersion">
                       {{ serviceVersionOptionLabel(tv) }}
@@ -1734,6 +1875,7 @@
           <footer class="config-drawer-footer">
             <button v-if="configDrawer.kind === 'component'" type="button" class="text-btn danger" :disabled="configDrawer.saving" @click="deleteDrawerComponent">删除组件</button>
             <button v-if="configDrawer.kind === 'service'" type="button" class="text-btn danger" :disabled="uninstallSubmitting" @click="deleteDrawerService">删除卡片</button>
+            <button v-if="configDrawer.kind === 'capability'" type="button" class="text-btn danger" :disabled="configDrawer.saving" @click="deleteDrawerCapability">删除卡片</button>
             <button type="button" class="bx--btn bx--btn--secondary" @click="closeConfigDrawer">取消</button>
             <button v-if="configDrawer.kind === 'component'" type="button" class="bx--btn bx--btn--secondary" :disabled="configDrawer.saving" @click="() => saveConfigDrawer()">
               {{ configDrawer.saving ? '保存中...' : '保存配置' }}
@@ -1743,6 +1885,9 @@
             </button>
             <button v-if="configDrawer.kind === 'service' && serviceDrawerProfile.showDeploymentConfig" type="button" class="bx--btn bx--btn--secondary" :disabled="configDrawer.saving || !serviceDrawerConfigurable" @click="saveServiceConfigDrawer">
               {{ configDrawer.saving ? '保存中...' : '保存部署配置' }}
+            </button>
+            <button v-if="configDrawer.kind === 'capability' && drawerCapability?.source === 'external'" type="button" class="bx--btn bx--btn--secondary" :disabled="configDrawer.saving" @click="saveCapabilityConfigDrawer">
+              {{ configDrawer.saving ? '保存中...' : '保存外部配置' }}
             </button>
             <button v-if="configDrawer.kind === 'service'" type="button" class="bx--btn bx--btn--primary" :disabled="serviceDrawerDeployDisabled" @click="deployServiceFromDrawer">
               {{ serviceDrawerDeployLabel }}
@@ -1760,7 +1905,7 @@
         @pointerdown.stop
         @click.stop
       >
-        <button v-if="componentContextMenu.kind === 'canvas'" type="button" @mouseenter="openComponentSubmenu" @click="openComponentSubmenu">
+        <button v-if="componentContextMenu.kind === 'canvas' && !isSystemSharedEnvironment" type="button" @mouseenter="openComponentSubmenu" @click="openComponentSubmenu">
           <span>创建组件</span>
           <small>前端、后端、自定义组件</small>
           <svg class="submenu-arrow" width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M6 4l4 4-4 4V4z"/></svg>
@@ -1775,8 +1920,18 @@
           <small>数据库、缓存、消息队列</small>
           <svg class="submenu-arrow" width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M6 4l4 4-4 4V4z"/></svg>
         </button>
-        <div v-if="componentContextMenu.kind === 'canvas'" class="context-menu-divider"></div>
-        <button v-if="componentContextMenu.kind === 'canvas'" type="button" @click="adoptCanvasResource">
+        <button v-if="componentContextMenu.kind === 'canvas' && !isSystemSharedEnvironment" type="button" @mouseenter="openSharedCapabilitySubmenu" @click="openSharedCapabilitySubmenu">
+          <span>添加共享资源</span>
+          <small>引用平台共享资源池中的工具或中间件</small>
+          <svg class="submenu-arrow" width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M6 4l4 4-4 4V4z"/></svg>
+        </button>
+        <button v-if="componentContextMenu.kind === 'canvas' && !isSystemSharedEnvironment" type="button" @mouseenter="openExternalCapabilitySubmenu" @click="openExternalCapabilitySubmenu">
+          <span>添加外部资源</span>
+          <small>接入外部代码、镜像、数据库、中间件或观测资源</small>
+          <svg class="submenu-arrow" width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M6 4l4 4-4 4V4z"/></svg>
+        </button>
+        <div v-if="componentContextMenu.kind === 'canvas' && !isSystemSharedEnvironment" class="context-menu-divider"></div>
+        <button v-if="componentContextMenu.kind === 'canvas' && !isSystemSharedEnvironment" type="button" @click="adoptCanvasResource">
           <span>纳管已有资源</span>
           <small>接入集群现有资源</small>
         </button>
@@ -1784,9 +1939,9 @@
           <span>删除连线</span>
           <small>只删除这条手动画布连线</small>
         </button>
-        <button v-if="componentContextMenu.kind === 'component' || componentContextMenu.kind === 'service'" type="button" @click="configureContextNode">
+        <button v-if="componentContextMenu.kind === 'component' || componentContextMenu.kind === 'service' || componentContextMenu.kind === 'capability'" type="button" @click="configureContextNode">
           <span>配置</span>
-          <small>{{ componentContextMenu.kind === 'service' ? '在右侧查看工具或中间件配置' : '在右侧配置环境变量、副本和启动参数' }}</small>
+          <small>{{ componentContextMenu.kind === 'capability' ? '在右侧查看或配置能力来源' : (componentContextMenu.kind === 'service' ? '在右侧查看工具或中间件配置' : '在右侧配置环境变量、副本和启动参数') }}</small>
         </button>
         <button v-if="componentContextMenu.kind === 'component' || componentContextMenu.kind === 'service'" type="button" @click="renameContextNode">
           <span>重命名</span>
@@ -1807,6 +1962,10 @@
         <button v-if="componentContextMenu.kind === 'service'" type="button" @click="deleteContextService">
           <span>删除</span>
           <small>卸载工具、中间件或数据库并清理卡片</small>
+        </button>
+        <button v-if="componentContextMenu.kind === 'capability'" type="button" @click="deleteContextCapability">
+          <span>删除</span>
+          <small>移除共享或外部资源卡片</small>
         </button>
         <button v-if="componentContextMenu.kind === 'component' || componentContextMenu.kind === 'service'" type="button" @click="openContextNodeMonitoring">
           <span>监控</span>
@@ -2054,6 +2213,7 @@ import {
 } from './serviceAssetConfig'
 import { numericRouteParam, routeEnvironmentKey } from './envDetailRouteState'
 import { shouldPollTemplateInstallations, TEMPLATE_INSTALL_POLL_INTERVAL_MS, TEMPLATE_INSTALL_POLL_MAX_ATTEMPTS } from './envInstallPolling'
+import { runtimeConsoleWebSocketProtocols } from './runtimeConsoleAuth'
 import { buildPickerTemplates, createPickerSessionState, isServiceActive, pickerNotice } from './envDetailServicePicker'
 import { buildEnvironmentCapabilityTabs, capabilityServiceInstanceLabel, knownCapabilityTabByKey, knownCapabilityTabKeys, requiredEnvironmentCapabilities, serviceCapability as resolveServiceCapability, serviceCategory as resolveServiceCategory, type CapabilityCategory, type CapabilityTab } from './envCapabilities'
 import { effectiveEnvironmentStatus, environmentStatusLabel } from './appSummary'
@@ -2084,6 +2244,7 @@ import { mergeCreatedCanvasResource, selectCreatedCanvasResource } from './envDe
 import {
   buildComponentDependencyEdges,
   buildComponentTopologyNodes,
+  buildComponentTopologyZones,
   componentTopologyCanvasViewBox,
   componentTopologyEdgePath,
   findTopologyNodeAtPoint,
@@ -2131,6 +2292,12 @@ const services = ref<any[]>([])
 const templates = ref<any[]>([])
 const availableServices = ref<any[]>([])
 const externalAccess = ref<any[]>([])
+const environmentCapabilities = ref<any[]>([])
+const sharedCapabilityResources = ref<any[]>([])
+const isSystemSharedEnvironment = computed(() =>
+  Boolean(env.value?.isSystem) ||
+  (String(app.value?.identifier || '').toLowerCase() === 'default' && String(env.value?.identifier || '').toLowerCase() === 'shared')
+)
 
 const showComponentModal = ref(false)
 const showServiceModal = ref(false)
@@ -2158,6 +2325,32 @@ const pendingUninstallService = ref<any>(null)
 const uninstallError = ref('')
 const uninstallSubmitting = ref(false)
 const serviceForm = ref({ serviceType:'deploy' })
+const externalCapabilityOptions = [
+  { capability: 'git', label: '代码仓库', serviceType: 'git', provider: 'gitlab', externalPlaceholder: 'https://gitlab.example.com' },
+  { capability: 'registry', label: '镜像仓库', serviceType: 'registry', provider: 'harbor', externalPlaceholder: 'https://harbor.example.com' },
+  { capability: 'ci', label: '持续集成', serviceType: 'ci', provider: 'jenkins', externalPlaceholder: 'https://jenkins.example.com' },
+  { capability: 'cd', label: '持续部署', serviceType: 'deploy', provider: 'argocd', externalPlaceholder: 'https://argocd.example.com' },
+  { capability: 'database', label: '数据库', serviceType: 'database', provider: 'postgresql', externalPlaceholder: 'postgres://user:password@db.example.com:5432/app' },
+  { capability: 'cache', label: '缓存', serviceType: 'cache', provider: 'redis', externalPlaceholder: 'redis://redis.example.com:6379/0' },
+  { capability: 'mq', label: '消息中间件', serviceType: 'mq', provider: 'kafka', externalPlaceholder: 'kafka://kafka.example.com:9092' },
+  { capability: 'objectStorage', label: '对象存储', serviceType: 'object-storage', provider: 's3', externalPlaceholder: 'https://s3.example.com' },
+  { capability: 'monitor', label: '监控', serviceType: 'monitor', provider: 'prometheus', externalPlaceholder: 'https://prometheus.example.com' },
+  { capability: 'logging', label: '日志', serviceType: 'log', provider: 'loki', externalPlaceholder: 'https://loki.example.com' },
+  { capability: 'custom', label: '自定义外部资源', serviceType: 'custom', provider: 'custom', externalPlaceholder: 'https://service.example.com' },
+]
+const defaultCapabilityForm = () => ({
+  externalEndpoint: '',
+  authType: 'none',
+  username: '',
+  password: '',
+  token: '',
+  credentialSecretRef: '',
+  tlsInsecureSkipVerify: false,
+})
+const capabilityForm = ref(defaultCapabilityForm())
+const capabilitySecretVisibleKeys = ref<Set<string>>(new Set())
+const capabilityCredentialLoading = ref(false)
+const capabilityCredentialError = ref('')
 const activeCapabilityServiceId = ref<number | null>(null)
 const capabilityWorkspaceCache = ref<Record<number, ServiceWorkspace>>({})
 const capabilityWorkspaceLoading = ref(false)
@@ -2193,16 +2386,17 @@ const selectedTopologyKey = ref<string | null>(null)
 const selectedManualEdge = ref<{ fromKey: string; toKey: string } | null>(null)
 const coreToolsSection = ref<HTMLElement | null>(null)
 const componentActionLoading = ref(false)
-const componentContextMenu = ref<{ visible: boolean; x: number; y: number; kind: 'component' | 'service' | 'canvas' | 'edge'; component: any | null; service: any | null; edge: any | null }>({
+const componentContextMenu = ref<{ visible: boolean; x: number; y: number; kind: 'component' | 'service' | 'capability' | 'canvas' | 'edge'; component: any | null; service: any | null; capability: any | null; edge: any | null }>({
   visible: false,
   x: 0,
   y: 0,
   kind: 'component',
   component: null,
   service: null,
+  capability: null,
   edge: null,
 })
-const contextSubmenu = ref<{ visible: boolean; x: number; y: number; mode: 'component' | 'tool' | 'infra'; templates: any[] }>({
+const contextSubmenu = ref<{ visible: boolean; x: number; y: number; mode: 'component' | 'tool' | 'infra' | 'shared-capability' | 'external-capability'; templates: any[] }>({
   visible: false,
   x: 0,
   y: 0,
@@ -2368,16 +2562,20 @@ const runtimeConsoleInput = ref('')
 const runtimeConsoleView = ref<HTMLElement | null>(null)
 type ConfigDrawerTab = 'deploy' | 'workspace' | 'capabilities' | 'api' | 'dependencies' | 'database' | 'data' | 'queues' | 'buckets' | 'backups' | 'variables' | 'runtime' | 'logs' | 'console'
 const configDrawerTab = ref<ConfigDrawerTab>('deploy')
-const configDrawer = ref<{ visible: boolean; kind: 'component' | 'service'; component: any | null; service: any | null; saving: boolean; error: string; message: string }>({
+const configDrawer = ref<{ visible: boolean; kind: 'component' | 'service' | 'capability'; component: any | null; service: any | null; capability: any | null; saving: boolean; error: string; message: string }>({
   visible: false,
   kind: 'component',
   component: null,
   service: null,
+  capability: null,
   saving: false,
   error: '',
   message: '',
 })
 const configDrawerTabs = computed<Array<{ key: ConfigDrawerTab; label: string }>>(() => {
+  if (configDrawer.value.kind === 'capability') {
+    return [{ key: 'deploy', label: '配置' }]
+  }
   if (configDrawer.value.kind === 'component') {
     return componentDrawerBlueprintModel.value.tabs as Array<{ key: ConfigDrawerTab; label: string }>
   }
@@ -2436,7 +2634,7 @@ const registryWorkspaceLoading = ref(false)
 const registryWorkspaceError = ref('')
 type RegistryRepositoryOption = { repository: string; tags: string[]; resource: WorkspaceResource }
 type PendingDeleteDialog = {
-  kind: 'component'
+  kind: 'component' | 'capability'
   label: string
   name: string
   message: string
@@ -2602,6 +2800,7 @@ const loadEnvironmentDetail = async () => {
     components.value = res.data.components || []
     services.value = res.data.services || []
     externalAccess.value = res.data.externalAccess || []
+    await Promise.all([loadEnvironmentCapabilities(), loadSharedCapabilityResources()])
     const appRes = await api.getApp(targetAppId)
     if (seq !== environmentLoadSeq) return
     app.value = appRes.data?.application || appRes.data
@@ -2668,6 +2867,35 @@ const typeLabel = (type:string) => {
   const labels: Record<string,string> = { deploy:'部署与持续交付', monitor:'监控与可观测性', log:'日志服务', ci:'持续集成', git:'代码仓库', registry:'轻量镜像仓库', harbor:'企业镜像仓库', postgresql:'关系型数据库', mysql:'关系型数据库', mongodb:'文档数据库', redis:'缓存服务', rabbitmq:'消息队列', kafka:'消息队列', minio:'对象存储', infra:'中间件', tool:'平台工具', custom:'自定义工具' }
   return labels[type] || type
 }
+const capabilityLabel = (capability:string) => ({
+  git: '代码仓库',
+  registry: '镜像仓库',
+  cd: '持续部署',
+  ci: '持续集成',
+  monitor: '监控',
+  logging: '日志',
+  database: '数据库',
+  cache: '缓存',
+  mq: '消息队列',
+  objectStorage: '对象存储',
+  custom: '自定义资源',
+}[capability] || capability)
+const capabilitySourceLabel = (source:string) => ({
+  managed: '本环境',
+  shared: '共享资源',
+  external: '外部资源',
+  deferred: '稍后配置',
+}[source] || source)
+const capabilityDisplayName = (cap:any) => {
+  if (cap?.source === 'shared' && cap?.refService) return `${capabilityLabel(cap.capability)} · ${cap.refService.serviceName || cap.refService.serviceType}`
+  if (cap?.source === 'external' && cap?.externalEndpoint) return `${capabilityLabel(cap.capability)} · 外部`
+  return `${capabilityLabel(cap?.capability || '')} · ${capabilitySourceLabel(cap?.source || '')}`
+}
+const capabilityNodeStatus = (cap:any) => {
+  if (cap?.source === 'shared') return 'linked'
+  if (cap?.source === 'external' && cap?.externalEndpoint) return 'pending'
+  return cap?.validationStatus || 'draft'
+}
 const compTypeText = (type?:string) => ({ frontend:'前端服务', backend:'后端服务', database:'数据库', middleware:'中间件', custom:'自定义' }[type || ''] || type || 'custom')
 const componentIsSourceDelivery = (comp:any) => comp?.deliveryMode === 'source' || Boolean(comp?.sourceRepoUrl || comp?.sourceMirrorRepoUrl || comp?.jenkinsJob)
 const componentDeliveryModeLabel = (comp:any) => componentIsSourceDelivery(comp) ? '源码交付' : '镜像交付'
@@ -2677,8 +2905,27 @@ const isApplicationTopologyService = (svc:any) => {
   return ['postgresql', 'mysql', 'mongodb', 'redis', 'rabbitmq', 'kafka', 'minio'].includes(type)
 }
 const appCanvasServices = computed(() => services.value.filter(isApplicationTopologyService))
-const componentTopologyAllNodes = computed(() => buildComponentTopologyNodes(components.value, appCanvasServices.value, componentDisplayNames.value))
-const environmentTopologyAllNodes = computed(() => buildComponentTopologyNodes(components.value, services.value, componentDisplayNames.value))
+const environmentCapabilityNodes = computed(() => environmentCapabilities.value.map((cap:any) => {
+  const key = `capability:${cap.id || cap.capability}`
+  const displayName = componentDisplayNames.value[key] || capabilityDisplayName(cap)
+  return {
+    ...cap,
+    id: cap.id || cap.capability,
+    name: displayName,
+    type: `capability-${cap.source || 'external'}`,
+    status: capabilityNodeStatus(cap),
+    topologyKind: 'capability',
+    topologyId: key,
+  }
+}))
+const componentTopologyAllNodes = computed(() => [
+  ...buildComponentTopologyNodes(components.value, appCanvasServices.value, componentDisplayNames.value),
+  ...environmentCapabilityNodes.value,
+])
+const environmentTopologyAllNodes = computed(() => [
+  ...buildComponentTopologyNodes(components.value, services.value, componentDisplayNames.value),
+  ...environmentCapabilityNodes.value,
+])
 const componentTopologyEdges = computed(() => buildComponentDependencyEdges(componentTopologyAllNodes.value))
 const environmentTopologyEdges = computed(() => buildComponentDependencyEdges(environmentTopologyAllNodes.value))
 const componentTypes = computed(() =>
@@ -2710,9 +2957,11 @@ const filteredTopologyNodes = computed(() => {
     return !q || text.includes(q)
   })
 })
-const environmentTopologyNodeSubtitle = (node:any) => node?.topologyKind === 'service'
-  ? `${typeLabel(node.type || node.serviceType || '')}`
-  : `${compTypeText(node.type)} · 应用组件`
+const environmentTopologyNodeSubtitle = (node:any) => {
+  if (node?.topologyKind === 'capability') return `${capabilitySourceLabel(node.source)} · ${node.externalEndpoint || node.refService?.namespace || node.credentialSecretRef || '待配置'}`
+  if (node?.topologyKind === 'service') return `${typeLabel(node.type || node.serviceType || '')}`
+  return `${compTypeText(node.type)} · 应用组件`
+}
 const componentCanvasMetrics = {
   colWidth: 260,
   nodeWidth: 196,
@@ -2722,6 +2971,7 @@ const componentCanvasMetrics = {
   rowGap: 34,
 }
 const preferredTopologyDepth = (node:any) => {
+  if (node?.topologyKind === 'capability') return 3
   if (node?.topologyKind === 'service') return 2
   const type = String(node?.type || '').toLowerCase()
   if (type === 'frontend') return 0
@@ -2848,6 +3098,30 @@ const environmentCanvasNodes = computed(() =>
     }))
   )
 )
+const topologyZoneBounds = (nodes:any[], canvasSize:any) => {
+  const left = Math.max(16, Math.min(...nodes.map((node:any) => Number(node.x || 0))) - 28)
+  const top = Math.max(16, Math.min(...nodes.map((node:any) => Number(node.y || 0))) - 36)
+  const right = Math.min(
+    Number(canvasSize.width || 0) - 16,
+    Math.max(...nodes.map((node:any) => Number(node.x || 0) + Number(node.width || componentCanvasMetrics.nodeWidth))) + 28,
+  )
+  const bottom = Math.min(
+    Number(canvasSize.height || 0) - 16,
+    Math.max(...nodes.map((node:any) => Number(node.y || 0) + Number(node.height || componentCanvasMetrics.nodeHeight))) + 28,
+  )
+  return {
+    left,
+    top,
+    width: Math.max(componentCanvasMetrics.nodeWidth + 56, right - left),
+    height: Math.max(componentCanvasMetrics.nodeHeight + 64, bottom - top),
+  }
+}
+const environmentCanvasZones = computed(() =>
+  buildComponentTopologyZones(environmentCanvasNodes.value).map((zone:any) => ({
+    ...zone,
+    bounds: topologyZoneBounds(zone.nodes, environmentCanvasSize.value),
+  }))
+)
 const componentNodePosition = (node:any, laneIndex: number, nodeIndex: number) => {
   const key = String(node?.topologyId || node?.id || node?.name || '')
   const saved = componentNodePositions.value[key]
@@ -2903,11 +3177,19 @@ const componentNodeStyle = (node:any) => ({
   width: `${node.width}px`,
   height: `${node.height}px`,
 })
+const componentTopologyZoneStyle = (zone:any) => ({
+  left: `${zone.bounds.left}px`,
+  top: `${zone.bounds.top}px`,
+  width: `${zone.bounds.width}px`,
+  height: `${zone.bounds.height}px`,
+})
 const componentNodeIconClass = (node:any) => {
+  if (node?.topologyKind === 'capability') return `node-type-icon--capability node-type-icon--capability-${String(node.source || 'external').toLowerCase()}`
   if (node?.topologyKind === 'service') return `node-type-icon--${String(node.type || node.serviceType || 'service').toLowerCase()}`
   return `node-type-icon--${String(node.type || 'component').toLowerCase()}`
 }
 const componentNodeIconPath = (node:any) => {
+  if (node?.topologyKind === 'capability') return 'M12 2 3 7v10l9 5 9-5V7l-9-5zm0 2.2L18.8 8 12 11.8 5.2 8 12 4.2zM5 10.5l6 3.3v5.6l-6-3.3v-5.6zm14 0v5.6l-6 3.3v-5.6l6-3.3z'
   const type = String(node?.type || node?.serviceType || '').toLowerCase()
   const paths: Record<string, string> = {
     frontend: 'M4 5h16v10H4V5zm2 2v6h12V7H6zm3 12h6v2H9v-2zm-4-2h14v2H5v-2z',
@@ -3044,6 +3326,10 @@ const topologyNodeSubtitle = (node:any) => node?.topologyKind === 'service'
 const selectTopologyNode = (node:any) => {
   if (!node) return
   selectedTopologyKey.value = String(node.topologyId || node.id || '')
+  if (node.topologyKind === 'capability') {
+    openCapabilityConfigDrawer(node)
+    return
+  }
   if (node.topologyKind === 'service') {
     openServiceConfigDrawer(node)
     return
@@ -3081,7 +3367,7 @@ const handleTopologyNodeClick = (event: MouseEvent, node:any) => {
   selectTopologyNode(node)
 }
 const closeCanvasMenus = () => {
-  componentContextMenu.value = { visible: false, x: 0, y: 0, kind: 'component', component: null, service: null, edge: null }
+  componentContextMenu.value = { visible: false, x: 0, y: 0, kind: 'component', component: null, service: null, capability: null, edge: null }
   contextSubmenu.value = { visible: false, x: 0, y: 0, mode: 'tool', templates: [] }
 }
 const closeCanvasDialogs = () => {
@@ -3138,7 +3424,28 @@ const openComponentSubmenu = () => {
     templates: componentTypeTemplates,
   }
 }
-const openToolSubmenu = () => {
+const openToolSubmenu = async () => {
+  if (templates.value.length === 0) {
+    contextSubmenu.value = {
+      visible: true,
+      x: componentContextMenu.value.x + 230,
+      y: componentContextMenu.value.y + 40,
+      mode: 'tool',
+      templates: [{ type: 'loading', label: '模板加载中...', description: '正在读取模板中心', disabled: true }],
+    }
+    try {
+      await loadServiceTemplates()
+    } catch (e:any) {
+      contextSubmenu.value = {
+        visible: true,
+        x: componentContextMenu.value.x + 230,
+        y: componentContextMenu.value.y + 40,
+        mode: 'tool',
+        templates: [{ type: 'error', label: '模板加载失败', description: e?.message || '请稍后重试', disabled: true }],
+      }
+      return
+    }
+  }
   const toolTemplates = buildPickerTemplates(templates.value, services.value, 'tool')
   contextSubmenu.value = {
     visible: true,
@@ -3148,7 +3455,28 @@ const openToolSubmenu = () => {
     templates: toolTemplates.map((t:any) => ({ ...t, label: t.serviceName || t.name || t.type })),
   }
 }
-const openInfraSubmenu = () => {
+const openInfraSubmenu = async () => {
+  if (templates.value.length === 0) {
+    contextSubmenu.value = {
+      visible: true,
+      x: componentContextMenu.value.x + 230,
+      y: componentContextMenu.value.y + 80,
+      mode: 'infra',
+      templates: [{ type: 'loading', label: '模板加载中...', description: '正在读取模板中心', disabled: true }],
+    }
+    try {
+      await loadServiceTemplates()
+    } catch (e:any) {
+      contextSubmenu.value = {
+        visible: true,
+        x: componentContextMenu.value.x + 230,
+        y: componentContextMenu.value.y + 80,
+        mode: 'infra',
+        templates: [{ type: 'error', label: '模板加载失败', description: e?.message || '请稍后重试', disabled: true }],
+      }
+      return
+    }
+  }
   const infraTemplates = buildPickerTemplates(templates.value, services.value, 'infra')
   contextSubmenu.value = {
     visible: true,
@@ -3158,16 +3486,58 @@ const openInfraSubmenu = () => {
     templates: infraTemplates.map((t:any) => ({ ...t, label: t.serviceName || t.name || t.type })),
   }
 }
+const sharedCapabilityTemplateLabel = (item:any) => [capabilityLabel(item.capability), item.serviceName || item.serviceType].filter(Boolean).join(' · ')
+const openSharedCapabilitySubmenu = async () => {
+  await loadSharedCapabilityResources()
+  const templates = sharedCapabilityResources.value.map((item:any) => ({
+    ...item,
+    type: String(item.capability || item.serviceType || item.id),
+    label: sharedCapabilityTemplateLabel(item),
+    description: [item.namespace, item.status].filter(Boolean).join(' · ') || '共享资源',
+  }))
+  contextSubmenu.value = {
+    visible: true,
+    x: componentContextMenu.value.x + 230,
+    y: componentContextMenu.value.y + 120,
+    mode: 'shared-capability',
+    templates: templates.length ? templates : [{ type: 'none', label: '暂无共享资源', description: '平台管理员需要先在共享资源池创建资源', disabled: true }],
+  }
+}
+const openExternalCapabilitySubmenu = () => {
+  contextSubmenu.value = {
+    visible: true,
+    x: componentContextMenu.value.x + 230,
+    y: componentContextMenu.value.y + 160,
+    mode: 'external-capability',
+    templates: externalCapabilityOptions.map((item) => ({
+      ...item,
+      type: item.capability,
+      description: item.externalPlaceholder,
+    })),
+  }
+}
 const selectSubmenuTemplate = async (tmpl: any) => {
   if (tmpl.disabled) return
   if (contextSubmenu.value.mode === 'component') {
     await createCanvasComponentDraft(tmpl.type)
     return
   }
+  if (contextSubmenu.value.mode === 'shared-capability') {
+    await createSharedCapabilityReference(tmpl)
+    return
+  }
+  if (contextSubmenu.value.mode === 'external-capability') {
+    await createExternalCapabilityDraft(tmpl)
+    return
+  }
   closeComponentContextMenu()
   await createCanvasServiceDraft(tmpl.type)
 }
 const openTopologyContextMenu = (event: MouseEvent, node: any) => {
+  if (node?.topologyKind === 'capability') {
+    openCapabilityContextMenu(event, node)
+    return
+  }
   if (node?.topologyKind === 'service') {
     openServiceContextMenu(event, node)
     return
@@ -3196,6 +3566,7 @@ const openCanvasContextMenu = (event: MouseEvent) => {
     kind: 'canvas',
     component: null,
     service: null,
+    capability: null,
     edge: null,
   }
 }
@@ -3211,6 +3582,7 @@ const openComponentContextMenu = (event: MouseEvent, comp: any) => {
     kind: 'component',
     component: comp,
     service: null,
+    capability: null,
     edge: null,
   }
 }
@@ -3226,6 +3598,23 @@ const openServiceContextMenu = (event: MouseEvent, svc: any) => {
     kind: 'service',
     component: null,
     service: svc,
+    capability: null,
+    edge: null,
+  }
+}
+const openCapabilityContextMenu = (event: MouseEvent, capability: any) => {
+  enterCanvasContextMenu(event, 'component')
+  selectedManualEdge.value = null
+  const pos = contextMenuPosition(event, 220, 164)
+  selectedTopologyKey.value = String(capability?.topologyId || '')
+  componentContextMenu.value = {
+    visible: true,
+    x: pos.x,
+    y: pos.y,
+    kind: 'capability',
+    component: null,
+    service: null,
+    capability,
     edge: null,
   }
 }
@@ -3252,6 +3641,7 @@ const openManualEdgeContextMenu = (event: MouseEvent, edge:any) => {
     kind: 'edge',
     component: null,
     service: null,
+    capability: null,
     edge,
   }
 }
@@ -3549,12 +3939,9 @@ const serviceChartVersion = (svc:any) => {
   return ver.startsWith('v') ? ver.slice(1) : ver
 }
 const serviceVersionOptionLabel = (tmpl:any) => {
-  const chart = String(tmpl?.chartVersion || '').replace(/^v/, '')
   const app = String(tmpl?.appVersion || '').replace(/^v/, '')
-  if (chart && app) return `Chart v${chart} / 应用 v${app}`
-  if (chart) return `Chart v${chart}`
   if (app) return `应用 v${app}`
-  return '未标注版本'
+  return '应用版本未标注'
 }
 const serviceTypeVersions = computed(() => {
   const svc = drawerService.value
@@ -4185,6 +4572,7 @@ const refreshServices = async () => {
   components.value = res.data.components || []
   services.value = res.data.services || []
   externalAccess.value = res.data.externalAccess || []
+  await Promise.all([loadEnvironmentCapabilities(), loadSharedCapabilityResources()])
   if (configDrawer.value.visible && configDrawer.value.kind === 'service' && configDrawer.value.service?.id) {
     const refreshed = services.value.find((item:any) => Number(item.id) === Number(configDrawer.value.service?.id))
     if (refreshed) configDrawer.value.service = refreshed
@@ -4194,6 +4582,24 @@ const refreshServices = async () => {
     if (refreshed) configDrawer.value.component = refreshed
   }
   notifyEnvUpdated()
+}
+
+const loadEnvironmentCapabilities = async () => {
+  if (!envId.value) {
+    environmentCapabilities.value = []
+    return
+  }
+  const res = await api.listEnvironmentCapabilities(envId.value)
+  environmentCapabilities.value = Array.isArray(res.data) ? res.data : []
+}
+
+const loadSharedCapabilityResources = async () => {
+  try {
+    const res = await api.listSharedCapabilityResources()
+    sharedCapabilityResources.value = Array.isArray(res.data) ? res.data : []
+  } catch {
+    sharedCapabilityResources.value = []
+  }
 }
 
 const prepareServicePicker = async (mode:'tool'|'infra', preferredType = '') => {
@@ -4354,6 +4760,87 @@ const componentDrawerConfigKeySuggestions = computed(() => {
   return componentConfigKeySuggestions(componentDrawerProfile.value)
 })
 const drawerService = computed(() => configDrawer.value.kind === 'service' ? configDrawer.value.service : null)
+const drawerCapability = computed(() => configDrawer.value.kind === 'capability' ? configDrawer.value.capability : null)
+const drawerCapabilitySource = computed(() => String(drawerCapability.value?.source || '').toLowerCase())
+const drawerCapabilityRows = computed(() => {
+  const cap = drawerCapability.value || {}
+  const ref = cap.refService || {}
+  const rows = [
+    { label: '来源', value: capabilitySourceLabel(cap.source || '') },
+    { label: '能力', value: capabilityLabel(cap.capability || '') },
+    { label: 'Provider', value: cap.provider || '-' },
+    { label: '服务类型', value: typeLabel(cap.serviceType || ref.serviceType || '') || '-' },
+  ]
+  if (drawerCapabilitySource.value === 'shared') {
+    rows.push(
+      { label: '共享服务', value: ref.serviceName || ref.serviceType || cap.serviceType || '-' },
+      { label: '命名空间', value: ref.namespace || '-' },
+      { label: '运行状态', value: serviceStatusText(ref.status || cap.validationStatus || '') },
+    )
+  }
+  if (drawerCapabilitySource.value === 'external') {
+    rows.push(
+      { label: '外部地址', value: cap.externalEndpoint || '-' },
+      { label: 'credentialSecretRef', value: cap.credentialSecretRef || '-' },
+      { label: 'TLS 校验', value: cap.tlsInsecureSkipVerify ? '跳过' : '启用' },
+    )
+  }
+  if (cap.validationMessage) rows.push({ label: '校验信息', value: cap.validationMessage })
+  return rows
+})
+const externalCapabilityOptionFor = (capability:string) =>
+  externalCapabilityOptions.find((item) => item.capability === capability)
+const providerForCapability = (capability:string) =>
+  externalCapabilityOptionFor(capability)?.provider || capability || 'external'
+const serviceTypeForCapability = (capability:string) =>
+  externalCapabilityOptionFor(capability)?.serviceType || capability || 'external'
+const externalCapabilityPlaceholder = (cap:any) =>
+  externalCapabilityOptionFor(cap?.capability)?.externalPlaceholder || 'https://service.example.com'
+const capabilitySecretVisible = (key:string) => capabilitySecretVisibleKeys.value.has(key)
+const capabilityCredentialValue = (credentials:any[], keys:string[]) => {
+  const normalizedKeys = keys.map((key) => key.toLowerCase())
+  const match = credentials.find((item:any) => normalizedKeys.includes(String(item.key || '').toLowerCase()))
+  return match?.value ? String(match.value) : ''
+}
+const loadCapabilityCredentials = async () => {
+  const cap = drawerCapability.value
+  if (!envId.value || !cap?.capability || !cap.credentialSecretRef || capabilityCredentialLoading.value) return
+  capabilityCredentialLoading.value = true
+  capabilityCredentialError.value = ''
+  try {
+    const res = await api.getEnvironmentCapabilityCredentials(envId.value, cap.capability)
+    const credentials = Array.isArray(res?.data?.credentials) ? res.data.credentials : []
+    const endpoint = capabilityCredentialValue(credentials, ['endpoint'])
+    const username = capabilityCredentialValue(credentials, ['username', 'user'])
+    const password = capabilityCredentialValue(credentials, ['password'])
+    const token = capabilityCredentialValue(credentials, ['token', 'access-token'])
+    const authType = capabilityCredentialValue(credentials, ['authType', 'auth-type'])
+    if (endpoint && !capabilityForm.value.externalEndpoint) capabilityForm.value.externalEndpoint = endpoint
+    if (username && !capabilityForm.value.username) capabilityForm.value.username = username
+    if (password && !capabilityForm.value.password) capabilityForm.value.password = password
+    if (token && !capabilityForm.value.token) capabilityForm.value.token = token
+    if (authType && capabilityForm.value.authType === 'none') capabilityForm.value.authType = authType
+    if (password && capabilityForm.value.authType === 'none') capabilityForm.value.authType = 'basic'
+    if (token && capabilityForm.value.authType === 'none') capabilityForm.value.authType = 'token'
+  } catch (e:any) {
+    capabilityCredentialError.value = '读取外部资源凭据失败：' + (e?.message || '未知错误')
+  } finally {
+    capabilityCredentialLoading.value = false
+  }
+}
+const toggleCapabilitySecret = async (key:'password' | 'token') => {
+  const next = new Set(capabilitySecretVisibleKeys.value)
+  if (next.has(key)) {
+    next.delete(key)
+    capabilitySecretVisibleKeys.value = next
+    return
+  }
+  if (!capabilityForm.value[key]) {
+    await loadCapabilityCredentials()
+  }
+  next.add(key)
+  capabilitySecretVisibleKeys.value = next
+}
 watch(() => drawerService.value?.id || '', () => {
   serviceDrawerRevealedSecrets.value = new Set()
   serviceDrawerSecretValues.value = {}
@@ -4583,8 +5070,15 @@ const setServiceVolumeSize = (volume: ServiceVolumeField, size: string) => {
   if (volume.enabledKey && !serviceConfigForm.value[volume.enabledKey]) return
   serviceConfigForm.value[volume.sizeKey] = size
 }
-const configDrawerTitle = computed(() => configDrawer.value.component?.name || configDrawer.value.service?.serviceName || configDrawer.value.service?.name || configDrawer.value.service?.serviceType || '-')
+const configDrawerTitle = computed(() => {
+  if (configDrawer.value.kind === 'capability') return capabilityDisplayName(configDrawer.value.capability || {})
+  return configDrawer.value.component?.name || configDrawer.value.service?.serviceName || configDrawer.value.service?.name || configDrawer.value.service?.serviceType || '-'
+})
 const configDrawerSubtitle = computed(() => {
+  if (configDrawer.value.kind === 'capability') {
+    const cap = configDrawer.value.capability || {}
+    return `${capabilityLabel(cap.capability)} · ${capabilitySourceLabel(cap.source)}`
+  }
   if (configDrawer.value.kind === 'service') {
     return `${serviceProductLabel(configDrawer.value.service)} · ${serviceStatusText(configDrawer.value.service?.status)}`
   }
@@ -4621,6 +5115,7 @@ const serviceDrawerExternalAccessLabel = computed(() => {
   return serviceDrawerExternalAccessEnabled.value ? '关闭外部访问' : '开启外部访问'
 })
 const configDrawerAvatarLabel = computed(() => {
+  if (configDrawer.value.kind === 'capability') return 'CAP'
   if (configDrawer.value.kind === 'component') return String(configDrawer.value.component?.type || 'C').slice(0, 1).toUpperCase()
   const type = serviceDrawerType.value
   if (['postgresql', 'mysql', 'mongodb'].includes(type)) return 'DB'
@@ -4634,7 +5129,7 @@ const configDrawerAvatarLabel = computed(() => {
   if (type === 'prometheus-grafana') return 'Obs'
   return 'S'
 })
-const drawerStatusValue = computed(() => String(configDrawer.value.component?.status || configDrawer.value.service?.status || 'draft').toLowerCase())
+const drawerStatusValue = computed(() => String(configDrawer.value.capability?.validationStatus || configDrawer.value.component?.status || configDrawer.value.service?.status || 'draft').toLowerCase())
 const drawerStatusLabel = computed(() => {
   if (configDrawer.value.kind === 'service') return serviceStatusText(drawerStatusValue.value)
   const labels: Record<string, string> = {
@@ -4648,12 +5143,19 @@ const drawerStatusLabel = computed(() => {
   return labels[drawerStatusValue.value] || drawerStatusValue.value || '未知'
 })
 const drawerDeploymentTitle = computed(() => {
+  if (configDrawer.value.kind === 'capability') {
+    return drawerCapabilitySource.value === 'external' ? 'External capability' : 'Shared capability'
+  }
   if (configDrawer.value.kind === 'service') {
     return serviceStatusHasRuntime(drawerService.value) ? 'Active deployment' : 'Draft deployment'
   }
   return drawerStatusValue.value === 'running' ? 'Active deployment' : 'Ready to deploy'
 })
 const drawerDeploymentSubtitle = computed(() => {
+  if (configDrawer.value.kind === 'capability') {
+    const cap = drawerCapability.value || {}
+    return `${capabilityLabel(cap.capability || '')} · ${capabilitySourceLabel(cap.source || '')}`
+  }
   if (configDrawer.value.kind === 'service') {
     const type = svcLabel(serviceDrawerType.value) || serviceDrawerType.value || 'Service'
     return `${type} · ${drawerStatusLabel.value}`
@@ -4921,6 +5423,7 @@ const runtimeMetricBarStyle = (sample:any, kind:'cpu' | 'memory') => {
 const drawerConsoleKey = computed(() => {
   if (!configDrawer.value.visible) return ''
   if (configDrawer.value.kind === 'component') return `component:${configDrawer.value.component?.id || ''}`
+  if (configDrawer.value.kind === 'capability') return ''
   return `service:${configDrawer.value.service?.id || ''}`
 })
 const drawerConsoleUrl = computed(() => {
@@ -4981,7 +5484,7 @@ const connectDrawerConsole = () => {
   disconnectDrawerConsole()
   runtimeConsoleError.value = ''
   runtimeConsoleConnecting.value = true
-  const socket = new WebSocket(drawerConsoleUrl.value)
+  const socket = new WebSocket(drawerConsoleUrl.value, runtimeConsoleWebSocketProtocols())
   socket.binaryType = 'arraybuffer'
   runtimeConsoleSocket.value = socket
   socket.onopen = () => {
@@ -5028,15 +5531,18 @@ const showServiceRawVariables = () => {
 const drawerRuntimeMetricsKey = computed(() => {
   if (!configDrawer.value.visible) return ''
   if (configDrawer.value.kind === 'component') return `component:${configDrawer.value.component?.id || ''}`
+  if (configDrawer.value.kind === 'capability') return ''
   return `service:${configDrawer.value.service?.id || ''}`
 })
 const drawerRuntimeLogsKey = computed(() => {
   if (!configDrawer.value.visible) return ''
   if (configDrawer.value.kind === 'component') return `component:${configDrawer.value.component?.id || ''}`
+  if (configDrawer.value.kind === 'capability') return ''
   return `service:${configDrawer.value.service?.id || ''}`
 })
 const loadDrawerRuntimeMetrics = async (force = false) => {
   if (!envId.value || !configDrawer.value.visible || configDrawerTab.value !== 'runtime') return
+  if (configDrawer.value.kind === 'capability') return
   if (runtimeMetricsLoading.value) return
   if (!force && runtimeMetrics.value?.targetKey === drawerRuntimeMetricsKey.value) return
   runtimeMetricsLoading.value = true
@@ -5055,6 +5561,7 @@ const loadDrawerRuntimeMetrics = async (force = false) => {
 }
 const loadDrawerRuntimeLogs = async (force = false) => {
   if (!envId.value || !configDrawer.value.visible || configDrawerTab.value !== 'logs') return
+  if (configDrawer.value.kind === 'capability') return
   if (runtimeLogsLoading.value) return
   if (!force && runtimeLogs.value?.targetKey === drawerRuntimeLogsKey.value) return
   runtimeLogsLoading.value = true
@@ -5098,7 +5605,7 @@ const openComponentConfigDrawer = (comp:any) => {
   if (!actual) return
   selectComponent(actual.id)
   configDrawerTab.value = 'deploy'
-  configDrawer.value = { visible: true, kind: 'component', component: actual, service: null, saving: false, error: '', message: '' }
+  configDrawer.value = { visible: true, kind: 'component', component: actual, service: null, capability: null, saving: false, error: '', message: '' }
   runtimeMetrics.value = null
   runtimeMetricsError.value = ''
   runtimeLogs.value = null
@@ -5114,7 +5621,7 @@ const openServiceConfigDrawer = (svc:any) => {
   if (!actual) return
   selectedTopologyKey.value = String(actual.topologyId || `service:${actual.id}`)
   configDrawerTab.value = 'deploy'
-  configDrawer.value = { visible: true, kind: 'service', component: null, service: actual, saving: false, error: '', message: '' }
+  configDrawer.value = { visible: true, kind: 'service', component: null, service: actual, capability: null, saving: false, error: '', message: '' }
   runtimeMetrics.value = null
   runtimeMetricsError.value = ''
   runtimeLogs.value = null
@@ -5132,17 +5639,45 @@ const openServiceConfigDrawer = (svc:any) => {
   selectedChartVersion.value = curVer || versions[0]?.chartVersion || ''
   void loadServiceDrawerWorkspace(actual)
 }
+const openCapabilityConfigDrawer = (capability:any) => {
+  enterDrawerContext()
+  const actual = environmentCapabilities.value.find((item:any) => Number(item.id) === Number(capability?.id)) || capability
+  if (!actual) return
+  selectedTopologyKey.value = String(actual.topologyId || `capability:${actual.id || actual.capability}`)
+  configDrawerTab.value = 'deploy'
+  configDrawer.value = { visible: true, kind: 'capability', component: null, service: null, capability: actual, saving: false, error: '', message: '' }
+  capabilityForm.value = {
+    externalEndpoint: actual.externalEndpoint || '',
+    authType: actual.credentialSecretRef ? 'existingSecret' : 'none',
+    username: '',
+    password: '',
+    token: '',
+    credentialSecretRef: actual.credentialSecretRef || '',
+    tlsInsecureSkipVerify: Boolean(actual.tlsInsecureSkipVerify),
+  }
+  capabilitySecretVisibleKeys.value = new Set()
+  capabilityCredentialError.value = ''
+  runtimeMetrics.value = null
+  runtimeMetricsError.value = ''
+  runtimeLogs.value = null
+  runtimeLogsError.value = ''
+  disconnectDrawerConsole()
+  resetRuntimeConsole()
+}
 const closeConfigDrawer = () => {
   if (configDrawer.value.saving) return
   disconnectDrawerConsole()
   configDrawerTab.value = 'deploy'
-  configDrawer.value = { visible: false, kind: 'component', component: null, service: null, saving: false, error: '', message: '' }
+  configDrawer.value = { visible: false, kind: 'component', component: null, service: null, capability: null, saving: false, error: '', message: '' }
   configForm.value = defaultConfigForm()
   nginxRouteRows.value = []
   selectedComponentConfigTemplateId.value = ''
   componentTemplateFieldValues.value = {}
   componentDrawerRole.value = 'custom'
   serviceConfigForm.value = defaultServiceConfigForm()
+  capabilityForm.value = defaultCapabilityForm()
+  capabilitySecretVisibleKeys.value = new Set()
+  capabilityCredentialError.value = ''
   runtimeMetrics.value = null
   runtimeMetricsError.value = ''
   runtimeLogs.value = null
@@ -6450,6 +6985,60 @@ const saveServiceConfigDrawer = async () => {
     configDrawer.value.saving = false
   }
 }
+const saveCapabilityConfigDrawer = async () => {
+  const cap = drawerCapability.value
+  if (!cap?.capability || configDrawer.value.saving) return
+  if (cap.source !== 'external') {
+    configDrawer.value.error = '共享资源只读，不能在业务环境中修改。'
+    return
+  }
+  configDrawer.value.saving = true
+  configDrawer.value.error = ''
+  configDrawer.value.message = ''
+  const authType = String(capabilityForm.value.authType || 'none')
+  const payload: any = {
+    source: 'external',
+    provider: cap.provider || providerForCapability(cap.capability),
+    serviceType: cap.serviceType || serviceTypeForCapability(cap.capability),
+    externalEndpoint: capabilityForm.value.externalEndpoint,
+    authType,
+    tlsInsecureSkipVerify: Boolean(capabilityForm.value.tlsInsecureSkipVerify),
+  }
+  const credentialSecretRef = String(capabilityForm.value.credentialSecretRef || cap.credentialSecretRef || '').trim()
+  if (authType === 'basic') {
+    payload.username = capabilityForm.value.username
+    if (capabilityForm.value.password) payload.password = capabilityForm.value.password
+    if (!payload.password && credentialSecretRef) payload.credentialSecretRef = credentialSecretRef
+  } else if (authType === 'token') {
+    if (capabilityForm.value.token) payload.token = capabilityForm.value.token
+    if (!payload.token && credentialSecretRef) payload.credentialSecretRef = credentialSecretRef
+  } else if (authType === 'existingSecret') {
+    payload.credentialSecretRef = credentialSecretRef
+  } else {
+    payload.credentialSecretRef = ''
+  }
+  try {
+    const res = await api.updateEnvironmentCapability(envId.value, cap.capability, payload)
+    await loadEnvironmentCapabilities()
+    const updated = environmentCapabilities.value.find((item:any) => Number(item.id) === Number(res.data?.id || cap.id)) || res.data || cap
+    const currentForm = capabilityForm.value
+    configDrawer.value.capability = updated
+    capabilityForm.value = {
+      externalEndpoint: updated.externalEndpoint || currentForm.externalEndpoint,
+      authType: updated.credentialSecretRef ? (authType === 'existingSecret' ? 'existingSecret' : authType) : 'none',
+      username: currentForm.username,
+      password: currentForm.password,
+      token: currentForm.token,
+      credentialSecretRef: updated.credentialSecretRef || '',
+      tlsInsecureSkipVerify: Boolean(updated.tlsInsecureSkipVerify),
+    }
+    configDrawer.value.message = '外部资源配置已保存。'
+  } catch (e:any) {
+    configDrawer.value.error = '保存外部资源配置失败：' + (e?.message || '未知错误')
+  } finally {
+    configDrawer.value.saving = false
+  }
+}
 const deployServiceFromDrawer = async () => {
   const svc = configDrawer.value.service
   if (!svc?.id || configDrawer.value.saving || !serviceStatusCanDeploy(svc)) return
@@ -6591,7 +7180,8 @@ const runPendingDelete = async () => {
   dialog.submitting = true
   dialog.error = ''
   try {
-    await performDeleteComponent(dialog.target)
+    if (dialog.kind === 'capability') await performDeleteCapability(dialog.target)
+    else await performDeleteComponent(dialog.target)
     pendingDeleteDialog.value = null
   } catch (e:any) {
     dialog.error = e?.message || '删除失败'
@@ -6599,7 +7189,7 @@ const runPendingDelete = async () => {
     if (pendingDeleteDialog.value) pendingDeleteDialog.value.submitting = false
   }
 }
-const topologyDeleteTitle = (node:any) => node?.topologyKind === 'service' ? '删除卡片' : '删除组件'
+const topologyDeleteTitle = (node:any) => node?.topologyKind === 'service' || node?.topologyKind === 'capability' ? '删除卡片' : '删除组件'
 const resolveTopologyService = (node:any) => {
   if (!node) return null
   const serviceId = Number(node.serviceId || node.id)
@@ -6612,10 +7202,27 @@ const resolveTopologyService = (node:any) => {
   }
   return node
 }
+const resolveTopologyCapability = (node:any) => {
+  if (!node) return null
+  const capabilityId = Number(node.id)
+  if (Number.isFinite(capabilityId) && capabilityId > 0) {
+    return environmentCapabilities.value.find((item:any) => Number(item.id) === capabilityId) || node
+  }
+  const capability = String(node.capability || '').trim()
+  if (capability) {
+    return environmentCapabilities.value.find((item:any) => String(item.capability || '') === capability) || node
+  }
+  return node
+}
 const deleteTopologyNode = (node:any) => {
   if (node?.topologyKind === 'service') {
     const svc = resolveTopologyService(node)
     if (svc) beginUninstallService(svc)
+    return
+  }
+  if (node?.topologyKind === 'capability') {
+    const capability = resolveTopologyCapability(node)
+    if (capability) void deleteCapabilityById(capability)
     return
   }
   void deleteComponentById(node)
@@ -6663,6 +7270,55 @@ const deleteDrawerComponent = async () => {
   closeConfigDrawer()
   await deleteComponentById(comp)
 }
+const deleteCapabilityById = async (cap:any) => {
+  if (!cap?.capability || configDrawer.value.saving) return
+  openDeleteDialog({
+    kind: 'capability',
+    label: '资源卡片',
+    name: capabilityDisplayName(cap),
+    message: '删除后只会移除当前环境中的共享或外部资源卡片，不会删除共享资源池中的服务。',
+    target: cap,
+    submitting: false,
+    error: '',
+  })
+}
+const performDeleteCapability = async (cap:any) => {
+  if (!cap?.capability || configDrawer.value.saving) return
+  configDrawer.value.saving = true
+  pageError.value = ''
+  try {
+    await api.deleteEnvironmentCapability(envId.value, cap.capability)
+    const key = `capability:${cap.id || cap.capability}`
+    environmentCapabilities.value = environmentCapabilities.value.filter((item:any) => {
+      if (cap.id && Number(item.id) === Number(cap.id)) return false
+      return String(item.capability || '') !== String(cap.capability || '')
+    })
+    const nextPositions = { ...componentNodePositions.value }
+    delete nextPositions[key]
+    componentNodePositions.value = nextPositions
+    manualCanvasEdges.value = manualCanvasEdges.value.filter(edge => edge.fromKey !== key && edge.toKey !== key)
+    selectedTopologyKey.value = null
+    selectedManualEdge.value = null
+    if (configDrawer.value.kind === 'capability') closeConfigDrawer()
+    await saveComponentNodePositions()
+    notifyEnvUpdated()
+  } catch (e:any) {
+    throw new Error('删除资源卡片失败：' + (e?.message || '未知错误'))
+  } finally {
+    configDrawer.value.saving = false
+    closeComponentContextMenu()
+  }
+}
+const deleteContextCapability = () => {
+  const capability = componentContextMenu.value.capability
+  closeComponentContextMenu()
+  if (capability) void deleteCapabilityById(capability)
+}
+const deleteDrawerCapability = async () => {
+  const capability = configDrawer.value.capability
+  closeConfigDrawer()
+  if (capability) await deleteCapabilityById(capability)
+}
 const runtimeEnvValue = (envItem:any) => {
   if (envItem?.secretName) return envItem.secretKey ? `由敏感配置管理 · ${envItem.secretKey}` : '由敏感配置管理'
   if (envItem?.configMapName) return envItem.configMapKey ? `由普通配置管理 · ${envItem.configMapKey}` : '由普通配置管理'
@@ -6671,9 +7327,11 @@ const runtimeEnvValue = (envItem:any) => {
 const configureContextNode = () => {
   const comp = componentContextMenu.value.component
   const svc = componentContextMenu.value.service
+  const capability = componentContextMenu.value.capability
   closeComponentContextMenu()
   if (comp?.id) openComponentConfigDrawer(comp)
   else if (svc?.id) openServiceConfigDrawer(svc)
+  else if (capability) openCapabilityConfigDrawer(capability)
 }
 const startRenameNode = (node: any) => {
   const key = String(node?.topologyId || node?.id || '')
@@ -6889,6 +7547,54 @@ const createCanvasServiceDraft = async (serviceType: string) => {
     }
   } catch (e:any) {
     pageError.value = '添加服务草稿失败：' + (e?.message || '未知错误')
+  }
+}
+const placeCapabilityNode = async (capability:any) => {
+  const createPoint = canvasCreatePoint.value
+  if (!capability?.id || !createPoint) return
+  const key = `capability:${capability.id}`
+  componentNodePositions.value = {
+    ...componentNodePositions.value,
+    [key]: {
+      x: Math.max(12, createPoint.x - componentCanvasMetrics.nodeWidth / 2),
+      y: Math.max(46, createPoint.y - componentCanvasMetrics.nodeHeight / 2),
+    },
+  }
+  await saveComponentNodePositions()
+}
+const createSharedCapabilityReference = async (resource:any) => {
+  closeComponentContextMenu()
+  pageError.value = ''
+  try {
+    const res = await api.updateEnvironmentCapability(envId.value, resource.capability, {
+      source: 'shared',
+      provider: resource.provider,
+      serviceType: resource.serviceType,
+      refServiceId: Number(resource.id),
+    })
+    await loadEnvironmentCapabilities()
+    const created = res.data
+    await placeCapabilityNode(created)
+    openCapabilityConfigDrawer(created)
+  } catch (e:any) {
+    pageError.value = '添加共享资源失败：' + (e?.message || '未知错误')
+  }
+}
+const createExternalCapabilityDraft = async (item:any) => {
+  closeComponentContextMenu()
+  pageError.value = ''
+  try {
+    const res = await api.updateEnvironmentCapability(envId.value, item.capability, {
+      source: 'external',
+      provider: item.provider,
+      serviceType: item.serviceType,
+    })
+    await loadEnvironmentCapabilities()
+    const created = res.data
+    await placeCapabilityNode(created)
+    openCapabilityConfigDrawer(created)
+  } catch (e:any) {
+    pageError.value = '添加外部资源失败：' + (e?.message || '未知错误')
   }
 }
 const adoptCanvasResource = async () => {
@@ -7853,6 +8559,60 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 }
 .component-canvas-stage {
   position: relative;
+}
+.component-topology-zone-legend {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  z-index: 3;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--paap-space-2);
+  max-width: calc(100% - 220px);
+  pointer-events: none;
+}
+.component-topology-zone-legend span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--cds-border-subtle-01, var(--paap-border));
+  background: var(--cds-layer-01, var(--paap-panel));
+  color: var(--cds-text-secondary, var(--paap-muted));
+  font-size: 11px;
+  font-weight: 600;
+}
+.component-topology-zone {
+  position: absolute;
+  z-index: 0;
+  display: block;
+  border: 1px solid var(--cds-border-subtle-01, var(--paap-border));
+  background: rgba(var(--cds-white-rgb, 255, 255, 255), 0.72);
+  pointer-events: none;
+}
+.component-topology-zone--shared {
+  border-color: var(--cds-blue-20, #d0e2ff);
+}
+.component-topology-zone--external {
+  border-color: var(--cds-gray-30, #c6c6c6);
+  background: rgba(var(--cds-gray-10-rgb, 244, 244, 244), 0.72);
+}
+.component-topology-zone > span,
+.component-topology-zone > small {
+  position: relative;
+  left: 12px;
+  top: 8px;
+  display: inline-flex;
+  align-items: center;
+  min-height: 20px;
+  margin-right: 8px;
+  color: var(--cds-text-secondary, var(--paap-muted));
+  font-size: 11px;
+  line-height: 1.2;
+}
+.component-topology-zone > span {
+  color: var(--cds-text-primary, var(--paap-text));
+  font-weight: 700;
 }
 .component-canvas-empty-hint {
   position: absolute;
@@ -9888,6 +10648,58 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--paap-space-2);
+}
+.capability-config-section,
+.external-capability-form {
+  display: grid;
+  gap: var(--paap-space-3);
+}
+.capability-summary-grid {
+  margin-top: 0;
+}
+.capability-checkbox-field {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--paap-space-2);
+  min-height: 38px;
+  color: var(--paap-muted);
+  font-size: 13px;
+}
+.capability-checkbox-field input {
+  margin: 0;
+}
+.password-field-wrap {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 40px;
+  min-width: 0;
+}
+.password-field-wrap .password-field-input {
+  border-right: 0;
+}
+.password-visible-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--cds-border-strong-01, #8d8d8d);
+  border-radius: 0;
+  background: var(--cds-layer-01, #ffffff);
+  color: var(--cds-icon-secondary, #525252);
+  cursor: pointer;
+  transition: border-color 110ms, color 110ms, box-shadow 110ms;
+}
+.password-visible-toggle:hover:not(:disabled) {
+  color: var(--cds-blue-60, #0f62fe);
+}
+.password-visible-toggle:disabled {
+  cursor: progress;
+  opacity: 0.5;
+}
+.password-field-wrap:focus-within .password-field-input,
+.password-field-wrap:focus-within .password-visible-toggle {
+  border-color: var(--cds-border-interactive, #0f62fe);
+  box-shadow: inset 0 0 0 1px var(--cds-border-interactive, #0f62fe);
 }
 .component-detail-grid div {
   display: grid;

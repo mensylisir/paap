@@ -13,19 +13,49 @@ import (
 	"paap/internal/model"
 
 	"github.com/gin-gonic/gin"
-	"gorm.io/driver/sqlite"
-	"gorm.io/gorm"
 )
 
 func withTestAuthUser(userID uint, next gin.HandlerFunc) gin.HandlerFunc {
-	return withTestAuthUserRole(userID, "user", next)
+	return withTestAuthUserRoles(userID, []string{model.RoleUser}, next)
 }
 
 func withTestAuthUserRole(userID uint, role string, next gin.HandlerFunc) gin.HandlerFunc {
+	return withTestAuthUserRoles(userID, []string{role}, next)
+}
+
+func withTestAuthUserRoles(userID uint, roles []string, next gin.HandlerFunc) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.Set(middleware.ContextUserIDKey, userID)
-		c.Set(middleware.ContextUserRoleKey, role)
+		c.Set(middleware.ContextUserRolesKey, roles)
 		next(c)
+	}
+}
+
+func TestAuthenticatedUserCanCreateAppRequiresAppAdminRole(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(rec)
+	ctx.Set(middleware.ContextUserIDKey, uint(1))
+	ctx.Set(middleware.ContextUserRolesKey, []string{model.RolePlatformAdmin})
+
+	if authenticatedUserCanCreateApp(ctx) {
+		t.Fatalf("platform_admin without app_admin must not create applications")
+	}
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusForbidden, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "only application administrators can create applications") {
+		t.Fatalf("unexpected body: %s", rec.Body.String())
+	}
+
+	rec = httptest.NewRecorder()
+	ctx, _ = gin.CreateTestContext(rec)
+	ctx.Set(middleware.ContextUserIDKey, uint(1))
+	ctx.Set(middleware.ContextUserRolesKey, []string{model.RolePlatformAdmin, model.RoleAppAdmin})
+
+	if !authenticatedUserCanCreateApp(ctx) {
+		t.Fatalf("user with app_admin role must create applications")
 	}
 }
 
@@ -33,9 +63,9 @@ func TestListApplicationsIncludesEnvironmentCounts(t *testing.T) {
 	previousDB := database.DB
 	t.Cleanup(func() { database.DB = previousDB })
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatalf("open db: %v", err)
 	}
 	if err := db.AutoMigrate(
 		&model.Application{},
@@ -118,9 +148,9 @@ func TestListApplicationsFiltersByAppMemberForRegularUsers(t *testing.T) {
 	previousDB := database.DB
 	t.Cleanup(func() { database.DB = previousDB })
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatalf("open db: %v", err)
 	}
 	if err := db.AutoMigrate(
 		&model.Application{},
@@ -169,13 +199,167 @@ func TestListApplicationsFiltersByAppMemberForRegularUsers(t *testing.T) {
 	}
 }
 
+func TestListApplicationsIncludesSystemAppsForPlatformAdmins(t *testing.T) {
+	previousDB := database.DB
+	t.Cleanup(func() { database.DB = previousDB })
+
+	db, err := openTestDB(t)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := db.AutoMigrate(
+		&model.Application{},
+		&model.AppMember{},
+		&model.Environment{},
+		&model.ServiceInstallation{},
+		&model.Component{},
+		&model.User{},
+		&model.UserRole{},
+	); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	database.DB = db
+
+	admin := model.User{Username: "admin", Email: "admin@example.com", Password: "x"}
+	if err := db.Create(&admin).Error; err != nil {
+		t.Fatalf("create admin: %v", err)
+	}
+	if _, err := model.ReplaceUserRoles(db, admin.ID, []string{model.RolePlatformAdmin}); err != nil {
+		t.Fatalf("create admin roles: %v", err)
+	}
+	normal := model.Application{Name: "业务应用", Identifier: "billing", OwnerID: admin.ID}
+	if err := db.Create(&normal).Error; err != nil {
+		t.Fatalf("create normal app: %v", err)
+	}
+	systemApp := model.Application{Name: "共享资源池", Identifier: "default", OwnerID: admin.ID, IsSystem: true}
+	if err := db.Create(&systemApp).Error; err != nil {
+		t.Fatalf("create system app: %v", err)
+	}
+	systemEnv := model.Environment{ApplicationID: systemApp.ID, Name: "共享环境", Identifier: "shared", Namespace: "default-shared", IsSystem: true}
+	if err := db.Create(&systemEnv).Error; err != nil {
+		t.Fatalf("create system env: %v", err)
+	}
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.GET("/api/v1/applications", withTestAuthUserRole(admin.ID, model.RolePlatformAdmin, ListApplications))
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/applications", nil)
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var body struct {
+		Data []struct {
+			Name             string `json:"name"`
+			Identifier       string `json:"identifier"`
+			IsSystem         bool   `json:"isSystem"`
+			EnvironmentCount int    `json:"environmentCount"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(body.Data) < 2 || body.Data[0].Identifier != "default" || body.Data[0].Name != "共享资源池" || !body.Data[0].IsSystem {
+		t.Fatalf("first application = %#v, want shared resource pool first", body.Data)
+	}
+	seen := map[string]struct {
+		IsSystem         bool
+		EnvironmentCount int
+	}{}
+	for _, app := range body.Data {
+		seen[app.Identifier] = struct {
+			IsSystem         bool
+			EnvironmentCount int
+		}{IsSystem: app.IsSystem, EnvironmentCount: app.EnvironmentCount}
+	}
+	if !seen["default"].IsSystem || seen["default"].EnvironmentCount != 1 {
+		t.Fatalf("default system app missing or malformed: %#v", body.Data)
+	}
+	if _, ok := seen["billing"]; !ok {
+		t.Fatalf("normal app missing: %#v", body.Data)
+	}
+}
+
+func TestListApplicationsDoesNotCreateSharedResourcePool(t *testing.T) {
+	previousDB := database.DB
+	t.Cleanup(func() { database.DB = previousDB })
+
+	db, err := openTestDB(t)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := db.AutoMigrate(
+		&model.Application{},
+		&model.AppMember{},
+		&model.Environment{},
+		&model.ServiceInstallation{},
+		&model.Component{},
+		&model.User{},
+		&model.UserRole{},
+	); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	database.DB = db
+
+	admin := model.User{Username: "admin", Email: "admin@example.com", Password: "x"}
+	if err := db.Create(&admin).Error; err != nil {
+		t.Fatalf("create admin: %v", err)
+	}
+	if _, err := model.ReplaceUserRoles(db, admin.ID, []string{model.RolePlatformAdmin}); err != nil {
+		t.Fatalf("create admin roles: %v", err)
+	}
+	normal := model.Application{Name: "业务应用", Identifier: "billing", OwnerID: admin.ID}
+	if err := db.Create(&normal).Error; err != nil {
+		t.Fatalf("create normal app: %v", err)
+	}
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.GET("/api/v1/applications", withTestAuthUserRole(admin.ID, model.RolePlatformAdmin, ListApplications))
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/applications", nil)
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var body struct {
+		Data []struct {
+			Identifier string `json:"identifier"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(body.Data) != 1 || body.Data[0].Identifier != "billing" {
+		t.Fatalf("applications = %#v, want only existing business app", body.Data)
+	}
+
+	var appCount int64
+	if err := db.Model(&model.Application{}).Where("identifier = ?", "default").Count(&appCount).Error; err != nil {
+		t.Fatalf("count shared app: %v", err)
+	}
+	if appCount != 0 {
+		t.Fatalf("shared app count = %d, want ListApplications to be read-only", appCount)
+	}
+	var envCount int64
+	if err := db.Model(&model.Environment{}).Where("identifier = ?", "shared").Count(&envCount).Error; err != nil {
+		t.Fatalf("count shared env: %v", err)
+	}
+	if envCount != 0 {
+		t.Fatalf("shared env count = %d, want ListApplications to be read-only", envCount)
+	}
+}
+
 func TestCreateApplicationGeneratesIdentifierWhenMissing(t *testing.T) {
 	previousDB := database.DB
 	t.Cleanup(func() { database.DB = previousDB })
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatalf("open db: %v", err)
 	}
 	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}); err != nil {
 		t.Fatalf("migrate: %v", err)
@@ -189,7 +373,7 @@ func TestCreateApplicationGeneratesIdentifierWhenMissing(t *testing.T) {
 
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	router.POST("/api/v1/applications", withTestAuthUser(1, CreateApplication))
+	router.POST("/api/v1/applications", withTestAuthUserRole(1, model.RoleAppAdmin, CreateApplication))
 	router.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusCreated {
@@ -210,9 +394,9 @@ func TestCreateApplicationUsesAuthenticatedUserAsOwner(t *testing.T) {
 	previousDB := database.DB
 	t.Cleanup(func() { database.DB = previousDB })
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatalf("open db: %v", err)
 	}
 	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}); err != nil {
 		t.Fatalf("migrate: %v", err)
@@ -226,7 +410,7 @@ func TestCreateApplicationUsesAuthenticatedUserAsOwner(t *testing.T) {
 
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	router.POST("/api/v1/applications", withTestAuthUser(42, CreateApplication))
+	router.POST("/api/v1/applications", withTestAuthUserRole(42, model.RoleAppAdmin, CreateApplication))
 	router.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusCreated {
@@ -250,13 +434,44 @@ func TestCreateApplicationUsesAuthenticatedUserAsOwner(t *testing.T) {
 	}
 }
 
+func TestCreateApplicationRejectsRegularUser(t *testing.T) {
+	previousDB := database.DB
+	t.Cleanup(func() { database.DB = previousDB })
+
+	db, err := openTestDB(t)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	database.DB = db
+
+	body, _ := json.Marshal(CreateAppRequest{Name: "普通用户应用"})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/applications", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.POST("/api/v1/applications", withTestAuthUser(42, CreateApplication))
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusForbidden, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "only application administrators can create applications") {
+		t.Fatalf("unexpected body: %s", rec.Body.String())
+	}
+}
+
 func TestGetApplicationIncludesEnvironmentCounts(t *testing.T) {
 	previousDB := database.DB
 	t.Cleanup(func() { database.DB = previousDB })
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatalf("open db: %v", err)
 	}
 	if err := db.AutoMigrate(
 		&model.Application{},
@@ -329,9 +544,9 @@ func TestGetApplicationRejectsNonMembers(t *testing.T) {
 	previousDB := database.DB
 	t.Cleanup(func() { database.DB = previousDB })
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatalf("open db: %v", err)
 	}
 	if err := db.AutoMigrate(&model.Application{}, &model.Environment{}, &model.AppMember{}, &model.User{}); err != nil {
 		t.Fatalf("migrate: %v", err)
@@ -359,9 +574,9 @@ func TestUpdateApplicationRejectsNonMembers(t *testing.T) {
 	previousDB := database.DB
 	t.Cleanup(func() { database.DB = previousDB })
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatalf("open db: %v", err)
 	}
 	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}); err != nil {
 		t.Fatalf("migrate: %v", err)
@@ -399,9 +614,9 @@ func TestDeleteApplicationRejectsNonMembers(t *testing.T) {
 	previousDB := database.DB
 	t.Cleanup(func() { database.DB = previousDB })
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatalf("open db: %v", err)
 	}
 	if err := db.AutoMigrate(
 		&model.Application{},
@@ -441,13 +656,54 @@ func TestDeleteApplicationRejectsNonMembers(t *testing.T) {
 	}
 }
 
+func TestDeleteApplicationRejectsSystemApplications(t *testing.T) {
+	previousDB := database.DB
+	t.Cleanup(func() { database.DB = previousDB })
+
+	db, err := openTestDB(t)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := db.AutoMigrate(
+		&model.Application{},
+		&model.AppMember{},
+		&model.Environment{},
+		&model.ServiceInstallation{},
+		&model.InfraInstallation{},
+		&model.Component{},
+		&model.EnvironmentCanvasState{},
+	); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	database.DB = db
+
+	app := model.Application{Name: "default", Identifier: "default", OwnerID: 1, IsSystem: true}
+	if err := db.Create(&app).Error; err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.DELETE("/api/v1/applications/:id", withTestAuthUserRole(1, model.RolePlatformAdmin, DeleteApplication))
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/applications/1", nil)
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusBadRequest, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "system applications cannot be deleted") {
+		t.Fatalf("body = %s, want system app delete guard", rec.Body.String())
+	}
+}
+
 func TestListApplicationMembersReturnsUsersForAppMembers(t *testing.T) {
 	previousDB := database.DB
 	t.Cleanup(func() { database.DB = previousDB })
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatalf("open db: %v", err)
 	}
 	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.User{}); err != nil {
 		t.Fatalf("migrate: %v", err)
@@ -459,8 +715,8 @@ func TestListApplicationMembersReturnsUsersForAppMembers(t *testing.T) {
 		t.Fatalf("create app: %v", err)
 	}
 	users := []model.User{
-		{Username: "owner", Email: "owner@example.com", Password: "x", Role: "user"},
-		{Username: "alice", Email: "alice@example.com", Password: "x", Role: "user"},
+		{Username: "owner", Email: "owner@example.com", Password: "x"},
+		{Username: "alice", Email: "alice@example.com", Password: "x"},
 	}
 	if err := db.Create(&users).Error; err != nil {
 		t.Fatalf("create users: %v", err)
@@ -500,9 +756,9 @@ func TestInviteApplicationMemberAddsExistingUserByUsername(t *testing.T) {
 	previousDB := database.DB
 	t.Cleanup(func() { database.DB = previousDB })
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatalf("open db: %v", err)
 	}
 	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.User{}); err != nil {
 		t.Fatalf("migrate: %v", err)
@@ -513,8 +769,8 @@ func TestInviteApplicationMemberAddsExistingUserByUsername(t *testing.T) {
 	if err := db.Create(&app).Error; err != nil {
 		t.Fatalf("create app: %v", err)
 	}
-	owner := model.User{Username: "owner", Email: "owner@example.com", Password: "x", Role: "user"}
-	target := model.User{Username: "bob", Email: "bob@example.com", Password: "x", Role: "user"}
+	owner := model.User{Username: "owner", Email: "owner@example.com", Password: "x"}
+	target := model.User{Username: "bob", Email: "bob@example.com", Password: "x"}
 	if err := db.Create(&[]model.User{owner, target}).Error; err != nil {
 		t.Fatalf("create users: %v", err)
 	}
@@ -554,9 +810,9 @@ func TestUpdateApplicationMemberRoleRequiresAppAdmin(t *testing.T) {
 	previousDB := database.DB
 	t.Cleanup(func() { database.DB = previousDB })
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatalf("open db: %v", err)
 	}
 	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.User{}); err != nil {
 		t.Fatalf("migrate: %v", err)
@@ -567,9 +823,9 @@ func TestUpdateApplicationMemberRoleRequiresAppAdmin(t *testing.T) {
 	if err := db.Create(&app).Error; err != nil {
 		t.Fatalf("create app: %v", err)
 	}
-	admin := model.User{Username: "owner", Email: "owner@example.com", Password: "x", Role: "user"}
-	memberUser := model.User{Username: "alice", Email: "alice@example.com", Password: "x", Role: "user"}
-	targetUser := model.User{Username: "bob", Email: "bob@example.com", Password: "x", Role: "user"}
+	admin := model.User{Username: "owner", Email: "owner@example.com", Password: "x"}
+	memberUser := model.User{Username: "alice", Email: "alice@example.com", Password: "x"}
+	targetUser := model.User{Username: "bob", Email: "bob@example.com", Password: "x"}
 	if err := db.Create(&[]model.User{admin, memberUser, targetUser}).Error; err != nil {
 		t.Fatalf("create users: %v", err)
 	}
@@ -619,9 +875,9 @@ func TestRemoveApplicationMemberPreventsDeletingLastAdmin(t *testing.T) {
 	previousDB := database.DB
 	t.Cleanup(func() { database.DB = previousDB })
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatalf("open db: %v", err)
 	}
 	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.User{}); err != nil {
 		t.Fatalf("migrate: %v", err)
@@ -632,7 +888,7 @@ func TestRemoveApplicationMemberPreventsDeletingLastAdmin(t *testing.T) {
 	if err := db.Create(&app).Error; err != nil {
 		t.Fatalf("create app: %v", err)
 	}
-	admin := model.User{Username: "owner", Email: "owner@example.com", Password: "x", Role: "user"}
+	admin := model.User{Username: "owner", Email: "owner@example.com", Password: "x"}
 	if err := db.Create(&admin).Error; err != nil {
 		t.Fatalf("create admin: %v", err)
 	}

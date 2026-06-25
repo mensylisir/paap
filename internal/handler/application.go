@@ -59,13 +59,15 @@ type ServiceStatusListItem struct {
 func ListApplications(c *gin.Context) {
 	syncClusterStateIfPossible()
 
+	platformAdmin := authenticatedUserIsPlatformAdmin(c)
 	query := database.DB.Model(&model.Application{})
-	if !authenticatedUserIsPlatformAdmin(c) {
+	if !platformAdmin {
 		userID, ok := authenticatedUserID(c)
 		if !ok {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid or missing authenticated user"})
 			return
 		}
+		query = query.Where("applications.is_system = ?", false)
 		query = query.Joins(
 			"JOIN app_members ON app_members.application_id = applications.id AND app_members.user_id = ? AND app_members.deleted_at IS NULL",
 			userID,
@@ -73,7 +75,7 @@ func ListApplications(c *gin.Context) {
 	}
 
 	var apps []model.Application
-	if err := query.Order("applications.id").Find(&apps).Error; err != nil {
+	if err := query.Order("applications.is_system DESC").Order("applications.id").Find(&apps).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -104,6 +106,10 @@ func ListApplications(c *gin.Context) {
 
 // CreateApplication creates a new application and its K8s CR
 func CreateApplication(c *gin.Context) {
+	if !authenticatedUserCanCreateApp(c) {
+		return
+	}
+
 	var req CreateAppRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -175,16 +181,34 @@ func authenticatedUserID(c *gin.Context) (uint, bool) {
 	return 0, false
 }
 
+func authenticatedUserCanCreateApp(c *gin.Context) bool {
+	if !authenticatedUserHasRole(c, model.RoleAppAdmin) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "only application administrators can create applications"})
+		return false
+	}
+	return true
+}
+
 func authenticatedUserIsPlatformAdmin(c *gin.Context) bool {
-	value, exists := c.Get(middleware.ContextUserRoleKey)
+	return authenticatedUserHasRole(c, model.RolePlatformAdmin)
+}
+
+func authenticatedUserHasRole(c *gin.Context, role string) bool {
+	value, exists := c.Get(middleware.ContextUserRolesKey)
 	if !exists {
 		return false
 	}
-	role, ok := value.(string)
-	if !ok {
-		return false
+	switch roles := value.(type) {
+	case []string:
+		return model.HasUserRole(roles, role)
+	case []interface{}:
+		for _, candidate := range roles {
+			if text, ok := candidate.(string); ok && text == role {
+				return true
+			}
+		}
 	}
-	return role == "admin" || role == "platform_admin"
+	return false
 }
 
 func requireApplicationAccess(c *gin.Context, appID uint) bool {
@@ -584,6 +608,10 @@ func DeleteApplication(c *gin.Context) {
 		return
 	}
 	if !requireApplicationAccess(c, app.ID) {
+		return
+	}
+	if app.IsSystem {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "system applications cannot be deleted"})
 		return
 	}
 

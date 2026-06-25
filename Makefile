@@ -2,10 +2,10 @@ GO_VERSION := go1.25.7
 SHELL := /bin/bash
 GOPATH := $(shell source ~/.gvm/scripts/gvm && gvm use $(GO_VERSION) >/dev/null && go env GOPATH)
 CONTROLLER_GEN := $(GOPATH)/bin/controller-gen
-SERVER_IMAGE ?= paap-server:v0.1.500
-OPERATOR_IMAGE ?= paap-operator:v0.1.52
+SERVER_IMAGE ?= paap-server:v0.1.516
+OPERATOR_IMAGE ?= paap-operator:v0.1.53
 
-.PHONY: run run-operator build build-operator test frontend-test frontend-build frontend-smoke frontend-verify verify clean deps fmt lint manifests generate install uninstall install-kpack uninstall-kpack package-built-in-templates preload-kind-images verify-server-image
+.PHONY: run run-operator build build-operator test scripts-test frontend-test frontend-build frontend-smoke frontend-verify verify clean deps fmt lint manifests generate install uninstall install-kpack uninstall-kpack package-built-in-templates preload-kind-images check-disk-space verify-server-image
 
 # ========== Server ==========
 
@@ -36,6 +36,10 @@ all: build build-operator
 test:
 	@source ~/.gvm/scripts/gvm && gvm use $(GO_VERSION) && go test ./...
 
+# 运行脚本单元测试
+scripts-test:
+	bash scripts/check-disk-space.test.sh
+
 # 运行前端单元测试
 frontend-test:
 	cd frontend && npm run test
@@ -53,7 +57,7 @@ frontend-verify:
 	cd frontend && npm run verify
 
 # 后端与前端完整验证
-verify: test frontend-verify
+verify: test scripts-test frontend-verify
 
 # 安装依赖
 deps:
@@ -107,10 +111,15 @@ package-built-in-templates:
 preload-kind-images:
 	./scripts/preload-kind-images.sh
 
+check-disk-space:
+	./scripts/check-disk-space.sh make-check
+
 # 构建 Server 镜像
 docker-build-server: package-built-in-templates
+	./scripts/check-disk-space.sh before-server-image-build
 	docker build --build-arg FRONTEND_CACHE_BUST="$$(date +%s)" -t $(SERVER_IMAGE) -f Dockerfile.server .
 	$(MAKE) verify-server-image SERVER_IMAGE=$(SERVER_IMAGE)
+	./scripts/check-disk-space.sh after-server-image-build
 
 verify-server-image:
 	docker run --rm --entrypoint sh $(SERVER_IMAGE) -c 'test -x /paap-server && ls -l /paap-server'

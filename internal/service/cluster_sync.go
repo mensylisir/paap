@@ -18,6 +18,11 @@ import (
 
 const legacyClusterSyncOwnerID uint = 1
 
+const (
+	systemSharedApplicationIdentifier = "default"
+	systemSharedEnvironmentIdentifier = "shared"
+)
+
 // SyncClusterState restores the server database from PAAP custom resources.
 // The Kubernetes CRs are the durable control-plane state; the DB is the UI/API index.
 func SyncClusterState(ctx context.Context, db *gorm.DB, k8sClient client.Client) error {
@@ -72,10 +77,14 @@ func clusterSyncOwnerID(db *gorm.DB) (uint, error) {
 		return 0, fmt.Errorf("find platform admin user: %w", err)
 	}
 
-	if err := db.Where("role IN ?", []string{"platform_admin", "admin"}).Order("id").First(&user).Error; err == nil {
+	if err := db.
+		Joins("JOIN user_roles ON user_roles.user_id = users.id AND user_roles.role = ? AND user_roles.deleted_at IS NULL", model.RolePlatformAdmin).
+		Where("users.deleted_at IS NULL").
+		Order("users.id").
+		First(&user).Error; err == nil {
 		return user.ID, nil
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return 0, fmt.Errorf("find admin role user: %w", err)
+		return 0, fmt.Errorf("find platform admin role user: %w", err)
 	}
 
 	return legacyClusterSyncOwnerID, nil
@@ -99,6 +108,7 @@ func syncApplications(ctx context.Context, db *gorm.DB, k8sClient client.Client,
 			Identifier:  identifier,
 			Description: appCR.Spec.Description,
 			OwnerID:     ownerID,
+			IsSystem:    identifier == systemSharedApplicationIdentifier,
 		}
 		if err := upsertApplication(db, &app); err != nil {
 			return nil, err
@@ -137,6 +147,7 @@ func syncEnvironments(ctx context.Context, db *gorm.DB, k8sClient client.Client,
 			Identifier:    envIdentifier,
 			Status:        normalizePhase(envCR.Status.Phase, "empty"),
 			Namespace:     firstNonEmpty(envCR.Spec.PrimaryNamespace, envIdentifier),
+			IsSystem:      appIdentifier == systemSharedApplicationIdentifier && envIdentifier == systemSharedEnvironmentIdentifier,
 		}
 		if env.Status != "error" {
 			env.ErrorMessage = ""
@@ -334,6 +345,7 @@ func ensureApplication(db *gorm.DB, appsByIdentifier map[string]model.Applicatio
 		Name:       identifier,
 		Identifier: identifier,
 		OwnerID:    ownerID,
+		IsSystem:   identifier == systemSharedApplicationIdentifier,
 	}
 	if err := upsertApplication(db, &app); err != nil {
 		return model.Application{}, err
@@ -362,6 +374,7 @@ func ensureEnvironment(db *gorm.DB, envsByKey map[string]model.Environment, appI
 		Identifier:    envIdentifier,
 		Status:        "empty",
 		Namespace:     fmt.Sprintf("%s-%s", appIdentifier, envIdentifier),
+		IsSystem:      appIdentifier == systemSharedApplicationIdentifier && envIdentifier == systemSharedEnvironmentIdentifier,
 	}
 	if err := upsertEnvironment(db, &env); err != nil {
 		return model.Environment{}, err
@@ -382,6 +395,7 @@ func upsertApplication(db *gorm.DB, app *model.Application) error {
 	existing.Name = app.Name
 	existing.Description = app.Description
 	existing.OwnerID = app.OwnerID
+	existing.IsSystem = app.IsSystem
 	existing.DeletedAt = gorm.DeletedAt{}
 	if err := db.Unscoped().Save(&existing).Error; err != nil {
 		return fmt.Errorf("update application %s: %w", app.Identifier, err)
@@ -412,6 +426,7 @@ func upsertEnvironment(db *gorm.DB, env *model.Environment) error {
 	}
 	existing.Namespace = env.Namespace
 	existing.ErrorMessage = env.ErrorMessage
+	existing.IsSystem = env.IsSystem
 	existing.DeletedAt = gorm.DeletedAt{}
 	if err := db.Unscoped().Save(&existing).Error; err != nil {
 		return fmt.Errorf("update environment %d/%s: %w", env.ApplicationID, env.Identifier, err)

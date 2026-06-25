@@ -8,7 +8,6 @@ import (
 	"paap/internal/model"
 
 	"gorm.io/driver/postgres"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
@@ -17,17 +16,14 @@ var DB *gorm.DB
 
 func Init(dsn string) error {
 	var err error
-	var dialector gorm.Dialector
 
 	if strings.HasPrefix(dsn, "postgres://") || strings.HasPrefix(dsn, "postgresql://") {
-		dialector = postgres.Open(dsn)
+		DB, err = gorm.Open(postgres.Open(dsn), &gorm.Config{
+			Logger: logger.Default.LogMode(logger.Warn),
+		})
 	} else {
-		dialector = sqlite.Open(dsn)
+		return fmt.Errorf("PostgreSQL DATABASE_URL is required")
 	}
-
-	DB, err = gorm.Open(dialector, &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Warn),
-	})
 	if err != nil {
 		return fmt.Errorf("failed to connect to database: %w", err)
 	}
@@ -46,10 +42,12 @@ func autoMigrate() error {
 	}
 	return DB.AutoMigrate(
 		&model.User{},
+		&model.UserRole{},
 		&model.Application{},
 		&model.AppMember{},
 		&model.Environment{},
 		&model.EnvironmentCanvasState{},
+		&model.EnvironmentCapability{},
 		&model.EnvTemplate{},
 		&model.ServiceTemplate{},
 		&model.ServiceCatalog{},

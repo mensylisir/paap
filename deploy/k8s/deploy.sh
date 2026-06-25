@@ -4,8 +4,8 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 KIND_CLUSTER="${KIND_CLUSTER:-kind}"
-SERVER_IMAGE="${SERVER_IMAGE:-paap-server:v0.1.500}"
-OPERATOR_IMAGE="${OPERATOR_IMAGE:-paap-operator:v0.1.52}"
+SERVER_IMAGE="${SERVER_IMAGE:-paap-server:v0.1.516}"
+OPERATOR_IMAGE="${OPERATOR_IMAGE:-paap-operator:v0.1.53}"
 
 echo "=== PAAP Deploy to Kind ==="
 
@@ -16,6 +16,8 @@ inspect_namespace() {
   echo "   Recent events in $namespace:"
   kubectl get events -n "$namespace" --sort-by=.lastTimestamp | tail -20 || true
 }
+
+"$PROJECT_DIR/scripts/check-disk-space.sh" before-paap-kind-deploy
 
 # 1. 构建内置模板包和 PAAP 本地镜像
 echo "1. Packaging templates and building PAAP images..."
@@ -68,12 +70,16 @@ kubectl logs -n paap-system job/init-templates --tail=20 || true
 echo "9. Deploying Operator..."
 kubectl apply -f "$SCRIPT_DIR/paap-operator.yaml"
 
-# 10. 部署 Server
-echo "10. Deploying Server..."
+# 10. 内置共享资源池 CR
+echo "10. Seeding shared resource pool..."
+kubectl apply -f "$SCRIPT_DIR/shared-resource-pool.yaml"
+
+# 11. 部署 Server
+echo "11. Deploying Server..."
 kubectl apply -f "$SCRIPT_DIR/paap-server.yaml"
 
-# 11. 直接检查当前状态，不做被动等待
-echo "11. Inspecting current pod status..."
+# 12. 直接检查当前状态，不做被动等待
+echo "12. Inspecting current pod status..."
 inspect_namespace paap-system
 inspect_namespace kpack
 
@@ -100,3 +106,4 @@ kubectl exec -n paap-system deployment/minio -- \
   mc alias set local http://localhost:9000 minioadmin minioadmin123 2>/dev/null || true
 kubectl exec -n paap-system deployment/minio -- \
   mc ls local/paap-charts/charts/ 2>/dev/null || echo "  (Run 'kubectl port-forward -n paap-system svc/minio 9000:9000' to access MinIO)"
+"$PROJECT_DIR/scripts/check-disk-space.sh" after-paap-kind-deploy

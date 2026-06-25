@@ -3,8 +3,10 @@ import {
   buildComponentDependencyEdges,
   buildComponentTopologyNodes,
   buildComponentTopologyLanes,
+  buildComponentTopologyZones,
   componentTopologyCanvasViewBox,
   componentTopologyEdgePath,
+  componentTopologyZoneKey,
   findTopologyNodeAtPoint,
   hasComponentTopologyDragMoved,
   nextComponentTopologyDragPosition,
@@ -95,6 +97,26 @@ describe('componentTopology', () => {
       'dev-git',
       'dev-deploy',
       'dev-monitor',
+    ])
+  })
+
+  it('groups topology nodes by environment shared and external zones', () => {
+    const nodes = [
+      { id: 1, name: 'api', topologyKind: 'component' as const },
+      { id: 10, name: 'redis', topologyKind: 'service' as const },
+      { id: 20, name: 'shared-harbor', topologyKind: 'capability' as any, source: 'shared' },
+      { id: 21, name: 'external-postgres', topologyKind: 'capability' as any, source: 'external' },
+    ]
+
+    expect(nodes.map(componentTopologyZoneKey)).toEqual(['environment', 'environment', 'shared', 'external'])
+    expect(buildComponentTopologyZones(nodes).map((zone) => ({
+      key: zone.key,
+      label: zone.label,
+      names: zone.nodes.map((node) => node.name),
+    }))).toEqual([
+      { key: 'environment', label: '本环境', names: ['api', 'redis'] },
+      { key: 'shared', label: '平台公共', names: ['shared-harbor'] },
+      { key: 'external', label: '集群外部', names: ['external-postgres'] },
     ])
   })
 

@@ -77,7 +77,7 @@
 import { computed, ref, watch } from 'vue'
 import ToolWorkspaceFrame from './ToolWorkspaceFrame.vue'
 import { compactGrafanaEmbed } from './grafanaEmbed'
-import type { WorkspaceResource } from '../../views/serviceWorkspace'
+import { withEmbeddedProxyAuthToken, type WorkspaceResource } from '../../views/serviceWorkspace'
 
 const props = defineProps<{
   resources: WorkspaceResource[]
@@ -182,7 +182,7 @@ const toEmbeddedGrafanaURL = (url: string, subject?: WorkspaceResource | null) =
       }
       parsed.searchParams.set('left', JSON.stringify(left))
     }
-    return parsed.pathname + parsed.search + parsed.hash
+    return withEmbeddedProxyAuthToken(parsed.pathname + parsed.search + parsed.hash)
   } catch {
     return url
   }

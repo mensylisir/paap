@@ -2,8 +2,8 @@
   <div class="rail-page">
     <header class="page-header">
       <div class="header-text">
-        <h1 class="page-title">中间件目录</h1>
-        <p class="page-desc">平台支持的中间件与工具一览<template v-if="hasCatalogItems">（共 {{ totalItems }} 个）</template></p>
+        <h1 class="page-title">服务目录</h1>
+        <p class="page-desc">平台支持的服务与中间件一览<template v-if="hasCatalogItems">（共 {{ totalItems }} 个）</template></p>
       </div>
     </header>
 
@@ -92,12 +92,12 @@
     </template>
 
     <div v-if="!loading && hasCatalogItems && filterQuery.trim() && catalogGroups.length === 0" class="catalog-empty-search">
-      <strong>没有匹配的中间件或工具</strong>
+      <strong>没有匹配的服务或中间件</strong>
       <span>当前目录中没有包含“{{ filterQuery.trim() }}”的名称、类型、分组或描述。</span>
       <button type="button" class="catalog-empty-clear" @click="clearCatalogSearch">清除搜索</button>
     </div>
 
-    <p v-if="!loading && !hasCatalogItems && !pageError" class="no-data">没有找到中间件数据</p>
+    <p v-if="!loading && !hasCatalogItems && !pageError" class="no-data">没有找到服务数据</p>
   </div>
 </template>
 
@@ -206,7 +206,7 @@ onMounted(async () => {
     const data = await api.listServiceTemplates()
     templates.value = Array.isArray(data) ? data : (data?.data ? (Array.isArray(data.data) ? data.data : []) : [])
   } catch (e: any) {
-    pageError.value = '加载中间件目录失败：' + (e?.message || '未知错误')
+    pageError.value = '加载服务目录失败：' + (e?.message || '未知错误')
   } finally {
     loading.value = false
   }

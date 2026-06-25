@@ -45,6 +45,8 @@ func SetupRouter(r *gin.Engine) {
 		// Auth
 		api.POST("/auth/register", Register)
 		api.POST("/auth/login", Login)
+		api.GET("/auth/keycloak/login", KeycloakLogin)
+		api.GET("/auth/keycloak/callback", KeycloakCallback)
 	}
 
 	protected := api.Group("", middleware.AuthRequired())
@@ -87,6 +89,9 @@ func SetupRouter(r *gin.Engine) {
 
 		// Environment (standalone routes)
 		protected.GET("/environments/:id", GetEnvironment)
+		protected.GET("/environments/:id/capabilities", ListEnvironmentCapabilities)
+		protected.PUT("/environments/:id/capabilities/:capability", UpsertEnvironmentCapability)
+		protected.GET("/environments/:id/capabilities/:capability/credentials", GetEnvironmentCapabilityCredentials)
 		protected.GET("/environments/:id/canvas-state", GetEnvironmentCanvasState)
 		protected.PUT("/environments/:id/canvas-state", SaveEnvironmentCanvasState)
 		protected.DELETE("/environments/:id", DeleteEnvironment)
@@ -124,5 +129,15 @@ func SetupRouter(r *gin.Engine) {
 		protected.PUT("/environments/:id/components/:componentId/nodeport-access", SetComponentNodePortAccess)
 		// Component delete
 		protected.DELETE("/components/:id", DeleteComponent)
+		protected.DELETE("/environments/:id/capabilities/:capability", DeleteEnvironmentCapability)
+		protected.GET("/capabilities/shared-resources", ListSharedCapabilityResources)
+
+		// Platform admin routes
+		admin := protected.Group("/admin", RequirePlatformAdmin())
+		{
+			admin.GET("/users", ListUsers)
+			admin.PUT("/users/:id/role", UpdateUserRole)
+			admin.GET("/shared-resource-pool", GetSharedResourcePool)
+		}
 	}
 }

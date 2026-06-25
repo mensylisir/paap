@@ -12,7 +12,8 @@ export type ComponentTopologyComponent = {
   dependencyNames?: unknown
   dependencyComponents?: unknown
   topologyId?: string
-  topologyKind?: 'component' | 'service'
+  topologyKind?: 'component' | 'service' | 'capability'
+  source?: string
   serviceId?: string | number
   componentId?: string | number
   externalUrl?: string
@@ -34,6 +35,12 @@ export type ComponentTopologyEdge = {
 
 export type ComponentTopologyLane = {
   key: string
+  label: string
+  nodes: ComponentTopologyComponent[]
+}
+
+export type ComponentTopologyZone = {
+  key: 'environment' | 'shared' | 'external'
   label: string
   nodes: ComponentTopologyComponent[]
 }
@@ -105,6 +112,12 @@ const laneLabels: Record<string, string> = {
 }
 
 const laneOrder = ['frontend', 'backend', 'data', 'tools', 'other']
+const zoneLabels: Record<ComponentTopologyZone['key'], string> = {
+  environment: '本环境',
+  shared: '平台公共',
+  external: '集群外部',
+}
+const zoneOrder: ComponentTopologyZone['key'][] = ['environment', 'shared', 'external']
 
 const dataServiceTypes = new Set(['postgresql', 'postgres', 'mysql', 'mongodb', 'mongo', 'redis', 'rabbitmq', 'kafka', 'minio', 'database', 'middleware', 'infra'])
 const toolServiceTypes = new Set(['git', 'gitea', 'ci', 'jenkins', 'deploy', 'argocd', 'monitor', 'log', 'loki', 'registry', 'harbor', 'tool'])
@@ -171,6 +184,23 @@ export const buildComponentTopologyLanes = (components: ComponentTopologyCompone
       nodes: components.filter((comp) => componentLaneKey(comp) === key),
     }))
     .filter((lane) => lane.nodes.length > 0)
+
+export const componentTopologyZoneKey = (node: ComponentTopologyComponent): ComponentTopologyZone['key'] => {
+  if (node?.topologyKind === 'capability') {
+    if (String(node.source || '').toLowerCase() === 'shared') return 'shared'
+    if (String(node.source || '').toLowerCase() === 'external') return 'external'
+  }
+  return 'environment'
+}
+
+export const buildComponentTopologyZones = (nodes: ComponentTopologyComponent[]): ComponentTopologyZone[] =>
+  zoneOrder
+    .map((key) => ({
+      key,
+      label: zoneLabels[key],
+      nodes: nodes.filter((node) => componentTopologyZoneKey(node) === key),
+    }))
+    .filter((zone) => zone.nodes.length > 0)
 
 export const serviceNetworkSummary = (node: ComponentTopologyComponent) => {
   const runtimeServiceName = String(node?.runtimeServiceName || '').trim()

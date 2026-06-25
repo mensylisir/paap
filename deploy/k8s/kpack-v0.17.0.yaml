@@ -463,6 +463,8 @@ spec:
             - ALL
         image: ghcr.io/buildpacks-community/kpack/controller@sha256:80e71f484f0aa5f54eb549f5d5e015ac5373c9bc616f12891d676a7e1dfb80bd
         env:
+        - name: KUBERNETES_MIN_VERSION
+          value: "1.24.9"
         - name: ENABLE_PRIORITY_CLASSES
           value: "false"
         - name: INJECTED_SIDECAR_SUPPORT
@@ -900,6 +902,8 @@ spec:
         - name: https-webhook
           containerPort: 8443
         env:
+        - name: KUBERNETES_MIN_VERSION
+          value: "1.24.9"
         - name: CONFIG_LOGGING_NAME
           value: config-logging
         - name: CONFIG_OBSERVABILITY_NAME

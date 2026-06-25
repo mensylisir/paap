@@ -148,3 +148,24 @@ export function serviceProxyUrl(environmentId?: number | string, serviceId?: num
   const cleanPath = String(path || '').replace(/^\/+/, '')
   return `/api/v1/environments/${environmentId}/services/${serviceId}/proxy/${cleanPath}`
 }
+
+export function withEmbeddedProxyAuthToken(url: string, token?: string) {
+  if (!url) return ''
+  const authToken = token !== undefined
+    ? token
+    : (typeof localStorage === 'undefined' ? '' : localStorage.getItem('paap_token') || '')
+  if (!authToken) return url
+
+  const baseOrigin = typeof window === 'undefined' ? 'http://paap.local' : window.location.origin
+  try {
+    const parsed = new URL(url, baseOrigin)
+    if (parsed.origin !== baseOrigin) return url
+    if (!parsed.pathname.startsWith('/api/v1/environments/') || !parsed.pathname.includes('/proxy/')) {
+      return parsed.pathname + parsed.search + parsed.hash
+    }
+    parsed.searchParams.set('paap_token', authToken)
+    return parsed.pathname + parsed.search + parsed.hash
+  } catch {
+    return url
+  }
+}

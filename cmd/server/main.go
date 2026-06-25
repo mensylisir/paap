@@ -22,7 +22,6 @@ func main() {
 		log.Fatalf("Database initialization failed: %v", err)
 	}
 	defer database.Close()
-	handler.SeedDefaultUsers()
 	if err := database.RunSQLMigrations(); err != nil {
 		log.Fatalf("SQL migration failed: %v", err)
 	}

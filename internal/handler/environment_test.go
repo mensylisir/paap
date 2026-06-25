@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -520,9 +519,9 @@ func TestGetWorkloadRoleDefaultsToNoProjectedPermissions(t *testing.T) {
 	previousDB := database.DB
 	t.Cleanup(func() { database.DB = previousDB })
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatalf("open db: %v", err)
 	}
 	if err := db.AutoMigrate(&model.ServiceTemplate{}); err != nil {
 		t.Fatalf("migrate: %v", err)
@@ -545,7 +544,7 @@ func TestGetEnvironmentRoleReadsCustomTemplatePolicy(t *testing.T) {
 	previousDB := database.DB
 	t.Cleanup(func() { database.DB = previousDB })
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -606,9 +605,9 @@ func TestSeedEnvTemplatesRefreshesBuiltInFoundation(t *testing.T) {
 	previousDB := database.DB
 	t.Cleanup(func() { database.DB = previousDB })
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatalf("open db: %v", err)
 	}
 	if err := db.AutoMigrate(&model.EnvTemplate{}); err != nil {
 		t.Fatalf("migrate: %v", err)
@@ -660,9 +659,9 @@ func TestInstallTemplateServicesInstallsServicesAndInfra(t *testing.T) {
 		k8s.SetClient(previousClient)
 	})
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatalf("open db: %v", err)
 	}
 	if err := db.AutoMigrate(&model.Application{}, &model.Environment{}, &model.EnvTemplate{}, &model.ServiceTemplate{}, &model.ServiceInstallation{}); err != nil {
 		t.Fatalf("migrate: %v", err)
@@ -750,13 +749,13 @@ func TestCreateServiceDraftDoesNotCreateServiceInstanceCR(t *testing.T) {
 		k8s.SetClient(previousClient)
 	})
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatalf("open db: %v", err)
 	}
 	sqlDB, err := db.DB()
 	if err != nil {
-		t.Fatalf("sqlite db handle: %v", err)
+		t.Fatalf("db handle: %v", err)
 	}
 	sqlDB.SetMaxOpenConns(1)
 	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.ServiceTemplate{}, &model.ServiceInstallation{}); err != nil {
@@ -830,13 +829,13 @@ func TestInstallServiceDeploysExistingDraft(t *testing.T) {
 	})
 	syncClusterState = func(context.Context, *gorm.DB, ctrlclient.Client) error { return nil }
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatalf("open db: %v", err)
 	}
 	sqlDB, err := db.DB()
 	if err != nil {
-		t.Fatalf("sqlite db handle: %v", err)
+		t.Fatalf("db handle: %v", err)
 	}
 	sqlDB.SetMaxOpenConns(1)
 	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.ServiceTemplate{}, &model.ServiceInstallation{}); err != nil {
@@ -920,13 +919,13 @@ func TestInstallServiceSelectsTemplateByChartVersion(t *testing.T) {
 	})
 	syncClusterState = func(context.Context, *gorm.DB, ctrlclient.Client) error { return nil }
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatalf("open db: %v", err)
 	}
 	sqlDB, err := db.DB()
 	if err != nil {
-		t.Fatalf("sqlite db handle: %v", err)
+		t.Fatalf("db handle: %v", err)
 	}
 	sqlDB.SetMaxOpenConns(1)
 	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.ServiceTemplate{}, &model.ServiceInstallation{}); err != nil {
@@ -995,9 +994,9 @@ func TestInstallServiceRejectsNonMembers(t *testing.T) {
 		k8s.SetClient(previousClient)
 	})
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatalf("open db: %v", err)
 	}
 	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.ServiceTemplate{}, &model.ServiceInstallation{}); err != nil {
 		t.Fatalf("migrate: %v", err)
@@ -1047,9 +1046,9 @@ func TestInstallServiceRejectsNonMembersBeforeTemplateLookup(t *testing.T) {
 		k8s.SetClient(previousClient)
 	})
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatalf("open db: %v", err)
 	}
 	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.ServiceTemplate{}, &model.ServiceInstallation{}); err != nil {
 		t.Fatalf("migrate: %v", err)
@@ -1088,9 +1087,9 @@ func TestInstallServiceChecksTemplateAfterMemberAccess(t *testing.T) {
 		k8s.SetClient(previousClient)
 	})
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatalf("open db: %v", err)
 	}
 	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.ServiceTemplate{}, &model.ServiceInstallation{}); err != nil {
 		t.Fatalf("migrate: %v", err)
@@ -1132,13 +1131,13 @@ func TestUpdateServiceDraftSavesValuesWithoutCreatingCR(t *testing.T) {
 		k8s.SetClient(previousClient)
 	})
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatalf("open db: %v", err)
 	}
 	sqlDB, err := db.DB()
 	if err != nil {
-		t.Fatalf("sqlite db handle: %v", err)
+		t.Fatalf("db handle: %v", err)
 	}
 	sqlDB.SetMaxOpenConns(1)
 	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.ServiceTemplate{}, &model.ServiceInstallation{}); err != nil {
@@ -1221,9 +1220,9 @@ func TestUpdateServiceRejectsNonMembers(t *testing.T) {
 		k8s.SetClient(previousClient)
 	})
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatalf("open db: %v", err)
 	}
 	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.ServiceTemplate{}, &model.ServiceInstallation{}); err != nil {
 		t.Fatalf("migrate: %v", err)
@@ -1278,9 +1277,9 @@ func TestUpdateServiceRejectsNonMembersBeforeServiceLookup(t *testing.T) {
 		k8s.SetClient(previousClient)
 	})
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatalf("open db: %v", err)
 	}
 	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.ServiceInstallation{}); err != nil {
 		t.Fatalf("migrate: %v", err)
@@ -1320,9 +1319,9 @@ func TestUpdateServiceChecksTemplateAfterMemberAccess(t *testing.T) {
 		k8s.SetClient(previousClient)
 	})
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatalf("open db: %v", err)
 	}
 	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.ServiceTemplate{}, &model.ServiceInstallation{}); err != nil {
 		t.Fatalf("migrate: %v", err)
@@ -1369,13 +1368,13 @@ func TestUpdateRunningServiceReconcilesServiceInstanceCR(t *testing.T) {
 		k8s.SetClient(previousClient)
 	})
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatalf("open db: %v", err)
 	}
 	sqlDB, err := db.DB()
 	if err != nil {
-		t.Fatalf("sqlite db handle: %v", err)
+		t.Fatalf("db handle: %v", err)
 	}
 	sqlDB.SetMaxOpenConns(1)
 	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.ServiceTemplate{}, &model.ServiceInstallation{}); err != nil {
@@ -1507,9 +1506,9 @@ func TestUninstallServiceRejectsNonMembers(t *testing.T) {
 	})
 	t.Setenv("PATH", "/nonexistent")
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatalf("open db: %v", err)
 	}
 	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.ServiceInstallation{}); err != nil {
 		t.Fatalf("migrate: %v", err)
@@ -1555,9 +1554,9 @@ func TestUninstallServiceRejectsNonMembersBeforeServiceLookup(t *testing.T) {
 	previousDB := database.DB
 	t.Cleanup(func() { database.DB = previousDB })
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatalf("open db: %v", err)
 	}
 	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.ServiceInstallation{}); err != nil {
 		t.Fatalf("migrate: %v", err)
@@ -1596,9 +1595,9 @@ func TestUninstallServiceScopesServiceToEnvironmentAfterMemberAccess(t *testing.
 	})
 	t.Setenv("PATH", "/nonexistent")
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatalf("open db: %v", err)
 	}
 	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.ServiceInstallation{}); err != nil {
 		t.Fatalf("migrate: %v", err)
@@ -1674,9 +1673,9 @@ func TestCreateEnvironmentGeneratesIdentifierWhenMissing(t *testing.T) {
 	previousDB := database.DB
 	t.Cleanup(func() { database.DB = previousDB })
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatalf("open db: %v", err)
 	}
 	if err := db.AutoMigrate(&model.Application{}, &model.Environment{}); err != nil {
 		t.Fatalf("migrate: %v", err)
@@ -1723,9 +1722,9 @@ func TestCreateEnvironmentAppliesTemplateResourceQuota(t *testing.T) {
 		k8s.SetClient(previousClient)
 	})
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatalf("open db: %v", err)
 	}
 	sqlDB, err := db.DB()
 	if err != nil {
@@ -1813,9 +1812,9 @@ func TestCreateEnvironmentAppliesAdditionalNamespaces(t *testing.T) {
 		k8s.SetClient(previousClient)
 	})
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatalf("open db: %v", err)
 	}
 	sqlDB, err := db.DB()
 	if err != nil {
@@ -1905,9 +1904,9 @@ func TestListApplicationEnvironmentsRejectsNonMembers(t *testing.T) {
 	previousDB := database.DB
 	t.Cleanup(func() { database.DB = previousDB })
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatalf("open db: %v", err)
 	}
 	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}); err != nil {
 		t.Fatalf("migrate: %v", err)
@@ -1939,9 +1938,9 @@ func TestCreateEnvironmentRejectsNonMembers(t *testing.T) {
 	previousDB := database.DB
 	t.Cleanup(func() { database.DB = previousDB })
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatalf("open db: %v", err)
 	}
 	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}); err != nil {
 		t.Fatalf("migrate: %v", err)
@@ -1979,9 +1978,9 @@ func TestCreateApplicationGeneratesIdentifierForDuplicateNames(t *testing.T) {
 	previousDB := database.DB
 	t.Cleanup(func() { database.DB = previousDB })
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatalf("open db: %v", err)
 	}
 	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}); err != nil {
 		t.Fatalf("migrate: %v", err)
@@ -1999,7 +1998,7 @@ func TestCreateApplicationGeneratesIdentifierForDuplicateNames(t *testing.T) {
 
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	router.POST("/api/v1/applications", withTestAuthUser(1, CreateApplication))
+	router.POST("/api/v1/applications", withTestAuthUserRole(1, model.RoleAppAdmin, CreateApplication))
 	router.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusCreated {
@@ -2027,9 +2026,9 @@ func TestGetEnvironmentReturnsApplicationAndServiceExternalAccess(t *testing.T) 
 	})
 	syncClusterState = func(context.Context, *gorm.DB, ctrlclient.Client) error { return nil }
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatalf("open db: %v", err)
 	}
 	if err := db.AutoMigrate(&model.Application{}, &model.Environment{}, &model.ServiceInstallation{}, &model.Component{}, &model.InfraInstallation{}); err != nil {
 		t.Fatalf("migrate: %v", err)
@@ -2162,9 +2161,9 @@ func TestGetEnvironmentRejectsNonMembers(t *testing.T) {
 	})
 	syncClusterState = func(context.Context, *gorm.DB, ctrlclient.Client) error { return nil }
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatalf("open db: %v", err)
 	}
 	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.Component{}, &model.ServiceInstallation{}, &model.InfraInstallation{}); err != nil {
 		t.Fatalf("migrate: %v", err)
@@ -2201,9 +2200,9 @@ func TestSetServiceExternalAccessPatchesLiveServiceWithoutChangingHelmValues(t *
 		k8s.SetClient(previousClient)
 	})
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatalf("open db: %v", err)
 	}
 	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.ServiceInstallation{}); err != nil {
 		t.Fatalf("migrate: %v", err)
@@ -2309,9 +2308,9 @@ func TestSetServiceExternalAccessRejectsNonMembers(t *testing.T) {
 		k8s.SetClient(previousClient)
 	})
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatalf("open db: %v", err)
 	}
 	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.ServiceInstallation{}); err != nil {
 		t.Fatalf("migrate: %v", err)
@@ -2351,9 +2350,9 @@ func TestSetServiceExternalAccessChecksNamespaceAfterMemberAccess(t *testing.T) 
 	previousDB := database.DB
 	t.Cleanup(func() { database.DB = previousDB })
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatalf("open db: %v", err)
 	}
 	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.ServiceInstallation{}); err != nil {
 		t.Fatalf("migrate: %v", err)
@@ -2395,9 +2394,9 @@ func TestSetServiceExternalAccessRejectsNonMembersBeforeServiceLookup(t *testing
 	previousDB := database.DB
 	t.Cleanup(func() { database.DB = previousDB })
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatalf("open db: %v", err)
 	}
 	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.ServiceInstallation{}); err != nil {
 		t.Fatalf("migrate: %v", err)
@@ -2436,9 +2435,9 @@ func TestSetComponentExternalAccessRejectsNonMembers(t *testing.T) {
 		k8s.SetClient(previousClient)
 	})
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatalf("open db: %v", err)
 	}
 	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.Component{}); err != nil {
 		t.Fatalf("migrate: %v", err)
@@ -2482,9 +2481,9 @@ func TestSetComponentExternalAccessChecksNamespaceAfterMemberAccess(t *testing.T
 		k8s.SetClient(previousClient)
 	})
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatalf("open db: %v", err)
 	}
 	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.Component{}); err != nil {
 		t.Fatalf("migrate: %v", err)
@@ -2527,9 +2526,9 @@ func TestSetComponentExternalAccessRejectsNonMembersBeforeComponentLookup(t *tes
 	previousDB := database.DB
 	t.Cleanup(func() { database.DB = previousDB })
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatalf("open db: %v", err)
 	}
 	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.Component{}); err != nil {
 		t.Fatalf("migrate: %v", err)
@@ -2568,9 +2567,9 @@ func TestSetComponentNodePortAccessRejectsNonMembers(t *testing.T) {
 		k8s.SetClient(previousClient)
 	})
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatalf("open db: %v", err)
 	}
 	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.Component{}); err != nil {
 		t.Fatalf("migrate: %v", err)
@@ -2614,9 +2613,9 @@ func TestSetComponentNodePortAccessChecksNamespaceAfterMemberAccess(t *testing.T
 		k8s.SetClient(previousClient)
 	})
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatalf("open db: %v", err)
 	}
 	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.Component{}); err != nil {
 		t.Fatalf("migrate: %v", err)
@@ -2659,9 +2658,9 @@ func TestSetComponentNodePortAccessRejectsNonMembersBeforeComponentLookup(t *tes
 	previousDB := database.DB
 	t.Cleanup(func() { database.DB = previousDB })
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatalf("open db: %v", err)
 	}
 	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.Component{}); err != nil {
 		t.Fatalf("migrate: %v", err)
@@ -2703,9 +2702,9 @@ func TestGetServiceCredentialsReadsRealSecrets(t *testing.T) {
 	})
 	syncClusterState = func(context.Context, *gorm.DB, ctrlclient.Client) error { return nil }
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatalf("open db: %v", err)
 	}
 	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.ServiceInstallation{}); err != nil {
 		t.Fatalf("migrate: %v", err)
@@ -2783,9 +2782,9 @@ func TestGetServiceWorkspaceReturnsBackendWorkspace(t *testing.T) {
 	previousDB := database.DB
 	t.Cleanup(func() { database.DB = previousDB })
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatalf("open db: %v", err)
 	}
 	if err := db.AutoMigrate(
 		&model.Application{},
@@ -2856,7 +2855,7 @@ func TestDeleteComponentRejectsNonMembers(t *testing.T) {
 	})
 	k8s.SetClient(nil)
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -2906,7 +2905,7 @@ func TestDeleteComponentRemovesArgoCDApplicationAndRuntimeResources(t *testing.T
 		k8s.SetClient(previousK8sClient)
 	})
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -3083,7 +3082,7 @@ func TestDeleteComponentUsesArgoCDApplicationIdentifierForRuntimeCleanup(t *test
 		k8s.SetClient(previousK8sClient)
 	})
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -3166,7 +3165,7 @@ func TestDeleteEnvironmentRejectsNonMembers(t *testing.T) {
 	previousDB := database.DB
 	t.Cleanup(func() { database.DB = previousDB })
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -3230,7 +3229,7 @@ func TestListEnvironmentComponentsRejectsNonMembers(t *testing.T) {
 	})
 	k8s.SetClient(nil)
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -3273,7 +3272,7 @@ func TestListServiceInstancesRejectsNonMembers(t *testing.T) {
 	})
 	k8s.SetClient(nil)
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -3316,7 +3315,7 @@ func TestGetServiceInstanceRejectsNonMembers(t *testing.T) {
 	})
 	k8s.SetClient(nil)
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -3360,7 +3359,7 @@ func TestGetServiceInstanceRejectsNonMembersBeforeServiceLookup(t *testing.T) {
 	})
 	k8s.SetClient(nil)
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -3400,7 +3399,7 @@ func TestGetServiceCredentialsRejectsNonMembers(t *testing.T) {
 	})
 	k8s.SetClient(nil)
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -3444,7 +3443,7 @@ func TestGetServiceCredentialsRejectsNonMembersBeforeServiceLookup(t *testing.T)
 	})
 	k8s.SetClient(nil)
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -3479,7 +3478,7 @@ func TestGetServiceWorkspaceRejectsNonMembers(t *testing.T) {
 	previousDB := database.DB
 	t.Cleanup(func() { database.DB = previousDB })
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -3518,7 +3517,7 @@ func TestGetServiceWorkspaceRejectsNonMembersBeforeServiceLookup(t *testing.T) {
 	previousDB := database.DB
 	t.Cleanup(func() { database.DB = previousDB })
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -3558,7 +3557,7 @@ func TestGetServiceRuntimeMetricsRejectsNonMembers(t *testing.T) {
 	})
 	k8s.SetClient(nil)
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -3602,7 +3601,7 @@ func TestGetServiceRuntimeMetricsRejectsNonMembersBeforeServiceLookup(t *testing
 	})
 	k8s.SetClient(nil)
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -3642,7 +3641,7 @@ func TestGetComponentRuntimeMetricsRejectsNonMembers(t *testing.T) {
 	})
 	k8s.SetClient(nil)
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -3686,7 +3685,7 @@ func TestGetComponentRuntimeMetricsRejectsNonMembersBeforeComponentLookup(t *tes
 	})
 	k8s.SetClient(nil)
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -3726,7 +3725,7 @@ func TestGetComponentRuntimeMetricsChecksComponentAfterMemberAccess(t *testing.T
 	})
 	k8s.SetClient(nil)
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -3769,7 +3768,7 @@ func TestGetComponentRuntimeLogsRejectsNonMembers(t *testing.T) {
 	})
 	k8s.SetClient(nil)
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -3813,7 +3812,7 @@ func TestGetComponentRuntimeLogsRejectsNonMembersBeforeComponentLookup(t *testin
 	})
 	k8s.SetClient(nil)
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -3853,7 +3852,7 @@ func TestGetComponentRuntimeLogsChecksComponentAfterMemberAccess(t *testing.T) {
 	})
 	k8s.SetClient(nil)
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -3896,7 +3895,7 @@ func TestProxyComponentRejectsNonMembers(t *testing.T) {
 	})
 	k8s.SetClient(nil)
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -3940,7 +3939,7 @@ func TestProxyComponentRejectsNonMembersBeforeComponentLookup(t *testing.T) {
 	})
 	k8s.SetClient(nil)
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -3980,7 +3979,7 @@ func TestProxyComponentChecksComponentAfterMemberAccess(t *testing.T) {
 	})
 	k8s.SetClient(nil)
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -4023,7 +4022,7 @@ func TestHandleComponentConsoleRejectsNonMembers(t *testing.T) {
 	})
 	k8s.SetClient(nil)
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -4067,7 +4066,7 @@ func TestHandleComponentConsoleRejectsNonMembersBeforeComponentLookup(t *testing
 	})
 	k8s.SetClient(nil)
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -4107,7 +4106,7 @@ func TestHandleComponentConsoleChecksComponentAfterMemberAccess(t *testing.T) {
 	})
 	k8s.SetClient(nil)
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -4150,7 +4149,7 @@ func TestGetServiceRuntimeLogsRejectsNonMembers(t *testing.T) {
 	})
 	k8s.SetClient(nil)
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -4194,7 +4193,7 @@ func TestGetServiceRuntimeLogsRejectsNonMembersBeforeServiceLookup(t *testing.T)
 	})
 	k8s.SetClient(nil)
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -4229,7 +4228,7 @@ func TestProxyServiceInstanceRejectsNonMembers(t *testing.T) {
 	previousDB := database.DB
 	t.Cleanup(func() { database.DB = previousDB })
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -4268,7 +4267,7 @@ func TestProxyServiceInstanceRejectsNonMembersBeforeServiceLookup(t *testing.T) 
 	previousDB := database.DB
 	t.Cleanup(func() { database.DB = previousDB })
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -4303,7 +4302,7 @@ func TestProxyServiceInstanceChecksServiceAfterMemberAccess(t *testing.T) {
 	previousDB := database.DB
 	t.Cleanup(func() { database.DB = previousDB })
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -4346,7 +4345,7 @@ func TestHandleServiceConsoleRejectsNonMembers(t *testing.T) {
 	})
 	k8s.SetClient(nil)
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -4390,7 +4389,7 @@ func TestHandleServiceConsoleRejectsNonMembersBeforeServiceLookup(t *testing.T) 
 	})
 	k8s.SetClient(nil)
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -4430,7 +4429,7 @@ func TestHandleServiceConsoleChecksServiceAfterMemberAccess(t *testing.T) {
 	})
 	k8s.SetClient(nil)
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -4471,7 +4470,7 @@ func TestRunServiceWorkspaceActionRejectsNonMembers(t *testing.T) {
 	t.Cleanup(func() { syncClusterState = previousSync })
 	syncClusterState = func(context.Context, *gorm.DB, ctrlclient.Client) error { return nil }
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -4515,7 +4514,7 @@ func TestRunServiceWorkspaceActionRejectsNonMembersBeforeServiceLookup(t *testin
 	t.Cleanup(func() { syncClusterState = previousSync })
 	syncClusterState = func(context.Context, *gorm.DB, ctrlclient.Client) error { return nil }
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -4557,7 +4556,7 @@ func TestDownloadRegistryCACertificateRejectsNonMembers(t *testing.T) {
 	})
 	k8s.SetClient(nil)
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -4601,7 +4600,7 @@ func TestDownloadRegistryCACertificateRejectsNonMembersBeforeServiceLookup(t *te
 	})
 	k8s.SetClient(nil)
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -4641,7 +4640,7 @@ func TestCreateServiceDraftRejectsNonMembers(t *testing.T) {
 	})
 	syncClusterState = func(context.Context, *gorm.DB, ctrlclient.Client) error { return nil }
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -4693,7 +4692,7 @@ func TestCreateServiceDraftRejectsNonMembersBeforeTemplateLookup(t *testing.T) {
 	})
 	syncClusterState = func(context.Context, *gorm.DB, ctrlclient.Client) error { return nil }
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -4733,7 +4732,7 @@ func TestDeleteEnvironmentRemovesClusterCRsNamespacesAndDatabaseRows(t *testing.
 		k8s.SetClient(previousK8sClient)
 	})
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -4850,9 +4849,9 @@ func TestApplyArgoCDApplicationRejectsNamespaceOutsideEnvironment(t *testing.T) 
 	t.Cleanup(func() { syncClusterState = previousSync })
 	syncClusterState = func(context.Context, *gorm.DB, ctrlclient.Client) error { return nil }
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatalf("open db: %v", err)
 	}
 	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.ServiceInstallation{}, &model.Component{}); err != nil {
 		t.Fatalf("migrate: %v", err)
@@ -4911,9 +4910,9 @@ func TestApplyArgoCDApplicationForcesEnvironmentProject(t *testing.T) {
 	t.Cleanup(func() { syncClusterState = previousSync })
 	syncClusterState = func(context.Context, *gorm.DB, ctrlclient.Client) error { return nil }
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatalf("open db: %v", err)
 	}
 	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.ServiceInstallation{}, &model.Component{}); err != nil {
 		t.Fatalf("migrate: %v", err)
@@ -5059,9 +5058,9 @@ func TestApplyArgoCDApplicationSetForcesEnvironmentProject(t *testing.T) {
 	t.Cleanup(func() { syncClusterState = previousSync })
 	syncClusterState = func(context.Context, *gorm.DB, ctrlclient.Client) error { return nil }
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatalf("open db: %v", err)
 	}
 	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.ServiceInstallation{}, &model.Component{}); err != nil {
 		t.Fatalf("migrate: %v", err)
@@ -5180,9 +5179,9 @@ func TestBuildLiveMonitorWorkspaceAddsObjectLevelDashboards(t *testing.T) {
 	previousClient := k8s.GetClient()
 	t.Cleanup(func() { k8s.SetClient(previousClient) })
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatalf("open db: %v", err)
 	}
 	if err := db.AutoMigrate(
 		&model.Application{},
@@ -5536,9 +5535,9 @@ func TestDownloadRegistryCACertificateReturnsPublicCA(t *testing.T) {
 	previousClient := k8s.GetClient()
 	t.Cleanup(func() { k8s.SetClient(previousClient) })
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatalf("open db: %v", err)
 	}
 	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.ServiceInstallation{}, &model.Component{}); err != nil {
 		t.Fatalf("migrate: %v", err)
@@ -6345,9 +6344,9 @@ func TestInstalledServiceMonitorSubjectsExposeServiceID(t *testing.T) {
 	previousDB := database.DB
 	t.Cleanup(func() { database.DB = previousDB })
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatalf("open db: %v", err)
 	}
 	if err := db.AutoMigrate(&model.Application{}, &model.Environment{}, &model.ServiceInstallation{}); err != nil {
 		t.Fatalf("migrate: %v", err)
@@ -6495,9 +6494,9 @@ func TestCreateComponentRejectsImplicitLatestBeforeCreatingRecord(t *testing.T) 
 	previousDB := database.DB
 	t.Cleanup(func() { database.DB = previousDB })
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatalf("open db: %v", err)
 	}
 	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.Component{}); err != nil {
 		t.Fatalf("migrate: %v", err)
@@ -6548,9 +6547,9 @@ func TestCreateComponentRejectsNonMembers(t *testing.T) {
 	previousDB := database.DB
 	t.Cleanup(func() { database.DB = previousDB })
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatalf("open db: %v", err)
 	}
 	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.Component{}); err != nil {
 		t.Fatalf("migrate: %v", err)
@@ -6598,9 +6597,9 @@ func TestCreateComponentRejectsNonMembersBeforePayloadValidation(t *testing.T) {
 	previousDB := database.DB
 	t.Cleanup(func() { database.DB = previousDB })
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatalf("open db: %v", err)
 	}
 	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.Component{}); err != nil {
 		t.Fatalf("migrate: %v", err)
@@ -6645,9 +6644,9 @@ func TestCreateComponentCreatesDraftWithoutDeploying(t *testing.T) {
 		k8s.SetClient(previousClient)
 	})
 
-	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatalf("open db: %v", err)
 	}
 	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.Component{}, &model.ServiceInstallation{}); err != nil {
 		t.Fatalf("migrate: %v", err)
@@ -6713,9 +6712,9 @@ func TestCreateComponentAllowsCanvasDraftWithoutImage(t *testing.T) {
 	previousDB := database.DB
 	t.Cleanup(func() { database.DB = previousDB })
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatalf("open db: %v", err)
 	}
 	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.Component{}); err != nil {
 		t.Fatalf("migrate: %v", err)
@@ -6767,9 +6766,9 @@ func TestEnvironmentCanvasStatePersistsPositionsAndEdges(t *testing.T) {
 	previousDB := database.DB
 	t.Cleanup(func() { database.DB = previousDB })
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatalf("open db: %v", err)
 	}
 	if err := db.AutoMigrate(&model.Application{}, &model.Environment{}, &model.EnvironmentCanvasState{}, &model.Component{}, &model.ServiceInstallation{}); err != nil {
 		t.Fatalf("migrate: %v", err)
@@ -6851,9 +6850,9 @@ func TestEnvironmentCanvasStatePersistsDisplayNames(t *testing.T) {
 	previousDB := database.DB
 	t.Cleanup(func() { database.DB = previousDB })
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatalf("open db: %v", err)
 	}
 	if err := db.AutoMigrate(&model.Application{}, &model.Environment{}, &model.EnvironmentCanvasState{}, &model.Component{}, &model.ServiceInstallation{}); err != nil {
 		t.Fatalf("migrate: %v", err)
@@ -6930,9 +6929,9 @@ func TestGetEnvironmentCanvasStateRejectsNonMembers(t *testing.T) {
 	previousDB := database.DB
 	t.Cleanup(func() { database.DB = previousDB })
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatalf("open db: %v", err)
 	}
 	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.EnvironmentCanvasState{}); err != nil {
 		t.Fatalf("migrate: %v", err)
@@ -6968,9 +6967,9 @@ func TestSaveEnvironmentCanvasStateRejectsNonMembers(t *testing.T) {
 	previousDB := database.DB
 	t.Cleanup(func() { database.DB = previousDB })
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatalf("open db: %v", err)
 	}
 	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.EnvironmentCanvasState{}); err != nil {
 		t.Fatalf("migrate: %v", err)
@@ -7012,9 +7011,9 @@ func TestUpdateComponentPersistsRuntimeConfig(t *testing.T) {
 	previousDB := database.DB
 	t.Cleanup(func() { database.DB = previousDB })
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatalf("open db: %v", err)
 	}
 	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.Component{}); err != nil {
 		t.Fatalf("migrate: %v", err)
@@ -7102,9 +7101,9 @@ func TestUpdateComponentRejectsNonMembers(t *testing.T) {
 	previousDB := database.DB
 	t.Cleanup(func() { database.DB = previousDB })
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatalf("open db: %v", err)
 	}
 	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.Component{}); err != nil {
 		t.Fatalf("migrate: %v", err)
@@ -7149,9 +7148,9 @@ func TestUpdateComponentRejectsNonMembersBeforePayloadValidation(t *testing.T) {
 	previousDB := database.DB
 	t.Cleanup(func() { database.DB = previousDB })
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatalf("open db: %v", err)
 	}
 	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.Component{}); err != nil {
 		t.Fatalf("migrate: %v", err)
@@ -7189,9 +7188,9 @@ func TestUpdateComponentKeepsRegistryImageInSyncForImageDelivery(t *testing.T) {
 	previousDB := database.DB
 	t.Cleanup(func() { database.DB = previousDB })
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatalf("open db: %v", err)
 	}
 	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.Component{}); err != nil {
 		t.Fatalf("migrate: %v", err)
@@ -7251,9 +7250,9 @@ func TestUpdateComponentCanSwitchDraftToSourceDelivery(t *testing.T) {
 	previousDB := database.DB
 	t.Cleanup(func() { database.DB = previousDB })
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatalf("open db: %v", err)
 	}
 	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.Component{}, &model.ServiceInstallation{}); err != nil {
 		t.Fatalf("migrate: %v", err)
@@ -7328,9 +7327,9 @@ func TestUpdateComponentKeepsExistingConfigWhenConfigOmitted(t *testing.T) {
 	previousDB := database.DB
 	t.Cleanup(func() { database.DB = previousDB })
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatalf("open db: %v", err)
 	}
 	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.Component{}); err != nil {
 		t.Fatalf("migrate: %v", err)
@@ -7611,9 +7610,9 @@ func TestDeployComponentRejectsNonMembers(t *testing.T) {
 	previousDB := database.DB
 	t.Cleanup(func() { database.DB = previousDB })
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatalf("open db: %v", err)
 	}
 	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.Component{}); err != nil {
 		t.Fatalf("migrate: %v", err)
@@ -7658,9 +7657,9 @@ func TestDeployComponentRejectsNonMembersBeforeVersionValidation(t *testing.T) {
 	previousDB := database.DB
 	t.Cleanup(func() { database.DB = previousDB })
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatalf("open db: %v", err)
 	}
 	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.Component{}); err != nil {
 		t.Fatalf("migrate: %v", err)
@@ -7698,9 +7697,9 @@ func TestDeployComponentValidatesVersionAfterMemberAccess(t *testing.T) {
 	previousDB := database.DB
 	t.Cleanup(func() { database.DB = previousDB })
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatalf("open db: %v", err)
 	}
 	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.Component{}); err != nil {
 		t.Fatalf("migrate: %v", err)
@@ -7800,9 +7799,9 @@ func TestAdoptResourceDiscoversAndCreatesDraftFromRealWorkload(t *testing.T) {
 		k8s.SetClient(previousClient)
 	})
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatalf("open db: %v", err)
 	}
 	if err := db.AutoMigrate(&model.Application{}, &model.Environment{}, &model.Component{}, &model.ServiceInstallation{}); err != nil {
 		t.Fatalf("migrate: %v", err)
@@ -7937,9 +7936,9 @@ func TestListAdoptableResourcesRejectsNonMembers(t *testing.T) {
 	})
 	k8s.SetClient(nil)
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatalf("open db: %v", err)
 	}
 	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.ServiceInstallation{}); err != nil {
 		t.Fatalf("migrate: %v", err)
@@ -7977,9 +7976,9 @@ func TestAdoptResourceRejectsNonMembers(t *testing.T) {
 	})
 	k8s.SetClient(nil)
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatalf("open db: %v", err)
 	}
 	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.Component{}, &model.ServiceInstallation{}); err != nil {
 		t.Fatalf("migrate: %v", err)

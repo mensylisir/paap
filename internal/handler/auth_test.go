@@ -12,8 +12,6 @@ import (
 	"paap/internal/model"
 
 	"github.com/gin-gonic/gin"
-	"gorm.io/driver/sqlite"
-	"gorm.io/gorm"
 )
 
 func TestLoginReturnsSignedJWTAndMeAcceptsBearerToken(t *testing.T) {
@@ -22,11 +20,11 @@ func TestLoginReturnsSignedJWTAndMeAcceptsBearerToken(t *testing.T) {
 	previousDB := database.DB
 	t.Cleanup(func() { database.DB = previousDB })
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatalf("open db: %v", err)
 	}
-	if err := db.AutoMigrate(&model.User{}); err != nil {
+	if err := db.AutoMigrate(&model.User{}, &model.UserRole{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	database.DB = db
@@ -35,8 +33,15 @@ func TestLoginReturnsSignedJWTAndMeAcceptsBearerToken(t *testing.T) {
 	if err != nil {
 		t.Fatalf("hash password: %v", err)
 	}
-	if err := db.Create(&model.User{Username: "admin", Email: "admin@example.test", Password: passwordHash, Role: "admin"}).Error; err != nil {
+	if err := db.Create(&model.User{Username: "admin", Email: "admin@example.test", Password: passwordHash}).Error; err != nil {
 		t.Fatalf("create user: %v", err)
+	}
+	var admin model.User
+	if err := db.Where("username = ?", "admin").First(&admin).Error; err != nil {
+		t.Fatalf("find admin: %v", err)
+	}
+	if _, err := model.ReplaceUserRoles(db, admin.ID, []string{model.RolePlatformAdmin, model.RoleAppAdmin}); err != nil {
+		t.Fatalf("create roles: %v", err)
 	}
 
 	gin.SetMode(gin.TestMode)
@@ -56,7 +61,8 @@ func TestLoginReturnsSignedJWTAndMeAcceptsBearerToken(t *testing.T) {
 
 	var loginResponse struct {
 		Data struct {
-			Token string `json:"token"`
+			Token string   `json:"token"`
+			Roles []string `json:"roles"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(loginRec.Body.Bytes(), &loginResponse); err != nil {
@@ -64,6 +70,9 @@ func TestLoginReturnsSignedJWTAndMeAcceptsBearerToken(t *testing.T) {
 	}
 	if parts := strings.Split(loginResponse.Data.Token, "."); len(parts) != 3 {
 		t.Fatalf("token = %q, want compact JWT with three segments", loginResponse.Data.Token)
+	}
+	if !model.HasUserRole(loginResponse.Data.Roles, model.RolePlatformAdmin) || !model.HasUserRole(loginResponse.Data.Roles, model.RoleAppAdmin) {
+		t.Fatalf("login roles = %#v, want platform_admin and app_admin", loginResponse.Data.Roles)
 	}
 
 	meReq := httptest.NewRequest(http.MethodGet, "/api/v1/auth/me", nil)
@@ -77,39 +86,30 @@ func TestLoginReturnsSignedJWTAndMeAcceptsBearerToken(t *testing.T) {
 
 	var meResponse struct {
 		Data struct {
-			Username string `json:"username"`
-			Role     string `json:"role"`
+			Username string   `json:"username"`
+			Roles    []string `json:"roles"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(meRec.Body.Bytes(), &meResponse); err != nil {
 		t.Fatalf("decode me response: %v", err)
 	}
-	if meResponse.Data.Username != "admin" || meResponse.Data.Role != "admin" {
-		t.Fatalf("current user = %#v, want admin/admin", meResponse.Data)
+	if meResponse.Data.Username != "admin" || !model.HasUserRole(meResponse.Data.Roles, model.RolePlatformAdmin) || !model.HasUserRole(meResponse.Data.Roles, model.RoleAppAdmin) {
+		t.Fatalf("current user = %#v, want admin with platform_admin and app_admin", meResponse.Data)
 	}
 }
 
-func TestPlatformAdminMigrationUpdatesSeededAdminPassword(t *testing.T) {
+func TestPlatformAdminMigrationSeedsPlatformAdminWithHardenedPassword(t *testing.T) {
 	previousDB := database.DB
 	t.Cleanup(func() { database.DB = previousDB })
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatalf("open db: %v", err)
 	}
 	if err := db.AutoMigrate(&model.User{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	database.DB = db
-
-	SeedDefaultUsers()
-	var seededAdmin model.User
-	if err := db.Where("username = ?", "admin").First(&seededAdmin).Error; err != nil {
-		t.Fatalf("find seeded admin: %v", err)
-	}
-	if checkPasswordHash("admin123", seededAdmin.Password) {
-		t.Fatalf("seeded admin password must not accept legacy default before migrations")
-	}
 
 	if err := database.RunSQLMigrations(); err != nil {
 		t.Fatalf("run sql migrations: %v", err)
@@ -119,11 +119,18 @@ func TestPlatformAdminMigrationUpdatesSeededAdminPassword(t *testing.T) {
 	if err := db.Where("username = ?", "admin").First(&admin).Error; err != nil {
 		t.Fatalf("find admin: %v", err)
 	}
+	roles, err := model.UserRoleValues(db, admin.ID)
+	if err != nil {
+		t.Fatalf("load admin roles: %v", err)
+	}
+	if !model.HasUserRole(roles, model.RolePlatformAdmin) || !model.HasUserRole(roles, model.RoleAppAdmin) {
+		t.Fatalf("seeded admin roles = %#v, want platform_admin and app_admin", roles)
+	}
 	if !checkPasswordHash("Def@u1tpwd", admin.Password) {
-		t.Fatalf("seeded admin password must match hardened default")
+		t.Fatalf("fresh migration admin password must match hardened default")
 	}
 	if checkPasswordHash("admin123", admin.Password) {
-		t.Fatalf("seeded admin password must not accept legacy default")
+		t.Fatalf("fresh migration admin password must not accept legacy default")
 	}
 }
 
@@ -131,9 +138,9 @@ func TestPlatformAdminMigrationUpdatesExistingAdminPassword(t *testing.T) {
 	previousDB := database.DB
 	t.Cleanup(func() { database.DB = previousDB })
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatalf("open db: %v", err)
 	}
 	if err := db.AutoMigrate(&model.User{}); err != nil {
 		t.Fatalf("migrate: %v", err)
@@ -144,7 +151,7 @@ func TestPlatformAdminMigrationUpdatesExistingAdminPassword(t *testing.T) {
 	if err != nil {
 		t.Fatalf("hash legacy password: %v", err)
 	}
-	if err := db.Create(&model.User{Username: "admin", Email: "admin@paap.local", Password: legacyHash, Role: "admin"}).Error; err != nil {
+	if err := db.Create(&model.User{Username: "admin", Email: "admin@paap.local", Password: legacyHash}).Error; err != nil {
 		t.Fatalf("create legacy admin: %v", err)
 	}
 

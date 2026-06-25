@@ -6,7 +6,7 @@
         <h1 class="page-title">应用概览</h1>
         <p class="page-desc">管理应用的运行环境和部署状态</p>
       </div>
-      <button class="rail-btn rail-btn--primary" @click="openCreateEnvironmentModal">
+      <button v-if="!isSystemApp" class="rail-btn rail-btn--primary" @click="openCreateEnvironmentModal">
         <svg width="16" height="16" viewBox="0 0 32 32" fill="currentColor"><path d="M17 15V7h-2v8H7v2h8v8h2v-8h8v-2z"/></svg>
         创建环境
       </button>
@@ -40,7 +40,7 @@
           <rect x="18" y="18" width="8" height="3" rx="1" fill="#e6e8eb"/>
         </svg>
         <p class="rail-empty-desc" style="max-width:360px">暂无环境。创建第一个环境来开始部署服务。</p>
-        <button class="rail-btn rail-btn--primary" style="margin-top:12px" @click="openCreateEnvironmentModal">
+        <button v-if="!isSystemApp" class="rail-btn rail-btn--primary" style="margin-top:12px" @click="openCreateEnvironmentModal">
           创建第一个环境
         </button>
       </div>
@@ -58,6 +58,7 @@
                 {{ environmentStatusLabel(effectiveEnvironmentStatus(env)) }}
               </span>
               <button
+                v-if="!env.isSystem"
                 type="button"
                 class="rail-btn rail-btn--danger rail-btn--sm env-delete-btn"
                 :disabled="deletingEnvId === Number(env.id)"
@@ -76,71 +77,6 @@
         </div>
       </div>
       <div v-if="deleteError" class="form-error env-list-error" role="alert">{{ deleteError }}</div>
-    </section>
-
-    <!-- 应用成员 -->
-    <section class="section-card member-section">
-      <div class="section-header">
-        <div>
-          <h2 class="rail-section-title">应用成员</h2>
-          <p class="rail-section-desc">邀请已有用户加入应用，并维护应用内角色</p>
-        </div>
-      </div>
-
-      <form class="member-invite-form" @submit.prevent="inviteMember">
-        <div class="member-form-fields">
-          <label class="sr-only" for="member-username">用户名</label>
-          <input
-            id="member-username"
-            v-model.trim="memberForm.username"
-            class="rail-input"
-            placeholder="输入用户名"
-            autocomplete="off"
-          />
-          <label class="sr-only" for="member-role">成员角色</label>
-          <select id="member-role" v-model="memberForm.role" class="rail-select member-role-select">
-            <option v-for="role in memberRoles" :key="role.value" :value="role.value">{{ role.label }}</option>
-          </select>
-        </div>
-        <button type="submit" class="rail-btn rail-btn--primary" :disabled="!memberForm.username || memberSubmitting">
-          {{ memberSubmitting ? '邀请中...' : '邀请成员' }}
-        </button>
-      </form>
-
-      <div v-if="memberError" class="form-error member-error" role="alert">{{ memberError }}</div>
-
-      <div v-if="members.length" class="member-list">
-        <div v-for="member in members" :key="member.id" class="member-row">
-          <div class="member-main">
-            <div class="member-avatar">{{ memberInitial(member) }}</div>
-            <div class="member-copy">
-              <strong>{{ memberDisplayName(member) }}</strong>
-              <span>{{ member.user?.email || `用户 #${member.userId}` }}</span>
-            </div>
-          </div>
-          <div class="member-actions">
-            <select
-              v-model="member.role"
-              class="rail-select member-role-select"
-              :disabled="updatingMemberId === Number(member.id)"
-              @change="updateMemberRole(member, member.role)"
-            >
-              <option v-for="role in memberRoles" :key="role.value" :value="role.value">{{ role.label }}</option>
-            </select>
-            <button
-              type="button"
-              class="rail-btn rail-btn--ghost rail-btn--sm"
-              :disabled="removingMemberId === Number(member.id) || !canRemoveMember(member)"
-              @click="removeMember(member)"
-            >
-              {{ removingMemberId === Number(member.id) ? '移除中...' : '移除' }}
-            </button>
-          </div>
-        </div>
-      </div>
-      <div v-else class="rail-empty minimal">
-        <p class="rail-empty-desc">暂无成员记录</p>
-      </div>
     </section>
 
     <!-- 最近事件 -->
@@ -162,68 +98,17 @@
       </div>
     </section>
 
-    <Teleport to="body">
-      <div v-if="showCreateEnvModal" class="modal-overlay" role="dialog" aria-modal="true" @click.self="closeCreateEnvironmentModal">
-        <div class="modal-container">
-          <div class="modal-header">
-            <div>
-              <p class="modal-label">创建环境</p>
-              <p class="modal-heading">新建环境</p>
-            </div>
-            <button class="modal-close" type="button" aria-label="关闭" :disabled="creatingEnv" @click="closeCreateEnvironmentModal">
-              <svg width="20" height="20" viewBox="0 0 32 32" fill="currentColor"><path d="M24 9.4L22.6 8 16 14.6 9.4 8 8 9.4l6.6 6.6L8 22.6 9.4 24l6.6-6.6 6.6 6.6 1.4-1.4-6.6-6.6L24 9.4z"/></svg>
-            </button>
-          </div>
-          <div class="modal-body">
-            <div class="form-item">
-              <label class="form-label">环境名称 <span class="required">*</span></label>
-              <input v-model.trim="envForm.name" class="rail-input" placeholder="例如：开发环境" @keyup.enter="submitEnvironment" />
-            </div>
-            <div class="form-item">
-              <label class="form-label">环境标识</label>
-              <input v-model.trim="envForm.identifier" class="rail-input" placeholder="留空由后台生成" />
-              <div class="form-helper">当前预览：{{ identifierPreview }}</div>
-            </div>
-            <div class="form-item">
-              <label class="form-label">创建方式</label>
-              <div class="radio-group">
-                <label class="radio-item" :class="{ active: envForm.mode === 'empty' }">
-                  <input type="radio" value="empty" v-model="envForm.mode" />
-                  <span>创建基础环境</span>
-                </label>
-                <label class="radio-item" :class="{ active: envForm.mode === 'template' }">
-                  <input type="radio" value="template" v-model="envForm.mode" />
-                  <span>从模板创建</span>
-                </label>
-              </div>
-            </div>
-            <div v-if="envForm.mode === 'template'" class="form-item">
-              <label class="form-label">选择模板</label>
-              <select v-model="envForm.templateId" class="rail-select">
-                <option v-for="t in templates" :key="t.id" :value="String(t.id)">{{ t.name }}</option>
-              </select>
-            </div>
-            <div class="form-item">
-              <label class="form-label" for="overview-additional-namespaces">附加命名空间</label>
-              <textarea id="overview-additional-namespaces" v-model.trim="envForm.additionalNamespacesInput" class="rail-textarea" rows="3" placeholder="database:database&#10;cache:cache"></textarea>
-              <div class="form-helper">每行一个后缀，可写成 suffix:purpose；默认保留 app 工作负载空间。</div>
-            </div>
-            <div class="form-item">
-              <label class="form-label" for="overview-environment-ip-pool">网络地址池</label>
-              <input id="overview-environment-ip-pool" class="rail-input environment-ip-pool-state" value="暂未启用" readonly disabled aria-describedby="overview-environment-ip-pool-helper" />
-              <div id="overview-environment-ip-pool-helper" class="form-helper">当前环境创建使用平台默认网络规划，自定义 IP 池将在后续版本启用。</div>
-            </div>
-            <div v-if="modalError" class="form-error" role="alert">{{ modalError }}</div>
-          </div>
-          <div class="modal-footer">
-            <button type="button" class="rail-btn rail-btn--ghost" :disabled="creatingEnv" @click="closeCreateEnvironmentModal">取消</button>
-            <button type="button" class="rail-btn rail-btn--primary" :disabled="!envForm.name || creatingEnv" @click="submitEnvironment">
-              {{ creatingEnv ? '创建中...' : '创建' }}
-            </button>
-          </div>
-        </div>
-      </div>
-    </Teleport>
+    <CreateEnvironmentModal
+      :visible="showCreateEnvModal"
+      :creating="creatingEnv"
+      :error="modalError"
+      :templates="templates"
+      :form="envForm"
+      dialog-id-prefix="overview"
+      @update:form="envForm = $event"
+      @close="closeCreateEnvironmentModal"
+      @submit="submitEnvironment"
+    />
 
     <Teleport to="body">
       <div v-if="pendingDeleteEnv" class="modal-overlay" role="dialog" aria-modal="true" @click.self="closeDeleteEnvironmentDialog">
@@ -257,33 +142,24 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api } from '../api/client'
+import CreateEnvironmentModal from '../components/CreateEnvironmentModal.vue'
 import { toIdentifier } from '../utils/identifier'
 import { buildRecentEvents, countServiceIssues, effectiveEnvironmentStatus, environmentResourceSummary, environmentStatusDotClass, environmentStatusLabel, sumApplicationResources } from './appSummary'
 
 const route = useRoute()
 const router = useRouter()
 const appId = Number(route.params.id)
+const app = ref<any>(null)
 const environments = ref<any[]>([])
-const members = ref<any[]>([])
 const recentEvents = ref<string[]>([])
 const templates = ref<any[]>([])
 const showCreateEnvModal = ref(false)
 const creatingEnv = ref(false)
 const deletingEnvId = ref<number | null>(null)
-const memberSubmitting = ref(false)
-const updatingMemberId = ref<number | null>(null)
-const removingMemberId = ref<number | null>(null)
 const modalError = ref('')
 const deleteError = ref('')
-const memberError = ref('')
 const envForm = ref({ name: '', identifier: '', mode: 'empty' as string, templateId: '1', additionalNamespacesInput: '' })
-const memberForm = ref({ username: '', role: 'member' })
 const pendingDeleteEnv = ref<any | null>(null)
-const memberRoles = [
-  { value: 'admin', label: '管理员' },
-  { value: 'member', label: '成员' },
-  { value: 'viewer', label: '只读' },
-]
 
 const runningCount = computed(() => environments.value.filter(e => effectiveEnvironmentStatus(e) === 'running').length)
 const resourceTotals = computed(() => sumApplicationResources(environments.value))
@@ -291,7 +167,7 @@ const totalTools = computed(() => resourceTotals.value.toolCount)
 const totalMiddleware = computed(() => resourceTotals.value.middlewareCount)
 const totalComponents = computed(() => resourceTotals.value.componentCount)
 const serviceIssues = computed(() => countServiceIssues(environments.value))
-const identifierPreview = computed(() => toIdentifier(envForm.value.identifier || envForm.value.name, 'env'))
+const isSystemApp = computed(() => Boolean(app.value?.isSystem))
 
 const kpis = computed(() => [
   { label: '环境总数', value: environments.value.length, dotClass: '' },
@@ -306,21 +182,12 @@ async function loadAppOverview() {
   try {
     const res = await api.getApp(appId)
     const appPayload = res.data?.application || res.data
+    app.value = appPayload
     const appEnvironments = res.data?.environments || res.environments || appPayload?.environments || []
     environments.value = await hydrateEnvironmentSummaries(appEnvironments)
     recentEvents.value = buildRecentEvents(environments.value)
     templates.value = (await api.templates()).data || []
-    await loadAppMembers()
   } catch (e) { console.error(e) }
-}
-
-async function loadAppMembers() {
-  try {
-    const res = await api.listAppMembers(appId)
-    members.value = res.data || []
-  } catch (e: any) {
-    memberError.value = '加载成员失败：' + (e?.message || '未知错误')
-  }
 }
 
 async function hydrateEnvironmentSummaries(items: any[]) {
@@ -346,6 +213,7 @@ onMounted(async () => {
 
 const goToEnv = (envId: number) => router.push(`/apps/${appId}/environments/${envId}`)
 const openCreateEnvironmentModal = () => {
+  if (isSystemApp.value) return
   envForm.value = { name: '', identifier: '', mode: 'empty', templateId: String(templates.value[0]?.id || 1), additionalNamespacesInput: '' }
   modalError.value = ''
   showCreateEnvModal.value = true
@@ -363,7 +231,8 @@ const submitEnvironment = async () => {
       name: envForm.value.name,
       identifier: envForm.value.identifier,
       templateId: envForm.value.mode === 'template' ? Number(envForm.value.templateId) : 0,
-      fromEmpty: envForm.value.mode === 'empty',
+      fromEmpty: envForm.value.mode === 'empty' || envForm.value.mode === 'blank',
+      blank: envForm.value.mode === 'blank',
       additionalNamespaces: parseAdditionalNamespacesInput(envForm.value.additionalNamespacesInput),
     })
     showCreateEnvModal.value = false
@@ -405,55 +274,6 @@ const openDeleteEnvironmentDialog = (env: any) => {
 const closeDeleteEnvironmentDialog = () => {
   if (deletingEnvId.value !== null) return
   pendingDeleteEnv.value = null
-}
-
-const memberDisplayName = (member: any) => member?.user?.username || `用户 #${member?.userId || member?.id || '-'}`
-const memberInitial = (member: any) => memberDisplayName(member).slice(0, 1).toUpperCase()
-const adminMemberCount = computed(() => members.value.filter((member: any) => member.role === 'admin').length)
-const canRemoveMember = (member: any) => !(member?.role === 'admin' && adminMemberCount.value <= 1)
-
-const inviteMember = async () => {
-  if (!memberForm.value.username || memberSubmitting.value) return
-  memberSubmitting.value = true
-  memberError.value = ''
-  try {
-    await api.inviteAppMember(appId, { ...memberForm.value })
-    memberForm.value = { username: '', role: 'member' }
-    await loadAppMembers()
-  } catch (e: any) {
-    memberError.value = '邀请成员失败：' + (e?.message || '未知错误')
-  } finally {
-    memberSubmitting.value = false
-  }
-}
-
-const updateMemberRole = async (member: any, role: string) => {
-  if (!member?.id || updatingMemberId.value !== null) return
-  updatingMemberId.value = Number(member.id)
-  memberError.value = ''
-  try {
-    await api.updateAppMember(appId, Number(member.id), { role })
-    await loadAppMembers()
-  } catch (e: any) {
-    memberError.value = '更新成员角色失败：' + (e?.message || '未知错误')
-    await loadAppMembers()
-  } finally {
-    updatingMemberId.value = null
-  }
-}
-
-const removeMember = async (member: any) => {
-  if (!member?.id || removingMemberId.value !== null || !canRemoveMember(member)) return
-  removingMemberId.value = Number(member.id)
-  memberError.value = ''
-  try {
-    await api.removeAppMember(appId, Number(member.id))
-    await loadAppMembers()
-  } catch (e: any) {
-    memberError.value = '移除成员失败：' + (e?.message || '未知错误')
-  } finally {
-    removingMemberId.value = null
-  }
 }
 
 const performDeleteEnvironment = async () => {
@@ -731,85 +551,6 @@ const performDeleteEnvironment = async () => {
   gap: 6px;
 }
 
-/* Members */
-.member-section {
-  display: grid;
-  gap: var(--paap-space-4);
-}
-.member-invite-form {
-  display: flex;
-  align-items: stretch;
-  justify-content: space-between;
-  gap: var(--paap-space-3);
-}
-.member-form-fields {
-  display: grid;
-  grid-template-columns: minmax(180px, 1fr) 148px;
-  gap: var(--paap-space-3);
-  width: min(560px, 100%);
-}
-.member-error {
-  margin: 0;
-}
-.member-list {
-  display: grid;
-  border-top: 1px solid var(--paap-border);
-}
-.member-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--paap-space-4);
-  min-height: 64px;
-  padding: var(--paap-space-3) 0;
-  border-bottom: 1px solid var(--paap-border);
-}
-.member-main {
-  display: flex;
-  align-items: center;
-  gap: var(--paap-space-3);
-  min-width: 0;
-}
-.member-avatar {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 34px;
-  height: 34px;
-  border: 1px solid var(--paap-border);
-  border-radius: var(--paap-radius-sm);
-  background: var(--cds-layer-accent-01, var(--paap-bg));
-  color: var(--paap-text);
-  font-size: 13px;
-  font-weight: 650;
-}
-.member-copy {
-  display: grid;
-  gap: 2px;
-  min-width: 0;
-}
-.member-copy strong {
-  color: var(--paap-text);
-  font-size: 14px;
-  font-weight: 600;
-}
-.member-copy span {
-  overflow: hidden;
-  color: var(--paap-muted);
-  font-size: 12px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.member-actions {
-  display: flex;
-  align-items: center;
-  gap: var(--paap-space-2);
-  flex-shrink: 0;
-}
-.member-role-select {
-  min-width: 128px;
-}
-
 /* Events */
 .event-list {
   display: flex;
@@ -847,7 +588,6 @@ const performDeleteEnvironment = async () => {
   .kpi-section { grid-template-columns: repeat(3, 1fr); }
   .env-card-top { flex-direction: column; }
   .env-card-actions { width: 100%; justify-content: space-between; }
-  .member-invite-form { flex-direction: column; }
 }
 @media (max-width: 640px) {
   .rail-page { padding: var(--paap-space-6) var(--paap-space-4) var(--paap-space-10); }
@@ -855,8 +595,5 @@ const performDeleteEnvironment = async () => {
   .section-header { flex-direction: column; gap: var(--paap-space-3); }
   .env-grid { grid-template-columns: 1fr; }
   .kpi-section { grid-template-columns: repeat(2, 1fr); }
-  .member-form-fields { grid-template-columns: 1fr; }
-  .member-row { align-items: flex-start; flex-direction: column; }
-  .member-actions { width: 100%; justify-content: space-between; }
 }
 </style>

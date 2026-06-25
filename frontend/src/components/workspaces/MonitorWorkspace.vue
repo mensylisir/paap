@@ -110,7 +110,7 @@
 import { computed, ref, watch } from 'vue'
 import ToolWorkspaceFrame from './ToolWorkspaceFrame.vue'
 import { compactGrafanaEmbed } from './grafanaEmbed'
-import type { WorkspaceResource } from '../../views/serviceWorkspace'
+import { withEmbeddedProxyAuthToken, type WorkspaceResource } from '../../views/serviceWorkspace'
 
 const props = defineProps<{
   resources: WorkspaceResource[]
@@ -221,7 +221,7 @@ const dashboardFrameURL = (url: string, subject?: WorkspaceResource | null) => {
     const selector = String(subject?.annotations?.selector || subject?.name || '')
     if (namespace) parsed.searchParams.set('var-namespace', namespace)
     if (selector) parsed.searchParams.set('var-workload', selector)
-    return parsed.pathname + parsed.search + parsed.hash
+    return withEmbeddedProxyAuthToken(parsed.pathname + parsed.search + parsed.hash)
   } catch {
     return url
   }

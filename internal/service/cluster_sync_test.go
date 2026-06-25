@@ -2,23 +2,73 @@ package service
 
 import (
 	"context"
+	"regexp"
 	"strings"
 	"testing"
+	"time"
 
-	paapv1 "paap/api/v1"
-	"paap/internal/model"
-
-	"gorm.io/driver/sqlite"
+	"github.com/DATA-DOG/go-sqlmock"
+	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	paapv1 "paap/api/v1"
+	"paap/internal/model"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
+func TestClusterSyncOwnerIDUsesUserRolesWhenAdminUsernameMissing(t *testing.T) {
+	db, mock := openMockClusterSyncDB(t)
+
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT count(*) FROM information_schema.tables WHERE table_schema = CURRENT_SCHEMA() AND table_name = $1 AND table_type = $2`)).
+		WithArgs("users", "BASE TABLE").
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "users" WHERE username = $1 AND "users"."deleted_at" IS NULL ORDER BY "users"."id" LIMIT $2`)).
+		WithArgs("admin", 1).
+		WillReturnRows(userSQLRows())
+	mock.ExpectQuery(`SELECT .* FROM "users" JOIN user_roles .*user_roles\.role = \$1.*`).
+		WithArgs(model.RolePlatformAdmin, 1).
+		WillReturnRows(userSQLRows().AddRow(42, time.Now(), time.Now(), nil, "platform-owner", "owner@example.local", "x"))
+
+	ownerID, err := clusterSyncOwnerID(db)
+	if err != nil {
+		t.Fatalf("cluster sync owner: %v", err)
+	}
+	if ownerID != 42 {
+		t.Fatalf("ownerID = %d, want 42", ownerID)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet sql expectations: %v", err)
+	}
+}
+
+func openMockClusterSyncDB(t *testing.T) (*gorm.DB, sqlmock.Sqlmock) {
+	t.Helper()
+
+	sqlDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("open sql mock: %v", err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	db, err := gorm.Open(postgres.New(postgres.Config{Conn: sqlDB, PreferSimpleProtocol: true}), &gorm.Config{
+		Logger: logger.Default.LogMode(logger.Silent),
+	})
+	if err != nil {
+		t.Fatalf("open gorm sql mock: %v", err)
+	}
+	return db, mock
+}
+
+func userSQLRows() *sqlmock.Rows {
+	return sqlmock.NewRows([]string{"id", "created_at", "updated_at", "deleted_at", "username", "email", "password"})
+}
+
 func TestSyncClusterStateRestoresDBFromExistingCRs(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -32,10 +82,10 @@ func TestSyncClusterStateRestoresDBFromExistingCRs(t *testing.T) {
 	); err != nil {
 		t.Fatalf("migrate db: %v", err)
 	}
-	if err := db.Create(&model.User{Username: "developer", Email: "developer@example.local", Password: "x", Role: "user"}).Error; err != nil {
+	if err := db.Create(&model.User{Username: "developer", Email: "developer@example.local", Password: "x"}).Error; err != nil {
 		t.Fatalf("seed user: %v", err)
 	}
-	admin := model.User{Username: "admin", Email: "admin@example.local", Password: "x", Role: "admin"}
+	admin := model.User{Username: "admin", Email: "admin@example.local", Password: "x"}
 	if err := db.Create(&admin).Error; err != nil {
 		t.Fatalf("seed admin: %v", err)
 	}
@@ -183,8 +233,84 @@ func TestSyncClusterStateRestoresDBFromExistingCRs(t *testing.T) {
 	}
 }
 
+func TestSyncClusterStateMarksSharedPoolCRsAsSystem(t *testing.T) {
+	db, err := openTestDB(t)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := db.AutoMigrate(
+		&model.User{},
+		&model.Application{},
+		&model.AppMember{},
+		&model.Environment{},
+		&model.ServiceInstallation{},
+		&model.Component{},
+	); err != nil {
+		t.Fatalf("migrate db: %v", err)
+	}
+	admin := model.User{Username: "admin", Email: "admin@example.local", Password: "x"}
+	if err := db.Create(&admin).Error; err != nil {
+		t.Fatalf("seed admin: %v", err)
+	}
+
+	scheme := runtime.NewScheme()
+	if err := clientgoscheme.AddToScheme(scheme); err != nil {
+		t.Fatalf("add client-go scheme: %v", err)
+	}
+	if err := paapv1.AddToScheme(scheme); err != nil {
+		t.Fatalf("add paap scheme: %v", err)
+	}
+	k8sClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(
+			&paapv1.Application{
+				ObjectMeta: metav1.ObjectMeta{Name: "default", Namespace: "paap-system"},
+				Spec: paapv1.ApplicationSpec{
+					Name:        "共享资源池",
+					Identifier:  "default",
+					Description: "PAAP platform shared resource pool",
+				},
+			},
+			&paapv1.Environment{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "shared",
+					Namespace: "paap-app-default",
+					Labels: map[string]string{
+						"paap.io/app": "default",
+						"paap.io/env": "shared",
+					},
+				},
+				Spec: paapv1.EnvironmentSpec{
+					Name:             "共享环境",
+					Identifier:       "shared",
+					PrimaryNamespace: "default-shared",
+				},
+			},
+		).
+		Build()
+
+	if err := SyncClusterState(context.Background(), db, k8sClient); err != nil {
+		t.Fatalf("sync cluster state: %v", err)
+	}
+
+	var app model.Application
+	if err := db.Where("identifier = ?", "default").First(&app).Error; err != nil {
+		t.Fatalf("load shared app: %v", err)
+	}
+	if !app.IsSystem || app.Name != "共享资源池" {
+		t.Fatalf("shared app = %#v, want system shared app from CR", app)
+	}
+	var env model.Environment
+	if err := db.Where("application_id = ? AND identifier = ?", app.ID, "shared").First(&env).Error; err != nil {
+		t.Fatalf("load shared env: %v", err)
+	}
+	if !env.IsSystem || env.Name != "共享环境" || env.Namespace != "default-shared" {
+		t.Fatalf("shared env = %#v, want system shared environment from CR", env)
+	}
+}
+
 func TestSyncClusterStateIgnoresLegacyServiceTypeNamedServiceInstances(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -262,7 +388,7 @@ func TestSyncClusterStateIgnoresLegacyServiceTypeNamedServiceInstances(t *testin
 }
 
 func TestSyncClusterStateKeepsEnvironmentEmptyWithoutServicesOrComponents(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -346,7 +472,7 @@ func TestSyncClusterStateKeepsEnvironmentEmptyWithoutServicesOrComponents(t *tes
 }
 
 func TestSyncClusterStateRestoresEmptyStatusAfterRunningDrift(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -430,7 +556,7 @@ func TestSyncClusterStateRestoresEmptyStatusAfterRunningDrift(t *testing.T) {
 }
 
 func TestSyncClusterStateUpdatesComponentRegistryImageFromCR(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -538,7 +664,7 @@ func TestSyncClusterStateUpdatesComponentRegistryImageFromCR(t *testing.T) {
 }
 
 func TestSyncClusterStatePreservesHighLevelComponentConfig(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -688,7 +814,7 @@ func TestSyncClusterStatePreservesHighLevelComponentConfig(t *testing.T) {
 }
 
 func TestSyncClusterStatePrunesDBRecordsMissingFromCluster(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -785,8 +911,104 @@ func TestSyncClusterStatePrunesDBRecordsMissingFromCluster(t *testing.T) {
 	}
 }
 
+func TestSyncClusterStatePrunesSystemSharedPoolMissingFromCluster(t *testing.T) {
+	db, err := openTestDB(t)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := db.AutoMigrate(
+		&model.Application{},
+		&model.AppMember{},
+		&model.Environment{},
+		&model.ServiceInstallation{},
+		&model.Component{},
+	); err != nil {
+		t.Fatalf("migrate db: %v", err)
+	}
+
+	systemApp := model.Application{Name: "共享资源池", Identifier: "default", OwnerID: 1, IsSystem: true}
+	if err := db.Create(&systemApp).Error; err != nil {
+		t.Fatalf("create system app: %v", err)
+	}
+	systemEnv := model.Environment{
+		ApplicationID: systemApp.ID,
+		Name:          "共享环境",
+		Identifier:    "shared",
+		Status:        "empty",
+		Namespace:     "default-shared",
+		IsSystem:      true,
+	}
+	if err := db.Create(&systemEnv).Error; err != nil {
+		t.Fatalf("create system env: %v", err)
+	}
+	if err := db.Create(&model.ServiceInstallation{
+		EnvironmentID: systemEnv.ID,
+		ServiceType:   "git",
+		Status:        "running",
+		Namespace:     "default-shared-git",
+	}).Error; err != nil {
+		t.Fatalf("create system service: %v", err)
+	}
+	if err := db.Create(&model.Component{
+		EnvironmentID: systemEnv.ID,
+		Name:          "system-helper",
+		Type:          "backend",
+		Image:         "registry.local/helper:v1",
+		Version:       "v1",
+		Replicas:      1,
+		Status:        "running",
+	}).Error; err != nil {
+		t.Fatalf("create system component: %v", err)
+	}
+	if err := db.Create(&model.AppMember{ApplicationID: systemApp.ID, UserID: 1, Role: "admin"}).Error; err != nil {
+		t.Fatalf("create system member: %v", err)
+	}
+
+	scheme := runtime.NewScheme()
+	if err := clientgoscheme.AddToScheme(scheme); err != nil {
+		t.Fatalf("add client-go scheme: %v", err)
+	}
+	if err := paapv1.AddToScheme(scheme); err != nil {
+		t.Fatalf("add paap scheme: %v", err)
+	}
+	k8sClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+
+	if err := SyncClusterState(context.Background(), db, k8sClient); err != nil {
+		t.Fatalf("sync cluster state: %v", err)
+	}
+
+	var appCount int64
+	if err := db.Model(&model.Application{}).Where("identifier = ? AND is_system = ?", "default", true).Count(&appCount).Error; err != nil {
+		t.Fatalf("count system app: %v", err)
+	}
+	if appCount != 0 {
+		t.Fatalf("system app count = %d, want CR-backed shared pool pruned when CR is missing", appCount)
+	}
+	var envCount int64
+	if err := db.Model(&model.Environment{}).Where("application_id = ? AND identifier = ? AND is_system = ?", systemApp.ID, "shared", true).Count(&envCount).Error; err != nil {
+		t.Fatalf("count system env: %v", err)
+	}
+	if envCount != 0 {
+		t.Fatalf("system env count = %d, want CR-backed shared environment pruned when CR is missing", envCount)
+	}
+	var serviceCount int64
+	if err := db.Model(&model.ServiceInstallation{}).Where("environment_id = ?", systemEnv.ID).Count(&serviceCount).Error; err != nil {
+		t.Fatalf("count system services: %v", err)
+	}
+	if serviceCount != 0 {
+		t.Fatalf("system service count = %d, want pruned with missing shared environment CR", serviceCount)
+	}
+	var componentCount int64
+	if err := db.Model(&model.Component{}).Where("environment_id = ?", systemEnv.ID).Count(&componentCount).Error; err != nil {
+		t.Fatalf("count system components: %v", err)
+	}
+	if componentCount != 0 {
+		t.Fatalf("system component count = %d, want pruned with missing shared environment CR", componentCount)
+	}
+}
+
 func TestSyncClusterStatePreservesDraftComponentsMissingFromCluster(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -876,7 +1098,7 @@ func TestSyncClusterStatePreservesDraftComponentsMissingFromCluster(t *testing.T
 }
 
 func TestSyncClusterStatePreservesServiceCardsMissingFromCluster(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -969,7 +1191,7 @@ func TestSyncClusterStatePreservesServiceCardsMissingFromCluster(t *testing.T) {
 }
 
 func TestSyncClusterStateClearsEnvironmentErrorWhenRunning(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -1050,7 +1272,7 @@ func TestSyncClusterStateClearsEnvironmentErrorWhenRunning(t *testing.T) {
 }
 
 func TestSyncClusterStateDeduplicatesServiceInstallations(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -1178,7 +1400,7 @@ func TestSyncClusterStateDeduplicatesServiceInstallations(t *testing.T) {
 }
 
 func TestSyncClusterStateDeletesObsoleteDockerRegistryServiceInstances(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}

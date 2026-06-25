@@ -2,14 +2,12 @@ package handler
 
 import (
 	"context"
-	"sync/atomic"
-	"testing"
-	"time"
-
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sync/atomic"
+	"testing"
+	"time"
 
 	"paap/internal/database"
 	"paap/internal/k8s"
@@ -29,7 +27,7 @@ func TestSyncClusterStateIfPossibleSchedulesBackgroundSync(t *testing.T) {
 		clusterSyncRunning = previousRunning
 	})
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -89,7 +87,7 @@ func TestSyncClusterStateIfPossibleSkipsRecentCompletedSync(t *testing.T) {
 		clusterSyncRunning = previousRunning
 	})
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}

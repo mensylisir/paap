@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import {
+  withEmbeddedProxyAuthToken,
   serviceAccessUrl,
   serviceProxyUrl,
   serviceWorkspaceKind,
@@ -31,6 +32,15 @@ describe('serviceWorkspace', () => {
     expect(serviceAccessUrl('billing-prod-registry', 'registry')).toBe('https://billing-prod-registry.billing-prod-registry.svc.cluster.local:5000')
     expect(serviceProxyUrl(1, 9, '/api/health')).toBe('/api/v1/environments/1/services/9/proxy/api/health')
     expect(serviceProxyUrl(undefined, 9, '/api/health')).toBe('')
+  })
+
+  it('adds auth tokens only to embedded same-origin service proxy URLs', () => {
+    expect(withEmbeddedProxyAuthToken('/api/v1/environments/1/services/9/proxy/d/node?orgId=1#view', 'signed.jwt.token'))
+      .toBe('/api/v1/environments/1/services/9/proxy/d/node?orgId=1&paap_token=signed.jwt.token#view')
+    expect(withEmbeddedProxyAuthToken('/api/v1/environments/1/services/9/runtime-metrics', 'signed.jwt.token'))
+      .toBe('/api/v1/environments/1/services/9/runtime-metrics')
+    expect(withEmbeddedProxyAuthToken('https://grafana.example.com/d/node?orgId=1', 'signed.jwt.token'))
+      .toBe('https://grafana.example.com/d/node?orgId=1')
   })
 
   it('maps service types to workspace renderers without generating workspace contents', () => {

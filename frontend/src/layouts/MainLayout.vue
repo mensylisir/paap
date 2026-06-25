@@ -46,6 +46,15 @@
             </svg>
             <span>目录</span>
           </router-link>
+          <router-link v-if="isPlatformAdmin" to="/users" class="nav-item" :class="{ active: $route.path === '/users' }">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M16 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"/>
+              <circle cx="9.5" cy="7" r="4"/>
+              <path d="M22 21v-2a4 4 0 0 0-3-3.9"/>
+              <path d="M16 3.1a4 4 0 0 1 0 7.8"/>
+            </svg>
+            <span>用户</span>
+          </router-link>
         </nav>
       </div>
       <div class="sidebar-bottom">
@@ -70,23 +79,61 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
+import { api } from '../api/client'
+
+type StoredUser = {
+  id?: number
+  name?: string
+  username?: string
+  email?: string
+  roles?: string[]
+}
 
 const route = useRoute()
 const isAppsActive = computed(() =>
   route.path === '/apps' || route.path.startsWith('/apps/')
 )
-
-const userName = computed(() => {
+const readStoredUser = (): StoredUser | null => {
   try {
     const raw = localStorage.getItem('paap_user')
     if (raw) {
-      const u = JSON.parse(raw)
-      return u.name || u.username || u.email || '用户'
+      return JSON.parse(raw)
     }
   } catch {}
-  return '用户'
+  return null
+}
+
+const currentUser = ref<StoredUser | null>(readStoredUser())
+
+const storeAuthenticatedUser = (user: any) => {
+  const nextUser = {
+    id: user.id,
+    name: user.name,
+    username: user.username,
+    email: user.email,
+    roles: Array.isArray(user.roles) ? user.roles : [],
+  }
+  localStorage.setItem('paap_user', JSON.stringify(nextUser))
+  currentUser.value = nextUser
+}
+
+const refreshCurrentUser = async () => {
+  if (!localStorage.getItem('paap_token')) return
+  try {
+    const response = await api.me()
+    if (response?.data) storeAuthenticatedUser(response.data)
+  } catch {}
+}
+
+const isPlatformAdmin = computed(() =>
+  Array.isArray(currentUser.value?.roles) && currentUser.value.roles.includes('platform_admin')
+)
+
+const userName = computed(() => {
+  const user = currentUser.value
+  return user?.name || user?.username || user?.email || '用户'
 })
 
 const userInitial = computed(() => {
@@ -99,6 +146,10 @@ const logout = () => {
   localStorage.removeItem('paap_token')
   location.href = '/login'
 }
+
+onMounted(() => {
+  refreshCurrentUser()
+})
 </script>
 
 <style scoped>

@@ -12,8 +12,6 @@ import (
 	"paap/internal/model"
 
 	"github.com/gin-gonic/gin"
-	"gorm.io/driver/sqlite"
-	"gorm.io/gorm"
 )
 
 func TestMissingAssetDoesNotUseSPAFallback(t *testing.T) {
@@ -39,12 +37,13 @@ func TestAPIRoutesRequireAuthExceptLogin(t *testing.T) {
 	previousDB := database.DB
 	t.Cleanup(func() { database.DB = previousDB })
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatalf("open db: %v", err)
 	}
 	if err := db.AutoMigrate(
 		&model.User{},
+		&model.UserRole{},
 		&model.Application{},
 		&model.Environment{},
 		&model.ServiceInstallation{},
@@ -58,8 +57,12 @@ func TestAPIRoutesRequireAuthExceptLogin(t *testing.T) {
 	if err != nil {
 		t.Fatalf("hash password: %v", err)
 	}
-	if err := db.Create(&model.User{Username: "admin", Email: "admin@example.test", Password: passwordHash, Role: "admin"}).Error; err != nil {
+	user := model.User{Username: "admin", Email: "admin@example.test", Password: passwordHash}
+	if err := db.Create(&user).Error; err != nil {
 		t.Fatalf("create user: %v", err)
+	}
+	if _, err := model.ReplaceUserRoles(db, user.ID, []string{model.RolePlatformAdmin, model.RoleAppAdmin}); err != nil {
+		t.Fatalf("create roles: %v", err)
 	}
 
 	gin.SetMode(gin.TestMode)

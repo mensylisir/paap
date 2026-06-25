@@ -13,7 +13,7 @@
                        ▼
 ┌─────────────────────────────────────────────────┐
 │                   PAAP Server                    │
-│              (Go + Gin + GORM + SQLite)          │
+│              (Go + Gin + GORM + PostgreSQL)          │
 └──────────────────────┬──────────────────────────┘
                        │ 创建/管理 CR
                        ▼
@@ -165,7 +165,7 @@ paap/
 | 前端 | Vue 3 + TypeScript + Carbon Design System + Pinia |
 | API Server | Go + Gin + GORM + client-go |
 | Operator | Go + Kubebuilder + controller-runtime |
-| 数据库 | SQLite（开发）/ PostgreSQL（生产） |
+| 数据库 | PostgreSQL |
 | 集群 | K8s 1.28+ (kind 开发) |
 
 ## 设计文档

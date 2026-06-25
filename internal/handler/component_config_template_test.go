@@ -12,8 +12,6 @@ import (
 	"paap/internal/model"
 
 	"github.com/gin-gonic/gin"
-	"gorm.io/driver/sqlite"
-	"gorm.io/gorm"
 )
 
 func TestComponentConfigTemplatesSeedBuiltInsAndList(t *testing.T) {
@@ -212,11 +210,11 @@ func setupComponentConfigTemplateTest(t *testing.T) (*gin.Engine, string) {
 	previousDB := database.DB
 	t.Cleanup(func() { database.DB = previousDB })
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := db.AutoMigrate(&model.User{}, &model.ComponentConfigTemplate{}); err != nil {
+	if err := db.AutoMigrate(&model.User{}, &model.UserRole{}, &model.ComponentConfigTemplate{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	database.DB = db
@@ -225,9 +223,12 @@ func setupComponentConfigTemplateTest(t *testing.T) (*gin.Engine, string) {
 	if err != nil {
 		t.Fatalf("hash password: %v", err)
 	}
-	user := model.User{Username: "admin", Email: "admin@example.test", Password: passwordHash, Role: "admin"}
+	user := model.User{Username: "admin", Email: "admin@example.test", Password: passwordHash}
 	if err := db.Create(&user).Error; err != nil {
 		t.Fatalf("create user: %v", err)
+	}
+	if _, err := model.ReplaceUserRoles(db, user.ID, []string{model.RolePlatformAdmin}); err != nil {
+		t.Fatalf("create roles: %v", err)
 	}
 	token, err := middleware.GenerateToken(user.ID)
 	if err != nil {

@@ -48,7 +48,7 @@ spec:
       serviceAccountName: paap-operator
       containers:
         - name: operator
-          image: paap-operator:v0.1.52
+          image: paap-operator:v0.1.53
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8080

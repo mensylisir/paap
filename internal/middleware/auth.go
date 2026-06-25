@@ -20,8 +20,9 @@ import (
 )
 
 const (
-	ContextUserIDKey   = "authUserID"
-	ContextUserRoleKey = "authUserRole"
+	ContextUserIDKey                = "authUserID"
+	ContextUserRolesKey             = "authUserRoles"
+	RuntimeConsoleWebSocketProtocol = "paap-runtime-console"
 )
 
 type jwtHeader struct {
@@ -64,6 +65,24 @@ func UserIDFromAuthorization(header string) (uint, error) {
 		return 0, errors.New("missing token")
 	}
 	return VerifyToken(token)
+}
+
+func UserIDFromRequest(r *http.Request) (uint, error) {
+	if r == nil {
+		return 0, errors.New("missing request")
+	}
+	if strings.TrimSpace(r.Header.Get("Authorization")) != "" {
+		return UserIDFromAuthorization(r.Header.Get("Authorization"))
+	}
+	token := tokenFromWebSocketSubprotocols(r.Header.Get("Sec-WebSocket-Protocol"))
+	if token != "" {
+		return VerifyToken(token)
+	}
+	token = tokenFromEmbeddedProxyQuery(r)
+	if token != "" {
+		return VerifyToken(token)
+	}
+	return 0, errors.New("missing token")
 }
 
 func VerifyToken(token string) (uint, error) {
@@ -109,7 +128,7 @@ func VerifyToken(token string) (uint, error) {
 
 func AuthRequired() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		userID, err := UserIDFromAuthorization(c.GetHeader("Authorization"))
+		userID, err := UserIDFromRequest(c.Request)
 		if err != nil {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid or missing token"})
 			return
@@ -121,8 +140,14 @@ func AuthRequired() gin.HandlerFunc {
 			return
 		}
 
+		roles, err := model.UserRoleValues(database.DB, user.ID)
+		if err != nil {
+			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "load user roles failed"})
+			return
+		}
+
 		c.Set(ContextUserIDKey, user.ID)
-		c.Set(ContextUserRoleKey, user.Role)
+		c.Set(ContextUserRolesKey, roles)
 		c.Next()
 	}
 }
@@ -147,4 +172,25 @@ func parseBearerToken(header string) string {
 		return strings.TrimSpace(value[7:])
 	}
 	return value
+}
+
+func tokenFromWebSocketSubprotocols(header string) string {
+	parts := strings.Split(header, ",")
+	for idx := 0; idx < len(parts)-1; idx++ {
+		if strings.TrimSpace(parts[idx]) == RuntimeConsoleWebSocketProtocol {
+			return strings.TrimSpace(parts[idx+1])
+		}
+	}
+	return ""
+}
+
+func tokenFromEmbeddedProxyQuery(r *http.Request) string {
+	if r == nil || r.URL == nil {
+		return ""
+	}
+	path := r.URL.Path
+	if !strings.HasPrefix(path, "/api/v1/environments/") || !strings.Contains(path, "/proxy/") {
+		return ""
+	}
+	return strings.TrimSpace(r.URL.Query().Get("paap_token"))
 }

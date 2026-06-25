@@ -93,42 +93,59 @@ describe('Vue view markup', () => {
   it('marks environment IP pool selection as unavailable in both create environment dialogs', async () => {
     const appOverview = await import('./AppOverviewView.vue?raw')
     const appEnvironments = await import('./AppEnvironmentsView.vue?raw')
+    const createEnvironmentModal = await import('../components/CreateEnvironmentModal.vue?raw')
 
     for (const source of [appOverview.default, appEnvironments.default]) {
-      expect(source).toContain('网络地址池')
-      expect(source).toContain('暂未启用')
-      expect(source).toContain('environment-ip-pool-state')
       expect(source).not.toContain('v-model="envForm.ipPool"')
       expect(source).not.toContain('ipPool: envForm.value.ipPool')
     }
+    expect(createEnvironmentModal.default).toContain('网络地址池')
+    expect(createEnvironmentModal.default).toContain('暂未启用')
+    expect(createEnvironmentModal.default).toContain('environment-ip-pool-state')
+    expect(createEnvironmentModal.default).not.toContain('v-model="envForm.ipPool"')
+    expect(createEnvironmentModal.default).not.toContain('ipPool: form.ipPool')
   })
 
   it('adds additional namespace inputs to both create environment dialogs', async () => {
     const appOverview = await import('./AppOverviewView.vue?raw')
     const appEnvironments = await import('./AppEnvironmentsView.vue?raw')
+    const createEnvironmentModal = await import('../components/CreateEnvironmentModal.vue?raw')
 
     for (const source of [appOverview.default, appEnvironments.default]) {
-      expect(source).toContain('附加命名空间')
       expect(source).toContain('additionalNamespacesInput')
       expect(source).toContain('parseAdditionalNamespacesInput')
       expect(source).toContain('additionalNamespaces: parseAdditionalNamespacesInput')
-      expect(source).toContain('database:database')
-      expect(source).toContain('cache:cache')
     }
+    expect(createEnvironmentModal.default).toContain('附加命名空间')
+    expect(createEnvironmentModal.default).toContain('additionalNamespacesInput')
+    expect(createEnvironmentModal.default).toContain('database:database')
+    expect(createEnvironmentModal.default).toContain('cache:cache')
   })
 
-  it('adds application member management controls to the app overview', async () => {
+  it('adds application member management controls to a dedicated app menu page', async () => {
     const appOverview = await import('./AppOverviewView.vue?raw')
+    const appMembers = await import('./AppMembersView.vue?raw')
+    const appLayout = await import('../layouts/AppLayout.vue?raw')
+    const router = await import('../router/index.ts?raw')
     const client = await import('../api/client.ts?raw')
 
-    expect(appOverview.default).toContain('应用成员')
-    expect(appOverview.default).toContain('memberForm.username')
-    expect(appOverview.default).toContain('member-role-select')
-    expect(appOverview.default).toContain('api.listAppMembers')
-    expect(appOverview.default).toContain('api.inviteAppMember')
-    expect(appOverview.default).toContain('api.updateAppMember')
-    expect(appOverview.default).toContain('api.removeAppMember')
-    expect(appOverview.default).toContain('移除')
+    expect(appOverview.default).not.toContain('memberForm.username')
+    expect(appOverview.default).not.toContain('api.listAppMembers')
+    expect(appMembers.default).toContain('应用成员')
+    expect(appMembers.default).toContain('memberForm.username')
+    expect(appMembers.default).toContain('member-role-select')
+    expect(appMembers.default).toContain('api.listAppMembers')
+    expect(appMembers.default).toContain('api.inviteAppMember')
+    expect(appMembers.default).toContain('api.updateAppMember')
+    expect(appMembers.default).toContain('api.removeAppMember')
+    expect(appMembers.default).toContain('移除')
+    expect(appLayout.default).toContain("`/apps/${appId}/members`")
+    expect(appLayout.default).toContain('<span>成员</span>')
+    expect(appLayout.default).toContain("active === 'members'")
+    expect(appLayout.default.indexOf('<span>环境</span>')).toBeLessThan(appLayout.default.indexOf('<span>成员</span>'))
+    expect(appMembers.default).not.toContain('member-page')
+    expect(appMembers.default).toContain('flex: 1')
+    expect(router.default).toContain('AppMembersView')
 
     expect(client.default).toContain('listAppMembers')
     expect(client.default).toContain('inviteAppMember')
@@ -152,8 +169,46 @@ describe('Vue view markup', () => {
 
     expect(mainLayout.default).toContain('<span>应用</span>')
     expect(mainLayout.default).toContain('<span>模板</span>')
+    expect(mainLayout.default).not.toContain('<span>共享资源</span>')
+    expect(mainLayout.default).not.toContain('to="/shared-resources"')
     expect(mainLayout.default).not.toContain('<span>仓库</span>')
     expect(mainLayout.default).not.toContain('to="/registries"')
+  })
+
+  it('exposes the platform shared resource pool through the normal application canvas route', async () => {
+    const mainLayout = await import('../layouts/MainLayout.vue?raw')
+    const router = await import('../router/index.ts?raw')
+    const sharedResources = await import('./PlatformSharedResourcesView.vue?raw')
+    const client = await import('../api/client.ts?raw')
+
+    expect(mainLayout.default).not.toContain('to="/shared-resources"')
+    expect(mainLayout.default).not.toContain('isSharedResourcesActive')
+    expect(router.default).toContain('PlatformSharedResourcesView')
+    expect(sharedResources.default).toContain('api.getSharedResourcePool')
+    expect(sharedResources.default).toContain('router.replace(`/apps/${appId}/environments/${envId}`)')
+    expect(client.default).toContain('getSharedResourcePool')
+  })
+
+  it('shows system shared applications in the normal app list without delete controls', async () => {
+    const appList = await import('./AppListView.vue?raw')
+
+    expect(appList.default).toContain('app.isSystem')
+    expect(appList.default).toContain('系统应用')
+    expect(appList.default).toContain('appDisplayName')
+    expect(appList.default).toContain('共享资源池')
+    expect(appList.default).toContain('v-if="!app.isSystem"')
+    expect(appList.default).toContain('firstBusinessApp')
+    expect(appList.default).toContain("goToDefaultWorkspace(firstBusinessApp())")
+  })
+
+  it('refreshes stored platform roles from the current user endpoint for existing sessions', async () => {
+    const mainLayout = await import('../layouts/MainLayout.vue?raw')
+
+    expect(mainLayout.default).toContain("import { api } from '../api/client'")
+    expect(mainLayout.default).toContain('onMounted')
+    expect(mainLayout.default).toContain('await api.me()')
+    expect(mainLayout.default).toContain("localStorage.setItem('paap_user'")
+    expect(mainLayout.default).toContain('roles: Array.isArray(user.roles) ? user.roles : []')
   })
 
   it('splits template management into tool, middleware, and config template views', async () => {
@@ -324,6 +379,7 @@ describe('Vue view markup', () => {
     const appLayout = await import('../layouts/AppLayout.vue?raw')
 
     expect(appLayout.default).toContain('<span>概览</span>')
+    expect(appLayout.default).toContain('<span>成员</span>')
     expect(appLayout.default).toContain('<span>环境</span>')
     expect(appLayout.default).not.toContain('<span>部署</span>')
     expect(appLayout.default).not.toContain('<span>CI</span>')
@@ -333,13 +389,122 @@ describe('Vue view markup', () => {
     expect(appLayout.default).not.toContain("active === 'monitor'")
   })
 
+  it('keeps the PAAP logo size consistent inside and outside application pages', async () => {
+    const mainLayout = await import('../layouts/MainLayout.vue?raw')
+    const appLayout = await import('../layouts/AppLayout.vue?raw')
+
+    const mainLogoRule = cssRule(mainLayout.default, '.logo-icon')
+    const appLogoRule = cssRule(appLayout.default, '.logo-icon')
+
+    expect(mainLogoRule).toContain('width: 36px')
+    expect(mainLogoRule).toContain('height: 36px')
+    expect(appLogoRule).toContain('width: 36px')
+    expect(appLogoRule).toContain('height: 36px')
+  })
+
+  it('keeps environment creation focused on environment shape only', async () => {
+    const appOverview = await import('./AppOverviewView.vue?raw')
+    const appEnvironments = await import('./AppEnvironmentsView.vue?raw')
+    const createEnvironmentModal = await import('../components/CreateEnvironmentModal.vue?raw')
+
+    for (const view of [appOverview.default, appEnvironments.default]) {
+      expect(view).toContain("mode === 'blank'")
+      expect(view).toContain("mode === 'empty'")
+      expect(view).not.toContain('能力来源')
+      expect(view).not.toContain('capabilities:')
+      expect(view).not.toContain('createEnvironmentCapabilityOptions')
+      expect(view).not.toContain('buildInitialCapabilityPayload')
+    }
+    expect(createEnvironmentModal.default).toContain('创建空环境')
+    expect(createEnvironmentModal.default).toContain('创建基础环境')
+    expect(createEnvironmentModal.default).toContain('从模板创建')
+    expect(createEnvironmentModal.default).not.toContain('能力来源')
+  })
+
+  it('uses one shared create environment dialog in overview and environment pages', async () => {
+    const appOverview = await import('./AppOverviewView.vue?raw')
+    const appEnvironments = await import('./AppEnvironmentsView.vue?raw')
+    const createEnvironmentModal = await import('../components/CreateEnvironmentModal.vue?raw')
+
+    for (const view of [appOverview.default, appEnvironments.default]) {
+      expect(view).toContain("import CreateEnvironmentModal from '../components/CreateEnvironmentModal.vue'")
+      expect(view).toContain('<CreateEnvironmentModal')
+      expect(view).not.toContain('<div v-if="showCreateEnvModal" class="modal-overlay"')
+      expect(view).not.toContain('<div v-if="showModal" class="modal-overlay"')
+    }
+
+    expect(createEnvironmentModal.default).toContain('创建空环境')
+    expect(createEnvironmentModal.default).toContain('创建基础环境')
+    expect(createEnvironmentModal.default).toContain('从模板创建')
+    expect(createEnvironmentModal.default).toContain('附加命名空间')
+    expect(createEnvironmentModal.default).toContain('网络地址池')
+    expect(createEnvironmentModal.default).not.toContain('能力来源')
+  })
+
+  it('configures shared and external capability sources from the environment canvas drawer', async () => {
+    const envDetail = await import('./EnvDetailView.vue?raw')
+    const client = await import('../api/client.ts?raw')
+
+    expect(envDetail.default).toContain('添加共享资源')
+    expect(envDetail.default).toContain('添加外部资源')
+    expect(envDetail.default).toContain('openSharedCapabilitySubmenu')
+    expect(envDetail.default).toContain('await loadSharedCapabilityResources()')
+    expect(envDetail.default).toContain('暂无共享资源')
+    expect(envDetail.default).toContain('openExternalCapabilitySubmenu')
+    expect(envDetail.default).toContain("capability: 'git'")
+    expect(envDetail.default).toContain("capability: 'registry'")
+    expect(envDetail.default).toContain("capability: 'ci'")
+    expect(envDetail.default).toContain("capability: 'cd'")
+    expect(envDetail.default).toContain("capability: 'database'")
+    expect(envDetail.default).toContain("capability: 'cache'")
+    expect(envDetail.default).toContain("capability: 'mq'")
+    expect(envDetail.default).toContain("capability: 'objectStorage'")
+    expect(envDetail.default).toContain("capability: 'monitor'")
+    expect(envDetail.default).toContain("capability: 'logging'")
+    expect(envDetail.default).toContain("capability: 'custom'")
+    expect(envDetail.default).toContain('environmentCapabilityNodes')
+    expect(envDetail.default).toContain("topologyKind === 'capability'")
+    expect(envDetail.default).toContain('能力配置')
+    expect(envDetail.default).toContain('外部资源配置')
+    expect(envDetail.default).toContain('共享资源只读')
+    expect(envDetail.default).toContain('credentialSecretRef')
+    expect(envDetail.default).toContain('capabilityForm.password')
+    expect(envDetail.default).toContain("capabilitySecretVisible('password')")
+    expect(envDetail.default).toContain("toggleCapabilitySecret('password')")
+    expect(envDetail.default).toContain("capabilitySecretVisible('token')")
+    expect(envDetail.default).toContain("getEnvironmentCapabilityCredentials")
+    expect(envDetail.default).toContain('password: currentForm.password')
+    expect(envDetail.default).toContain('saveCapabilityConfigDrawer')
+    expect(envDetail.default).not.toContain('deployContextCapability')
+
+    expect(client.default).toContain('listSharedCapabilityResources')
+    expect(client.default).toContain('listEnvironmentCapabilities')
+    expect(client.default).toContain('updateEnvironmentCapability')
+    expect(client.default).toContain('getEnvironmentCapabilityCredentials')
+  })
+
+  it('renders environment canvas zones for local shared and external resources', async () => {
+    const envDetail = await import('./EnvDetailView.vue?raw')
+    const topology = await import('./componentTopology.ts?raw')
+
+    expect(envDetail.default).toContain('environmentCanvasZones')
+    expect(envDetail.default).toContain('component-topology-zone')
+    expect(envDetail.default).toContain('本环境')
+    expect(envDetail.default).toContain('平台公共')
+    expect(envDetail.default).toContain('集群外部')
+    expect(topology.default).toContain('buildComponentTopologyZones')
+    expect(topology.default).toContain('componentTopologyZoneKey')
+  })
+
   it('keeps catalog search usable when a query has no matches', async () => {
     const catalogView = await import('./CatalogView.vue?raw')
 
     expect(catalogView.default).toContain('hasCatalogItems')
     expect(catalogView.default).toContain('v-if="hasCatalogItems" class="catalog-search"')
     expect(catalogView.default).toContain('catalog-empty-search')
-    expect(catalogView.default).toContain('没有匹配的中间件或工具')
+    expect(catalogView.default).toContain('没有匹配的服务或中间件')
+    expect(catalogView.default).toContain('服务目录')
+    expect(catalogView.default).not.toContain('中间件目录')
     expect(catalogView.default).toContain('clearCatalogSearch')
     expect(catalogView.default).not.toContain('v-if="availableTabs.length" class="catalog-search"')
   })
@@ -931,6 +1096,8 @@ describe('Vue view markup', () => {
     expect(envDetail.default).toContain('configureContextNode')
     expect(envDetail.default).toContain("componentContextMenu.kind === 'canvas'")
     expect(envDetail.default).toContain("componentContextMenu.kind === 'service'")
+    expect(envDetail.default).toContain(`v-if="componentContextMenu.kind === 'canvas' && !isSystemSharedEnvironment" type="button" @mouseenter="openComponentSubmenu"`)
+    expect(envDetail.default).toContain(`v-if="componentContextMenu.kind === 'canvas' && !isSystemSharedEnvironment" type="button" @click="adoptCanvasResource"`)
     expect(envDetail.default).toContain('<span>添加工具</span>')
     expect(envDetail.default).toContain('<span>添加中间件</span>')
     expect(envDetail.default).toContain('connectorSides')
@@ -1412,6 +1579,15 @@ describe('Vue view markup', () => {
     expect(envDetail.default).toContain('t.chartVersion')
     expect(envDetail.default).toContain(':value="tv.chartVersion"')
     expect(envDetail.default).toContain('chartVersion: selectedChartVersion.value || undefined')
+  })
+
+  it('shows only application versions in user-facing service version labels', async () => {
+    const envDetail = await import('./EnvDetailView.vue?raw')
+
+    expect(envDetail.default).toContain('serviceVersionOptionLabel')
+    expect(envDetail.default).toContain('应用 v${app}')
+    expect(envDetail.default).not.toContain('Chart v${chart}')
+    expect(envDetail.default).not.toContain('Chart v')
   })
 
   it('keeps tool and middleware drawer edits in deploy while marking runtime and access tabs as read-only', async () => {

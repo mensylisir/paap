@@ -8,7 +8,7 @@ data:
   KC_DB_URL: jdbc:postgresql://paap-postgres.paap-system.svc.cluster.local:5432/keycloak
   KC_DB_USERNAME: paap
   KC_DB_PASSWORD: paap
-  KC_HOSTNAME: localhost
+  KC_HOSTNAME: 172.18.0.2
   KC_HTTP_ENABLED: "true"
   KC_HEALTH_ENABLED: "true"
   KC_METRICS_ENABLED: "true"

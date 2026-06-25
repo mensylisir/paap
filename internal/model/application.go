@@ -15,4 +15,5 @@ type Application struct {
 	Identifier  string         `gorm:"uniqueIndex;size:50;not null" json:"identifier"`
 	Description string         `gorm:"size:500" json:"description"`
 	OwnerID     uint           `gorm:"not null" json:"ownerId"`
+	IsSystem    bool           `gorm:"default:false;index" json:"isSystem"`
 }

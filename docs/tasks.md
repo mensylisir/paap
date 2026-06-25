@@ -80,7 +80,7 @@
 
 ### Task 3.1: 数据库模型 + 迁移 ✅
 - [x] GORM 模型：User, Application, Environment, ServiceTemplate, EnvTemplate, ServiceInstallation, Component 等
-- [x] SQLite 连接（本地测试）
+- [x] PostgreSQL 连接（平台数据库）
 - [x] AutoMigrate 自动建表
 - [x] 种子数据：demo 用户 + ServiceCatalog
 
@@ -377,21 +377,33 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 - [ ] 为必须展示的底层概念补充上下文，避免应用管理员理解成本过高
 
 ### Task 6.13: 外部能力与共享能力模型
-- [ ] 新增统一 `EnvironmentCapability` 模型，覆盖 `git`、`registry`、`ci`、`cd`、`monitor`、`logging`、`database`、`cache`、`mq`、`objectStorage`
-- [ ] 每个 capability 支持 `managed`、`shared`、`external` 来源，并记录 provider、连接配置、验证结果和标准输出
+- [x] 新增统一 `EnvironmentCapability` 模型，覆盖 `git`、`registry`、`ci`、`cd`、`monitor`、`logging`、`database`、`cache`、`mq`、`objectStorage`
+- [x] 每个 capability 支持 `managed`、`shared`、`external` 来源，并记录 provider、连接配置、验证结果和标准输出
 - [ ] 环境模板声明 required capabilities，而不是硬编码必须安装 PAAP 管理实例
-- [ ] 创建环境时支持 `platform install`、`use shared`、`external connection`、`configure later`
-- [ ] default 共享环境只允许安装工具/中间件，不允许部署业务组件，且不可被普通用户删除
+- [x] 创建环境只选择环境形态：创建空环境 / 创建基础环境 / 从模板创建；能力来源不在创建环境弹窗选择
+  - 2026-06-25 验证：复用 Chrome tab，`/apps/5/overview?createEnvironment=true` 与 `/apps/5/environments?create=true` 均使用同一弹窗，创建方式为“创建空环境 / 创建基础环境 / 从模板创建”，无“能力来源”字段。
+- [x] 平台共享资源池通过 `/shared-resources` 进入同一套环境画布，目标为系统 `default/shared` 应用和环境；平台管理员在该画布创建、部署和维护共享工具/中间件
+  - 2026-06-25 验证：`/shared-resources` 跳转到 `/apps/62/environments/64`，页面显示“共享资源池 / 共享环境”，无 `environment not found`。
+- [x] 业务环境画布右键添加共享资源或外部资源，生成 capability 卡片；共享资源只读，外部资源在右侧栏编辑 endpoint/auth
+- [x] 外部资源凭据写入当前环境 Kubernetes Secret，数据库只保存 `credentialSecretRef`；右侧栏用眼睛按钮显示/隐藏已保存用户名、密码或 token
+- [x] default 共享环境只允许安装工具/中间件，不允许部署业务组件，且不可被普通用户删除
+  - 2026-06-25 验证：共享环境画布右键菜单只显示“添加工具 / 添加中间件”，工具二级菜单含 ArgoCD、Registry、Gitea、Jenkins、Prometheus+Grafana、Loki、Harbor，中间件二级菜单含 PostgreSQL、MySQL、MongoDB、Redis、RabbitMQ、Kafka、MinIO；未出现创建组件、共享资源、外部资源、纳管入口。
 - [ ] 卡片和抽屉明确展示 `platform managed`、`shared`、`external` 来源和断开/卸载语义
 - [ ] 对 external Git、Registry、Argo CD、Jenkins、Prometheus、Loki、PostgreSQL、Redis、RabbitMQ、Kafka、MinIO 做真实连接与权限验证
-- [ ] external 来源删除只移除 PAAP 连接记录和本地凭据，不能删除真实外部资源
+- [x] external 来源删除只移除 PAAP 连接记录和本地凭据，不能删除真实外部资源
+  - 2026-06-25 验证：在环境 5 创建临时 `custom` 外部资源卡片，页面确认删除后 `/api/v1/environments/5/capabilities` 只剩原有 `mq` 外部资源；删除弹窗文案明确“只会移除当前环境中的共享或外部资源卡片”。
+- [x] 画布分区方案：节点补 `zone`/group 元数据，按“本环境 / 平台公共 / 集群外部”渲染分区
+  - 2026-06-25 验证：环境 5 画布显示分区图例“本环境 / 平台公共 / 集群外部”，背景分区显示“本环境 9 个资源”“集群外部 1 个资源”；临时 external custom 卡片创建后“集群外部”计数变 2，删除后回到 1。
+- [x] RBAC/Casbin 评估：权限点表 + 角色权限表方向正确，但不应现在直接替换现有鉴权；当前阶段保留 `platform_admin` / `app_admin` / `user`、`user_roles` 和 `AppMember` 的资源域判断，后续再引入数据库权限点、缓存刷新和 Casbin domain 模型
+  - 评估结论：a.md 中的 RBAC/Casbin 方案方向适合后续自定义角色和权限点管理，但落地前需要先稳定三层角色、应用成员域、Keycloak 身份来源和路由权限矩阵；否则一次性切换会扩大回归面。
 
 ### Task 6.14: 平台目录、版本选择与服务暴露
 - [x] 安装/编辑中间件时提供版本下拉，数据来自同 `ServiceType` 下的 `ServiceTemplate.ChartVersion`
-  - 服务部署抽屉的版本下拉改为按同 `serviceType` 的 `ServiceTemplate.chartVersion` 取值，选项展示 Chart 版本和应用版本；安装请求新增 `chartVersion`，后端按 `chart_version` 精确选择模板，并保留旧 `appVersion` 兼容路径
+  - 服务部署抽屉的版本下拉改为按同 `serviceType` 的 `ServiceTemplate.chartVersion` 取值；安装请求新增 `chartVersion`，后端按 `chart_version` 精确选择模板，并保留旧 `appVersion` 兼容路径；用户界面只展示应用版本，不展示 Chart 版本
   - 测试覆盖：`go test -count=1 ./internal/handler -run TestInstallServiceSelectsTemplateByChartVersion` 先红后绿；`npm --prefix frontend run test -- src/views/viewMarkup.test.ts -t "chart version"` 先红后绿；`go test -count=1 ./internal/handler ./internal/k8s`、`npm --prefix frontend run test`、`npm --prefix frontend run build`、完整 `make test` 通过
   - 部署验证：`paap-server:v0.1.500` 已构建、加载到 `kind-rbac-governance-test` 并完成 `paap-system/paap-server` 滚动更新；实际 Deployment 镜像为 `paap-server:v0.1.500`，PAAP/kpack 相关 Pod Running，节点 Ready
-  - CDP/API/kubectl 验证：复用 Chrome tab，在应用 1 下创建临时环境 `chart-cdp-136303`，读取 Redis 模板 `chartVersion=18.6.0` 后用 `chartVersion` 安装 Redis；kubectl 读取 `serviceinstance chart-cdp-136303-redis` 得到 `.spec.helm.chartVersion=18.6.0`、`.spec.helm.s3Key=charts/redis.tar.gz`、`architecture=standalone`；前端服务抽屉显示 `Chart v18.6.0 / 应用 v7.2.3`；删除临时环境后 Environment、ServiceInstance 和临时 namespace 均返回 NotFound
+  - CDP/API/kubectl 验证：复用 Chrome tab，在应用 1 下创建临时环境 `chart-cdp-136303`，读取 Redis 模板 `chartVersion=18.6.0` 后用 `chartVersion` 安装 Redis；kubectl 读取 `serviceinstance chart-cdp-136303-redis` 得到 `.spec.helm.chartVersion=18.6.0`、`.spec.helm.s3Key=charts/redis.tar.gz`、`architecture=standalone`；删除临时环境后 Environment、ServiceInstance 和临时 namespace 均返回 NotFound
+  - 2026-06-25 验证：复用 Chrome tab，PostgreSQL 抽屉版本区域显示“当前应用版本 / 应用 v15.4.0”，Prometheus+Grafana 显示“应用 v0.77.2”，Loki 显示“应用 v2.9.3”，抽屉文本中无 `Chart v` 或 `Chart 版本`。
 - [x] 增加“平台支持的中间件/工具目录”只读浏览页，按工具/数据库/缓存/消息队列/对象存储分组
   - 已提供 `/catalog` 只读目录页，读取 `api.listServiceTemplates()`，按工具类、数据库、缓存、消息队列、对象存储分组展示服务类型、描述和版本标签，并支持名称、类型、分组、描述搜索
   - 验证：`npm --prefix frontend run test -- src/utils/catalogGroups.test.ts src/utils/catalogVersions.test.ts src/views/viewMarkup.test.ts` 通过；CDP 验证当前部署 `/catalog` 展示 14 张卡片，分组为工具类 7、数据库 3、缓存 1、消息队列 2、对象存储 1
@@ -458,24 +470,24 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 ### Task 7.5: Capability 来源模型（环境内/共享/外部）
 > 领导需求 2+3+4 的统一模型，也是 External Capability Design Direction 的落地
 
-- [ ] 新增 `EnvironmentCapability` GORM 模型（`EnvironmentID` + `Capability` + `Source` + `RefServiceID` + `ExternalConfig`）
-- [ ] `Source` 枚举：`self` / `shared` / `external`
-- [ ] 系统初始化时创建 `default` 应用 + `default` 环境（受保护、只装工具/中间件）
-- [ ] 平台管理员在 default 环境预装共享实例，供其它环境 `shared` 引用
+- [x] 新增 `EnvironmentCapability` GORM 模型（`EnvironmentID` + `Capability` + `Source` + `RefServiceID` + `ExternalConfig`）
+- [x] `Source` 枚举：`managed` / `shared` / `external` / `deferred`
+- [x] 部署清单内置 `default` 应用 + `shared` 系统环境（受保护、用于共享资源池）；读接口和列表接口不再按需创建系统资源
+- [x] 平台管理员通过 `/shared-resources` 进入同一套环境画布创建和维护共享实例，供其它环境 `shared` 引用
 - [ ] 重构 `registry_endpoint.go:16` `RuntimeRegistryHost` 的硬编码
 - [ ] 重构 `environment.go` 中 `toolHTTPBaseURL` 等 FQDN 拼接
 - [ ] 组件消费 capability 时按 `Source` 分流（self→本环境，shared→default，external→用户 endpoint）
 - [ ] 放行 NetworkPolicy：业务 namespace → default 工具 namespace ingress
 - [ ] external 来源放行到集群外 endpoint 的 egress
-- [ ] 画布节点带 `zone` 字段（`environment` / `shared` / `external`）
-- [ ] 三条泳道渲染：本环境、平台公共、集群外部
-- [ ] `componentTopology.ts` 已有 `laneLabels`，扩展为可配置 zone
+- [x] 画布节点带 `zone` 字段（`environment` / `shared` / `external`）
+- [x] 三条泳道渲染：本环境、平台公共、集群外部
+- [x] `componentTopology.ts` 扩展为可配置 zone，并由 `EnvDetailView.vue` 渲染背景分区与图例
 - [ ] 扩展 `ListAdoptableResources` 可扫指定 namespace / 全集群
-- [ ] 新增"手动接入"外部资源表单（类型 + endpoint + 凭证）
-- [ ] external 卡片只支持"断开"，不删真实资源
+- [x] 业务环境画布右键新增共享资源和外部资源入口；共享资源生成只读卡片，外部资源右侧栏编辑 endpoint、认证方式、用户名、密码/token、`credentialSecretRef`
+- [x] external 卡片只支持"断开"，不删真实资源
 - [ ] 环境模板声明所需 capabilities
-- [ ] 创建环境时每个 capability 让用户四选一
-- [ ] 当前状态：`ServiceInstallation` 是环境级（`service_catalog.go:111`），无共享/外部概念
+- [x] 创建环境阶段不再选择 capability 来源，只选择环境形态；从模板/基础环境安装本环境默认资源，后续在画布上引用共享或接入外部
+- [x] 当前状态：`ServiceInstallation` 仍是环境级；共享通过系统共享环境中的 `ServiceInstallation` 引用，外部通过 `EnvironmentCapability` + Secret 引用
 - [ ] 当前状态：`ListAdoptableResources` 只扫自己 namespace（`environment.go:1700`）
 - [ ] 工作量：4-6 周，按来源分三步交付
 
@@ -1171,12 +1183,12 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 - [ ] 工作量：1-2 周
 
 ### Task 7.20: 画布卡片分组分区
-- [ ] 画布上大卡片容器：每个大卡片 = 一个组/区（zone）
+- [x] 画布上增加 zone 背景容器，每个 zone 聚合展示该组资源数量
 - [ ] 目前每个服务/组件是独立卡片，打开后大卡片包含这些小卡片
-- [ ] 支持分组类型：本环境、平台公共、集群外部（对应 Task 7.5 的 zone 概念）
+- [x] 支持分组类型：本环境、平台公共、集群外部（对应 Task 7.5 的 zone 概念）
 - [ ] 组卡片可折叠/展开
-- [ ] 当前状态：画布上所有卡片平铺无分组
-- [ ] 对应文件：`frontend/src/views/EnvDetailView.vue`、`frontend/src/composables/componentTopology.ts`
+- [x] 当前状态：画布已按来源显示背景分区和分区资源数，尚未实现折叠/展开
+- [x] 对应文件：`frontend/src/views/EnvDetailView.vue`、`frontend/src/views/componentTopology.ts`
 - [ ] 工作量：1-2 周
 
 ### Task 7.22: 画布卡片端点地址展示

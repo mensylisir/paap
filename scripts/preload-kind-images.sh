@@ -15,6 +15,7 @@ echo "Cluster: $KIND_CLUSTER"
 echo "Image list: $IMAGE_LIST"
 echo "Template package source for image discovery: data/charts/*.tar.gz"
 echo "Runtime chart source: data/charts/*.tar.gz copied into /charts and uploaded to MinIO."
+"$PROJECT_DIR/scripts/check-disk-space.sh" before-kind-image-preload
 
 extract_images_from_rendered_yaml() {
   awk '
@@ -153,3 +154,4 @@ while read -r image; do
 done < "$FINAL_LIST"
 
 echo "Loaded $(wc -l < "$FINAL_LIST" | tr -d ' ') images into kind."
+"$PROJECT_DIR/scripts/check-disk-space.sh" after-kind-image-preload

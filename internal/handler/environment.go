@@ -85,11 +85,13 @@ var (
 const giteaWorkspaceCacheTTL = 15 * time.Second
 
 type CreateEnvRequest struct {
-	Name                 string                       `json:"name" binding:"required"`
-	Identifier           string                       `json:"identifier"`
-	TemplateID           uint                         `json:"templateId"`
-	FromEmpty            bool                         `json:"fromEmpty"`
-	AdditionalNamespaces []paapv1.AdditionalNamespace `json:"additionalNamespaces"`
+	Name                 string                         `json:"name" binding:"required"`
+	Identifier           string                         `json:"identifier"`
+	TemplateID           uint                           `json:"templateId"`
+	FromEmpty            bool                           `json:"fromEmpty"`
+	Blank                bool                           `json:"blank"`
+	AdditionalNamespaces []paapv1.AdditionalNamespace   `json:"additionalNamespaces"`
+	Capabilities         []EnvironmentCapabilityRequest `json:"capabilities"`
 }
 
 type EnvironmentExternalAccess struct {
@@ -1012,7 +1014,8 @@ func ListApplicationEnvironments(c *gin.Context) {
 }
 
 // CreateEnvironment creates a new environment for an application.
-// Every environment gets the foundation toolchain. Templates add business infra on top.
+// Blank environments only create the namespace boundary. Basic/template environments
+// get the foundation toolchain, and templates add business infra on top.
 func CreateEnvironment(c *gin.Context) {
 	appID, _ := strconv.Atoi(c.Param("id"))
 	var req CreateEnvRequest
@@ -1025,6 +1028,10 @@ func CreateEnvironment(c *gin.Context) {
 	var app model.Application
 	if err := database.DB.First(&app, appID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "application not found"})
+		return
+	}
+	if app.IsSystem {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "system applications cannot create additional environments"})
 		return
 	}
 	if !requireApplicationAccess(c, app.ID) {
@@ -1050,7 +1057,7 @@ func CreateEnvironment(c *gin.Context) {
 		Namespace:     app.Identifier + "-" + identifier,
 	}
 
-	if req.FromEmpty {
+	if req.FromEmpty || req.Blank {
 		env.TemplateID = 0
 	}
 	resourceQuota := environmentTemplateResourceQuota(env.TemplateID)
@@ -1058,6 +1065,13 @@ func CreateEnvironment(c *gin.Context) {
 	if err := database.DB.Create(&env).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
+	}
+	if len(req.Capabilities) > 0 {
+		createdBy, _ := authenticatedUserID(c)
+		if err := CreateInitialEnvironmentCapabilities(env, req.Capabilities, createdBy); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
 	}
 
 	// 1) 创建 K8s Environment CR（Operator 会自动创建 namespace + NetworkPolicy + Quota）
@@ -1067,6 +1081,13 @@ func CreateEnvironment(c *gin.Context) {
 	if err := k8s.CreateEnvironmentCR(ctx, app.Identifier, req.Name, identifier, primaryNS, additionalNS, resourceQuota); err != nil {
 		database.DB.Model(&env).Update("status", "error").Update("error_message", err.Error())
 		c.JSON(http.StatusCreated, gin.H{"data": env, "warning": "Environment CR creation failed: " + err.Error()})
+		return
+	}
+
+	if req.Blank {
+		env.Status = "running"
+		database.DB.Model(&env).Update("status", "running")
+		c.JSON(http.StatusCreated, gin.H{"data": env})
 		return
 	}
 
@@ -1952,6 +1973,10 @@ func DeleteEnvironment(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "environment not found"})
 		return
 	}
+	if env.IsSystem {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "system environments cannot be deleted"})
+		return
+	}
 	if !requireApplicationAccess(c, env.ApplicationID) {
 		return
 	}
@@ -2014,6 +2039,9 @@ func AdoptResource(c *gin.Context) {
 	envID, _ := strconv.Atoi(c.Param("id"))
 	env, app, ok := loadEnvironmentAndApp(c, uint(envID))
 	if !ok {
+		return
+	}
+	if rejectSystemSharedEnvironmentMutation(c, env, "system shared environments cannot adopt workload resources") {
 		return
 	}
 	var req AdoptResourceRequest
@@ -2191,6 +2219,9 @@ func CreateComponent(c *gin.Context) {
 	var env model.Environment
 	if err := database.DB.First(&env, envID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "environment not found"})
+		return
+	}
+	if rejectSystemSharedEnvironmentMutation(c, env, "system shared environments only support installing tools and middleware") {
 		return
 	}
 	if !requireApplicationAccess(c, env.ApplicationID) {

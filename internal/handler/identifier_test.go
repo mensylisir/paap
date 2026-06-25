@@ -1,10 +1,8 @@
 package handler
 
 import (
-	"testing"
-
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
+	"testing"
 )
 
 func TestNormalizeIdentifier(t *testing.T) {
@@ -17,7 +15,7 @@ func TestNormalizeIdentifier(t *testing.T) {
 }
 
 func TestUniqueIdentifierAddsSuffixForDuplicates(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := openTestDB(t)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}

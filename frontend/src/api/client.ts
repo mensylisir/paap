@@ -104,6 +104,14 @@ export const api = {
   listEnvs: (appId: number) => request(`/applications/${appId}/environments`),
   createEnv: (appId: number, data: any) => request(`/applications/${appId}/environments`, { method: 'POST', body: JSON.stringify(data) }),
   getEnv: (id: number) => request(`/environments/${id}`),
+  listEnvironmentCapabilities: (id: number) => request(`/environments/${id}/capabilities`),
+  updateEnvironmentCapability: (id: number, capability: string, data: any) =>
+    request(`/environments/${id}/capabilities/${capability}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteEnvironmentCapability: (id: number, capability: string) =>
+    request(`/environments/${id}/capabilities/${capability}`, { method: 'DELETE' }),
+  getEnvironmentCapabilityCredentials: (id: number, capability: string) =>
+    request(`/environments/${id}/capabilities/${capability}/credentials`),
+  listSharedCapabilityResources: () => request('/capabilities/shared-resources'),
   getEnvironmentCanvasState: (id: number) => request(`/environments/${id}/canvas-state`),
   saveEnvironmentCanvasState: (id: number, data: any) => request(`/environments/${id}/canvas-state`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteEnv: (id: number) => request(`/environments/${id}`, { method: 'DELETE' }),
@@ -137,4 +145,9 @@ export const api = {
    setComponentNodePortAccess: (envId: number, componentId: number, enabled: boolean) =>
      request(`/environments/${envId}/components/${componentId}/nodeport-access`, { method: 'PUT', body: JSON.stringify({ enabled }) }),
    uninstallService: (envId: number, serviceId: number) => request(`/environments/${envId}/services/${serviceId}`, { method: 'DELETE' }),
+
+  // Platform admin
+  listUsers: () => request('/admin/users'),
+  updateUserRoles: (userId: number, roles: string[]) => request(`/admin/users/${userId}/role`, { method: 'PUT', body: JSON.stringify({ roles }) }),
+  getSharedResourcePool: () => request('/admin/shared-resource-pool'),
 }

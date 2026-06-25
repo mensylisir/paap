@@ -1,0 +1,32 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: paap-app-default
+  labels:
+    paap.io/app: default
+    paap.io/managed-by: paap-operator
+---
+apiVersion: paap.io/v1
+kind: Application
+metadata:
+  name: default
+  namespace: paap-system
+spec:
+  name: 共享资源池
+  identifier: default
+  description: PAAP platform shared resource pool
+---
+apiVersion: paap.io/v1
+kind: Environment
+metadata:
+  name: shared
+  namespace: paap-app-default
+  labels:
+    paap.io/app: default
+    paap.io/env: shared
+spec:
+  name: 共享环境
+  identifier: shared
+  primaryNamespace: default-shared
+  network:
+    isolation: NetworkPolicy

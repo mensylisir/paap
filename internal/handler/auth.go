@@ -1,8 +1,6 @@
 package handler
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -53,10 +51,14 @@ func Register(c *gin.Context) {
 		Username: req.Username,
 		Password: hash,
 		Email:    req.Email,
-		Role:     "user",
 	}
 
 	if err := database.DB.Create(&user).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	roles, err := model.ReplaceUserRoles(database.DB, user.ID, []string{model.RoleUser})
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -66,7 +68,7 @@ func Register(c *gin.Context) {
 			"id":       user.ID,
 			"username": user.Username,
 			"email":    user.Email,
-			"role":     user.Role,
+			"roles":    roles,
 		},
 	})
 }
@@ -89,6 +91,11 @@ func Login(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid credentials"})
 		return
 	}
+	roles, err := model.UserRoleValues(database.DB, user.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 
 	token, err := middleware.GenerateToken(user.ID)
 	if err != nil {
@@ -101,7 +108,7 @@ func Login(c *gin.Context) {
 			"token":    token,
 			"id":       user.ID,
 			"username": user.Username,
-			"role":     user.Role,
+			"roles":    roles,
 		},
 	})
 }
@@ -125,56 +132,20 @@ func GetCurrentUser(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "user not found"})
 		return
 	}
+	roles, err := model.UserRoleValues(database.DB, user.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"data": gin.H{
 			"id":       user.ID,
 			"username": user.Username,
 			"email":    user.Email,
-			"role":     user.Role,
+			"roles":    roles,
 		},
 	})
-}
-
-// SeedDefaultUsers creates local default users when the database is empty.
-func SeedDefaultUsers() {
-	var count int64
-	database.DB.Model(&model.User{}).Count(&count)
-	if count > 0 {
-		return
-	}
-
-	// The SQL migration owns the real platform admin password. Seed with a random
-	// locked value so no legacy default works before migrations run.
-	hash := randomInitialPasswordHash()
-	admin := model.User{
-		Username: "admin",
-		Email:    "admin@paap.local",
-		Password: hash,
-		Role:     "admin",
-	}
-	database.DB.Create(&admin)
-
-	hash, _ = hashPassword("user123")
-	user := model.User{
-		Username: "user",
-		Email:    "user@paap.local",
-		Password: hash,
-		Role:     "user",
-	}
-	database.DB.Create(&user)
-}
-
-func randomInitialPasswordHash() string {
-	seed := make([]byte, 32)
-	if _, err := rand.Read(seed); err != nil {
-		panic(err)
-	}
-	hash, err := hashPassword(hex.EncodeToString(seed))
-	if err != nil {
-		panic(err)
-	}
-	return hash
 }
 
 func init() {

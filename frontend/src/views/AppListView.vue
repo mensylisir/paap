@@ -32,7 +32,8 @@
         >
           <div class="app-card-main">
             <div class="app-card-header">
-              <h3 class="app-card-name">{{ app.name }}</h3>
+              <h3 class="app-card-name">{{ appDisplayName(app) }}</h3>
+              <span v-if="app.isSystem" class="rail-tag rail-tag--gray">系统应用</span>
               <span v-if="app.environmentCount" class="rail-tag rail-tag--blue">{{ app.environmentCount }} 环境</span>
               <span v-else class="rail-tag rail-tag--gray">无环境</span>
             </div>
@@ -44,6 +45,7 @@
             <span class="app-stat"><strong>{{ appResourceSummary(app).middlewareCount }}</strong><em>中间件</em></span>
             <span class="app-stat"><strong>{{ appComponentCount(app) }}</strong><em>组件</em></span>
             <button
+              v-if="!app.isSystem"
               type="button"
               class="rail-btn rail-btn--danger rail-btn--sm app-delete-btn"
               :disabled="deletingAppId === Number(app.id)"
@@ -171,6 +173,14 @@ const appResourceSummary = (app: any) => sumApplicationResources(app)
 const appComponentCount = (app: any) =>
   appResourceSummary(app).componentCount
 
+const appDisplayName = (app: any) =>
+  app?.isSystem && String(app?.identifier || '') === 'default'
+    ? '共享资源池'
+    : (app?.name || app?.identifier || '未命名应用')
+
+const firstBusinessApp = () =>
+  apps.value.find((app: any) => !app?.isSystem) || apps.value[0]
+
 const normalizeApps = (payload: any) => {
   if (Array.isArray(payload?.data)) return payload.data
   if (Array.isArray(payload?.data?.applications)) return payload.data.applications
@@ -188,7 +198,7 @@ async function loadApps() {
   try {
     apps.value = normalizeApps(await api.listApps())
     if (apps.value.length === 0) openCreateAppModal()
-    else if (route.query.auto === 'true') goToDefaultWorkspace(apps.value[0])
+    else if (route.query.auto === 'true') goToDefaultWorkspace(firstBusinessApp())
   } catch (e) {
     console.error(e)
     loadError.value = '无法读取应用列表，请稍后重试。'

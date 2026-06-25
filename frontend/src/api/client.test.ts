@@ -76,6 +76,28 @@ describe('api client', () => {
     }))
   })
 
+  it('calls environment capability endpoints', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => ({ data: [] }),
+    } as Response)
+
+    await api.listEnvironmentCapabilities(5)
+    await api.updateEnvironmentCapability(5, 'registry', { source: 'shared', refServiceId: 21 })
+    await api.listSharedCapabilityResources()
+    await api.getEnvironmentCapabilityCredentials(5, 'git')
+    await api.deleteEnvironmentCapability(5, 'git')
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/v1/environments/5/capabilities', expect.objectContaining({ method: 'GET' }))
+    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/v1/environments/5/capabilities/registry', expect.objectContaining({
+      method: 'PUT',
+      body: JSON.stringify({ source: 'shared', refServiceId: 21 }),
+    }))
+    expect(fetchMock).toHaveBeenNthCalledWith(3, '/api/v1/capabilities/shared-resources', expect.objectContaining({ method: 'GET' }))
+    expect(fetchMock).toHaveBeenNthCalledWith(4, '/api/v1/environments/5/capabilities/git/credentials', expect.objectContaining({ method: 'GET' }))
+    expect(fetchMock).toHaveBeenNthCalledWith(5, '/api/v1/environments/5/capabilities/git', expect.objectContaining({ method: 'DELETE' }))
+  })
+
   it('calls application member management endpoints', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
       ok: true,
@@ -97,6 +119,31 @@ describe('api client', () => {
       body: JSON.stringify({ role: 'viewer' }),
     }))
     expect(fetchMock).toHaveBeenNthCalledWith(4, '/api/v1/applications/7/members/3', expect.objectContaining({ method: 'DELETE' }))
+  })
+
+  it('updates platform user roles as an array', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => ({ data: { id: 1, roles: ['platform_admin', 'app_admin'] } }),
+    } as Response)
+
+    await api.updateUserRoles(1, ['platform_admin', 'app_admin'])
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/v1/admin/users/1/role', expect.objectContaining({
+      method: 'PUT',
+      body: JSON.stringify({ roles: ['platform_admin', 'app_admin'] }),
+    }))
+  })
+
+  it('resolves the platform shared resource pool', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => ({ data: { application: { id: 1 }, environment: { id: 2 } } }),
+    } as Response)
+
+    await api.getSharedResourcePool()
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/v1/admin/shared-resource-pool', expect.objectContaining({ method: 'GET' }))
   })
 
   it('calls environment template management endpoints', async () => {

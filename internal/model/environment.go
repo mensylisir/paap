@@ -19,6 +19,7 @@ type Environment struct {
 	Status        string         `gorm:"size:20;default:empty" json:"status"` // empty, running, stopped, creating, error
 	Namespace     string         `gorm:"size:100" json:"namespace"`
 	ErrorMessage  string         `gorm:"type:text" json:"errorMessage,omitempty"` // 环境创建/运行过程中的错误信息
+	IsSystem      bool           `gorm:"default:false;index" json:"isSystem"`
 }
 
 type EnvironmentCanvasState struct {

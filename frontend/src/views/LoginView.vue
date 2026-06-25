@@ -27,6 +27,9 @@
           <button type="submit" class="btn btn--primary" :disabled="loading">
             {{ loading ? '登录中...' : '登录' }}
           </button>
+          <button type="button" class="btn btn--secondary" :disabled="loading" @click="loginWithKeycloak">
+            Keycloak 登录
+          </button>
         </form>
       </div>
     </div>
@@ -34,15 +37,24 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { onMounted, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { api } from '../api/client'
 
 const router = useRouter()
+const route = useRoute()
 const username = ref('')
 const password = ref('')
 const loading = ref(false)
 const errorMessage = ref('')
+
+const storeAuthenticatedUser = (user: any) => {
+  localStorage.setItem('paap_user', JSON.stringify({
+    id: user.id,
+    username: user.username,
+    roles: Array.isArray(user.roles) ? user.roles : [],
+  }))
+}
 
 const handleLogin = async () => {
   errorMessage.value = ''
@@ -54,11 +66,7 @@ const handleLogin = async () => {
       throw new Error('登录响应缺少 token')
     }
     localStorage.setItem('paap_token', user.token)
-    localStorage.setItem('paap_user', JSON.stringify({
-      id: user.id,
-      username: user.username,
-      role: user.role,
-    }))
+    storeAuthenticatedUser(user)
     router.push('/apps?auto=true')
   } catch (err) {
     errorMessage.value = err instanceof Error ? err.message : '请检查用户名和密码'
@@ -66,6 +74,34 @@ const handleLogin = async () => {
     loading.value = false
   }
 }
+
+const loginWithKeycloak = () => {
+  location.href = '/api/v1/auth/keycloak/login'
+}
+
+const completeTokenLogin = async (token: string) => {
+  errorMessage.value = ''
+  loading.value = true
+  try {
+    localStorage.setItem('paap_token', token)
+    const response = await api.me()
+    storeAuthenticatedUser(response?.data || {})
+    router.replace('/apps?auto=true')
+  } catch (err) {
+    localStorage.removeItem('paap_token')
+    localStorage.removeItem('paap_user')
+    errorMessage.value = err instanceof Error ? err.message : 'Keycloak 登录失败'
+  } finally {
+    loading.value = false
+  }
+}
+
+onMounted(() => {
+  const token = typeof route.query.token === 'string' ? route.query.token : ''
+  if (token) {
+    completeTokenLogin(token)
+  }
+})
 </script>
 
 <style scoped>

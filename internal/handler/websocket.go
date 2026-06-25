@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"paap/internal/middleware"
 	"sync"
 
 	"github.com/gin-gonic/gin"
@@ -11,6 +12,7 @@ import (
 )
 
 var upgrader = websocket.Upgrader{
+	Subprotocols: []string{middleware.RuntimeConsoleWebSocketProtocol},
 	CheckOrigin: func(r *http.Request) bool {
 		return true // 允许所有来源（开发环境）
 	},

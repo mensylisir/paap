@@ -32,6 +32,16 @@ const routes = [
         component: () => import('../views/CatalogView.vue'),
       },
       {
+        path: 'shared-resources',
+        name: 'PlatformSharedResources',
+        component: () => import('../views/PlatformSharedResourcesView.vue'),
+      },
+      {
+        path: 'users',
+        name: 'Users',
+        component: () => import('../views/PlatformUsersView.vue'),
+      },
+      {
         path: 'registries',
         name: 'AppRegistries',
         component: () => import('../views/AppRegistryView.vue'),
@@ -47,6 +57,11 @@ const routes = [
         path: 'overview',
         name: 'AppOverview',
         component: () => import('../views/AppOverviewView.vue'),
+      },
+      {
+        path: 'members',
+        name: 'AppMembers',
+        component: () => import('../views/AppMembersView.vue'),
       },
       {
         path: 'environments',
