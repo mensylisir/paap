@@ -23,6 +23,7 @@ const (
 	ContextUserIDKey                = "authUserID"
 	ContextUserRolesKey             = "authUserRoles"
 	RuntimeConsoleWebSocketProtocol = "paap-runtime-console"
+	EmbeddedProxyAuthCookieName     = "paap_proxy_token"
 )
 
 type jwtHeader struct {
@@ -79,6 +80,10 @@ func UserIDFromRequest(r *http.Request) (uint, error) {
 		return VerifyToken(token)
 	}
 	token = tokenFromEmbeddedProxyQuery(r)
+	if token != "" {
+		return VerifyToken(token)
+	}
+	token = tokenFromEmbeddedProxyCookie(r)
 	if token != "" {
 		return VerifyToken(token)
 	}
@@ -188,9 +193,23 @@ func tokenFromEmbeddedProxyQuery(r *http.Request) string {
 	if r == nil || r.URL == nil {
 		return ""
 	}
-	path := r.URL.Path
-	if !strings.HasPrefix(path, "/api/v1/environments/") || !strings.Contains(path, "/proxy/") {
+	if !isEmbeddedProxyPath(r.URL.Path) {
 		return ""
 	}
 	return strings.TrimSpace(r.URL.Query().Get("paap_token"))
+}
+
+func tokenFromEmbeddedProxyCookie(r *http.Request) string {
+	if r == nil || r.URL == nil || !isEmbeddedProxyPath(r.URL.Path) {
+		return ""
+	}
+	cookie, err := r.Cookie(EmbeddedProxyAuthCookieName)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(cookie.Value)
+}
+
+func isEmbeddedProxyPath(path string) bool {
+	return strings.HasPrefix(path, "/api/v1/environments/") && strings.Contains(path, "/proxy/")
 }

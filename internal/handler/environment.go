@@ -31,6 +31,7 @@ import (
 	paapv1 "paap/api/v1"
 	"paap/internal/database"
 	"paap/internal/k8s"
+	"paap/internal/middleware"
 	"paap/internal/model"
 	"paap/internal/service"
 )
@@ -162,8 +163,10 @@ type UpdateComponentRequest struct {
 }
 
 type CanvasNodePosition struct {
-	X float64 `json:"x"`
-	Y float64 `json:"y"`
+	X      float64 `json:"x"`
+	Y      float64 `json:"y"`
+	Width  float64 `json:"width,omitempty"`
+	Height float64 `json:"height,omitempty"`
 }
 
 type CanvasManualEdge struct {
@@ -1468,7 +1471,14 @@ func normalizeCanvasPositions(input map[string]CanvasNodePosition) map[string]Ca
 		if key == "" {
 			continue
 		}
-		out[key] = CanvasNodePosition{X: pos.X, Y: pos.Y}
+		normalized := CanvasNodePosition{X: pos.X, Y: pos.Y}
+		if pos.Width > 0 {
+			normalized.Width = pos.Width
+		}
+		if pos.Height > 0 {
+			normalized.Height = pos.Height
+		}
+		out[key] = normalized
 	}
 	return out
 }
@@ -1509,23 +1519,48 @@ func cleanCanvasStateForEnvironment(envID uint, positionsJSON, edgesJSON string)
 }
 
 func currentCanvasNodeKeys(envID uint) map[string]bool {
-	keys := map[string]bool{}
+	keys := map[string]bool{
+		"zone:environment":             true,
+		"zone:shared":                  true,
+		"zone:external":                true,
+		"environment:zone:environment": true,
+		"environment:zone:shared":      true,
+		"environment:zone:external":    true,
+	}
 	var components []model.Component
 	if err := database.DB.Where("environment_id = ?", envID).Find(&components).Error; err == nil {
 		for _, comp := range components {
-			keys[fmt.Sprintf("component:%d", comp.ID)] = true
+			key := fmt.Sprintf("component:%d", comp.ID)
+			keys[key] = true
+			keys["component:"+key] = true
+			keys["environment:"+key] = true
 		}
 	}
 	var services []model.ServiceInstallation
 	if err := database.DB.Where("environment_id = ?", envID).Find(&services).Error; err == nil {
 		for _, svc := range services {
-			keys[fmt.Sprintf("service:%d", svc.ID)] = true
+			key := fmt.Sprintf("service:%d", svc.ID)
+			keys[key] = true
+			keys["component:"+key] = true
+			keys["environment:"+key] = true
 		}
 	}
 	var infra []model.InfraInstallation
 	if err := database.DB.Where("environment_id = ?", envID).Find(&infra).Error; err == nil {
 		for _, item := range infra {
-			keys[fmt.Sprintf("infra:%d", item.ID)] = true
+			key := fmt.Sprintf("infra:%d", item.ID)
+			keys[key] = true
+			keys["component:"+key] = true
+			keys["environment:"+key] = true
+		}
+	}
+	var capabilities []model.EnvironmentCapability
+	if err := database.DB.Where("environment_id = ?", envID).Find(&capabilities).Error; err == nil {
+		for _, capability := range capabilities {
+			key := fmt.Sprintf("capability:%d", capability.ID)
+			keys[key] = true
+			keys["component:"+key] = true
+			keys["environment:"+key] = true
 		}
 	}
 	return keys
@@ -3340,6 +3375,7 @@ func ProxyServiceInstance(c *gin.Context) {
 		return
 	}
 	proxyPrefix := fmt.Sprintf("/api/v1/environments/%d/services/%d/proxy", envID, serviceID)
+	persistEmbeddedProxyAuthCookie(c, proxyPrefix)
 	paapEmbeddedGrafana := inst.ServiceType == "monitor" && c.Query("paap_embed") != ""
 	proxy := httputil.NewSingleHostReverseProxy(target)
 	if inst.ServiceType == "registry" {
@@ -3405,6 +3441,7 @@ func ProxyComponent(c *gin.Context) {
 		return
 	}
 	proxyPrefix := fmt.Sprintf("/api/v1/environments/%d/components/%d/proxy", envID, componentID)
+	persistEmbeddedProxyAuthCookie(c, proxyPrefix)
 	proxy := httputil.NewSingleHostReverseProxy(target)
 	originalDirector := proxy.Director
 	proxy.Director = func(req *http.Request) {
@@ -3520,6 +3557,7 @@ func prepareComponentProxyRequest(req *http.Request, target *url.URL, proxyPrefi
 	req.Header.Set("X-Forwarded-Prefix", proxyPrefix)
 	req.Header.Set("X-Forwarded-Proto", "http")
 	req.Header.Del("Accept-Encoding")
+	removeEmbeddedProxyQueryParams(req)
 }
 
 func prepareToolProxyRequest(req *http.Request, target *url.URL, proxyPrefix, path string, inst model.ServiceInstallation) {
@@ -3536,6 +3574,7 @@ func prepareToolProxyRequest(req *http.Request, target *url.URL, proxyPrefix, pa
 	req.Header.Set("X-Forwarded-Prefix", proxyPrefix)
 	req.Header.Set("X-Forwarded-Proto", "http")
 	req.Header.Del("Accept-Encoding")
+	removeEmbeddedProxyQueryParams(req)
 	if inst.ServiceType == "monitor" && isWebSocketUpgrade(req) {
 		req.Header.Set("Origin", target.Scheme+"://"+target.Host)
 	}
@@ -3543,6 +3582,27 @@ func prepareToolProxyRequest(req *http.Request, target *url.URL, proxyPrefix, pa
 	if inst.ServiceType == "monitor" {
 		normalizeGrafanaLokiLogsVolumeRequest(req)
 	}
+}
+
+func persistEmbeddedProxyAuthCookie(c *gin.Context, proxyPrefix string) {
+	token := strings.TrimSpace(c.Query("paap_token"))
+	if token == "" {
+		return
+	}
+	c.SetCookie(middleware.EmbeddedProxyAuthCookieName, token, int(24*time.Hour/time.Second), proxyPrefix, "", false, true)
+}
+
+func removeEmbeddedProxyQueryParams(req *http.Request) {
+	if req == nil || req.URL == nil {
+		return
+	}
+	values := req.URL.Query()
+	if values.Get("paap_token") == "" && values.Get("paap_embed") == "" {
+		return
+	}
+	values.Del("paap_token")
+	values.Del("paap_embed")
+	req.URL.RawQuery = values.Encode()
 }
 
 func isWebSocketUpgrade(req *http.Request) bool {

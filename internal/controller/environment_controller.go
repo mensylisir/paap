@@ -319,6 +319,18 @@ func (r *EnvironmentReconciler) ensureNetworkPolicy(ctx context.Context, env *pa
 					{
 						NamespaceSelector: &metav1.LabelSelector{
 							MatchLabels: map[string]string{
+								"paap.io/app": "default",
+								"paap.io/env": "shared",
+							},
+						},
+					},
+				},
+			},
+			{
+				To: []networkingv1.NetworkPolicyPeer{
+					{
+						NamespaceSelector: &metav1.LabelSelector{
+							MatchLabels: map[string]string{
 								"kubernetes.io/metadata.name": "kube-system",
 							},
 						},

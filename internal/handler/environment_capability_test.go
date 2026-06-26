@@ -234,6 +234,235 @@ func TestEnvironmentCapabilityCanUseManagedSharedAndExternalSources(t *testing.T
 	}
 }
 
+func TestUpsertEnvironmentCapabilityUpdatesExistingSharedReference(t *testing.T) {
+	db := setupCapabilityTestDB(t)
+
+	admin := createCapabilityTestPlatformAdmin(t, db)
+	app := model.Application{Name: "业务应用", Identifier: "billing", OwnerID: admin.ID}
+	if err := db.Create(&app).Error; err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	if err := db.Create(&model.AppMember{ApplicationID: app.ID, UserID: admin.ID, Role: "admin"}).Error; err != nil {
+		t.Fatalf("create app member: %v", err)
+	}
+	env := model.Environment{ApplicationID: app.ID, Name: "生产", Identifier: "prod", Namespace: "billing-prod"}
+	if err := db.Create(&env).Error; err != nil {
+		t.Fatalf("create env: %v", err)
+	}
+	_, sharedEnv := createCapabilityTestSharedEnvironment(t, db, admin.ID)
+	firstSharedPostgres := model.ServiceInstallation{
+		EnvironmentID: sharedEnv.ID,
+		ServiceType:   "postgresql",
+		ServiceName:   "shared-postgres-a",
+		Status:        "running",
+		Namespace:     "default-shared-postgres-a",
+	}
+	secondSharedDatabase := model.ServiceInstallation{
+		EnvironmentID: sharedEnv.ID,
+		ServiceType:   "mysql",
+		ServiceName:   "shared-mysql",
+		Status:        "running",
+		Namespace:     "default-shared-mysql",
+	}
+	if err := db.Create(&firstSharedPostgres).Error; err != nil {
+		t.Fatalf("create first shared postgres: %v", err)
+	}
+	if err := db.Create(&secondSharedDatabase).Error; err != nil {
+		t.Fatalf("create second shared database: %v", err)
+	}
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.PUT("/api/v1/environments/:id/capabilities/:capability", withTestAuthUserRole(admin.ID, model.RoleAppAdmin, UpsertEnvironmentCapability))
+	router.GET("/api/v1/environments/:id/capabilities", withTestAuthUserRole(admin.ID, model.RoleAppAdmin, ListEnvironmentCapabilities))
+
+	for _, svc := range []model.ServiceInstallation{firstSharedPostgres, secondSharedDatabase} {
+		body := bytes.NewBufferString(fmt.Sprintf(`{"source":"shared","provider":"%s","serviceType":"%s","refServiceId":%d}`, svc.ServiceType, svc.ServiceType, svc.ID))
+		req := httptest.NewRequest(http.MethodPut, fmt.Sprintf("/api/v1/environments/%d/capabilities/database", env.ID), body)
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("shared capability upsert for service %d status = %d, body=%s", svc.ID, rec.Code, rec.Body.String())
+		}
+	}
+
+	var count int64
+	if err := db.Model(&model.EnvironmentCapability{}).Where("environment_id = ? AND capability = ?", env.ID, "database").Count(&count).Error; err != nil {
+		t.Fatalf("count capability: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("capability count = %d, want one updated row", count)
+	}
+	listReq := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/v1/environments/%d/capabilities", env.ID), nil)
+	listRec := httptest.NewRecorder()
+	router.ServeHTTP(listRec, listReq)
+	if listRec.Code != http.StatusOK {
+		t.Fatalf("list status = %d, body=%s", listRec.Code, listRec.Body.String())
+	}
+	var response struct {
+		Data []model.EnvironmentCapability `json:"data"`
+	}
+	if err := json.Unmarshal(listRec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode list: %v", err)
+	}
+	if len(response.Data) != 1 || response.Data[0].RefServiceID == nil || *response.Data[0].RefServiceID != secondSharedDatabase.ID {
+		t.Fatalf("capability list = %#v, want active row linked to second database", response.Data)
+	}
+}
+
+func TestUpsertEnvironmentCapabilityRestoresSoftDeletedSharedReference(t *testing.T) {
+	db := setupCapabilityTestDB(t)
+
+	admin := createCapabilityTestPlatformAdmin(t, db)
+	app := model.Application{Name: "业务应用", Identifier: "billing", OwnerID: admin.ID}
+	if err := db.Create(&app).Error; err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	if err := db.Create(&model.AppMember{ApplicationID: app.ID, UserID: admin.ID, Role: "admin"}).Error; err != nil {
+		t.Fatalf("create app member: %v", err)
+	}
+	env := model.Environment{ApplicationID: app.ID, Name: "生产", Identifier: "prod", Namespace: "billing-prod"}
+	if err := db.Create(&env).Error; err != nil {
+		t.Fatalf("create env: %v", err)
+	}
+	_, sharedEnv := createCapabilityTestSharedEnvironment(t, db, admin.ID)
+	sharedPostgres := model.ServiceInstallation{
+		EnvironmentID: sharedEnv.ID,
+		ServiceType:   "postgresql",
+		ServiceName:   "shared-postgres",
+		Status:        "running",
+		Namespace:     "default-shared-postgres",
+	}
+	if err := db.Create(&sharedPostgres).Error; err != nil {
+		t.Fatalf("create shared postgres: %v", err)
+	}
+	softDeleted := model.EnvironmentCapability{
+		EnvironmentID:     env.ID,
+		Capability:        "database",
+		Source:            model.CapabilitySourceShared,
+		Provider:          "postgresql",
+		ServiceType:       "postgresql",
+		RefServiceID:      &sharedPostgres.ID,
+		ValidationStatus:  "linked",
+		ValidationMessage: "old hidden row",
+		CreatedBy:         admin.ID,
+	}
+	if err := db.Create(&softDeleted).Error; err != nil {
+		t.Fatalf("create capability: %v", err)
+	}
+	if err := db.Delete(&softDeleted).Error; err != nil {
+		t.Fatalf("soft delete capability: %v", err)
+	}
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.PUT("/api/v1/environments/:id/capabilities/:capability", withTestAuthUserRole(admin.ID, model.RoleAppAdmin, UpsertEnvironmentCapability))
+	router.GET("/api/v1/environments/:id/capabilities", withTestAuthUserRole(admin.ID, model.RoleAppAdmin, ListEnvironmentCapabilities))
+
+	body := bytes.NewBufferString(fmt.Sprintf(`{"source":"shared","provider":"postgresql","serviceType":"postgresql","refServiceId":%d}`, sharedPostgres.ID))
+	req := httptest.NewRequest(http.MethodPut, fmt.Sprintf("/api/v1/environments/%d/capabilities/database", env.ID), body)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("restore shared capability status = %d, body=%s", rec.Code, rec.Body.String())
+	}
+
+	var allRows []model.EnvironmentCapability
+	if err := db.Unscoped().Where("environment_id = ? AND capability = ?", env.ID, "database").Find(&allRows).Error; err != nil {
+		t.Fatalf("load all capability rows: %v", err)
+	}
+	if len(allRows) != 1 || allRows[0].DeletedAt.Valid {
+		t.Fatalf("allRows = %#v, want one restored active row", allRows)
+	}
+	listReq := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/v1/environments/%d/capabilities", env.ID), nil)
+	listRec := httptest.NewRecorder()
+	router.ServeHTTP(listRec, listReq)
+	if listRec.Code != http.StatusOK {
+		t.Fatalf("list status = %d, body=%s", listRec.Code, listRec.Body.String())
+	}
+	var response struct {
+		Data []model.EnvironmentCapability `json:"data"`
+	}
+	if err := json.Unmarshal(listRec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode list: %v", err)
+	}
+	if len(response.Data) != 1 || response.Data[0].ID != softDeleted.ID {
+		t.Fatalf("capability list = %#v, want restored capability id %d", response.Data, softDeleted.ID)
+	}
+}
+
+func TestGetEnvironmentCapabilityCredentialsReadsSharedRefServiceSecrets(t *testing.T) {
+	db := setupCapabilityTestDB(t)
+	previousK8sClient := k8s.GetClient()
+	t.Cleanup(func() { k8s.SetClient(previousK8sClient) })
+	k8s.SetClient(fake.NewClientBuilder().WithObjects(&corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "shared-postgresql", Namespace: "default-shared-postgresql"},
+		Data: map[string][]byte{
+			"postgres-password": []byte("shared-secret"),
+		},
+	}).Build())
+
+	admin := createCapabilityTestPlatformAdmin(t, db)
+	app := model.Application{Name: "业务应用", Identifier: "billing", OwnerID: admin.ID}
+	if err := db.Create(&app).Error; err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	if err := db.Create(&model.AppMember{ApplicationID: app.ID, UserID: admin.ID, Role: "admin"}).Error; err != nil {
+		t.Fatalf("create app member: %v", err)
+	}
+	env := model.Environment{ApplicationID: app.ID, Name: "生产", Identifier: "prod", Namespace: "billing-prod"}
+	if err := db.Create(&env).Error; err != nil {
+		t.Fatalf("create env: %v", err)
+	}
+	_, sharedEnv := createCapabilityTestSharedEnvironment(t, db, admin.ID)
+	sharedSvc := model.ServiceInstallation{
+		EnvironmentID: sharedEnv.ID,
+		ServiceType:   "postgresql",
+		ServiceName:   "shared-postgresql",
+		Status:        "running",
+		Namespace:     "default-shared-postgresql",
+	}
+	if err := db.Create(&sharedSvc).Error; err != nil {
+		t.Fatalf("create shared service: %v", err)
+	}
+	if err := db.Create(&model.EnvironmentCapability{
+		EnvironmentID:    env.ID,
+		Capability:       "database",
+		Source:           model.CapabilitySourceShared,
+		Provider:         "postgresql",
+		ServiceType:      "postgresql",
+		RefServiceID:     &sharedSvc.ID,
+		ValidationStatus: "linked",
+		CreatedBy:        admin.ID,
+	}).Error; err != nil {
+		t.Fatalf("create capability: %v", err)
+	}
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.GET("/api/v1/environments/:id/capabilities/:capability/credentials", withTestAuthUserRole(admin.ID, model.RoleAppAdmin, GetEnvironmentCapabilityCredentials))
+	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/v1/environments/%d/capabilities/database/credentials", env.ID), nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var response struct {
+		Data struct {
+			Credentials []ServiceCredential `json:"credentials"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(response.Data.Credentials) != 1 || response.Data.Credentials[0].Key != "postgres-password" || response.Data.Credentials[0].Value != "shared-secret" {
+		t.Fatalf("unexpected credentials: %#v", response.Data.Credentials)
+	}
+}
+
 func TestDeleteEnvironmentCapabilityRemovesCapabilityCard(t *testing.T) {
 	db := setupCapabilityTestDB(t)
 
@@ -309,6 +538,7 @@ func TestExternalEnvironmentCapabilityStoresCredentialsInKubernetesSecret(t *tes
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	router.PUT("/api/v1/environments/:id/capabilities/:capability", withTestAuthUserRole(admin.ID, model.RoleAppAdmin, UpsertEnvironmentCapability))
+	router.GET("/api/v1/environments/:id/capabilities/:capability/credentials", withTestAuthUserRole(admin.ID, model.RoleAppAdmin, GetEnvironmentCapabilityCredentials))
 
 	body := bytes.NewBufferString(`{"source":"external","provider":"gitlab","serviceType":"git","externalEndpoint":"https://gitlab.example.com","authType":"basic","username":"paap","password":"secret-pass"}`)
 	req := httptest.NewRequest(http.MethodPut, "/api/v1/environments/1/capabilities/git", body)

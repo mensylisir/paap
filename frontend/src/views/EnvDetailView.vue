@@ -60,6 +60,18 @@
                       <path :d="isTopologyZoneCollapsed(zone.key) ? 'M6 4l4 4-4 4V4z' : 'M4 6l4 4 4-4H4z'" />
                     </svg>
                   </button>
+                  <button
+                    v-for="handle in topologyZoneResizeHandles"
+                    :key="handle.key"
+                    v-show="!zone.collapsed"
+                    type="button"
+                    class="component-topology-zone-resize-handle"
+                    :class="`component-topology-zone-resize-handle--${handle.key}`"
+                    :aria-label="topologyZoneResizeHandleTitle(zone, handle)"
+                    :title="topologyZoneResizeHandleTitle(zone, handle)"
+                    @click.stop.prevent
+                    @pointerdown.stop.prevent="startTopologyZoneResize($event, zone, handle.edges)"
+                  ></button>
                 </div>
                 <svg class="component-canvas-links" :viewBox="environmentCanvasViewBox" aria-hidden="true">
                   <defs>
@@ -2258,13 +2270,17 @@ import {
   buildComponentDependencyEdges,
   buildComponentTopologyNodes,
   buildComponentTopologyZones,
+  componentTopologyCanvasSizeWithSavedBounds,
   componentTopologyCanvasViewBox,
   componentTopologyEdgePath,
+  componentTopologyUnionBounds,
   componentTopologyZoneKey,
+  expandComponentTopologyZoneBounds,
   findTopologyNodeAtPoint,
   hasComponentTopologyDragMoved,
   isNodeInMarquee,
   nextComponentTopologyDragPosition,
+  nextComponentTopologyZoneResizeBounds,
   nodeKey,
   parseComponentTopologyDisplayNames,
   parseComponentTopologyManualEdges,
@@ -2466,9 +2482,21 @@ const componentDisplayNames = ref<Record<string, string>>({})
 const renamingNodeKey = ref<string | null>(null)
 const renamingNodeValue = ref('')
 const canvasCreatePoint = ref<{ x: number; y: number } | null>(null)
+type CanvasPositionScope = 'component' | 'environment'
+const canvasCreateScope = ref<CanvasPositionScope>('component')
 type TopologyDragBounds = { minX?: number; minY?: number; maxX?: number; maxY?: number }
-const componentNodeDrag = ref<{ keys: string[]; origins: Record<string, { x: number; y: number }>; bounds?: Record<string, TopologyDragBounds>; startX: number; startY: number; moved: boolean; lastX: number; lastY: number } | null>(null)
+const componentNodeDrag = ref<{ keys: string[]; positionKeys: Record<string, string>; origins: Record<string, { x: number; y: number }>; bounds?: Record<string, TopologyDragBounds>; stageEl: HTMLElement | null; startX: number; startY: number; moved: boolean; lastX: number; lastY: number } | null>(null)
 type TopologyZoneDragEdge = 'left' | 'right' | 'top' | 'bottom'
+const topologyZoneResizeHandles: { key: string; label: string; edges: TopologyZoneDragEdge[] }[] = [
+  { key: 'top', label: '上边', edges: ['top'] },
+  { key: 'right', label: '右边', edges: ['right'] },
+  { key: 'bottom', label: '下边', edges: ['bottom'] },
+  { key: 'left', label: '左边', edges: ['left'] },
+  { key: 'top-left', label: '左上角', edges: ['top', 'left'] },
+  { key: 'top-right', label: '右上角', edges: ['top', 'right'] },
+  { key: 'bottom-right', label: '右下角', edges: ['bottom', 'right'] },
+  { key: 'bottom-left', label: '左下角', edges: ['bottom', 'left'] },
+]
 const topologyZoneDrag = ref<{ key: string; mode: 'move' | 'resize'; edges: TopologyZoneDragEdge[]; origins: Record<string, { x: number; y: number }>; originBounds: { left: number; top: number; width: number; height: number }; stageEl: HTMLElement; startX: number; startY: number; moved: boolean } | null>(null)
 const connectionDrag = ref<{ fromNode: any; startX: number; startY: number; currentX: number; currentY: number; stageEl: HTMLElement } | null>(null)
 const suppressNextTopologyClick = ref(false)
@@ -2989,13 +3017,39 @@ const componentCanvasMetrics = {
   rowGap: 34,
 }
 const topologyZoneMetrics = {
-  paddingX: 28,
-  paddingTop: 32,
-  paddingBottom: 28,
+  paddingX: 12,
+  paddingTop: 24,
+  paddingBottom: 12,
+  canvasEdgePadding: 16,
   minWidth: 360,
   minHeight: 220,
   collapsedWidth: 180,
   collapsedHeight: 44,
+}
+const topologyZonePaddingOptions = () => ({
+  paddingX: topologyZoneMetrics.paddingX,
+  paddingTop: topologyZoneMetrics.paddingTop,
+  paddingBottom: topologyZoneMetrics.paddingBottom,
+  minLeft: 12,
+  minTop: 16,
+})
+const topologyNodeKey = (node:any) => String(node?.topologyId || node?.id || node?.name || '')
+const scopedCanvasPositionKey = (scope: CanvasPositionScope, key: string) => `${scope}:${key}`
+const nodeCanvasPositionKey = (scope: CanvasPositionScope, node:any) => scopedCanvasPositionKey(scope, topologyNodeKey(node))
+const canvasScopeForStage = (stageEl: HTMLElement | null): CanvasPositionScope =>
+  stageEl?.closest('.environment-topology-canvas') ? 'environment' : 'component'
+const deleteCanvasPositionKeys = (positions: Record<string, TopologyCanvasPosition>, key: string) => {
+  delete positions[key]
+  delete positions[scopedCanvasPositionKey('component', key)]
+  delete positions[scopedCanvasPositionKey('environment', key)]
+}
+const savedNodeCanvasPosition = (scope: CanvasPositionScope, node:any) => {
+  const key = topologyNodeKey(node)
+  if (!key) return null
+  const scoped = componentNodePositions.value[scopedCanvasPositionKey(scope, key)]
+  if (scoped) return scoped
+  if (scope === 'component') return componentNodePositions.value[key] || null
+  return null
 }
 const preferredTopologyDepth = (node:any) => {
   if (node?.topologyKind === 'capability') return 3
@@ -3079,6 +3133,16 @@ const saveComponentNodePositions = async () => {
     names: JSON.parse(serializeComponentTopologyDisplayNames(componentDisplayNames.value)),
   })
 }
+const canvasLayoutSaveErrorPrefix = '保存画布布局失败：'
+const clearCanvasLayoutSaveError = () => {
+  if (String(pageError.value || '').startsWith(canvasLayoutSaveErrorPrefix)) pageError.value = ''
+}
+const saveCanvasLayoutAfterDrag = () =>
+  saveComponentNodePositions()
+    .then(clearCanvasLayoutSaveError)
+    .catch((e:any) => {
+      pageError.value = canvasLayoutSaveErrorPrefix + (e?.message || '未知错误')
+    })
 const graphLayout = computed(() => {
   return layoutTopologyGraph(filteredTopologyNodes.value, componentTopologyEdges.value)
 })
@@ -3092,10 +3156,21 @@ const componentCanvasSize = computed(() => {
 })
 const environmentCanvasSize = computed(() => {
   const maxColumnNodes = Math.max(1, ...Array.from(environmentGraphLayout.value.buckets.values()).map(items => items.length))
-  return {
+  let savedRight = 0
+  let savedBottom = 0
+  for (const [key, pos] of Object.entries(componentNodePositions.value)) {
+    if (!key.startsWith('environment:')) continue
+    const x = Number(pos?.x || 0)
+    const y = Number(pos?.y || 0)
+    const width = Number(pos?.width || componentCanvasMetrics.nodeWidth)
+    const height = Number(pos?.height || componentCanvasMetrics.nodeHeight)
+    savedRight = Math.max(savedRight, x + width)
+    savedBottom = Math.max(savedBottom, y + height)
+  }
+  return componentTopologyCanvasSizeWithSavedBounds({
     width: Math.max(1280, componentCanvasMetrics.left * 2 + (environmentGraphLayout.value.maxDepth + 1) * componentCanvasMetrics.colWidth + 220),
     height: Math.max(680, componentCanvasMetrics.top + maxColumnNodes * (componentCanvasMetrics.nodeHeight + componentCanvasMetrics.rowGap) + 180),
-  }
+  }, { right: savedRight, bottom: savedBottom }, topologyZoneMetrics.canvasEdgePadding)
 })
 const componentCanvasViewBox = computed(() => {
   return componentTopologyCanvasViewBox(componentCanvasSize.value)
@@ -3107,8 +3182,8 @@ const componentCanvasNodes = computed(() =>
   Array.from(graphLayout.value.buckets.entries()).flatMap(([depth, items]) =>
     items.map((node:any, nodeIndex) => ({
       ...node,
-      x: componentNodePosition(node, depth, nodeIndex).x,
-      y: componentNodePosition(node, depth, nodeIndex).y,
+      x: componentNodePosition('component', node, depth, nodeIndex).x,
+      y: componentNodePosition('component', node, depth, nodeIndex).y,
       width: componentCanvasMetrics.nodeWidth,
       height: componentCanvasMetrics.nodeHeight,
     }))
@@ -3118,8 +3193,8 @@ const environmentCanvasAllNodes = computed(() =>
   Array.from(environmentGraphLayout.value.buckets.entries()).flatMap(([depth, items]) =>
     items.map((node:any, nodeIndex) => ({
       ...node,
-      x: componentNodePosition(node, depth, nodeIndex).x,
-      y: componentNodePosition(node, depth, nodeIndex).y,
+      x: componentNodePosition('environment', node, depth, nodeIndex).x,
+      y: componentNodePosition('environment', node, depth, nodeIndex).y,
       width: componentCanvasMetrics.nodeWidth,
       height: componentCanvasMetrics.nodeHeight,
     }))
@@ -3138,19 +3213,21 @@ const topologyZoneToggleTitle = (zone:any) => {
   const label = zone.key === 'environment' ? '本环境' : zone.label
   return `${action}${label}分区`
 }
+const topologyZoneResizeHandleTitle = (zone:any, handle:any) => `调整${zone?.label || '分区'}${handle?.label || '边框'}`
 const environmentCanvasVisibleNodes = computed(() =>
   environmentCanvasAllNodes.value.filter((node:any) => !isTopologyZoneCollapsed(componentTopologyZoneKey(node)))
 )
 const environmentCanvasNodes = environmentCanvasVisibleNodes
-const topologyZonePositionKey = (zoneKey:string) => `zone:${zoneKey}`
+const legacyTopologyZonePositionKey = (zoneKey:string) => `zone:${zoneKey}`
+const topologyZonePositionKey = (zoneKey:string) => scopedCanvasPositionKey('environment', legacyTopologyZonePositionKey(zoneKey))
 const topologyZoneContentMinimum = (bounds:any, nodes:any[]) => {
   const left = Number(bounds?.left || 0)
   const top = Number(bounds?.top || 0)
   const right = Math.max(...nodes.map((node:any) => Number(node.x || 0) + Number(node.width || componentCanvasMetrics.nodeWidth)), left)
   const bottom = Math.max(...nodes.map((node:any) => Number(node.y || 0) + Number(node.height || componentCanvasMetrics.nodeHeight)), top)
   return {
-    width: Math.max(topologyZoneMetrics.minWidth, right - left + topologyZoneMetrics.paddingX),
-    height: Math.max(topologyZoneMetrics.minHeight, bottom - top + topologyZoneMetrics.paddingBottom),
+    width: Math.max(0, right - left + topologyZoneMetrics.paddingX),
+    height: Math.max(0, bottom - top + topologyZoneMetrics.paddingBottom),
   }
 }
 const topologyZoneBounds = (zoneKey:string, nodes:any[], canvasSize:any) => {
@@ -3166,19 +3243,24 @@ const topologyZoneBounds = (zoneKey:string, nodes:any[], canvasSize:any) => {
     canvasHeight - 16,
     Math.max(...nodes.map((node:any) => Number(node.y || 0) + Number(node.height || componentCanvasMetrics.nodeHeight))) + topologyZoneMetrics.paddingBottom,
   )
-  const width = Math.max(topologyZoneMetrics.minWidth, contentRight - contentLeft)
-  const height = Math.max(topologyZoneMetrics.minHeight, contentBottom - contentTop)
+  const width = Math.max(0, contentRight - contentLeft)
+  const height = Math.max(0, contentBottom - contentTop)
   const saved = componentNodePositions.value[topologyZonePositionKey(zoneKey)]
+    || componentNodePositions.value[legacyTopologyZonePositionKey(zoneKey)]
   const left = saved ? Number(saved.x || 0) : contentLeft
   const top = saved ? Number(saved.y || 0) : contentTop
   const savedWidth = Number(saved?.width || 0)
   const savedHeight = Number(saved?.height || 0)
-  const minForContent = topologyZoneContentMinimum({ left, top }, nodes)
+  const union = componentTopologyUnionBounds(
+    { left: Math.max(16, left), top: Math.max(16, top), width: Number.isFinite(savedWidth) ? savedWidth : 0, height: Number.isFinite(savedHeight) ? savedHeight : 0 },
+    { left: contentLeft, top: contentTop, width, height },
+  )
+  const minForContent = topologyZoneContentMinimum({ left: union.left, top: union.top }, nodes)
   return {
-    left: Math.max(16, left),
-    top: Math.max(16, top),
-    width: Math.max(width, minForContent.width, Number.isFinite(savedWidth) ? savedWidth : 0),
-    height: Math.max(height, minForContent.height, Number.isFinite(savedHeight) ? savedHeight : 0),
+    left: union.left,
+    top: union.top,
+    width: Math.max(union.width, minForContent.width),
+    height: Math.max(union.height, minForContent.height),
   }
 }
 const collapsedTopologyZoneBounds = (bounds:any) => ({
@@ -3212,9 +3294,8 @@ const environmentCanvasZones = computed(() =>
     }
   })
 )
-const componentNodePosition = (node:any, laneIndex: number, nodeIndex: number) => {
-  const key = String(node?.topologyId || node?.id || node?.name || '')
-  const saved = componentNodePositions.value[key]
+const componentNodePosition = (scope: CanvasPositionScope, node:any, laneIndex: number, nodeIndex: number) => {
+  const saved = savedNodeCanvasPosition(scope, node)
   if (saved) return saved
   return {
     x: componentCanvasMetrics.left + laneIndex * componentCanvasMetrics.colWidth,
@@ -3284,17 +3365,10 @@ const topologyNodeDragBounds = (stageEl: HTMLElement | null, node:any): Topology
   const nodeWidth = Number(node?.width || componentCanvasMetrics.nodeWidth)
   const nodeHeight = Number(node?.height || componentCanvasMetrics.nodeHeight)
   if (stageEl?.closest('.environment-topology-canvas')) {
-    const zoneKey = componentTopologyZoneKey(node)
-    const zone = environmentCanvasZones.value.find((item:any) => item.key === zoneKey)
-    const bounds = zone?.expandedBounds || zone?.bounds
-    if (bounds) {
-      return clampDragBounds({
-        minX: Number(bounds.left || 0) + topologyZoneMetrics.paddingX,
-        minY: Number(bounds.top || 0) + topologyZoneMetrics.paddingTop,
-        maxX: Number(bounds.left || 0) + Number(bounds.width || 0) - nodeWidth - topologyZoneMetrics.paddingX,
-        maxY: Number(bounds.top || 0) + Number(bounds.height || 0) - nodeHeight - topologyZoneMetrics.paddingBottom,
-      })
-    }
+    return clampDragBounds({
+      minX: 12,
+      minY: 46,
+    })
   }
   return clampDragBounds({
     minX: 12,
@@ -3678,6 +3752,7 @@ const openCanvasContextMenu = (event: MouseEvent) => {
   selectedManualEdge.value = null
   const stageEl = (event.target as HTMLElement | null)?.closest?.('.component-canvas-stage') as HTMLElement | null
   canvasCreatePoint.value = stageEl ? canvasPointFromEvent(event, stageEl) : null
+  canvasCreateScope.value = canvasScopeForStage(stageEl)
   const pos = contextMenuPosition(event, 220, 288)
   componentContextMenu.value = {
     visible: true,
@@ -3798,7 +3873,9 @@ const startComponentNodeDrag = (event: PointerEvent, node:any) => {
   const keys = isGroupDrag ? [...selectedNodeKeys.value] : [key]
   const origins: Record<string, { x: number; y: number }> = {}
   const bounds: Record<string, TopologyDragBounds> = {}
+  const positionKeys: Record<string, string> = {}
   const stageEl = (event.currentTarget as HTMLElement | null)?.closest('.component-canvas-stage') as HTMLElement | null
+  const scope = canvasScopeForStage(stageEl)
   const currentCanvasNodes = canvasNodesForStage(stageEl)
   if (stageEl?.closest('.environment-topology-canvas')) {
     for (const draggedKey of keys) {
@@ -3814,16 +3891,20 @@ const startComponentNodeDrag = (event: PointerEvent, node:any) => {
       if (n) {
         origins[k] = { x: n.x, y: n.y }
         bounds[k] = topologyNodeDragBounds(stageEl, n)
+        positionKeys[k] = nodeCanvasPositionKey(scope, n)
       }
     }
   } else {
     origins[key] = { x: Number(node.x || 0), y: Number(node.y || 0) }
     bounds[key] = topologyNodeDragBounds(stageEl, node)
+    positionKeys[key] = nodeCanvasPositionKey(scope, node)
   }
   componentNodeDrag.value = {
     keys,
+    positionKeys,
     origins,
     bounds,
+    stageEl,
     startX: event.clientX,
     startY: event.clientY,
     moved: false,
@@ -3848,18 +3929,45 @@ const finishComponentNodePointer = (event: PointerEvent, node:any) => {
     suppressTopologyClickKeys.value = [...drag.keys]
   }
 }
-const onComponentNodeDrag = (event: PointerEvent) => {
-  const drag = componentNodeDrag.value
-  if (!drag) return
-  drag.lastX = event.clientX
-  drag.lastY = event.clientY
-  if (hasComponentTopologyDragMoved({ startX: drag.startX, startY: drag.startY, currentX: event.clientX, currentY: event.clientY })) drag.moved = true
-  const updated: Record<string, { x: number; y: number }> = {}
+const expandedEnvironmentZonePositionUpdates = (positionsByTopologyKey: Record<string, { x: number; y: number }>) => {
+  const updates: Record<string, TopologyCanvasPosition> = {}
+  const movedNodes = Object.entries(positionsByTopologyKey)
+    .map(([key, pos]) => {
+      const current = environmentCanvasAllNodes.value.find((node:any) => topologyNodeKey(node) === key)
+      return current ? { ...current, x: pos.x, y: pos.y } : null
+    })
+    .filter(Boolean) as any[]
+  for (const zone of environmentCanvasZones.value) {
+    const nodes = movedNodes.filter((node:any) => componentTopologyZoneKey(node) === zone.key)
+    if (!nodes.length) continue
+    const bounds = zone.expandedBounds || zone.bounds
+    const expanded = expandComponentTopologyZoneBounds(
+      {
+        left: Number(bounds?.left || 0),
+        top: Number(bounds?.top || 0),
+        width: Number(bounds?.width || 0),
+        height: Number(bounds?.height || 0),
+      },
+      nodes,
+      topologyZonePaddingOptions(),
+    )
+    updates[topologyZonePositionKey(zone.key)] = {
+      x: expanded.left,
+      y: expanded.top,
+      width: expanded.width,
+      height: expanded.height,
+    }
+  }
+  return updates
+}
+const componentNodeDragPositionUpdates = (drag: NonNullable<typeof componentNodeDrag.value>, event: PointerEvent) => {
+  const byTopologyKey: Record<string, { x: number; y: number }> = {}
+  const updates: Record<string, TopologyCanvasPosition> = {}
   for (const k of drag.keys) {
     const origin = drag.origins[k]
     if (!origin) continue
     const bound = drag.bounds?.[k] || {}
-    updated[k] = nextComponentTopologyDragPosition({
+    const next = nextComponentTopologyDragPosition({
       originX: origin.x,
       originY: origin.y,
       startX: drag.startX,
@@ -3872,7 +3980,21 @@ const onComponentNodeDrag = (event: PointerEvent) => {
       maxX: bound.maxX,
       maxY: bound.maxY,
     })
+    byTopologyKey[k] = next
+    updates[drag.positionKeys[k] || k] = next
   }
+  if (canvasScopeForStage(drag.stageEl) === 'environment') {
+    Object.assign(updates, expandedEnvironmentZonePositionUpdates(byTopologyKey))
+  }
+  return updates
+}
+const onComponentNodeDrag = (event: PointerEvent) => {
+  const drag = componentNodeDrag.value
+  if (!drag) return
+  drag.lastX = event.clientX
+  drag.lastY = event.clientY
+  if (hasComponentTopologyDragMoved({ startX: drag.startX, startY: drag.startY, currentX: event.clientX, currentY: event.clientY })) drag.moved = true
+  const updated = componentNodeDragPositionUpdates(drag, event)
   componentNodePositions.value = { ...componentNodePositions.value, ...updated }
 }
 const stopComponentNodeDrag = (event?: PointerEvent) => {
@@ -3883,25 +4005,7 @@ const stopComponentNodeDrag = (event?: PointerEvent) => {
     drag.lastY = event.clientY
     if (hasComponentTopologyDragMoved({ startX: drag.startX, startY: drag.startY, currentX: event.clientX, currentY: event.clientY })) {
       drag.moved = true
-      const updated: Record<string, { x: number; y: number }> = {}
-      for (const k of drag.keys) {
-        const origin = drag.origins[k]
-        if (!origin) continue
-        const bound = drag.bounds?.[k] || {}
-        updated[k] = nextComponentTopologyDragPosition({
-          originX: origin.x,
-          originY: origin.y,
-          startX: drag.startX,
-          startY: drag.startY,
-          currentX: event.clientX,
-          currentY: event.clientY,
-          zoom: canvasZoom.value,
-          minX: bound.minX,
-          minY: bound.minY,
-          maxX: bound.maxX,
-          maxY: bound.maxY,
-        })
-      }
+      const updated = componentNodeDragPositionUpdates(drag, event)
       componentNodePositions.value = { ...componentNodePositions.value, ...updated }
     }
   }
@@ -3909,9 +4013,7 @@ const stopComponentNodeDrag = (event?: PointerEvent) => {
     suppressNextTopologyClick.value = true
     suppressTopologyClickKeys.value = [...drag.keys]
     recentTopologyDrag.value = { key: drag.keys[0] || '', at: Date.now() }
-    void saveComponentNodePositions().catch((e:any) => {
-      pageError.value = '保存画布布局失败：' + (e?.message || '未知错误')
-    })
+    void saveCanvasLayoutAfterDrag()
   }
   componentNodeDrag.value = null
 }
@@ -3939,35 +4041,28 @@ const nextTopologyZoneResizeBounds = (drag: NonNullable<typeof topologyZoneDrag.
   const dx = (event.clientX - drag.startX) / canvasZoom.value
   const dy = (event.clientY - drag.startY) / canvasZoom.value
   const content = topologyZoneContentBoundsFromOrigins(drag.origins)
-  let left = drag.originBounds.left
-  let top = drag.originBounds.top
-  let right = drag.originBounds.left + drag.originBounds.width
-  let bottom = drag.originBounds.top + drag.originBounds.height
-  if (drag.edges.includes('left')) left = Math.min(Math.max(16, left + dx), content?.left ?? right - topologyZoneMetrics.minWidth)
-  if (drag.edges.includes('right')) right = Math.max(right + dx, content?.right ?? left + topologyZoneMetrics.minWidth)
-  if (drag.edges.includes('top')) top = Math.min(Math.max(16, top + dy), content?.top ?? bottom - topologyZoneMetrics.minHeight)
-  if (drag.edges.includes('bottom')) bottom = Math.max(bottom + dy, content?.bottom ?? top + topologyZoneMetrics.minHeight)
-  if (right - left < topologyZoneMetrics.minWidth) {
-    if (drag.edges.includes('left')) left = right - topologyZoneMetrics.minWidth
-    else right = left + topologyZoneMetrics.minWidth
-  }
-  if (bottom - top < topologyZoneMetrics.minHeight) {
-    if (drag.edges.includes('top')) top = bottom - topologyZoneMetrics.minHeight
-    else bottom = top + topologyZoneMetrics.minHeight
-  }
-  return { left: Math.max(16, left), top: Math.max(16, top), width: right - left, height: bottom - top }
+  return nextComponentTopologyZoneResizeBounds({
+    originBounds: drag.originBounds,
+    contentBounds: content,
+    edges: drag.edges,
+    dx,
+    dy,
+    minLeft: 16,
+    minTop: 16,
+    minWidth: topologyZoneMetrics.minWidth,
+    minHeight: topologyZoneMetrics.minHeight,
+  })
 }
-const startTopologyZoneDrag = (event: PointerEvent, zone:any) => {
+const beginTopologyZoneDrag = (event: PointerEvent, zone:any, mode: 'move' | 'resize', edges: TopologyZoneDragEdge[] = []) => {
   if (event.button !== 0) return
-  if ((event.target as HTMLElement)?.closest?.('.component-topology-zone-toggle')) return
   event.stopPropagation()
   closeComponentContextMenu()
   selectedManualEdge.value = null
   const stageEl = (event.currentTarget as HTMLElement | null)?.closest('.component-canvas-stage') as HTMLElement | null
   if (!stageEl || !zone?.bounds || !Array.isArray(zone.nodes) || !zone.nodes.length) return
+  if (mode === 'resize' && (zone.collapsed || !edges.length)) return
   ensureTopologyZonePosition(zone)
   const dragBounds = zone.expandedBounds || zone.bounds
-  const resizeEdges = topologyZoneResizeEdges(event, event.currentTarget as HTMLElement)
   const origins: Record<string, { x: number; y: number }> = {}
   for (const node of zone.nodes) {
     const key = String(node?.topologyId || node?.id || node?.name || '')
@@ -3977,8 +4072,8 @@ const startTopologyZoneDrag = (event: PointerEvent, zone:any) => {
   if (!Object.keys(origins).length) return
   topologyZoneDrag.value = {
     key: String(zone.key || ''),
-    mode: resizeEdges.length && !zone.collapsed ? 'resize' : 'move',
-    edges: resizeEdges,
+    mode,
+    edges,
     origins,
     originBounds: {
       left: Number(dragBounds.left || 0),
@@ -3998,6 +4093,14 @@ const startTopologyZoneDrag = (event: PointerEvent, zone:any) => {
   }
   window.addEventListener('pointermove', onTopologyZoneDrag)
   window.addEventListener('pointerup', stopTopologyZoneDrag, { once: true })
+}
+const startTopologyZoneDrag = (event: PointerEvent, zone:any) => {
+  if ((event.target as HTMLElement)?.closest?.('.component-topology-zone-toggle, .component-topology-zone-resize-handle')) return
+  const resizeEdges = topologyZoneResizeEdges(event, event.currentTarget as HTMLElement)
+  beginTopologyZoneDrag(event, zone, resizeEdges.length && !zone.collapsed ? 'resize' : 'move', resizeEdges)
+}
+const startTopologyZoneResize = (event: PointerEvent, zone:any, edges: TopologyZoneDragEdge[]) => {
+  beginTopologyZoneDrag(event, zone, 'resize', edges)
 }
 const onTopologyZoneDrag = (event: PointerEvent) => {
   const drag = topologyZoneDrag.value
@@ -4037,7 +4140,7 @@ const onTopologyZoneDrag = (event: PointerEvent) => {
     height: drag.originBounds.height,
   }
   for (const [key, origin] of Object.entries(drag.origins)) {
-    updated[key] = { x: origin.x + dx, y: origin.y + dy }
+    updated[scopedCanvasPositionKey('environment', key)] = { x: origin.x + dx, y: origin.y + dy }
   }
   componentNodePositions.value = { ...componentNodePositions.value, ...updated }
 }
@@ -4047,9 +4150,7 @@ const stopTopologyZoneDrag = (event?: PointerEvent) => {
   if (drag && event) onTopologyZoneDrag(event)
   if (drag?.moved) {
     selectedNodeKeys.value = Object.keys(drag.origins)
-    void saveComponentNodePositions().catch((e:any) => {
-      pageError.value = '保存画布布局失败：' + (e?.message || '未知错误')
-    })
+    void saveCanvasLayoutAfterDrag()
   }
   topologyZoneDrag.value = null
 }
@@ -6128,7 +6229,7 @@ const componentTemplateTargetRenderedValue = (field:any, target:any, credentials
   const serviceType = String(target.type || '').toLowerCase()
   return componentTemplateRenderTargetValue(field, target, {
     credentials,
-    endpoint: target.kind === 'service' ? serviceInternalEndpoint(target.service || {}) : '',
+    endpoint: ['service', 'capability'].includes(String(target.kind || '')) ? connectionTargetEndpoint(target) : '',
     defaultPort: defaultServicePortForBinding(serviceType),
     credentialValue,
   })
@@ -6224,7 +6325,7 @@ const componentTemplateFieldOptions = (field:any) => {
   const candidates = matchesBackend
     ? componentDrawerBackendTargets.value
     : componentConnectionTargets.value.filter((target:any) => {
-      if (target.kind !== 'service') return false
+      if (!['service', 'capability'].includes(String(target.kind || ''))) return false
       if (!targets.length) return true
       return targets.includes(String(target.type || '').toLowerCase())
     })
@@ -6409,7 +6510,22 @@ const componentConnectionTargets = computed(() => {
       namespace: svc.namespace || '',
       service: svc,
     }))
-  return [...componentTargets, ...serviceTargets]
+  const capabilityTargets = environmentCapabilities.value
+    .flatMap((cap:any) => {
+      const refService = cap.refService || {}
+      const type = String(cap.serviceType || cap.provider || refService.serviceType || cap.capability || '').toLowerCase()
+      if (!type) return []
+      return [{
+        key: `capability:${cap.id}`,
+        kind: 'capability',
+        name: refService.serviceName || cap.provider || capabilityLabel(cap.capability || '') || type,
+        type,
+        namespace: refService.namespace || '',
+        service: refService,
+        capability: cap,
+      }]
+    })
+  return [...componentTargets, ...serviceTargets, ...capabilityTargets]
 })
 const selectedConnectionTarget = computed(() =>
   componentConnectionTargets.value.find((item:any) => item.key === configForm.value.bindingTargetKey) || null
@@ -6487,9 +6603,9 @@ const managedEnvOptionsForTarget = (target:any, name:string, source: ComponentCo
 const applyServiceTargetBinding = async (target:any) => {
   const serviceType = String(target.type || '').toLowerCase()
   const mode = resolvedBindingMode(target)
-  const endpoint = serviceInternalEndpoint(target.service || {})
+  const endpoint = connectionTargetEndpoint(target)
   const [host, portText] = splitEndpoint(endpoint, defaultServicePortForBinding(serviceType))
-  const credentials = await serviceCredentials(target.service)
+  const credentials = await connectionTargetCredentials(target)
   const secretName = componentGeneratedSecretName()
   const generated: Record<string, string> = {}
   clearManagedConnectionEnvForTarget(target)
@@ -6622,7 +6738,7 @@ const applyServiceTargetBinding = async (target:any) => {
 
   upsertBinding({
     targetKey: target.key,
-    targetKind: 'service',
+    targetKind: target.kind === 'capability' ? 'capability' : 'service',
     targetName: target.name,
     targetType: serviceType,
     role: serviceRole(serviceType),
@@ -6643,6 +6759,24 @@ const serviceCredentials = async (svc:any) => {
   if (!envId.value || !svc?.id) return []
   const res = await api.getServiceCredentials(envId.value, Number(svc.id))
   return Array.isArray(res?.data?.credentials) ? res.data.credentials : []
+}
+const connectionTargetEndpoint = (target:any) => {
+  if (target?.kind === 'capability') {
+    const cap = target.capability || {}
+    if (cap.source === 'external') return String(cap.externalEndpoint || '')
+    return serviceInternalEndpoint(target.service || cap.refService || {})
+  }
+  return serviceInternalEndpoint(target?.service || {})
+}
+const connectionTargetCredentials = async (target:any) => {
+  if (!envId.value) return []
+  if (target?.kind === 'capability') {
+    const cap = target.capability || {}
+    if (!cap.capability) return []
+    const res = await api.getEnvironmentCapabilityCredentials(envId.value, cap.capability)
+    return Array.isArray(res?.data?.credentials) ? res.data.credentials : []
+  }
+  return serviceCredentials(target?.service)
 }
 const credentialValue = (credentials:any[], keys:string[]) => {
   for (const key of keys) {
@@ -7531,7 +7665,7 @@ const performDeleteComponent = async (comp:any) => {
     components.value = components.value.filter((item:any) => Number(item.id) !== Number(comp.id))
     const key = `component:${comp.id}`
     const nextPositions = { ...componentNodePositions.value }
-    delete nextPositions[key]
+    deleteCanvasPositionKeys(nextPositions, key)
     componentNodePositions.value = nextPositions
     manualCanvasEdges.value = manualCanvasEdges.value.filter(edge => edge.fromKey !== key && edge.toKey !== key)
     selectedComponentId.value = null
@@ -7577,7 +7711,7 @@ const performDeleteCapability = async (cap:any) => {
       return String(item.capability || '') !== String(cap.capability || '')
     })
     const nextPositions = { ...componentNodePositions.value }
-    delete nextPositions[key]
+    deleteCanvasPositionKeys(nextPositions, key)
     componentNodePositions.value = nextPositions
     manualCanvasEdges.value = manualCanvasEdges.value.filter(edge => edge.fromKey !== key && edge.toKey !== key)
     selectedTopologyKey.value = null
@@ -7786,9 +7920,10 @@ const createCanvasComponentDraft = async (type: string) => {
     components.value = mergeCreatedCanvasResource(components.value, created)
     const actual = selectCreatedCanvasResource(components.value, created, type)
     if (actual?.id && createPoint) {
+      const key = nodeCanvasPositionKey(canvasCreateScope.value, { topologyId: `component:${actual.id}` })
       componentNodePositions.value = {
         ...componentNodePositions.value,
-        [`component:${actual.id}`]: {
+        [key]: {
           x: Math.max(12, createPoint.x - componentCanvasMetrics.nodeWidth / 2),
           y: Math.max(46, createPoint.y - componentCanvasMetrics.nodeHeight / 2),
         },
@@ -7815,7 +7950,7 @@ const createCanvasServiceDraft = async (serviceType: string) => {
     const installed = selectCreatedCanvasResource(services.value, created, serviceType)
     if (installed) {
       if (createPoint) {
-        const key = `service:${installed.id}`
+        const key = nodeCanvasPositionKey(canvasCreateScope.value, { topologyId: `service:${installed.id}` })
         componentNodePositions.value = {
           ...componentNodePositions.value,
           [key]: {
@@ -7835,7 +7970,7 @@ const createCanvasServiceDraft = async (serviceType: string) => {
 const placeCapabilityNode = async (capability:any) => {
   const createPoint = canvasCreatePoint.value
   if (!capability?.id || !createPoint) return
-  const key = `capability:${capability.id}`
+  const key = nodeCanvasPositionKey(canvasCreateScope.value, { topologyId: `capability:${capability.id}` })
   componentNodePositions.value = {
     ...componentNodePositions.value,
     [key]: {
@@ -8055,7 +8190,7 @@ const performDeleteService = async (svc:any) => {
   await api.uninstallService(envId.value, svc.id)
   const key = `service:${svc.id}`
   const nextPositions = { ...componentNodePositions.value }
-  delete nextPositions[key]
+  deleteCanvasPositionKeys(nextPositions, key)
   componentNodePositions.value = nextPositions
   manualCanvasEdges.value = manualCanvasEdges.value.filter(edge => edge.fromKey !== key && edge.toKey !== key)
   selectedTopologyKey.value = null
@@ -8869,7 +9004,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   position: absolute;
   z-index: 1;
   display: block;
-  overflow: hidden;
+  overflow: visible;
   border: 1px solid var(--cds-border-subtle-01, var(--paap-border));
   background: rgba(var(--cds-white-rgb, 255, 255, 255), 0.72);
   cursor: grab;
@@ -8920,6 +9055,66 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 .component-topology-zone-toggle span {
   color: var(--cds-text-primary, var(--paap-text));
   font-weight: 700;
+}
+.component-topology-zone-resize-handle {
+  position: absolute;
+  z-index: 2;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  font: inherit;
+  pointer-events: auto;
+  touch-action: none;
+}
+.component-topology-zone-resize-handle:focus-visible {
+  outline: 2px solid var(--cds-focus, var(--paap-accent));
+  outline-offset: 1px;
+}
+.component-topology-zone-resize-handle--top,
+.component-topology-zone-resize-handle--bottom {
+  left: 12px;
+  right: 12px;
+  height: 10px;
+  cursor: ns-resize;
+}
+.component-topology-zone-resize-handle--top { top: -5px; }
+.component-topology-zone-resize-handle--bottom { bottom: -5px; }
+.component-topology-zone-resize-handle--left,
+.component-topology-zone-resize-handle--right {
+  top: 12px;
+  bottom: 12px;
+  width: 10px;
+  cursor: ew-resize;
+}
+.component-topology-zone-resize-handle--left { left: -5px; }
+.component-topology-zone-resize-handle--right { right: -5px; }
+.component-topology-zone-resize-handle--top-left,
+.component-topology-zone-resize-handle--top-right,
+.component-topology-zone-resize-handle--bottom-right,
+.component-topology-zone-resize-handle--bottom-left {
+  width: 16px;
+  height: 16px;
+}
+.component-topology-zone-resize-handle--top-left {
+  top: -8px;
+  left: -8px;
+  cursor: nwse-resize;
+}
+.component-topology-zone-resize-handle--top-right {
+  top: -8px;
+  right: -8px;
+  cursor: nesw-resize;
+}
+.component-topology-zone-resize-handle--bottom-right {
+  right: -8px;
+  bottom: -8px;
+  cursor: nwse-resize;
+}
+.component-topology-zone-resize-handle--bottom-left {
+  bottom: -8px;
+  left: -8px;
+  cursor: nesw-resize;
 }
 .component-canvas-empty-hint {
   position: absolute;

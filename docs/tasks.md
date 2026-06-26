@@ -476,8 +476,10 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 - [x] 平台管理员通过 `/shared-resources` 进入同一套环境画布创建和维护共享实例，供其它环境 `shared` 引用
 - [ ] 重构 `registry_endpoint.go:16` `RuntimeRegistryHost` 的硬编码
 - [ ] 重构 `environment.go` 中 `toolHTTPBaseURL` 等 FQDN 拼接
-- [ ] 组件消费 capability 时按 `Source` 分流（self→本环境，shared→default，external→用户 endpoint）
-- [ ] 放行 NetworkPolicy：业务 namespace → default 工具 namespace ingress
+- [x] 组件消费 capability 时按 `Source` 分流（self→本环境，shared→default，external→用户 endpoint）
+  - 2026-06-26 验证：组件连接目标支持 `capability:<id>`；`backend-1` 已切换到 shared PostgreSQL/Redis，`/api/status` 返回 PostgreSQL read/write OK、Redis AUTH/SET/GET OK。
+- [x] 放行 NetworkPolicy：业务 namespace → default/shared 工具 namespace
+  - 2026-06-26 验证：`paap-deny-cross-env` egress 增加 `paap.io/app=default, paap.io/env=shared`，业务 Pod 可访问 `default-shared-postgresql` 和 `default-shared-redis-master`。
 - [ ] external 来源放行到集群外 endpoint 的 egress
 - [x] 画布节点带 `zone` 字段（`environment` / `shared` / `external`）
 - [x] 三条泳道渲染：本环境、平台公共、集群外部

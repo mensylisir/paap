@@ -5,11 +5,16 @@ import {
   buildComponentTopologyLanes,
   buildComponentTopologyZones,
   componentTopologyCanvasViewBox,
+  componentTopologyCanvasSizeWithSavedBounds,
   componentTopologyEdgePath,
+  componentTopologyUnionBounds,
   componentTopologyZoneKey,
+  componentTopologyContentBounds,
+  expandComponentTopologyZoneBounds,
   findTopologyNodeAtPoint,
   hasComponentTopologyDragMoved,
   nextComponentTopologyDragPosition,
+  nextComponentTopologyZoneResizeBounds,
   nodeKey,
   parseComponentTopologyDisplayNames,
   parseComponentTopologyManualEdges,
@@ -399,6 +404,66 @@ describe('componentTopology', () => {
       maxX: 320,
       maxY: 240,
     })).toEqual({ x: 320, y: 240 })
+  })
+
+  it('expands topology zone bounds when dragged cards move past the frame', () => {
+    expect(expandComponentTopologyZoneBounds(
+      { left: 100, top: 80, width: 420, height: 260 },
+      [{ x: 470, y: 290, width: 196, height: 70 }],
+      { paddingX: 12, paddingTop: 24, paddingBottom: 12, minLeft: 16, minTop: 16 }
+    )).toEqual({ left: 100, top: 80, width: 578, height: 292 })
+
+    expect(expandComponentTopologyZoneBounds(
+      { left: 100, top: 80, width: 420, height: 260 },
+      [{ x: 36, y: 44, width: 196, height: 70 }],
+      { paddingX: 12, paddingTop: 24, paddingBottom: 12, minLeft: 16, minTop: 16 }
+    )).toEqual({ left: 24, top: 20, width: 496, height: 320 })
+  })
+
+  it('calculates topology zone minimum bounds from contained cards', () => {
+    expect(componentTopologyContentBounds(
+      [{ x: 470, y: 290, width: 196, height: 70 }],
+      { paddingX: 12, paddingTop: 24, paddingBottom: 12, minLeft: 16, minTop: 16 }
+    )).toEqual({ left: 458, top: 266, width: 220, height: 106 })
+  })
+
+  it('keeps environment canvas stable until saved bounds are near the edge', () => {
+    expect(componentTopologyCanvasSizeWithSavedBounds(
+      { width: 1280, height: 680 },
+      { right: 1180, bottom: 590 },
+      16
+    )).toEqual({ width: 1280, height: 680 })
+
+    expect(componentTopologyCanvasSizeWithSavedBounds(
+      { width: 1280, height: 680 },
+      { right: 1270, bottom: 670 },
+      16
+    )).toEqual({ width: 1286, height: 686 })
+  })
+
+  it('resizes topology zones on all four edges without covering contained cards', () => {
+    const base = {
+      originBounds: { left: 100, top: 80, width: 420, height: 260 },
+      contentBounds: { left: 128, top: 112, right: 410, bottom: 260 },
+      minLeft: 16,
+      minTop: 16,
+    }
+
+    expect(nextComponentTopologyZoneResizeBounds({ ...base, edges: ['right'], dx: 80, dy: 0 }))
+      .toEqual({ left: 100, top: 80, width: 500, height: 260 })
+    expect(nextComponentTopologyZoneResizeBounds({ ...base, edges: ['bottom'], dx: 0, dy: 90 }))
+      .toEqual({ left: 100, top: 80, width: 420, height: 350 })
+    expect(nextComponentTopologyZoneResizeBounds({ ...base, edges: ['left'], dx: 220, dy: 0 }))
+      .toEqual({ left: 128, top: 80, width: 392, height: 260 })
+    expect(nextComponentTopologyZoneResizeBounds({ ...base, edges: ['top'], dx: 0, dy: 220 }))
+      .toEqual({ left: 100, top: 112, width: 420, height: 228 })
+  })
+
+  it('expands saved zone bounds left and up when content sits outside the frame', () => {
+    expect(componentTopologyUnionBounds(
+      { left: 1012, top: 46, width: 321, height: 293 },
+      { left: 889, top: 63, width: 220, height: 106 }
+    )).toEqual({ left: 889, top: 46, width: 444, height: 293 })
   })
 
   it('draws canvas links from the nearest node boundaries instead of through cards', () => {

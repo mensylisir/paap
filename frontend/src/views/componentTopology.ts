@@ -105,6 +105,35 @@ export type ComponentTopologyCanvasSize = {
   height: number
 }
 
+export type ComponentTopologyBounds = {
+  left: number
+  top: number
+  width: number
+  height: number
+}
+
+export type ComponentTopologyZonePadding = {
+  paddingX: number
+  paddingTop: number
+  paddingBottom: number
+  minLeft?: number
+  minTop?: number
+  minWidth?: number
+  minHeight?: number
+}
+
+export type ComponentTopologyZoneResizeInput = {
+  originBounds: ComponentTopologyBounds
+  contentBounds?: { left: number; top: number; right: number; bottom: number } | null
+  edges: Array<'left' | 'right' | 'top' | 'bottom'>
+  dx: number
+  dy: number
+  minLeft?: number
+  minTop?: number
+  minWidth?: number
+  minHeight?: number
+}
+
 export type ComponentTopologyDisplayNames = Record<string, string>
 
 const laneLabels: Record<string, string> = {
@@ -537,6 +566,110 @@ export const nextComponentTopologyDragPosition = (input: ComponentTopologyDragPo
     x: Math.min(Math.max(minX, nextX), maxX),
     y: Math.min(Math.max(minY, nextY), maxY),
   }
+}
+
+export const componentTopologyContentBounds = (
+  nodes: ComponentTopologyEdgeNode[],
+  padding: ComponentTopologyZonePadding
+): ComponentTopologyBounds | null => {
+  if (!nodes.length) return null
+  const paddingX = Number(padding.paddingX || 0)
+  const paddingTop = Number(padding.paddingTop || 0)
+  const paddingBottom = Number(padding.paddingBottom || 0)
+  const minLeft = Number.isFinite(padding.minLeft) ? Number(padding.minLeft) : 0
+  const minTop = Number.isFinite(padding.minTop) ? Number(padding.minTop) : 0
+  const left = Math.max(minLeft, Math.min(...nodes.map((node) => Number(node.x || 0))) - paddingX)
+  const top = Math.max(minTop, Math.min(...nodes.map((node) => Number(node.y || 0))) - paddingTop)
+  const right = Math.max(...nodes.map((node) => Number(node.x || 0) + Number(node.width || 0))) + paddingX
+  const bottom = Math.max(...nodes.map((node) => Number(node.y || 0) + Number(node.height || 0))) + paddingBottom
+  const minWidth = Number.isFinite(padding.minWidth) ? Number(padding.minWidth) : 0
+  const minHeight = Number.isFinite(padding.minHeight) ? Number(padding.minHeight) : 0
+  return {
+    left,
+    top,
+    width: Math.max(minWidth, right - left),
+    height: Math.max(minHeight, bottom - top),
+  }
+}
+
+export const expandComponentTopologyZoneBounds = (
+  bounds: ComponentTopologyBounds,
+  nodes: ComponentTopologyEdgeNode[],
+  padding: ComponentTopologyZonePadding
+): ComponentTopologyBounds => {
+  const content = componentTopologyContentBounds(nodes, padding)
+  if (!content) return bounds
+  const minLeft = Number.isFinite(padding.minLeft) ? Number(padding.minLeft) : 0
+  const minTop = Number.isFinite(padding.minTop) ? Number(padding.minTop) : 0
+  const left = Math.max(minLeft, Math.min(Number(bounds.left || 0), content.left))
+  const top = Math.max(minTop, Math.min(Number(bounds.top || 0), content.top))
+  const right = Math.max(Number(bounds.left || 0) + Number(bounds.width || 0), content.left + content.width)
+  const bottom = Math.max(Number(bounds.top || 0) + Number(bounds.height || 0), content.top + content.height)
+  return {
+    left,
+    top,
+    width: Math.max(Number(padding.minWidth || 0), right - left),
+    height: Math.max(Number(padding.minHeight || 0), bottom - top),
+  }
+}
+
+export const componentTopologyCanvasSizeWithSavedBounds = (
+  base: ComponentTopologyCanvasSize,
+  savedBounds: { right?: number; bottom?: number },
+  edgePadding = 48
+): ComponentTopologyCanvasSize => {
+  const padding = Number.isFinite(edgePadding) ? Math.max(0, Number(edgePadding)) : 0
+  const savedRight = Number(savedBounds.right || 0)
+  const savedBottom = Number(savedBounds.bottom || 0)
+  return {
+    width: Math.max(Number(base.width || 0), savedRight > 0 ? savedRight + padding : 0),
+    height: Math.max(Number(base.height || 0), savedBottom > 0 ? savedBottom + padding : 0),
+  }
+}
+
+export const nextComponentTopologyZoneResizeBounds = (input: ComponentTopologyZoneResizeInput): ComponentTopologyBounds => {
+  const origin = input.originBounds
+  const edges = input.edges || []
+  const content = input.contentBounds || null
+  const minLeft = Number.isFinite(input.minLeft) ? Number(input.minLeft) : 16
+  const minTop = Number.isFinite(input.minTop) ? Number(input.minTop) : 16
+  const minWidth = content ? Number(content.right) - Number(content.left) : Number(input.minWidth || 0)
+  const minHeight = content ? Number(content.bottom) - Number(content.top) : Number(input.minHeight || 0)
+  let left = Number(origin.left || 0)
+  let top = Number(origin.top || 0)
+  let right = Number(origin.left || 0) + Number(origin.width || 0)
+  let bottom = Number(origin.top || 0) + Number(origin.height || 0)
+  if (edges.includes('left')) left = Math.min(Math.max(minLeft, left + Number(input.dx || 0)), content?.left ?? right - minWidth)
+  if (edges.includes('right')) right = Math.max(right + Number(input.dx || 0), content?.right ?? left + minWidth)
+  if (edges.includes('top')) top = Math.min(Math.max(minTop, top + Number(input.dy || 0)), content?.top ?? bottom - minHeight)
+  if (edges.includes('bottom')) bottom = Math.max(bottom + Number(input.dy || 0), content?.bottom ?? top + minHeight)
+  if (right - left < minWidth) {
+    if (edges.includes('left')) left = right - minWidth
+    else right = left + minWidth
+  }
+  if (bottom - top < minHeight) {
+    if (edges.includes('top')) top = bottom - minHeight
+    else bottom = top + minHeight
+  }
+  const normalizedLeft = Math.max(minLeft, left)
+  const normalizedTop = Math.max(minTop, top)
+  return {
+    left: normalizedLeft,
+    top: normalizedTop,
+    width: Math.max(minWidth, right - normalizedLeft),
+    height: Math.max(minHeight, bottom - normalizedTop),
+  }
+}
+
+export const componentTopologyUnionBounds = (
+  saved: ComponentTopologyBounds,
+  content: ComponentTopologyBounds
+): ComponentTopologyBounds => {
+  const left = Math.min(Number(saved.left || 0), Number(content.left || 0))
+  const top = Math.min(Number(saved.top || 0), Number(content.top || 0))
+  const right = Math.max(Number(saved.left || 0) + Number(saved.width || 0), Number(content.left || 0) + Number(content.width || 0))
+  const bottom = Math.max(Number(saved.top || 0) + Number(saved.height || 0), Number(content.top || 0) + Number(content.height || 0))
+  return { left, top, width: right - left, height: bottom - top }
 }
 
 export const componentTopologyEdgePath = (edge: ComponentTopologyEdgePathInput): string => {

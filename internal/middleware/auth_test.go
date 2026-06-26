@@ -81,3 +81,28 @@ func TestUserIDFromRequestAcceptsQueryTokenOnlyForProxyRoutes(t *testing.T) {
 		t.Fatalf("non-proxy query token should not authenticate")
 	}
 }
+
+func TestUserIDFromRequestAcceptsProxyCookieOnlyForProxyRoutes(t *testing.T) {
+	t.Setenv("JWT_SECRET", "test-secret")
+
+	token, err := GenerateToken(42)
+	if err != nil {
+		t.Fatalf("generate token: %v", err)
+	}
+
+	proxyReq := httptest.NewRequest(http.MethodGet, "/api/v1/environments/1/services/9/proxy/public/build/app.js", nil)
+	proxyReq.AddCookie(&http.Cookie{Name: EmbeddedProxyAuthCookieName, Value: token})
+	userID, err := UserIDFromRequest(proxyReq)
+	if err != nil {
+		t.Fatalf("proxy cookie token should authenticate: %v", err)
+	}
+	if userID != 42 {
+		t.Fatalf("userID = %d, want 42", userID)
+	}
+
+	normalReq := httptest.NewRequest(http.MethodGet, "/api/v1/applications", nil)
+	normalReq.AddCookie(&http.Cookie{Name: EmbeddedProxyAuthCookieName, Value: token})
+	if _, err := UserIDFromRequest(normalReq); err == nil {
+		t.Fatalf("non-proxy cookie token should not authenticate")
+	}
+}

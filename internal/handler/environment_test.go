@@ -32,6 +32,7 @@ import (
 	paapv1 "paap/api/v1"
 	"paap/internal/database"
 	"paap/internal/k8s"
+	"paap/internal/middleware"
 	"paap/internal/model"
 	svcservice "paap/internal/service"
 )
@@ -4336,6 +4337,51 @@ func TestProxyServiceInstanceChecksServiceAfterMemberAccess(t *testing.T) {
 	}
 }
 
+func TestPersistEmbeddedProxyAuthCookieScopesCookieToProxyPath(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(rec)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/environments/1/services/9/proxy/d/node?paap_token=signed.jwt.token", nil)
+	ctx.Request = req
+
+	persistEmbeddedProxyAuthCookie(ctx, "/api/v1/environments/1/services/9/proxy")
+
+	cookies := rec.Result().Cookies()
+	if len(cookies) != 1 {
+		t.Fatalf("cookies = %#v, want one proxy auth cookie", cookies)
+	}
+	cookie := cookies[0]
+	if cookie.Name != middleware.EmbeddedProxyAuthCookieName || cookie.Value != "signed.jwt.token" {
+		t.Fatalf("unexpected cookie: %#v", cookie)
+	}
+	if cookie.Path != "/api/v1/environments/1/services/9/proxy" {
+		t.Fatalf("cookie path = %q", cookie.Path)
+	}
+	if !cookie.HttpOnly {
+		t.Fatalf("proxy auth cookie must be HttpOnly")
+	}
+}
+
+func TestPrepareToolProxyRequestRemovesEmbeddedProxyQueryParams(t *testing.T) {
+	target, err := url.Parse("http://grafana.monitor.svc.cluster.local")
+	if err != nil {
+		t.Fatalf("parse target: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/environments/1/services/9/proxy/d/node?orgId=1&paap_token=signed.jwt.token&paap_embed=1", nil)
+
+	prepareToolProxyRequest(req, target, "/api/v1/environments/1/services/9/proxy", "/d/node", model.ServiceInstallation{ServiceType: "monitor"})
+
+	if req.URL.Path != "/d/node" {
+		t.Fatalf("path = %q", req.URL.Path)
+	}
+	if req.URL.Query().Get("paap_token") != "" || req.URL.Query().Get("paap_embed") != "" {
+		t.Fatalf("PAAP proxy params should not be forwarded upstream: %s", req.URL.RawQuery)
+	}
+	if req.URL.Query().Get("orgId") != "1" {
+		t.Fatalf("tool query param should be preserved: %s", req.URL.RawQuery)
+	}
+}
+
 func TestHandleServiceConsoleRejectsNonMembers(t *testing.T) {
 	previousDB := database.DB
 	previousK8sClient := k8s.GetClient()
@@ -6770,14 +6816,21 @@ func TestEnvironmentCanvasStatePersistsPositionsAndEdges(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := db.AutoMigrate(&model.Application{}, &model.Environment{}, &model.EnvironmentCanvasState{}, &model.Component{}, &model.ServiceInstallation{}); err != nil {
+	if err := db.AutoMigrate(&model.User{}, &model.Application{}, &model.AppMember{}, &model.Environment{}, &model.EnvironmentCanvasState{}, &model.Component{}, &model.ServiceInstallation{}, &model.EnvironmentCapability{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	database.DB = db
 
+	user := model.User{ID: 1, Username: "admin", Email: "admin@example.test", Password: "x"}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
 	app := model.Application{Name: "测试应用", Identifier: "test", OwnerID: 1}
 	if err := db.Create(&app).Error; err != nil {
 		t.Fatalf("create app: %v", err)
+	}
+	if err := db.Create(&model.AppMember{ApplicationID: app.ID, UserID: user.ID, Role: "admin"}).Error; err != nil {
+		t.Fatalf("create app member: %v", err)
 	}
 	env := model.Environment{ApplicationID: app.ID, Name: "测试环境", Identifier: "staging", Status: "running", Namespace: "test-staging"}
 	if err := db.Create(&env).Error; err != nil {
@@ -6789,13 +6842,23 @@ func TestEnvironmentCanvasStatePersistsPositionsAndEdges(t *testing.T) {
 	if err := db.Create(&model.ServiceInstallation{ID: 2, EnvironmentID: env.ID, ServiceType: "postgresql", ServiceName: "db"}).Error; err != nil {
 		t.Fatalf("create service: %v", err)
 	}
+	if err := db.Create(&model.EnvironmentCapability{ID: 3, EnvironmentID: env.ID, Capability: "registry", Source: model.CapabilitySourceShared}).Error; err != nil {
+		t.Fatalf("create capability: %v", err)
+	}
 
 	body := []byte(`{
 		"positions": {
 			"component:1": {"x": 120, "y": 88},
 			"component:999": {"x": 999, "y": 999},
 			"service:2": {"x": 360, "y": 144},
-			"service:999": {"x": 999, "y": 999}
+			"service:999": {"x": 999, "y": 999},
+			"capability:3": {"x": 520, "y": 188},
+			"capability:999": {"x": 999, "y": 999},
+			"component:service:2": {"x": 380, "y": 164},
+			"environment:service:2": {"x": 420, "y": 184},
+			"environment:capability:3": {"x": 560, "y": 208},
+			"zone:shared": {"x": 480, "y": 120, "width": 420, "height": 260},
+			"environment:zone:shared": {"x": 500, "y": 140, "width": 440, "height": 280}
 		},
 		"edges": [
 			{"fromKey":"component:1","toKey":"service:2"},
@@ -6841,6 +6904,27 @@ func TestEnvironmentCanvasStatePersistsPositionsAndEdges(t *testing.T) {
 	if _, ok := response.Data.Positions["service:999"]; ok {
 		t.Fatalf("orphan service position should be filtered: %#v", response.Data.Positions)
 	}
+	if got := response.Data.Positions["capability:3"]; got.X != 520 || got.Y != 188 {
+		t.Fatalf("capability position not persisted: %#v", got)
+	}
+	if got := response.Data.Positions["component:service:2"]; got.X != 380 || got.Y != 164 {
+		t.Fatalf("component scoped service position not persisted: %#v", got)
+	}
+	if got := response.Data.Positions["environment:service:2"]; got.X != 420 || got.Y != 184 {
+		t.Fatalf("environment scoped service position not persisted: %#v", got)
+	}
+	if got := response.Data.Positions["environment:capability:3"]; got.X != 560 || got.Y != 208 {
+		t.Fatalf("environment scoped capability position not persisted: %#v", got)
+	}
+	if _, ok := response.Data.Positions["capability:999"]; ok {
+		t.Fatalf("orphan capability position should be filtered: %#v", response.Data.Positions)
+	}
+	if got := response.Data.Positions["zone:shared"]; got.X != 480 || got.Y != 120 || got.Width != 420 || got.Height != 260 {
+		t.Fatalf("zone bounds not persisted: %#v", got)
+	}
+	if got := response.Data.Positions["environment:zone:shared"]; got.X != 500 || got.Y != 140 || got.Width != 440 || got.Height != 280 {
+		t.Fatalf("scoped zone bounds not persisted: %#v", got)
+	}
 	if len(response.Data.Edges) != 1 || response.Data.Edges[0].FromKey != "component:1" || response.Data.Edges[0].ToKey != "service:2" {
 		t.Fatalf("edges not normalized and persisted: %#v", response.Data.Edges)
 	}
@@ -6854,14 +6938,21 @@ func TestEnvironmentCanvasStatePersistsDisplayNames(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := db.AutoMigrate(&model.Application{}, &model.Environment{}, &model.EnvironmentCanvasState{}, &model.Component{}, &model.ServiceInstallation{}); err != nil {
+	if err := db.AutoMigrate(&model.User{}, &model.Application{}, &model.AppMember{}, &model.Environment{}, &model.EnvironmentCanvasState{}, &model.Component{}, &model.ServiceInstallation{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	database.DB = db
 
+	user := model.User{ID: 1, Username: "admin", Email: "admin@example.test", Password: "x"}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
 	app := model.Application{Name: "测试应用", Identifier: "test", OwnerID: 1}
 	if err := db.Create(&app).Error; err != nil {
 		t.Fatalf("create app: %v", err)
+	}
+	if err := db.Create(&model.AppMember{ApplicationID: app.ID, UserID: user.ID, Role: "admin"}).Error; err != nil {
+		t.Fatalf("create app member: %v", err)
 	}
 	env := model.Environment{ApplicationID: app.ID, Name: "测试环境", Identifier: "staging", Status: "running", Namespace: "test-staging"}
 	if err := db.Create(&env).Error; err != nil {

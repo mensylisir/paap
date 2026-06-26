@@ -14,6 +14,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -147,27 +148,9 @@ func UpsertEnvironmentCapability(c *gin.Context) {
 		capabilityRow.CreatedBy = userID
 	}
 
-	var existing model.EnvironmentCapability
-	err = database.DB.Where("environment_id = ? AND capability = ?", env.ID, capability).First(&existing).Error
-	if err != nil && !errorsIsRecordNotFound(err) {
+	if err := upsertEnvironmentCapability(&capabilityRow); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
-	}
-	if errorsIsRecordNotFound(err) {
-		if err := database.DB.Create(&capabilityRow).Error; err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-	} else {
-		capabilityRow.ID = existing.ID
-		capabilityRow.CreatedAt = existing.CreatedAt
-		if capabilityRow.CreatedBy == 0 {
-			capabilityRow.CreatedBy = existing.CreatedBy
-		}
-		if err := database.DB.Save(&capabilityRow).Error; err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
 	}
 
 	if err := database.DB.Preload("RefService").First(&capabilityRow, capabilityRow.ID).Error; err != nil {
@@ -175,6 +158,31 @@ func UpsertEnvironmentCapability(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"data": capabilityRow})
+}
+
+func upsertEnvironmentCapability(capabilityRow *model.EnvironmentCapability) error {
+	return database.DB.Clauses(
+		clause.OnConflict{
+			Columns: []clause.Column{
+				{Name: "environment_id"},
+				{Name: "capability"},
+			},
+			DoUpdates: clause.Assignments(map[string]interface{}{
+				"source":                   capabilityRow.Source,
+				"provider":                 capabilityRow.Provider,
+				"service_type":             capabilityRow.ServiceType,
+				"ref_service_id":           capabilityRow.RefServiceID,
+				"external_endpoint":        capabilityRow.ExternalEndpoint,
+				"credential_secret_ref":    capabilityRow.CredentialSecretRef,
+				"tls_insecure_skip_verify": capabilityRow.TLSInsecureSkipVerify,
+				"validation_status":        capabilityRow.ValidationStatus,
+				"validation_message":       capabilityRow.ValidationMessage,
+				"deleted_at":               nil,
+				"updated_at":               gorm.Expr("NOW()"),
+			}),
+		},
+		clause.Returning{},
+	).Create(capabilityRow).Error
 }
 
 func DeleteEnvironmentCapability(c *gin.Context) {
@@ -238,15 +246,36 @@ func GetEnvironmentCapabilityCredentials(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	if row.Source == model.CapabilitySourceShared {
+		var svc model.ServiceInstallation
+		if row.RefServiceID == nil || *row.RefServiceID == 0 {
+			c.JSON(http.StatusOK, gin.H{"data": gin.H{"credentials": []ServiceCredential{}}})
+			return
+		}
+		if err := database.DB.First(&svc, *row.RefServiceID).Error; errorsIsRecordNotFound(err) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "shared service not found"})
+			return
+		} else if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		credentials, err := discoverServiceCredentials(c.Request.Context(), svc.Namespace)
+		if err != nil {
+			c.JSON(http.StatusFailedDependency, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"data": gin.H{"credentials": credentials}})
+		return
+	}
+
 	if row.Source != model.CapabilitySourceExternal {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "capability is not external"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "capability is not external or shared"})
 		return
 	}
 	if strings.TrimSpace(row.CredentialSecretRef) == "" {
 		c.JSON(http.StatusOK, gin.H{"data": gin.H{"credentials": []ServiceCredential{}}})
 		return
 	}
-
 	namespace, name, err := parseEnvironmentCapabilitySecretRef(env, row.CredentialSecretRef)
 	if err != nil {
 		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
