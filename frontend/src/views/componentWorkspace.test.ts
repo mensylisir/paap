@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildComponentDeliveryChain, buildComponentEvents, buildComponentResourceTopology, buildComponentSummary } from './componentWorkspace'
+import { buildComponentDeliveryChain, buildComponentEvents, buildComponentResourceTopology, buildComponentSummary, componentHealthDescription, componentStatusText } from './componentWorkspace'
 
 describe('componentWorkspace', () => {
   it('builds business-oriented summary items for a component', () => {
@@ -85,6 +85,23 @@ describe('componentWorkspace', () => {
     expect(chain.map((step) => step.key)).not.toContain('ci')
     expect(chain.map((step) => step.key)).not.toContain('gitea-source')
     expect(chain.find((step) => step.key === 'image')?.detail).toContain('不经过源码构建')
+  })
+
+  it('describes syncing components as an in-progress deployment state', () => {
+    const chain = buildComponentDeliveryChain({
+      name: 'orders-api',
+      deliveryMode: 'image',
+      image: 'registry.local/orders:v1',
+      gitRepoUrl: 'http://gitea/paap/orders.git',
+      gitPath: 'components/orders-api',
+      argocdApp: 'orders-prod-api',
+      status: 'syncing',
+    })
+
+    expect(componentStatusText('syncing')).toBe('同步中')
+    expect(componentHealthDescription({ status: 'syncing' })).toContain('GitOps 同步结果')
+    expect(chain.find((step) => step.key === 'cluster')?.status).toBe('pending')
+    expect(chain.find((step) => step.key === 'cluster')?.value).toBe('同步中')
   })
 
   it('builds declared component resource topology without inventing pods or replicasets', () => {

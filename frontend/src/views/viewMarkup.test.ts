@@ -489,6 +489,9 @@ describe('Vue view markup', () => {
 
     expect(envDetail.default).toContain('environmentCanvasZones')
     expect(envDetail.default).toContain('component-topology-zone')
+    expect(envDetail.default).toContain('scheduleComponentStatusPolling')
+    expect(envDetail.default).toContain('.node-status.running, .node-status.linked')
+    expect(envDetail.default).toContain('.node-status.syncing')
     expect(envDetail.default).toContain('本环境')
     expect(envDetail.default).toContain('平台公共')
     expect(envDetail.default).toContain('集群外部')

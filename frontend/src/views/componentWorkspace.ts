@@ -62,12 +62,13 @@ export function componentTypeText(type?: string) {
 }
 
 export function componentStatusText(status?: string) {
-  return ({ running: '运行中', stopped: '已停止', pending: '等待中', error: '异常' }[status || ''] || status || '未知')
+  return ({ running: '运行中', syncing: '同步中', deploying: '部署中', building: '构建中', stopped: '已停止', pending: '等待中', error: '异常' }[status || ''] || status || '未知')
 }
 
 export function componentHealthDescription(component?: ComponentLike | null) {
   if (!component) return '等待组件数据加载。'
   if (component.status === 'running') return '组件运行正常，可以接收业务流量。'
+  if (component.status === 'syncing') return '组件部署已提交，正在等待 GitOps 同步结果刷新。'
   if (component.status === 'pending') return '组件正在准备发布，请等待状态刷新。'
   if (component.status === 'error') return component.errorMessage || '组件发布或运行异常，请查看事件和发布配置。'
   if (component.status === 'stopped') return '组件当前已停止，不会接收业务流量。'

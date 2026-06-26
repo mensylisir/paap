@@ -2806,11 +2806,50 @@ let environmentLoadSeq = 0
 let capabilityWorkspaceLoadSeq = 0
 let templateInstallPollTimer: number | null = null
 let templateInstallPollAttempts = 0
+let componentStatusPollTimer: number | null = null
+let componentStatusPollAttempts = 0
+let componentStatusPollComponentId: number | null = null
 
 const stopTemplateInstallPolling = () => {
   if (templateInstallPollTimer) window.clearTimeout(templateInstallPollTimer)
   templateInstallPollTimer = null
   templateInstallPollAttempts = 0
+}
+
+const componentNeedsStatusPolling = (componentId: number) => {
+  const comp = components.value.find((item:any) => Number(item.id) === Number(componentId))
+  return ['syncing', 'deploying', 'building', 'pending'].includes(String(comp?.status || '').toLowerCase())
+}
+
+const stopComponentStatusPolling = () => {
+  if (componentStatusPollTimer) window.clearTimeout(componentStatusPollTimer)
+  componentStatusPollTimer = null
+  componentStatusPollAttempts = 0
+  componentStatusPollComponentId = null
+}
+
+const scheduleComponentStatusPolling = (componentId: number) => {
+  if (!componentId) return
+  if (componentStatusPollComponentId !== componentId) {
+    if (componentStatusPollTimer) window.clearTimeout(componentStatusPollTimer)
+    componentStatusPollTimer = null
+    componentStatusPollAttempts = 0
+    componentStatusPollComponentId = componentId
+  }
+  if (componentStatusPollTimer || componentStatusPollAttempts >= TEMPLATE_INSTALL_POLL_MAX_ATTEMPTS) return
+  componentStatusPollAttempts += 1
+  componentStatusPollTimer = window.setTimeout(async () => {
+    componentStatusPollTimer = null
+    try {
+      await refreshServices()
+    } finally {
+      if (componentNeedsStatusPolling(componentId)) {
+        scheduleComponentStatusPolling(componentId)
+      } else {
+        stopComponentStatusPolling()
+      }
+    }
+  }, TEMPLATE_INSTALL_POLL_INTERVAL_MS)
 }
 
 const scheduleTemplateInstallPolling = () => {
@@ -2836,6 +2875,7 @@ const loadEnvironmentDetail = async () => {
   const targetAppId = appId.value
   const targetEnvId = envId.value
   stopTemplateInstallPolling()
+  stopComponentStatusPolling()
   resetEnvironmentState()
   try {
     await loadComponentNodePositions()
@@ -2873,6 +2913,7 @@ watch(envRouteKey, () => {
 
 onBeforeUnmount(() => {
   stopTemplateInstallPolling()
+  stopComponentStatusPolling()
   disconnectDrawerConsole()
   document.removeEventListener('pointerdown', handleDocumentPointerDown)
   document.removeEventListener('keydown', handleDocumentKeyDown)
@@ -2903,8 +2944,8 @@ const serviceIconPath = (type:string) => {
   }
   return p[type] || p.default
 }
-const serviceStatusText = (status?: string) => ({ running: '运行中', installing: '安装中', failed: '安装失败', deleting: '删除中', pending: '未部署', error: '安装失败', draft: '未部署' }[String(status || '').toLowerCase()] || '未知')
-const statusTagClass = (status?: string) => ({ running: 'bx--tag--green', installing: 'bx--tag--blue', failed: 'bx--tag--red', error: 'bx--tag--red', deleting: 'bx--tag--gray', pending: 'bx--tag--gray', draft: 'bx--tag--gray' }[String(status || '').toLowerCase()] || 'bx--tag--gray')
+const serviceStatusText = (status?: string) => ({ running: '运行中', linked: '已关联', installing: '安装中', syncing: '同步中', deploying: '部署中', building: '构建中', failed: '安装失败', deleting: '删除中', pending: '未部署', error: '安装失败', draft: '未部署' }[String(status || '').toLowerCase()] || '未知')
+const statusTagClass = (status?: string) => ({ running: 'bx--tag--green', linked: 'bx--tag--green', installing: 'bx--tag--blue', syncing: 'bx--tag--blue', deploying: 'bx--tag--blue', building: 'bx--tag--blue', failed: 'bx--tag--red', error: 'bx--tag--red', deleting: 'bx--tag--gray', pending: 'bx--tag--gray', draft: 'bx--tag--gray' }[String(status || '').toLowerCase()] || 'bx--tag--gray')
 const serviceStatusValue = (svc:any) => String(svc?.status || '').toLowerCase()
 const serviceStatusIsDraft = (svc:any) => ['draft', 'pending', ''].includes(serviceStatusValue(svc))
 const serviceStatusHasRuntime = (svc:any) => ['running', 'installing'].includes(serviceStatusValue(svc))
@@ -5043,6 +5084,7 @@ const deployComponent = async (comp:any) => {
   try {
     await api.deployComponent(Number(comp.id), { version })
     await refreshServices()
+    scheduleComponentStatusPolling(Number(comp.id))
     scheduleTemplateInstallPolling()
     selectComponent(comp.id)
     const refreshed = components.value.find((item:any) => Number(item.id) === Number(comp.id))
@@ -5518,6 +5560,10 @@ const drawerStatusLabel = computed(() => {
   if (configDrawer.value.kind === 'service') return serviceStatusText(drawerStatusValue.value)
   const labels: Record<string, string> = {
     running: '运行中',
+    linked: '已关联',
+    syncing: '同步中',
+    deploying: '部署中',
+    building: '构建中',
     deployed: '已部署',
     pending: '未部署',
     draft: '未部署',
@@ -9349,9 +9395,9 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 .node-type-icon--rabbitmq,
 .node-type-icon--kafka { background: #fcf4d6; color: #b28600; }
 .node-status { width: 7px; height: 7px; border-radius: 50%; background: var(--paap-border-strong); }
-.node-status.running { background: var(--paap-success); }
+.node-status.running, .node-status.linked { background: var(--paap-success); }
 .node-status.error, .node-status.failed { background: var(--paap-danger); }
-.node-status.creating, .node-status.deploying, .node-status.building, .node-status.installing { background: var(--paap-accent); }
+.node-status.creating, .node-status.deploying, .node-status.building, .node-status.installing, .node-status.syncing { background: var(--paap-accent); }
 .node-status.draft, .node-status.pending { background: var(--paap-border-strong); }
 .component-edge-list {
   display: flex;
