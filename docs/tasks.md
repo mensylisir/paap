@@ -388,8 +388,8 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 - [x] 外部资源凭据写入当前环境 Kubernetes Secret，数据库只保存 `credentialSecretRef`；右侧栏用眼睛按钮显示/隐藏已保存用户名、密码或 token
 - [x] default 共享环境只允许安装工具/中间件，不允许部署业务组件，且不可被普通用户删除
   - 2026-06-25 验证：共享环境画布右键菜单只显示“添加工具 / 添加中间件”，工具二级菜单含 ArgoCD、Registry、Gitea、Jenkins、Prometheus+Grafana、Loki、Harbor，中间件二级菜单含 PostgreSQL、MySQL、MongoDB、Redis、RabbitMQ、Kafka、MinIO；未出现创建组件、共享资源、外部资源、纳管入口。
-- [x] 卡片和抽屉明确展示 `platform managed`、`shared`、`external` 来源和断开/卸载语义
-  - 2026-06-26 验证：新增 focused markup 测试覆盖卡片/抽屉的来源与移除语义；环境 5 可见 Chrome 验证平台托管卡片显示“平台托管 / 卸载服务”，共享资源显示“共享资源 / 断开引用”，临时 external custom 显示“外部资源 / 断开外部连接”且抽屉提示不会删除外部系统；临时 external custom 已删除，环境能力恢复为 shared cache/database。
+- [x] 卡片和抽屉明确展示 `managed`、`shared`、`external` 来源和断开/卸载语义
+  - 2026-06-26 验证：新增 focused markup 测试覆盖卡片/抽屉的来源与移除语义；环境 5 可见 Chrome 验证环境内服务显示“环境内资源 / 卸载服务”，共享资源引用显示“平台共享 / 断开引用”，临时 external custom 显示“外部资源 / 断开外部连接”且抽屉提示不会删除外部系统；临时 external custom 已删除，环境能力恢复为 shared cache/database。
 - [ ] 对 external Git、Registry、Argo CD、Jenkins、Prometheus、Loki、PostgreSQL、Redis、RabbitMQ、Kafka、MinIO 做真实连接与权限验证
 - [x] external 来源删除只移除 PAAP 连接记录和本地凭据，不能删除真实外部资源
   - 2026-06-25 验证：在环境 5 创建临时 `custom` 外部资源卡片，页面确认删除后 `/api/v1/environments/5/capabilities` 只剩原有 `mq` 外部资源；删除弹窗文案明确“只会移除当前环境中的共享或外部资源卡片”。

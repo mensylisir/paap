@@ -3012,12 +3012,12 @@ const capabilityRemovalMessage = (cap:any) => {
 const topologySourceBadge = (node:any): { label: string; tone: string } | null => {
   if (!node) return null
   if (node.topologyKind === 'capability') {
-    if (node.source === 'shared') return { label: '共享资源', tone: 'shared' }
+    if (node.source === 'shared') return { label: '平台共享', tone: 'shared' }
     if (node.source === 'external') return { label: '外部资源', tone: 'external' }
-    if (node.source === 'managed') return { label: '平台托管', tone: 'managed' }
+    if (node.source === 'managed') return { label: '环境内资源', tone: 'managed' }
     return { label: capabilitySourceLabel(node.source || 'deferred'), tone: 'deferred' }
   }
-  if (node.topologyKind === 'service') return { label: '平台托管', tone: 'managed' }
+  if (node.topologyKind === 'service') return { label: '环境内资源', tone: 'managed' }
   if (node.topologyKind === 'component') return { label: '应用组件', tone: 'component' }
   return null
 }
@@ -5650,7 +5650,7 @@ const resourceSourceSummaryRows = computed(() => {
     const source = String(cap.source || '')
     if (source === 'shared') {
       return [
-        { label: '来源类型', value: '共享资源', hint: '由平台公共环境提供，业务环境只读引用。' },
+        { label: '来源类型', value: '平台共享', hint: '由共享资源池提供，业务环境只读引用。' },
         { label: '移除动作', value: '断开引用', hint: '只解除当前环境引用，不会删除共享资源池中的服务。' },
       ]
     }
@@ -5661,13 +5661,13 @@ const resourceSourceSummaryRows = computed(() => {
       ]
     }
     return [
-      { label: '来源类型', value: '平台托管', hint: '由 PAAP 在当前环境内安装和管理。' },
+      { label: '来源类型', value: '环境内资源', hint: '由 PAAP 在当前环境内安装和管理，生命周期归当前环境。' },
       { label: '移除动作', value: '删除卡片', hint: '移除当前环境内的能力记录。' },
     ]
   }
   if (configDrawer.value.kind === 'service') {
     return [
-      { label: '来源类型', value: '平台托管', hint: '由 PAAP 在当前环境内安装、升级和卸载。' },
+      { label: '来源类型', value: '环境内资源', hint: '由 PAAP 在当前环境内安装、升级和卸载，生命周期归当前环境。' },
       { label: '移除动作', value: '卸载服务', hint: '会卸载当前环境中的工具或中间件实例。' },
     ]
   }

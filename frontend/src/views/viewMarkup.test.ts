@@ -490,7 +490,9 @@ describe('Vue view markup', () => {
 
     expect(envDetail.default).toContain('topologySourceBadge')
     expect(envDetail.default).toContain('resourceSourceSummaryRows')
-    expect(envDetail.default).toContain('平台托管')
+    expect(envDetail.default).toContain('环境内资源')
+    expect(envDetail.default).toContain('平台共享')
+    expect(envDetail.default).not.toContain('平台托管')
     expect(envDetail.default).toContain('断开引用')
     expect(envDetail.default).toContain('断开外部连接')
     expect(envDetail.default).toContain('不会删除外部系统')
