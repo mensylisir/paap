@@ -48,6 +48,8 @@ export type ComponentTopologyZone = {
 export type ComponentTopologyPosition = {
   x: number
   y: number
+  width?: number
+  height?: number
 }
 
 export type ComponentTopologyPositions = Record<string, ComponentTopologyPosition>
@@ -69,6 +71,8 @@ export type ComponentTopologyDragPositionInput = ComponentTopologyDragPoint & {
   originY: number
   minX?: number
   minY?: number
+  maxX?: number
+  maxY?: number
   zoom?: number
 }
 
@@ -388,7 +392,14 @@ export const parseComponentTopologyPositions = (raw: string | null | undefined):
       const x = Number((value as any).x)
       const y = Number((value as any).y)
       if (!Number.isFinite(x) || !Number.isFinite(y)) continue
-      positions[key] = { x, y }
+      const width = Number((value as any).width)
+      const height = Number((value as any).height)
+      positions[key] = {
+        x,
+        y,
+        ...(Number.isFinite(width) && width > 0 ? { width } : {}),
+        ...(Number.isFinite(height) && height > 0 ? { height } : {}),
+      }
     }
     return positions
   } catch {
@@ -402,7 +413,14 @@ export const serializeComponentTopologyPositions = (positions: ComponentTopology
     const x = Number(value?.x)
     const y = Number(value?.y)
     if (!key || !Number.isFinite(x) || !Number.isFinite(y)) continue
-    serializable[key] = { x, y }
+    const width = Number(value?.width)
+    const height = Number(value?.height)
+    serializable[key] = {
+      x,
+      y,
+      ...(Number.isFinite(width) && width > 0 ? { width } : {}),
+      ...(Number.isFinite(height) && height > 0 ? { height } : {}),
+    }
   }
   return JSON.stringify(serializable)
 }
@@ -510,10 +528,14 @@ export const shouldSuppressComponentTopologyClick = (key: string, state: Compone
 export const nextComponentTopologyDragPosition = (input: ComponentTopologyDragPositionInput): ComponentTopologyPosition => {
   const minX = Number.isFinite(input.minX) ? Number(input.minX) : 12
   const minY = Number.isFinite(input.minY) ? Number(input.minY) : 46
+  const maxX = Number.isFinite(input.maxX) ? Number(input.maxX) : Number.POSITIVE_INFINITY
+  const maxY = Number.isFinite(input.maxY) ? Number(input.maxY) : Number.POSITIVE_INFINITY
   const zoom = Number.isFinite(input.zoom) && Number(input.zoom) > 0 ? Number(input.zoom) : 1
+  const nextX = Number(input.originX) + (Number(input.currentX) - Number(input.startX)) / zoom
+  const nextY = Number(input.originY) + (Number(input.currentY) - Number(input.startY)) / zoom
   return {
-    x: Math.max(minX, Number(input.originX) + (Number(input.currentX) - Number(input.startX)) / zoom),
-    y: Math.max(minY, Number(input.originY) + (Number(input.currentY) - Number(input.startY)) / zoom),
+    x: Math.min(Math.max(minX, nextX), maxX),
+    y: Math.min(Math.max(minY, nextY), maxY),
   }
 }
 

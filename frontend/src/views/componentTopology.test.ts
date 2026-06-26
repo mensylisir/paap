@@ -272,9 +272,10 @@ describe('componentTopology', () => {
   })
 
   it('parses only valid saved canvas positions', () => {
-    expect(parseComponentTopologyPositions('{"component:1":{"x":120,"y":88},"bad":{"x":"no","y":12},"service:2":{"x":"240","y":"144"}}')).toEqual({
+    expect(parseComponentTopologyPositions('{"component:1":{"x":120,"y":88},"bad":{"x":"no","y":12},"service:2":{"x":"240","y":"144"},"zone:shared":{"x":300,"y":120,"width":420,"height":260}}')).toEqual({
       'component:1': { x: 120, y: 88 },
       'service:2': { x: 240, y: 144 },
+      'zone:shared': { x: 300, y: 120, width: 420, height: 260 },
     })
     expect(parseComponentTopologyPositions('not-json')).toEqual({})
   })
@@ -282,8 +283,9 @@ describe('componentTopology', () => {
   it('serializes only finite canvas positions', () => {
     expect(serializeComponentTopologyPositions({
       'component:1': { x: 120, y: 88 },
+      'zone:shared': { x: 300, y: 120, width: 420, height: 260 },
       bad: { x: Number.NaN, y: 12 },
-    })).toBe('{"component:1":{"x":120,"y":88}}')
+    })).toBe('{"component:1":{"x":120,"y":88},"zone:shared":{"x":300,"y":120,"width":420,"height":260}}')
   })
 
   it('keeps the SVG viewBox in canvas coordinates so CSS zoom does not break links', () => {
@@ -384,6 +386,19 @@ describe('componentTopology', () => {
       currentX: 140,
       currentY: 160,
     })).toEqual({ x: 64, y: 96 })
+
+    expect(nextComponentTopologyDragPosition({
+      originX: 240,
+      originY: 180,
+      startX: 100,
+      startY: 100,
+      currentX: 600,
+      currentY: 460,
+      minX: 40,
+      minY: 56,
+      maxX: 320,
+      maxY: 240,
+    })).toEqual({ x: 320, y: 240 })
   })
 
   it('draws canvas links from the nearest node boundaries instead of through cards', () => {

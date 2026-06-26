@@ -62,7 +62,7 @@ IMAGES=(
   "busybox:1.36"
   "minio/mc:RELEASE.2024-05-09T17-04-24Z"
   "quay.io/keycloak/keycloak:25.0.0"
-  "paap-server:v0.1.516"
+  "paap-server:v0.1.521"
   "paap-operator:v0.1.53"
 )
 echo "2. Exporting ${#IMAGES[@]} PAAP system images to oci-archive..."

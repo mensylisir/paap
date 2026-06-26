@@ -79,7 +79,7 @@ describe('Vue view markup', () => {
     const envDetail = await import('./EnvDetailView.vue?raw')
     const appOverview = await import('./AppOverviewView.vue?raw')
 
-    expect(envDetail.default).toContain('environmentCanvasNodes.length === 0')
+    expect(envDetail.default).toContain('environmentCanvasAllNodes.length === 0')
     expect(envDetail.default).toContain('在画布空白处右键创建组件、工具、数据库或中间件。')
     expect(envDetail.default).not.toContain('v-if="environmentTopologyAllNodes.length"')
     expect(envDetail.default).not.toContain('当前环境还没有业务组件，先创建组件再进入源码/镜像到集群的交付流程。')
@@ -937,6 +937,30 @@ describe('Vue view markup', () => {
     expect(globalStyles).toContain('.ws-tabs')
     expect(globalStyles).toContain('.ws-tab.active')
     expect(workspaceFrame.default).not.toContain('.ws-tabs')
+  })
+
+  it('lets users collapse and expand environment topology zones', async () => {
+    const envDetail = await import('./EnvDetailView.vue?raw')
+
+    expect(envDetail.default).toContain('collapsedTopologyZones')
+    expect(envDetail.default).toContain('toggleTopologyZone')
+    expect(envDetail.default).toContain('environmentCanvasVisibleNodes')
+    expect(envDetail.default).toContain(':aria-expanded="!isTopologyZoneCollapsed(zone.key)"')
+    expect(envDetail.default).toContain('component-topology-zone-toggle')
+    expect(envDetail.default).toContain("zone.key === 'environment'")
+    expect(envDetail.default).toContain('@pointerdown="startTopologyZoneDrag($event, zone)"')
+    expect(envDetail.default).toContain('topologyZoneDrag')
+    expect(envDetail.default).toContain('topologyNodeDragBounds')
+    expect(envDetail.default).toContain('topologyZonePositionKey')
+    expect(envDetail.default).toContain('collapsedTopologyZoneBounds')
+    expect(envDetail.default).toContain('component-topology-zone--collapsed')
+    expect(envDetail.default).toContain('expandedBounds')
+    expect(envDetail.default).toContain('topologyZoneMetrics.minWidth')
+    expect(envDetail.default).toContain('topologyZoneResizeEdges')
+    expect(envDetail.default).toContain("mode: resizeEdges.length && !zone.collapsed ? 'resize' : 'move'")
+    expect(envDetail.default).toContain('nextTopologyZoneResizeBounds')
+    expect(envDetail.default).toContain('pointer-events: auto;')
+    expect(envDetail.default).toContain('pointer-events: none;')
   })
 
   it('renders ArgoCD applications as a topology map with details below the graph', async () => {
