@@ -42,6 +42,53 @@ html {
   --paap-danger: var(--cds-support-error, #da1e28);
   --paap-danger-soft: var(--cds-red-10, #fff1f1);
 
+  /* Legacy palette — preserves existing view colors during Carbon migration */
+  --paap-text-01: #11181c;       /* primary text (legacy) */
+  --paap-text-02: #687076;       /* secondary / muted text (legacy) */
+  --paap-text-03: #9ba1a6;       /* table header / placeholder text (legacy) */
+  --paap-border-01: #e6e8eb;     /* subtle border (legacy) */
+  --paap-border-02: #d7dbdf;     /* strong border / button border (legacy) */
+  --paap-border-03: #d1d5db;     /* separator border (legacy) */
+  --paap-bg-01: #f1f3f5;         /* soft bg, badge bg, table row stripe (legacy) */
+  --paap-bg-02: #f7f8fa;         /* hover bg (legacy) */
+  --paap-bg-03: #f9fafb;         /* table header bg (legacy) */
+  --paap-accent-01: #3b82f6;     /* link/accent blue (legacy) */
+  --paap-success-text: #166534;  /* success text */
+  --paap-success-bg: #f0fdf4;    /* success background */
+  --paap-danger-text: #b91c1c;   /* danger text */
+  --paap-danger-text-strong: #991b1b; /* danger text (stronger) */
+  --paap-danger-bg: #fef2f2;     /* danger background */
+  --paap-danger-border: #fecaca; /* danger border */
+  --paap-info-text: #1d4ed8;     /* info text */
+  --paap-info-bg: #eff6ff;       /* info background */
+  --paap-white: #ffffff;         /* pure white (panel bg) */
+  --paap-orange-bg: #fff7ed;     /* orange badge bg */
+  --paap-orange-text: #9a3412;   /* orange badge text */
+  --paap-red-bright: #ef4444;    /* bright red (count badge) */
+  --paap-success-accent: #16a34a;   /* green accent for status badges (legacy) */
+  --paap-success-border: #bbf7d0;   /* green border for success states (legacy) */
+  --paap-danger-accent: #dc2626;    /* red accent for status badges / icon hover (legacy) */
+  --paap-info-accent: #2563eb;      /* blue accent for info badges (legacy) */
+  --paap-info-border: #bfdbfe;      /* blue border for info states (legacy) */
+  --paap-info-light: #93c5fd;       /* light blue for delivery arrow (legacy) */
+  --paap-border-04: #cbd5e1;        /* slate/muted separator (legacy) */
+  --paap-service-git: #cc8888;      /* service icon: git */
+  --paap-service-ci: #c88ba8;       /* service icon: ci */
+  --paap-service-registry: #d4b072; /* service icon: registry / harbor / rabbitmq */
+  --paap-service-deploy: #8b9dc3;   /* service icon: deploy / harbor / postgresql / minio */
+  --paap-service-monitor: #7bb896;  /* service icon: monitor / mongodb */
+  --paap-service-log: #a090c8;      /* service icon: log / kafka */
+  --paap-service-mysql: #7bb8ae;    /* service icon: mysql */
+  --paap-bg-04: #f3f4f6;           /* subtle border-bottom / row bg (legacy) */
+  --paap-gray-20: #e0e0e0;         /* neutral gray-20 (Carbon) */
+  --paap-text-04: #c6c6c6;         /* placeholder / subtle text (legacy) */
+  --paap-danger-dark: #ba1b23;     /* dark red for destructive buttons */
+  --paap-emerald: #059669;         /* emerald-600 for tag dots */
+  --paap-emerald-dark: #047857;    /* emerald-700 for success text variant */
+  --paap-amber-dark: #b28600;      /* amber-700 for kafka icon */
+  --paap-purple-accent: #8a3ffc;   /* Carbon purple for mongodb icon */
+  --paap-purple-bg: #f6f2ff;       /* purple background for mongodb wrapper */
+
   /* Spacing (8px grid) */
   --paap-space-1: 4px;
   --paap-space-2: 8px;

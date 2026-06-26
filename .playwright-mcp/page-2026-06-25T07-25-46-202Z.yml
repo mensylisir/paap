@@ -1,0 +1,117 @@
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - generic [ref=e5]:
+      - link "PAAP" [ref=e6] [cursor=pointer]:
+        - /url: /apps
+        - img [ref=e8]
+        - generic [ref=e12]: PAAP
+      - navigation [ref=e13]:
+        - link "应用" [ref=e14] [cursor=pointer]:
+          - /url: /apps
+          - img [ref=e15]
+          - generic [ref=e20]: 应用
+        - link "模板" [ref=e21] [cursor=pointer]:
+          - /url: /templates
+          - img [ref=e22]
+          - generic [ref=e25]: 模板
+        - link "目录" [ref=e26] [cursor=pointer]:
+          - /url: /catalog
+          - img [ref=e27]
+          - generic [ref=e37]: 目录
+        - link "用户" [ref=e38] [cursor=pointer]:
+          - /url: /users
+          - img [ref=e39]
+          - generic [ref=e44]: 用户
+    - generic [ref=e45]:
+      - generic [ref=e46]:
+        - generic [ref=e47]: A
+        - generic [ref=e48]: admin
+      - button "退出" [ref=e49] [cursor=pointer]:
+        - img [ref=e50]
+        - generic [ref=e53]: 退出
+  - main [ref=e54]:
+    - generic [ref=e55]:
+      - generic [ref=e57]:
+        - heading "服务目录" [level=1] [ref=e58]
+        - paragraph [ref=e59]: 平台支持的服务与中间件一览（共 14 个）
+      - generic [ref=e60]:
+        - img [ref=e62]
+        - textbox "搜索名称、类型、分组或描述..." [ref=e64]
+      - generic [ref=e65]:
+        - button "🔧 工具类 7" [ref=e66] [cursor=pointer]:
+          - generic [ref=e67]: 🔧
+          - generic [ref=e68]: 工具类
+          - generic [ref=e69]: "7"
+        - button "🗄️ 数据库 3" [ref=e70] [cursor=pointer]:
+          - generic [ref=e71]: 🗄️
+          - generic [ref=e72]: 数据库
+          - generic [ref=e73]: "3"
+        - button "⚡ 缓存 1" [ref=e74] [cursor=pointer]:
+          - generic [ref=e75]: ⚡
+          - generic [ref=e76]: 缓存
+          - generic [ref=e77]: "1"
+        - button "📨 消息队列 2" [ref=e78] [cursor=pointer]:
+          - generic [ref=e79]: 📨
+          - generic [ref=e80]: 消息队列
+          - generic [ref=e81]: "2"
+        - button "🪣 对象存储 1" [ref=e82] [cursor=pointer]:
+          - generic [ref=e83]: 🪣
+          - generic [ref=e84]: 对象存储
+          - generic [ref=e85]: "1"
+      - generic [ref=e87]:
+        - article [ref=e88] [cursor=pointer]:
+          - generic [ref=e89]:
+            - generic [ref=e90]: 🔧
+            - generic [ref=e91]:
+              - strong [ref=e92]: ArgoCD (官方)
+              - code [ref=e93]: deploy
+          - paragraph [ref=e94]: ArgoCD - GitOps 持续部署工具
+          - generic [ref=e97]: v2.13.1
+        - article [ref=e98] [cursor=pointer]:
+          - generic [ref=e99]:
+            - generic [ref=e100]: 🔧
+            - generic [ref=e101]:
+              - strong [ref=e102]: Docker Registry v2
+              - code [ref=e103]: registry
+          - paragraph [ref=e104]: Docker Registry v2 - 轻量 OCI 镜像仓库，适合开发测试环境
+          - generic [ref=e107]: v2.8.3
+        - article [ref=e108] [cursor=pointer]:
+          - generic [ref=e109]:
+            - generic [ref=e110]: 🔧
+            - generic [ref=e111]:
+              - strong [ref=e112]: Gitea
+              - code [ref=e113]: git
+          - paragraph [ref=e114]: Gitea - 轻量 Git 代码仓库
+          - generic [ref=e117]: v1.23.8
+        - article [ref=e118] [cursor=pointer]:
+          - generic [ref=e119]:
+            - generic [ref=e120]: 🔧
+            - generic [ref=e121]:
+              - strong [ref=e122]: Jenkins (官方)
+              - code [ref=e123]: ci
+          - paragraph [ref=e124]: Jenkins - CI/CD 服务器
+          - generic [ref=e127]: v2.414.3
+        - article [ref=e128] [cursor=pointer]:
+          - generic [ref=e129]:
+            - generic [ref=e130]: 🔧
+            - generic [ref=e131]:
+              - strong [ref=e132]: Prometheus+Grafana (官方)
+              - code [ref=e133]: monitor
+          - paragraph [ref=e134]: Prometheus + Grafana - 全栈监控
+          - generic [ref=e137]: v0.77.2
+        - article [ref=e138] [cursor=pointer]:
+          - generic [ref=e139]:
+            - generic [ref=e140]: 🔧
+            - generic [ref=e141]:
+              - strong [ref=e142]: Loki+Promtail (官方)
+              - code [ref=e143]: log
+          - paragraph [ref=e144]: Loki + Promtail - 日志收集与查询
+          - generic [ref=e147]: v2.9.3
+        - article [ref=e148] [cursor=pointer]:
+          - generic [ref=e149]:
+            - generic [ref=e150]: 🔧
+            - generic [ref=e151]:
+              - strong [ref=e152]: Harbor (官方)
+              - code [ref=e153]: harbor
+          - paragraph [ref=e154]: Harbor - 企业级镜像仓库，组件多、镜像大，建议生产或资源充足环境使用
+          - generic [ref=e157]: v2.12.0

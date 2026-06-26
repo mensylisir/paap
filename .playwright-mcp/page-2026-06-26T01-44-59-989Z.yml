@@ -1,0 +1,69 @@
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - generic [ref=e5]:
+      - link "PAAP" [ref=e6] [cursor=pointer]:
+        - /url: /apps
+        - img [ref=e8]
+        - generic [ref=e12]: PAAP
+      - navigation [ref=e14]:
+        - link "概览" [ref=e15] [cursor=pointer]:
+          - /url: /apps/5/overview
+          - img [ref=e16]
+          - generic [ref=e21]: 概览
+        - link "环境" [ref=e22] [cursor=pointer]:
+          - /url: /apps/5/environments
+          - img [ref=e23]
+          - generic [ref=e26]: 环境
+        - link "成员" [ref=e27] [cursor=pointer]:
+          - /url: /apps/5/members
+          - img [ref=e28]
+          - generic [ref=e33]: 成员
+    - link "返回应用列表" [ref=e35] [cursor=pointer]:
+      - /url: /apps
+      - img [ref=e36]
+      - generic [ref=e38]: 返回应用列表
+  - main [ref=e39]:
+    - generic [ref=e40]:
+      - button "R 应用 Real Fullstack PostgreSQL Redis Demo" [ref=e42] [cursor=pointer]:
+        - generic [ref=e43]: R
+        - generic [ref=e44]:
+          - generic [ref=e45]: 应用
+          - strong [ref=e46]: Real Fullstack PostgreSQL Redis Demo
+        - img [ref=e47]
+      - generic [ref=e49]: /
+      - button "环境 生产环境" [ref=e51] [cursor=pointer]:
+        - generic [ref=e53]:
+          - generic [ref=e54]: 环境
+          - strong [ref=e55]: 生产环境
+        - img [ref=e56]
+    - generic [ref=e58]:
+      - generic [ref=e60]:
+        - heading "成员" [level=1] [ref=e61]
+        - paragraph [ref=e62]: 邀请已有用户加入应用，并维护应用内角色
+      - generic [ref=e63]:
+        - generic [ref=e65]:
+          - heading "应用成员" [level=2] [ref=e66]
+          - paragraph [ref=e67]: 成员权限只作用于当前应用
+        - generic [ref=e68]:
+          - generic [ref=e69]:
+            - generic [ref=e70]: 用户名
+            - textbox "用户名" [ref=e71]:
+              - /placeholder: 输入用户名
+            - generic [ref=e72]: 成员角色
+            - combobox "成员角色" [ref=e73] [cursor=pointer]:
+              - option "管理员"
+              - option "成员" [selected]
+              - option "只读"
+          - button "邀请成员" [disabled] [ref=e74]
+        - generic [ref=e76]:
+          - generic [ref=e77]:
+            - generic [ref=e78]: A
+            - generic [ref=e79]:
+              - strong [ref=e80]: admin
+              - generic [ref=e81]: admin@paap.local
+          - generic [ref=e82]:
+            - combobox [ref=e83] [cursor=pointer]:
+              - option "管理员" [selected]
+              - option "成员"
+              - option "只读"
+            - button "移除" [disabled] [ref=e84]

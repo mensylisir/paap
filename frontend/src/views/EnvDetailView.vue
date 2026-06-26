@@ -137,7 +137,7 @@
                   :style="componentNodeStyle(node)"
                   :data-node-key="node.topologyId || node.id"
                   @click="handleTopologyNodeClick($event, node)"
-                  @dblclick.stop.prevent="node.topologyKind !== 'capability' && startRenameNode(node)"
+                  @dblclick.stop.prevent="startRenameNode(node)"
                   @pointerdown="startComponentNodeDrag($event, node)"
                   @pointerup="finishComponentNodePointer($event, node)"
                   @contextmenu.stop.prevent="openTopologyContextMenu($event, node)"
@@ -338,13 +338,13 @@
       <div v-else-if="activeCapabilityTab">
         <div v-if="activeCapabilityServices.length === 0" class="empty-state">
           <svg class="empty-illustration" width="96" height="96" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect x="4" y="16" width="56" height="36" rx="0" stroke="#c6c6c6" stroke-width="2" fill="none"/>
-            <line x1="4" y1="26" x2="60" y2="26" stroke="#e0e0e0" stroke-width="2"/>
-            <circle cx="14" cy="21" r="2" fill="#c6c6c6"/>
-            <circle cx="22" cy="21" r="2" fill="#c6c6c6"/>
-            <rect x="10" y="32" width="18" height="14" fill="#e0e0e0" opacity="0.6"/>
-            <rect x="34" y="32" width="20" height="6" fill="#e0e0e0" opacity="0.4"/>
-            <rect x="34" y="42" width="12" height="4" fill="#e0e0e0" opacity="0.4"/>
+            <rect x="4" y="16" width="56" height="36" rx="0" stroke="var(--paap-text-04)" stroke-width="2" fill="none"/>
+            <line x1="4" y1="26" x2="60" y2="26" stroke="var(--paap-gray-20)" stroke-width="2"/>
+            <circle cx="14" cy="21" r="2" fill="var(--paap-text-04)"/>
+            <circle cx="22" cy="21" r="2" fill="var(--paap-text-04)"/>
+            <rect x="10" y="32" width="18" height="14" fill="var(--paap-gray-20)" opacity="0.6"/>
+            <rect x="34" y="32" width="20" height="6" fill="var(--paap-gray-20)" opacity="0.4"/>
+            <rect x="34" y="42" width="12" height="4" fill="var(--paap-gray-20)" opacity="0.4"/>
           </svg>
           <h3 class="empty-title">暂无{{ activeCapabilityTab?.label }}</h3>
           <p class="empty-text">{{ activeCapabilityEmptyText }}</p>
@@ -596,7 +596,7 @@
                   :style="componentNodeStyle(node)"
                   :data-node-key="node.topologyId || node.id"
                   @click="handleTopologyNodeClick($event, node)"
-                  @dblclick.stop.prevent="node.topologyKind !== 'capability' && startRenameNode(node)"
+                  @dblclick.stop.prevent="startRenameNode(node)"
                   @pointerdown="startComponentNodeDrag($event, node)"
                   @pointerup="finishComponentNodePointer($event, node)"
                   @contextmenu.stop.prevent="openTopologyContextMenu($event, node)"
@@ -991,8 +991,40 @@
                   <strong>{{ row.value }}</strong>
                 </div>
               </div>
+              <div v-if="drawerCapability?.source === 'shared'" class="shared-capability-readonly">
+                <div class="config-section-title">
+                  <span>共享资源连接信息</span>
+                  <small>当前业务环境只读引用，连接信息由共享资源池提供。</small>
+                </div>
+                <div v-if="sharedCapabilityConnectionRows.length" class="config-kv-grid service-summary-grid capability-summary-grid">
+                  <div v-for="row in sharedCapabilityConnectionRows" :key="row.label" :class="{ 'capability-secret-row': row.secretKey }">
+                    <span>{{ row.label }}</span>
+                    <strong>{{ row.value }}</strong>
+                    <button
+                      v-if="row.secretKey"
+                      type="button"
+                      class="password-visible-toggle capability-row-secret-toggle"
+                      :aria-label="sharedCapabilitySecretVisible(row.secretKey) ? '隐藏密码' : '显示密码'"
+                      :title="sharedCapabilitySecretVisible(row.secretKey) ? '隐藏密码' : '显示密码'"
+                      :disabled="sharedCapabilityCredentialLoading"
+                      @click="toggleSharedCapabilitySecret(row.secretKey)"
+                    >
+                      <svg v-if="sharedCapabilitySecretVisible(row.secretKey)" focusable="false" width="16" height="16" viewBox="0 0 32 32" fill="currentColor">
+                        <path d="M16 6C7 6 2 16 2 16s5 10 14 10 14-10 14-10S25 6 16 6zm0 18c-6.4 0-10.5-5.8-11.7-8C5.5 13.8 9.6 8 16 8s10.5 5.8 11.7 8c-1.2 2.2-5.3 8-11.7 8z"/>
+                        <path d="M16 10a6 6 0 1 0 0 12 6 6 0 0 0 0-12zm0 10a4 4 0 1 1 0-8 4 4 0 0 1 0 8z"/>
+                      </svg>
+                      <svg v-else focusable="false" width="16" height="16" viewBox="0 0 32 32" fill="currentColor">
+                        <path d="m3.3 2 26.7 26.7-1.4 1.4-5.1-5.1A15 15 0 0 1 16 26C7 26 2 16 2 16a25 25 0 0 1 6.2-7.5L1.9 3.4 3.3 2zm6.4 8A22.7 22.7 0 0 0 4.3 16C5.5 18.2 9.6 24 16 24c2.1 0 4-.6 5.7-1.5l-3-3A6 6 0 0 1 12.5 13l-2.8-3z"/>
+                        <path d="M16 6c9 0 14 10 14 10a24.9 24.9 0 0 1-4.6 6.1L24 20.7c1.7-1.6 3-3.5 3.7-4.7C26.5 13.8 22.4 8 16 8c-1.5 0-2.8.3-4.1.8L10.4 7.3A14 14 0 0 1 16 6z"/>
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+                <div v-else class="config-empty">未读取到共享资源连接信息。</div>
+                <div v-if="sharedCapabilityCredentialError" class="config-inline-note error-text">{{ sharedCapabilityCredentialError }}</div>
+              </div>
               <div v-if="drawerCapability?.source === 'shared'" class="config-inline-note">
-                共享资源只读。业务环境只能查看平台共享资源池中的服务信息，部署、编辑和删除由平台管理员在共享资源池画布完成。
+                只读引用不会改变共享资源池中的服务本体；部署、编辑和删除由平台管理员在共享环境完成。
               </div>
               <div v-if="drawerCapability?.source === 'external'" class="external-capability-form">
                 <div class="config-section-title">
@@ -1989,7 +2021,7 @@
           <span>配置</span>
           <small>{{ componentContextMenu.kind === 'capability' ? '在右侧查看或配置能力来源' : (componentContextMenu.kind === 'service' ? '在右侧查看工具或中间件配置' : '在右侧配置环境变量、副本和启动参数') }}</small>
         </button>
-        <button v-if="componentContextMenu.kind === 'component' || componentContextMenu.kind === 'service'" type="button" @click="renameContextNode">
+        <button v-if="componentContextMenu.kind === 'component' || componentContextMenu.kind === 'service' || componentContextMenu.kind === 'capability'" type="button" @click="renameContextNode">
           <span>重命名</span>
           <small>修改画布上显示的卡片名称</small>
         </button>
@@ -2402,6 +2434,11 @@ const capabilityForm = ref(defaultCapabilityForm())
 const capabilitySecretVisibleKeys = ref<Set<string>>(new Set())
 const capabilityCredentialLoading = ref(false)
 const capabilityCredentialError = ref('')
+const sharedCapabilitySecretVisibleKeys = ref<Set<string>>(new Set())
+const sharedCapabilityCredentialLoading = ref(false)
+const sharedCapabilityCredentialError = ref('')
+const sharedCapabilityCredentialCapability = ref('')
+const sharedCapabilityCredentials = ref<any[]>([])
 const activeCapabilityServiceId = ref<number | null>(null)
 const capabilityWorkspaceCache = ref<Record<number, ServiceWorkspace>>({})
 const capabilityWorkspaceLoading = ref(false)
@@ -3770,6 +3807,22 @@ const openInfraSubmenu = async () => {
   }
 }
 const sharedCapabilityTemplateLabel = (item:any) => [capabilityLabel(item.capability), item.serviceName || item.serviceType].filter(Boolean).join(' · ')
+const externalCapabilityMenuDescription = (item:any) => {
+  const labels: Record<string, string> = {
+    git: '接入外部 Git 或代码托管服务',
+    registry: '接入外部镜像仓库',
+    ci: '接入外部持续集成服务',
+    cd: '接入外部持续部署服务',
+    database: '接入外部数据库服务',
+    cache: '接入外部缓存服务',
+    mq: '接入外部消息中间件',
+    objectStorage: '接入外部对象存储',
+    monitor: '接入外部监控服务',
+    logging: '接入外部日志服务',
+    custom: '接入自定义外部资源',
+  }
+  return labels[String(item?.capability || '')] || '接入外部资源'
+}
 const openSharedCapabilitySubmenu = async () => {
   await loadSharedCapabilityResources()
   const templates = sharedCapabilityResources.value.map((item:any) => ({
@@ -3795,7 +3848,7 @@ const openExternalCapabilitySubmenu = () => {
     templates: externalCapabilityOptions.map((item) => ({
       ...item,
       type: item.capability,
-      description: item.externalPlaceholder,
+      description: externalCapabilityMenuDescription(item),
     })),
   }
 }
@@ -5236,6 +5289,81 @@ const componentDrawerConfigKeySuggestions = computed(() => {
 const drawerService = computed(() => configDrawer.value.kind === 'service' ? configDrawer.value.service : null)
 const drawerCapability = computed(() => configDrawer.value.kind === 'capability' ? configDrawer.value.capability : null)
 const drawerCapabilitySource = computed(() => String(drawerCapability.value?.source || '').toLowerCase())
+const sharedCapabilityService = computed(() => drawerCapabilitySource.value === 'shared' ? (drawerCapability.value?.refService || null) : null)
+const sharedCapabilityInternalEndpoint = computed(() => sharedCapabilityService.value ? serviceInternalEndpoint(sharedCapabilityService.value) : '')
+const sharedCapabilityType = computed(() => {
+  const cap = drawerCapability.value || {}
+  const service = sharedCapabilityService.value || {}
+  return String(service.serviceType || cap.serviceType || cap.provider || cap.capability || '').toLowerCase()
+})
+const sharedCapabilityEndpointParts = computed(() => splitEndpoint(sharedCapabilityInternalEndpoint.value, defaultServicePortForBinding(sharedCapabilityType.value)))
+const sharedCapabilityUsername = computed(() => {
+  const credentials = sharedCapabilityCredentials.value
+  const fromSecret = capabilityCredentialValue(credentials, ['username', 'user', 'postgres-user', 'postgresql-username', 'mysql-user', 'mongodb-root-user', 'rabbitmq-username', 'root-user', 'access-key'])
+  if (fromSecret) return fromSecret
+  const defaults: Record<string, string> = {
+    postgresql: 'postgres',
+    mysql: 'root',
+    mongodb: 'root',
+    rabbitmq: 'user',
+    minio: 'minioadmin',
+  }
+  if (sharedCapabilityType.value === 'redis' || sharedCapabilityType.value === 'kafka') return '无'
+  return defaults[sharedCapabilityType.value] || '按共享资源配置'
+})
+const sharedCapabilityPasswordKeys = computed(() => {
+  const type = sharedCapabilityType.value
+  if (type === 'postgresql') return ['postgres-password', 'postgresql-password', 'password']
+  if (type === 'mysql') return ['mysql-root-password', 'mysql-password', 'password']
+  if (type === 'mongodb') return ['mongodb-root-password', 'mongodb-password', 'password']
+  if (type === 'redis') return ['redis-password', 'password']
+  if (type === 'rabbitmq') return ['rabbitmq-password', 'password']
+  if (type === 'minio') return ['root-password', 'secret-key', 'secretkey', 'minio-secret-key', 'password']
+  return ['password', 'token']
+})
+const sharedCapabilityPassword = computed(() => capabilityCredentialValue(sharedCapabilityCredentials.value, sharedCapabilityPasswordKeys.value))
+const sharedCapabilitySecretVisible = (key:string) => sharedCapabilitySecretVisibleKeys.value.has(key)
+const sharedCapabilityPasswordDisplay = computed(() => {
+  if (!sharedCapabilitySecretVisible('password')) return '******'
+  if (sharedCapabilityCredentialLoading.value) return '读取中...'
+  return sharedCapabilityPassword.value || '未读取到密码'
+})
+const sharedCapabilityDefaultDatabase = computed(() => {
+  const type = sharedCapabilityType.value
+  if (type === 'mysql') return 'mysql'
+  if (type === 'postgresql') return 'postgres'
+  if (type === 'mongodb') return 'admin'
+  return ''
+})
+const sharedCapabilityConnectionString = computed(() => {
+  const type = sharedCapabilityType.value
+  const [host, port] = sharedCapabilityEndpointParts.value
+  const username = sharedCapabilityUsername.value
+  const password = sharedCapabilityPasswordDisplay.value
+  if (type === 'postgresql') return `postgresql://${username}:${password}@${host}:${port}/${sharedCapabilityDefaultDatabase.value}`
+  if (type === 'mysql') return `mysql://${username}:${password}@${host}:${port}/${sharedCapabilityDefaultDatabase.value}`
+  if (type === 'mongodb') return `mongodb://${username}:${password}@${host}:${port}/${sharedCapabilityDefaultDatabase.value}`
+  if (type === 'redis') return `redis://:${password}@${host}:${port}/0`
+  if (type === 'rabbitmq') return `amqp://${username}:${password}@${host}:${port}/`
+  if (type === 'kafka') return `${host}:${port}`
+  if (type === 'minio') return `http://${host}:${port}`
+  return `${host}:${port}`
+})
+const sharedCapabilityConnectionRows = computed(() => {
+  if (drawerCapabilitySource.value !== 'shared' || !sharedCapabilityService.value) return []
+  const [host, port] = sharedCapabilityEndpointParts.value
+  const rows: Array<{ label: string; value: string; secretKey?: string }> = [
+    { label: '地址', value: host || '部署后生成' },
+    { label: '端口', value: String(port || '-') },
+    { label: '用户名', value: sharedCapabilityUsername.value },
+  ]
+  if (sharedCapabilityType.value !== 'kafka') rows.push({ label: '密码', value: sharedCapabilityPasswordDisplay.value, secretKey: 'password' })
+  if (sharedCapabilityDefaultDatabase.value) rows.push({ label: '数据库', value: sharedCapabilityDefaultDatabase.value })
+  return [
+    ...rows,
+    { label: '连接串', value: sharedCapabilityConnectionString.value, secretKey: ['kafka', 'minio'].includes(sharedCapabilityType.value) ? undefined : 'password' },
+  ]
+})
 const drawerCapabilityRows = computed(() => {
   const cap = drawerCapability.value || {}
   const ref = cap.refService || {}
@@ -5248,7 +5376,6 @@ const drawerCapabilityRows = computed(() => {
   if (drawerCapabilitySource.value === 'shared') {
     rows.push(
       { label: '共享服务', value: ref.serviceName || ref.serviceType || cap.serviceType || '-' },
-      { label: '命名空间', value: ref.namespace || '-' },
       { label: '运行状态', value: serviceStatusText(ref.status || cap.validationStatus || '') },
     )
   }
@@ -5275,6 +5402,34 @@ const capabilityCredentialValue = (credentials:any[], keys:string[]) => {
   const normalizedKeys = keys.map((key) => key.toLowerCase())
   const match = credentials.find((item:any) => normalizedKeys.includes(String(item.key || '').toLowerCase()))
   return match?.value ? String(match.value) : ''
+}
+const loadSharedCapabilityCredentials = async () => {
+  const cap = drawerCapability.value
+  if (!envId.value || !cap?.capability || sharedCapabilityCredentialLoading.value) return
+  if (sharedCapabilityCredentialCapability.value === cap.capability && sharedCapabilityCredentials.value.length) return
+  sharedCapabilityCredentialLoading.value = true
+  sharedCapabilityCredentialError.value = ''
+  try {
+    const res = await api.getEnvironmentCapabilityCredentials(envId.value, cap.capability)
+    sharedCapabilityCredentials.value = Array.isArray(res?.data?.credentials) ? res.data.credentials : []
+    sharedCapabilityCredentialCapability.value = cap.capability
+  } catch (e:any) {
+    sharedCapabilityCredentials.value = []
+    sharedCapabilityCredentialError.value = '读取共享资源凭据失败：' + (e?.message || '未知错误')
+  } finally {
+    sharedCapabilityCredentialLoading.value = false
+  }
+}
+const toggleSharedCapabilitySecret = async (key:string) => {
+  const next = new Set(sharedCapabilitySecretVisibleKeys.value)
+  if (next.has(key)) {
+    next.delete(key)
+    sharedCapabilitySecretVisibleKeys.value = next
+    return
+  }
+  await loadSharedCapabilityCredentials()
+  next.add(key)
+  sharedCapabilitySecretVisibleKeys.value = next
 }
 const loadCapabilityCredentials = async () => {
   const cap = drawerCapability.value
@@ -6170,6 +6325,10 @@ const openCapabilityConfigDrawer = (capability:any) => {
   }
   capabilitySecretVisibleKeys.value = new Set()
   capabilityCredentialError.value = ''
+  sharedCapabilitySecretVisibleKeys.value = new Set()
+  sharedCapabilityCredentialError.value = ''
+  sharedCapabilityCredentialCapability.value = ''
+  sharedCapabilityCredentials.value = []
   runtimeMetrics.value = null
   runtimeMetricsError.value = ''
   runtimeLogs.value = null
@@ -6191,6 +6350,10 @@ const closeConfigDrawer = () => {
   capabilityForm.value = defaultCapabilityForm()
   capabilitySecretVisibleKeys.value = new Set()
   capabilityCredentialError.value = ''
+  sharedCapabilitySecretVisibleKeys.value = new Set()
+  sharedCapabilityCredentialError.value = ''
+  sharedCapabilityCredentialCapability.value = ''
+  sharedCapabilityCredentials.value = []
   runtimeMetrics.value = null
   runtimeMetricsError.value = ''
   runtimeLogs.value = null
@@ -7902,7 +8065,8 @@ const startRenameNode = (node: any) => {
 const renameContextNode = () => {
   const comp = componentContextMenu.value.component
   const svc = componentContextMenu.value.service
-  const node = comp || svc
+  const capability = componentContextMenu.value.capability
+  const node = comp || svc || capability
   closeComponentContextMenu()
   if (!node) return
   startRenameNode(node)
@@ -8370,16 +8534,16 @@ const performDeleteService = async (svc:any) => {
 .status-badge {
   display: inline-flex; align-items: center; gap: 5px;
   font-size: 11px; font-weight: 500; padding: 2px 10px; border-radius: var(--paap-radius-full);
-  background: #f3f4f6; color: var(--paap-muted);
+  background: var(--paap-bg-04); color: var(--paap-muted);
 }
-.status-badge.running { background: var(--paap-success-soft); color: #059669; }
+.status-badge.running { background: var(--paap-success-soft); color: var(--paap-emerald); }
 .status-badge.error { background: var(--paap-danger-soft); color: var(--paap-danger); }
 .status-badge.creating { background: var(--paap-accent-soft); color: var(--paap-accent); }
 .title-actions { flex-shrink: 0; display: flex; gap: var(--paap-space-2); align-self: center; flex-wrap: wrap; justify-content: flex-end; }
 .page-error {
-  border: 1px solid #fecaca;
+  border: 1px solid var(--paap-danger-border);
   background: var(--paap-danger-soft);
-  color: #991b1b;
+  color: var(--paap-danger-text-strong);
   border-radius: var(--paap-radius);
   padding: 10px 12px;
   font-size: 13px;
@@ -8615,7 +8779,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   white-space: nowrap;
 }
 .flow-list { display: flex; flex-direction: column; }
-.flow-step { display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; align-items: start; gap: var(--paap-space-3); padding: 13px 0; border-bottom: 1px solid #f3f4f6; }
+.flow-step { display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; align-items: start; gap: var(--paap-space-3); padding: 13px 0; border-bottom: 1px solid var(--paap-bg-04); }
 .flow-step:last-child { border-bottom: none; }
 .flow-dot { width: 9px; height: 9px; margin-top: 5px; border-radius: 50%; background: var(--paap-border-strong); }
 .flow-step.ready .flow-dot { background: var(--paap-success); }
@@ -8641,7 +8805,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   width: 100%;
   padding: 12px 0;
   border: none;
-  border-bottom: 1px solid #f3f4f6;
+  border-bottom: 1px solid var(--paap-bg-04);
   background: transparent;
   text-align: left;
   cursor: pointer;
@@ -8649,12 +8813,12 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 .quick-row:last-child, .compact-row:last-child { border-bottom: none; }
 .quick-row:hover, .compact-row:hover { background: var(--paap-panel-subtle); }
 .quick-icon { display: inline-flex; align-items: center; justify-content: center; width: 28px; color: var(--paap-muted); flex-shrink: 0; }
-.quick-icon.git { color: #cc8888; }
-.quick-icon.ci { color: #c88ba8; }
-.quick-icon.registry, .quick-icon.harbor { color: #d4b072; }
-.quick-icon.deploy { color: #8b9dc3; }
-.quick-icon.monitor { color: #7bb896; }
-.quick-icon.log { color: #a090c8; }
+.quick-icon.git { color: var(--paap-service-git); }
+.quick-icon.ci { color: var(--paap-service-ci); }
+.quick-icon.registry, .quick-icon.harbor { color: var(--paap-service-registry); }
+.quick-icon.deploy { color: var(--paap-service-deploy); }
+.quick-icon.monitor { color: var(--paap-service-monitor); }
+.quick-icon.log { color: var(--paap-service-log); }
 .quick-main { display: flex; flex-direction: column; flex: 1; min-width: 0; }
 .quick-name, .compact-name { color: var(--paap-text); font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .quick-desc { color: var(--paap-muted); font-size: 12px; margin-top: 2px; }
@@ -8723,7 +8887,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   cursor: pointer;
 }
 .capability-service-pill.active {
-  border-color: #bfdbfe;
+  border-color: var(--paap-info-border);
   background: var(--paap-accent-soft);
   color: var(--paap-accent);
 }
@@ -8741,7 +8905,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   font-weight: 600;
 }
 .capability-external-link:hover {
-  border-color: #bfdbfe;
+  border-color: var(--paap-info-border);
   background: var(--paap-accent-soft);
   text-decoration: none;
 }
@@ -8835,8 +8999,8 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 }
 .workspace-action-btn--primary {
   border-color: var(--paap-accent);
-  background: var(--paap-accent);
-  color: #fff;
+   background: var(--paap-accent);
+   color: var(--paap-white);
 }
 .workspace-action-btn--primary:hover:not(:disabled) {
   border-color: var(--paap-accent-hover);
@@ -8844,18 +9008,18 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 }
 .workspace-action-btn--danger {
   border-color: var(--paap-danger);
-  background: var(--paap-danger);
-  color: #fff;
+   background: var(--paap-danger);
+   color: var(--paap-white);
 }
 .workspace-action-btn--danger:hover:not(:disabled) {
-  border-color: #ba1b23;
-  background: #ba1b23;
+  border-color: var(--paap-danger-dark);
+  background: var(--paap-danger-dark);
 }
 .text-btn.danger { color: var(--paap-danger); }
 .workspace-message {
-  border: 1px solid #bbf7d0;
+  border: 1px solid var(--paap-success-border);
   background: var(--paap-success-soft);
-  color: #047857;
+  color: var(--paap-emerald-dark);
   border-radius: var(--paap-radius);
   padding: 10px 12px;
   font-size: 13px;
@@ -8996,7 +9160,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   border-radius: 0;
 }
 .application-set-deploy-btn--blocked {
-  border-color: var(--cds-border-subtle-01, #c6c6c6);
+  border-color: var(--cds-border-subtle-01, var(--paap-text-04));
   background: var(--cds-layer-02, #ffffff);
   color: var(--cds-text-disabled, rgba(22, 22, 22, 0.25));
   cursor: not-allowed;
@@ -9034,7 +9198,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   border-radius: var(--paap-radius-sm);
   background:
     radial-gradient(circle at 1px 1px, rgba(141, 141, 141, 0.34) 1px, transparent 0),
-    #ffffff;
+    var(--paap-white);
   background-size: 18px 18px;
 }
 .topology-controls {
@@ -9155,7 +9319,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   border-color: var(--cds-blue-20, #d0e2ff);
 }
 .component-topology-zone--external {
-  border-color: var(--cds-gray-30, #c6c6c6);
+  border-color: var(--cds-gray-30, var(--paap-text-04));
   background: rgba(var(--cds-gray-10-rgb, 244, 244, 244), 0.72);
 }
 .component-topology-zone-toggle {
@@ -9321,7 +9485,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 }
 .component-canvas-link {
   fill: none;
-  stroke: #0f62fe;
+  stroke: var(--paap-accent);
   stroke-width: 2.2;
   stroke-dasharray: 7 5;
   stroke-linecap: round;
@@ -9333,7 +9497,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 }
 .component-canvas-link:hover,
 .component-canvas-link.active {
-  stroke: #0043ce;
+  stroke: var(--paap-accent-hover);
   stroke-width: 2.8;
 }
 @keyframes dash-flow {
@@ -9343,7 +9507,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   marker-end: url(#environment-arrow);
 }
 .component-arrow-head {
-  fill: #0f62fe;
+  fill: var(--paap-accent);
 }
 .component-canvas-link.active {
   stroke: var(--paap-accent);
@@ -9446,7 +9610,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 }
 .node-source-badge--external {
   border-color: var(--cds-purple-20, #e8daff);
-  background: var(--cds-purple-10, #f6f2ff);
+  background: var(--cds-purple-10, var(--paap-purple-bg));
   color: var(--cds-purple-70, #6929c4);
 }
 .node-source-badge--component,
@@ -9510,19 +9674,19 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   justify-content: center;
   width: 36px;
   height: 36px;
-  background: #edf5ff;
+  background: var(--paap-accent-soft);
   color: var(--paap-accent);
 }
-.node-type-icon--frontend { background: #fff1f1; color: #da1e28; }
-.node-type-icon--backend { background: #edf5ff; color: #0f62fe; }
+.node-type-icon--frontend { background: var(--paap-danger-soft); color: var(--paap-danger); }
+.node-type-icon--backend { background: var(--paap-accent-soft); color: var(--paap-accent); }
 .node-type-icon--database,
 .node-type-icon--postgresql,
 .node-type-icon--mysql,
-.node-type-icon--mongodb { background: #f6f2ff; color: #8a3ffc; }
+.node-type-icon--mongodb { background: var(--paap-purple-bg); color: var(--paap-purple-accent); }
 .node-type-icon--redis,
 .node-type-icon--middleware,
 .node-type-icon--rabbitmq,
-.node-type-icon--kafka { background: #fcf4d6; color: #b28600; }
+.node-type-icon--kafka { background: var(--paap-warning-soft); color: var(--paap-amber-dark); }
 .node-status { width: 7px; height: 7px; border-radius: 50%; background: var(--paap-border-strong); }
 .node-status.running, .node-status.linked { background: var(--paap-success); }
 .node-status.error, .node-status.failed { background: var(--paap-danger); }
@@ -11367,6 +11531,21 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 .capability-summary-grid {
   margin-top: 0;
 }
+.capability-summary-grid .capability-secret-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+.capability-summary-grid .capability-secret-row span {
+  grid-column: 1 / -1;
+}
+.capability-summary-grid .capability-secret-row strong {
+  white-space: normal;
+  word-break: break-all;
+}
+.capability-row-secret-toggle {
+  width: 32px;
+  height: 32px;
+}
 .capability-checkbox-field {
   display: inline-flex;
   align-items: center;
@@ -11541,7 +11720,8 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   text-align: center;
 }
 .status-dot { width: 6px; height: 6px; background: var(--paap-border-strong); border-radius: 50%; }
-.status-dot.running { background: var(--paap-success); }
+.status-dot.running,
+.status-dot.linked { background: var(--paap-success); }
 .status-dot.stopped { background: var(--paap-danger); }
 .status-dot.failed,
 .status-dot.error { background: var(--paap-danger); }
@@ -11739,8 +11919,8 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 .service-select-card.disabled:hover { border-color: var(--paap-border); background: var(--paap-panel); }
 
 .select-radio { width: 18px; height: 18px; border: 1.5px solid var(--paap-border-strong); display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 2px; background: var(--paap-panel); transition: all 0.15s; border-radius: 50%; }
-.select-radio.selected { background: var(--paap-accent); border-color: var(--paap-accent); color: #ffffff; }
-.select-radio.disabled { background: #f3f4f6; border-color: var(--paap-border-strong); color: var(--paap-muted-2); }
+.select-radio.selected { background: var(--paap-accent); border-color: var(--paap-accent); color: var(--paap-white); }
+.select-radio.disabled { background: var(--paap-bg-04); border-color: var(--paap-border-strong); color: var(--paap-muted-2); }
 
 .service-name-row { display: flex; align-items: center; gap: var(--paap-space-2); flex-wrap: wrap; }
 .service-name { font-size: 15px; line-height: 1.4; font-weight: 600; }
@@ -11753,7 +11933,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 .bx--btn--secondary { background: var(--paap-panel); color: var(--paap-accent); border: 1px solid var(--paap-accent); }
 .bx--btn--secondary:hover { background: var(--paap-accent-soft); color: var(--paap-accent-hover); border-color: var(--paap-accent-hover); }
 .bx--btn--danger { background: var(--cds-button-danger-primary, var(--paap-danger)); color: var(--cds-text-on-color, #ffffff); }
-.bx--btn--danger:hover { background: var(--cds-button-danger-hover, #ba1b23); }
+.bx--btn--danger:hover { background: var(--cds-button-danger-hover, var(--paap-danger-dark)); }
 .bx--btn--ghost { background: transparent; color: var(--paap-muted); border: 1px solid var(--paap-border); }
 .bx--btn--ghost:hover { background: var(--paap-panel-subtle); color: var(--paap-text); }
 .bx--btn:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -11791,25 +11971,25 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 
 /* Service icon wrap */
 .service-icon-wrap { width: 32px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; align-self: center; background: transparent; color: var(--paap-muted-2); }
-.service-icon-wrap.deploy   { color: #8b9dc3; }
-.service-icon-wrap.git      { color: #cc8888; }
-.service-icon-wrap.log      { color: #a090c8; }
-.service-icon-wrap.monitor  { color: #7bb896; }
-.service-icon-wrap.registry { color: #d4b072; }
-.service-icon-wrap.harbor   { color: #8b9dc3; }
-.service-icon-wrap.ci       { color: #c88ba8; }
-.service-icon-wrap.mysql      { color: #7bb8ae; }
-.service-icon-wrap.postgresql { color: #8b9dc3; }
-.service-icon-wrap.mongodb    { color: #7bb896; }
-.service-icon-wrap.redis      { color: #c88ba8; }
-.service-icon-wrap.rabbitmq   { color: #d4b072; }
-.service-icon-wrap.kafka      { color: #a090c8; }
-.service-icon-wrap.minio      { color: #8b9dc3; }
+.service-icon-wrap.deploy   { color: var(--paap-service-deploy); }
+.service-icon-wrap.git      { color: var(--paap-service-git); }
+.service-icon-wrap.log      { color: var(--paap-service-log); }
+.service-icon-wrap.monitor  { color: var(--paap-service-monitor); }
+.service-icon-wrap.registry { color: var(--paap-service-registry); }
+.service-icon-wrap.harbor   { color: var(--paap-service-deploy); }
+.service-icon-wrap.ci       { color: var(--paap-service-ci); }
+.service-icon-wrap.mysql      { color: var(--paap-service-mysql); }
+.service-icon-wrap.postgresql { color: var(--paap-service-deploy); }
+.service-icon-wrap.mongodb    { color: var(--paap-service-monitor); }
+.service-icon-wrap.redis      { color: var(--paap-service-ci); }
+.service-icon-wrap.rabbitmq   { color: var(--paap-service-registry); }
+.service-icon-wrap.kafka      { color: var(--paap-service-log); }
+.service-icon-wrap.minio      { color: var(--paap-service-deploy); }
 .service-icon-wrap.infra      { color: var(--paap-muted); }
 
 /* Tag status dot */
 .tag-dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; margin-right: 5px; vertical-align: middle; margin-top: -1px; background: var(--paap-border-strong); }
-.tag-dot.running   { background: #059669; }
+.tag-dot.running   { background: var(--paap-emerald); }
 .tag-dot.installing{ background: var(--paap-accent); }
 .tag-dot.error     { background: var(--paap-danger); }
 .tag-dot.failed    { background: var(--paap-danger); }
@@ -11821,7 +12001,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 .bx--tag { font-size: 11px; padding: 2px 8px; border-radius: var(--paap-radius-full); font-weight: 500; }
 .bx--tag--sm { font-size: 10px; padding: 1px 6px; }
 .bx--tag--blue { background: var(--paap-accent-soft); color: var(--paap-accent); }
-.bx--tag--green { background: var(--paap-success-soft); color: #059669; }
+.bx--tag--green { background: var(--paap-success-soft); color: var(--paap-emerald); }
 .bx--tag--gray { background: var(--cds-tag-background-gray, var(--cds-gray-20, #e0e0e0)); color: var(--cds-tag-color-gray, var(--paap-text)); }
 .bx--tag--red { background: var(--paap-danger-soft); color: var(--paap-danger); }
 

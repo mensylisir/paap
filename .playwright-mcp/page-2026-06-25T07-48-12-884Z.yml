@@ -1,0 +1,254 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e3]:
+    - complementary [ref=e4]:
+      - generic [ref=e5]:
+        - link "PAAP" [ref=e6] [cursor=pointer]:
+          - /url: /apps
+          - img [ref=e8]
+          - generic [ref=e12]: PAAP
+        - navigation "环境菜单" [ref=e14]:
+          - link "概览" [ref=e15] [cursor=pointer]:
+            - /url: /apps/5/environments/5
+            - img [ref=e16]
+            - generic [ref=e18]: 概览
+          - link "组件 2" [ref=e80] [cursor=pointer]:
+            - /url: /apps/5/environments/5?tab=components
+            - img [ref=e20]
+            - generic [ref=e22]: 组件
+            - generic [ref=e81]: "2"
+      - link "返回环境列表" [ref=e24] [cursor=pointer]:
+        - /url: /apps/5/environments
+        - img [ref=e25]
+        - generic [ref=e27]: 返回环境列表
+    - main [ref=e28]:
+      - generic [ref=e29]:
+        - button "R 应用 Real Fullstack PostgreSQL Redis Demo" [ref=e31] [cursor=pointer]:
+          - generic [ref=e32]: R
+          - generic [ref=e33]:
+            - generic [ref=e34]: 应用
+            - strong [ref=e35]: Real Fullstack PostgreSQL Redis Demo
+          - img [ref=e36]
+        - generic [ref=e38]: /
+        - button "环境 生产环境" [ref=e40] [cursor=pointer]:
+          - generic [ref=e42]:
+            - generic [ref=e43]: 环境
+            - strong [ref=e44]: 生产环境
+          - img [ref=e45]
+      - main [ref=e49]:
+        - generic [ref=e50]:
+          - generic [ref=e51]:
+            - button "环境拓扑" [ref=e52] [cursor=pointer]
+            - button "环境详情" [ref=e53] [cursor=pointer]
+          - generic [ref=e55]:
+            - generic [ref=e56]:
+              - heading "环境拓扑" [level=2] [ref=e57]
+              - generic [ref=e58]: 组件、平台工具、中间件和数据库的环境视图
+            - generic [ref=e60]:
+              - generic [ref=e61]:
+                - button "放大" [ref=e62] [cursor=pointer]:
+                  - img [ref=e63]
+                - button "缩小" [ref=e65] [cursor=pointer]:
+                  - img [ref=e66]
+                - button "重置视图" [ref=e68] [cursor=pointer]:
+                  - img [ref=e69]
+                - generic [ref=e71]: 100%
+              - generic [ref=e72]:
+                - img [ref=e73]
+                - button "用户前端 前端服务 · 应用组件 拖拽到其他节点建立连接 拖拽到其他节点建立连接 拖拽到其他节点建立连接 拖拽到其他节点建立连接" [ref=e82]:
+                  - img [ref=e84]
+                  - strong [ref=e87]: 用户前端
+                  - generic [ref=e88]: 前端服务 · 应用组件
+                  - button "删除组件" [ref=e89] [cursor=pointer]:
+                    - img [ref=e90]
+                  - generic "拖拽到其他节点建立连接" [ref=e93]
+                  - generic "拖拽到其他节点建立连接" [ref=e94]
+                  - generic "拖拽到其他节点建立连接" [ref=e95]
+                  - generic "拖拽到其他节点建立连接" [ref=e96]
+                - button "API 服务 后端服务 · 应用组件 拖拽到其他节点建立连接 拖拽到其他节点建立连接 拖拽到其他节点建立连接 拖拽到其他节点建立连接" [ref=e97]:
+                  - img [ref=e99]
+                  - strong [ref=e102]: API 服务
+                  - generic [ref=e103]: 后端服务 · 应用组件
+                  - button "删除组件" [ref=e104] [cursor=pointer]:
+                    - img [ref=e105]
+                  - generic "拖拽到其他节点建立连接" [ref=e108]
+                  - generic "拖拽到其他节点建立连接" [ref=e109]
+                  - generic "拖拽到其他节点建立连接" [ref=e110]
+                  - generic "拖拽到其他节点建立连接" [ref=e111]
+                - button "prod-redis 缓存服务 拖拽到其他节点建立连接 拖拽到其他节点建立连接 拖拽到其他节点建立连接 拖拽到其他节点建立连接" [ref=e112]:
+                  - img [ref=e114]
+                  - strong [ref=e117]: prod-redis
+                  - generic [ref=e118]: 缓存服务
+                  - button "删除卡片" [ref=e119] [cursor=pointer]:
+                    - img [ref=e120]
+                  - generic "拖拽到其他节点建立连接" [ref=e123]
+                  - generic "拖拽到其他节点建立连接" [ref=e124]
+                  - generic "拖拽到其他节点建立连接" [ref=e125]
+                  - generic "拖拽到其他节点建立连接" [ref=e126]
+                - button "prod-argocd 部署与持续交付 拖拽到其他节点建立连接 拖拽到其他节点建立连接 拖拽到其他节点建立连接 拖拽到其他节点建立连接" [ref=e127]:
+                  - img [ref=e129]
+                  - strong [ref=e132]: prod-argocd
+                  - generic [ref=e133]: 部署与持续交付
+                  - button "删除卡片" [ref=e134] [cursor=pointer]:
+                    - img [ref=e135]
+                  - generic "拖拽到其他节点建立连接" [ref=e138]
+                  - generic "拖拽到其他节点建立连接" [ref=e139]
+                  - generic "拖拽到其他节点建立连接" [ref=e140]
+                  - generic "拖拽到其他节点建立连接" [ref=e141]
+                - button "prod-gitea 代码仓库 拖拽到其他节点建立连接 拖拽到其他节点建立连接 拖拽到其他节点建立连接 拖拽到其他节点建立连接" [ref=e142]:
+                  - img [ref=e144]
+                  - strong [ref=e147]: prod-gitea
+                  - generic [ref=e148]: 代码仓库
+                  - button "删除卡片" [ref=e149] [cursor=pointer]:
+                    - img [ref=e150]
+                  - generic "拖拽到其他节点建立连接" [ref=e153]
+                  - generic "拖拽到其他节点建立连接" [ref=e154]
+                  - generic "拖拽到其他节点建立连接" [ref=e155]
+                  - generic "拖拽到其他节点建立连接" [ref=e156]
+                - button "prod-registry 轻量镜像仓库 拖拽到其他节点建立连接 拖拽到其他节点建立连接 拖拽到其他节点建立连接 拖拽到其他节点建立连接" [ref=e157]:
+                  - img [ref=e159]
+                  - strong [ref=e162]: prod-registry
+                  - generic [ref=e163]: 轻量镜像仓库
+                  - button "删除卡片" [ref=e164] [cursor=pointer]:
+                    - img [ref=e165]
+                  - generic "拖拽到其他节点建立连接" [ref=e168]
+                  - generic "拖拽到其他节点建立连接" [ref=e169]
+                  - generic "拖拽到其他节点建立连接" [ref=e170]
+                  - generic "拖拽到其他节点建立连接" [ref=e171]
+                - button "prod-kube-prometheus-stack 监控与可观测性 拖拽到其他节点建立连接 拖拽到其他节点建立连接 拖拽到其他节点建立连接 拖拽到其他节点建立连接" [ref=e172]:
+                  - img [ref=e174]
+                  - strong [ref=e177]: prod-kube-prometheus-stack
+                  - generic [ref=e178]: 监控与可观测性
+                  - button "删除卡片" [ref=e179] [cursor=pointer]:
+                    - img [ref=e180]
+                  - generic "拖拽到其他节点建立连接" [ref=e183]
+                  - generic "拖拽到其他节点建立连接" [ref=e184]
+                  - generic "拖拽到其他节点建立连接" [ref=e185]
+                  - generic "拖拽到其他节点建立连接" [ref=e186]
+                - button "prod-loki 日志服务 拖拽到其他节点建立连接 拖拽到其他节点建立连接 拖拽到其他节点建立连接 拖拽到其他节点建立连接" [ref=e187]:
+                  - img [ref=e189]
+                  - strong [ref=e192]: prod-loki
+                  - generic [ref=e193]: 日志服务
+                  - button "删除卡片" [ref=e194] [cursor=pointer]:
+                    - img [ref=e195]
+                  - generic "拖拽到其他节点建立连接" [ref=e198]
+                  - generic "拖拽到其他节点建立连接" [ref=e199]
+                  - generic "拖拽到其他节点建立连接" [ref=e200]
+                  - generic "拖拽到其他节点建立连接" [ref=e201]
+                - button "prod-postgresql 关系型数据库 拖拽到其他节点建立连接 拖拽到其他节点建立连接 拖拽到其他节点建立连接 拖拽到其他节点建立连接" [ref=e202]:
+                  - img [ref=e204]
+                  - strong [ref=e207]: prod-postgresql
+                  - generic [ref=e208]: 关系型数据库
+                  - button "删除卡片" [ref=e209] [cursor=pointer]:
+                    - img [ref=e210]
+                  - generic "拖拽到其他节点建立连接" [ref=e213]
+                  - generic "拖拽到其他节点建立连接" [ref=e214]
+                  - generic "拖拽到其他节点建立连接" [ref=e215]
+                  - generic "拖拽到其他节点建立连接" [ref=e216]
+  - dialog:
+    - complementary [ref=e217]:
+      - generic [ref=e218]:
+        - generic [ref=e219]:
+          - generic [ref=e220]: R
+          - generic [ref=e221]:
+            - paragraph [ref=e222]: 服务配置
+            - heading "prod-redis" [level=3] [ref=e223]
+            - text: Redis · 运行中
+        - button "关闭" [ref=e225] [cursor=pointer]:
+          - img [ref=e226]
+      - navigation "资源配置视图" [ref=e228]:
+        - button "部署" [ref=e229] [cursor=pointer]
+        - button "数据" [ref=e230] [cursor=pointer]
+        - button "接入" [ref=e231] [cursor=pointer]
+        - button "指标" [ref=e232] [cursor=pointer]
+        - button "日志" [ref=e233] [cursor=pointer]
+        - button "控制台" [ref=e234] [cursor=pointer]
+      - generic [ref=e235]:
+        - generic [ref=e236]:
+          - generic [ref=e238]: 部署状态
+          - generic [ref=e239]:
+            - generic [ref=e240]:
+              - generic [ref=e242]:
+                - strong [ref=e243]: Active deployment
+                - generic [ref=e244]: Redis (Bitnami) · 运行中
+              - generic [ref=e245]: 运行中
+            - generic [ref=e246]:
+              - button "查看日志" [ref=e247] [cursor=pointer]
+              - button "查看监控" [ref=e248] [cursor=pointer]
+          - generic [ref=e249]:
+            - generic [ref=e250]:
+              - generic [ref=e251]: 环境内
+              - code [ref=e252]: real-fullstack-prod-redis-master.real-fullstack-prod-redis.svc.cluster.local:6379
+            - generic [ref=e253]:
+              - generic [ref=e254]: 外部访问
+              - code [ref=e255]: http://172.18.0.2:31458
+              - link "打开" [ref=e256] [cursor=pointer]:
+                - /url: http://172.18.0.2:31458
+              - button "关闭外部访问" [ref=e257] [cursor=pointer]
+        - generic [ref=e258]:
+          - generic [ref=e260]: 版本
+          - generic [ref=e262]:
+            - generic [ref=e263]: 当前 Chart 版本
+            - strong [ref=e264]: Chart v18.6.0 / 应用 v7.2.3
+        - generic [ref=e265]:
+          - generic [ref=e266]:
+            - generic [ref=e267]: 部署参数可编辑
+            - generic [ref=e268]: 保存后写入服务部署参数；运行中的服务应用后会更新 ServiceInstance。
+          - generic [ref=e269]:
+            - generic [ref=e270]:
+              - generic [ref=e271]: Redis 架构
+              - combobox "Redis 架构" [ref=e272] [cursor=pointer]:
+                - option "Redis 单节点"
+                - option "Redis 主从复制" [selected]
+                - option "Redis Sentinel"
+                - option "Redis Cluster"
+            - generic [ref=e273]:
+              - generic [ref=e274]: Redis 副本
+              - spinbutton "Redis 副本" [ref=e275]: "3"
+        - generic [ref=e276]:
+          - generic [ref=e277]:
+            - generic [ref=e278]: 存储卷
+            - generic [ref=e279]: 保存后写入当前服务部署参数；运行中的服务会触发更新。
+          - generic [ref=e280]:
+            - article [ref=e281]:
+              - generic [ref=e282]:
+                - generic [ref=e283]:
+                  - strong [ref=e284]: 主节点
+                  - generic [ref=e285]: 保存主实例的数据。
+                - generic [ref=e286] [cursor=pointer]:
+                  - checkbox "启用持久化" [ref=e287]
+                  - generic [ref=e288]: 启用持久化
+              - generic [ref=e289]:
+                - generic [ref=e290]: 容量
+                - textbox "容量" [disabled] [ref=e291]:
+                  - /placeholder: 8Gi
+                  - text: 8Gi
+              - generic "常用容量" [ref=e292]:
+                - button "1Gi" [disabled] [ref=e293]
+                - button "5Gi" [disabled] [ref=e294]
+                - button "10Gi" [disabled] [ref=e295]
+                - button "20Gi" [disabled] [ref=e296]
+                - button "50Gi" [disabled] [ref=e297]
+            - article [ref=e298]:
+              - generic [ref=e299]:
+                - generic [ref=e300]:
+                  - strong [ref=e301]: 副本节点
+                  - generic [ref=e302]: 保存副本实例的数据。
+                - generic [ref=e303] [cursor=pointer]:
+                  - checkbox "启用持久化" [ref=e304]
+                  - generic [ref=e305]: 启用持久化
+              - generic [ref=e306]:
+                - generic [ref=e307]: 容量
+                - textbox "容量" [disabled] [ref=e308]:
+                  - /placeholder: 8Gi
+                  - text: 8Gi
+              - generic "常用容量" [ref=e309]:
+                - button "1Gi" [disabled] [ref=e310]
+                - button "5Gi" [disabled] [ref=e311]
+                - button "10Gi" [disabled] [ref=e312]
+                - button "20Gi" [disabled] [ref=e313]
+                - button "50Gi" [disabled] [ref=e314]
+      - generic [ref=e315]:
+        - button "删除卡片" [ref=e316] [cursor=pointer]
+        - button "取消" [ref=e317] [cursor=pointer]
+        - button "保存部署配置" [ref=e318] [cursor=pointer]
+        - button "应用配置" [ref=e319] [cursor=pointer]

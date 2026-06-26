@@ -1,0 +1,32 @@
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - generic [ref=e5]:
+      - link "PAAP" [ref=e6] [cursor=pointer]:
+        - /url: /apps
+        - img [ref=e8]
+        - generic [ref=e12]: PAAP
+      - navigation [ref=e13]:
+        - link "应用" [ref=e14] [cursor=pointer]:
+          - /url: /apps
+          - img [ref=e15]
+          - generic [ref=e20]: 应用
+        - link "模板" [ref=e21] [cursor=pointer]:
+          - /url: /templates
+          - img [ref=e22]
+          - generic [ref=e25]: 模板
+        - link "目录" [ref=e26] [cursor=pointer]:
+          - /url: /catalog
+          - img [ref=e27]
+          - generic [ref=e37]: 目录
+        - link "用户" [ref=e38] [cursor=pointer]:
+          - /url: /users
+          - img [ref=e39]
+          - generic [ref=e44]: 用户
+    - generic [ref=e45]:
+      - generic [ref=e46]:
+        - generic [ref=e47]: A
+        - generic [ref=e48]: admin
+      - button "退出" [ref=e49] [cursor=pointer]:
+        - img [ref=e50]
+        - generic [ref=e53]: 退出
+  - main [ref=e54]

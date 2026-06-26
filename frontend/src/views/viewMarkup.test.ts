@@ -500,6 +500,41 @@ describe('Vue view markup', () => {
     expect(envDetail.default).toContain('node-source-badge')
   })
 
+  it('allows shared and external capability cards to use canvas-local display names', async () => {
+    const envDetail = await import('./EnvDetailView.vue?raw')
+
+    expect(envDetail.default).toContain('componentDisplayNames.value[key] || capabilityDisplayName(cap)')
+    expect(envDetail.default).toContain("const capability = componentContextMenu.value.capability")
+    expect(envDetail.default).toContain('const node = comp || svc || capability')
+    expect(envDetail.default).toContain("componentContextMenu.kind === 'component' || componentContextMenu.kind === 'service' || componentContextMenu.kind === 'capability'")
+    expect(envDetail.default).not.toContain("node.topologyKind !== 'capability' && startRenameNode(node)")
+  })
+
+  it('keeps external resource menu descriptions generic and linked drawer status green', async () => {
+    const envDetail = await import('./EnvDetailView.vue?raw')
+
+    expect(envDetail.default).toContain('externalCapabilityMenuDescription')
+    expect(envDetail.default).not.toContain('description: item.externalPlaceholder')
+    expect(envDetail.default).toContain('.status-dot.linked')
+  })
+
+  it('shows referenced shared resources with read-only connection details in the drawer', async () => {
+    const envDetail = await import('./EnvDetailView.vue?raw')
+
+    expect(envDetail.default).toContain('sharedCapabilityConnectionRows')
+    expect(envDetail.default).toContain('共享资源连接信息')
+    expect(envDetail.default).toContain('sharedCapabilityInternalEndpoint')
+    expect(envDetail.default).toContain('sharedCapabilityConnectionString')
+    expect(envDetail.default).toContain('toggleSharedCapabilitySecret')
+    expect(envDetail.default).toContain('用户名')
+    expect(envDetail.default).toContain('密码')
+    expect(envDetail.default).toContain('连接串')
+    expect(envDetail.default).not.toContain("{ label: '命名空间', value: service.namespace")
+    expect(envDetail.default).not.toContain("{ label: '命名空间', value: ref.namespace")
+    expect(envDetail.default).not.toContain('serviceConfigPrimaryRows(typedService)')
+    expect(envDetail.default).not.toContain('共享资源只读。业务环境只能查看平台共享资源池中的服务信息')
+  })
+
   it('renders environment canvas zones for local shared and external resources', async () => {
     const envDetail = await import('./EnvDetailView.vue?raw')
     const topology = await import('./componentTopology.ts?raw')

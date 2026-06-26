@@ -98,6 +98,9 @@ func syncApplications(ctx context.Context, db *gorm.DB, k8sClient client.Client,
 
 	appsByIdentifier := make(map[string]model.Application, len(appList.Items))
 	for _, appCR := range appList.Items {
+		if clusterSyncObjectIsDeleting(&appCR) {
+			continue
+		}
 		identifier := firstNonEmpty(appCR.Spec.Identifier, appCR.Name)
 		if identifier == "" {
 			continue
@@ -130,6 +133,9 @@ func syncEnvironments(ctx context.Context, db *gorm.DB, k8sClient client.Client,
 
 	envsByKey := make(map[string]model.Environment, len(envList.Items))
 	for _, envCR := range envList.Items {
+		if clusterSyncObjectIsDeleting(&envCR) {
+			continue
+		}
 		appIdentifier := firstNonEmpty(envCR.Labels["paap.io/app"], strings.TrimPrefix(envCR.Namespace, "paap-app-"))
 		envIdentifier := firstNonEmpty(envCR.Spec.Identifier, envCR.Labels["paap.io/env"], envCR.Name)
 		if appIdentifier == "" || envIdentifier == "" {
@@ -169,6 +175,9 @@ func syncServiceInstances(ctx context.Context, db *gorm.DB, k8sClient client.Cli
 
 	serviceKeys := make(map[string]struct{}, len(svcList.Items))
 	for _, svcCR := range svcList.Items {
+		if clusterSyncObjectIsDeleting(&svcCR) {
+			continue
+		}
 		appIdentifier := firstNonEmpty(svcCR.Labels["paap.io/app"], strings.TrimPrefix(svcCR.Namespace, "paap-app-"))
 		envIdentifier := firstNonEmpty(svcCR.Labels["paap.io/env"], svcCR.Spec.EnvironmentRef.Name)
 		serviceType := firstNonEmpty(svcCR.Spec.Type, svcCR.Labels["paap.io/tool"])
@@ -292,6 +301,9 @@ func syncComponents(ctx context.Context, db *gorm.DB, k8sClient client.Client, a
 
 	componentKeys := make(map[string]struct{}, len(compList.Items))
 	for _, compCR := range compList.Items {
+		if clusterSyncObjectIsDeleting(&compCR) {
+			continue
+		}
 		appIdentifier := firstNonEmpty(compCR.Labels["paap.io/app"], strings.TrimPrefix(compCR.Namespace, "paap-app-"))
 		envIdentifier := firstNonEmpty(compCR.Labels["paap.io/env"], compCR.Spec.EnvironmentRef.Name)
 		componentIdentifier := firstNonEmpty(compCR.Spec.Identifier, compCR.Labels["paap.io/component"], compCR.Name)
@@ -335,6 +347,14 @@ func syncComponents(ctx context.Context, db *gorm.DB, k8sClient client.Client, a
 	}
 
 	return componentKeys, nil
+}
+
+func clusterSyncObjectIsDeleting(obj metav1.Object) bool {
+	if obj == nil {
+		return false
+	}
+	deletionTimestamp := obj.GetDeletionTimestamp()
+	return deletionTimestamp != nil && !deletionTimestamp.IsZero()
 }
 
 func ensureApplication(db *gorm.DB, appsByIdentifier map[string]model.Application, identifier string, ownerID uint) (model.Application, error) {

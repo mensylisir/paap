@@ -1,0 +1,55 @@
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - generic [ref=e5]:
+      - link "PAAP" [ref=e6] [cursor=pointer]:
+        - /url: /apps
+        - img [ref=e8]
+        - generic [ref=e12]: PAAP
+      - navigation [ref=e14]:
+        - link "概览" [ref=e15] [cursor=pointer]:
+          - /url: /apps/5/overview
+          - img [ref=e16]
+          - generic [ref=e21]: 概览
+        - link "环境" [ref=e22] [cursor=pointer]:
+          - /url: /apps/5/environments
+          - img [ref=e23]
+          - generic [ref=e26]: 环境
+        - link "成员" [ref=e27] [cursor=pointer]:
+          - /url: /apps/5/members
+          - img [ref=e28]
+          - generic [ref=e33]: 成员
+    - link "返回应用列表" [ref=e35] [cursor=pointer]:
+      - /url: /apps
+      - img [ref=e36]
+      - generic [ref=e38]: 返回应用列表
+  - main [ref=e39]:
+    - button "应 应用 应用" [ref=e42] [cursor=pointer]:
+      - generic [ref=e43]: 应
+      - generic [ref=e44]:
+        - generic [ref=e45]: 应用
+        - strong [ref=e46]: 应用
+      - img [ref=e47]
+    - generic [ref=e49]:
+      - generic [ref=e50]:
+        - generic [ref=e51]:
+          - heading "环境管理" [level=1] [ref=e52]
+          - paragraph [ref=e53]: 管理应用的所有运行环境
+        - button "创建环境" [ref=e54] [cursor=pointer]:
+          - img [ref=e55]
+          - text: 创建环境
+      - generic [ref=e57]:
+        - generic [ref=e58]:
+          - generic [ref=e59]: "1"
+          - generic [ref=e60]: 环境总数
+        - generic [ref=e61]:
+          - generic [ref=e62]: "1"
+          - generic [ref=e63]: 运行中
+        - generic [ref=e64]:
+          - generic [ref=e65]: "0"
+          - generic [ref=e66]: 已安装工具
+        - generic [ref=e67]:
+          - generic [ref=e68]: "0"
+          - generic [ref=e69]: 业务组件
+      - generic [ref=e72]:
+        - heading "环境列表" [level=2] [ref=e73]
+        - paragraph [ref=e74]: 当前应用下的所有环境

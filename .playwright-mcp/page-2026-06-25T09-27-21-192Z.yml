@@ -1,0 +1,62 @@
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - generic [ref=e5]:
+      - link "PAAP" [ref=e6] [cursor=pointer]:
+        - /url: /apps
+        - img [ref=e8]
+        - generic [ref=e12]: PAAP
+      - navigation [ref=e14]:
+        - link "概览" [ref=e15] [cursor=pointer]:
+          - /url: /apps/5/overview
+          - img [ref=e16]
+          - generic [ref=e21]: 概览
+        - link "环境" [ref=e22] [cursor=pointer]:
+          - /url: /apps/5/environments
+          - img [ref=e23]
+          - generic [ref=e26]: 环境
+        - link "成员" [ref=e27] [cursor=pointer]:
+          - /url: /apps/5/members
+          - img [ref=e28]
+          - generic [ref=e33]: 成员
+    - link "返回应用列表" [ref=e35] [cursor=pointer]:
+      - /url: /apps
+      - img [ref=e36]
+      - generic [ref=e38]: 返回应用列表
+  - main [ref=e39]:
+    - button "应 应用 应用" [ref=e42] [cursor=pointer]:
+      - generic [ref=e43]: 应
+      - generic [ref=e44]:
+        - generic [ref=e45]: 应用
+        - strong [ref=e46]: 应用
+      - img [ref=e47]
+    - generic [ref=e49]:
+      - generic [ref=e51]:
+        - heading "成员" [level=1] [ref=e52]
+        - paragraph [ref=e53]: 邀请已有用户加入应用，并维护应用内角色
+      - generic [ref=e54]:
+        - generic [ref=e56]:
+          - heading "应用成员" [level=2] [ref=e57]
+          - paragraph [ref=e58]: 成员权限只作用于当前应用
+        - generic [ref=e59]:
+          - generic [ref=e60]:
+            - generic [ref=e61]: 用户名
+            - textbox "用户名" [ref=e62]:
+              - /placeholder: 输入用户名
+            - generic [ref=e63]: 成员角色
+            - combobox "成员角色" [ref=e64] [cursor=pointer]:
+              - option "管理员"
+              - option "成员" [selected]
+              - option "只读"
+          - button "邀请成员" [disabled] [ref=e65]
+        - generic [ref=e67]:
+          - generic [ref=e68]:
+            - generic [ref=e69]: A
+            - generic [ref=e70]:
+              - strong [ref=e71]: admin
+              - generic [ref=e72]: admin@paap.local
+          - generic [ref=e73]:
+            - combobox [ref=e74] [cursor=pointer]:
+              - option "管理员" [selected]
+              - option "成员"
+              - option "只读"
+            - button "移除" [disabled] [ref=e75]

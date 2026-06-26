@@ -1,0 +1,78 @@
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - generic [ref=e5]:
+      - link "PAAP" [ref=e6] [cursor=pointer]:
+        - /url: /apps
+        - img [ref=e8]
+        - generic [ref=e12]: PAAP
+      - navigation [ref=e13]:
+        - link "应用" [ref=e14] [cursor=pointer]:
+          - /url: /apps
+          - img [ref=e15]
+          - generic [ref=e20]: 应用
+        - link "模板" [ref=e21] [cursor=pointer]:
+          - /url: /templates
+          - img [ref=e22]
+          - generic [ref=e25]: 模板
+        - link "目录" [ref=e26] [cursor=pointer]:
+          - /url: /catalog
+          - img [ref=e27]
+          - generic [ref=e37]: 目录
+        - link "用户" [ref=e38] [cursor=pointer]:
+          - /url: /users
+          - img [ref=e39]
+          - generic [ref=e44]: 用户
+    - generic [ref=e45]:
+      - generic [ref=e46]:
+        - generic [ref=e47]: A
+        - generic [ref=e48]: admin
+      - button "退出" [ref=e49] [cursor=pointer]:
+        - img [ref=e50]
+        - generic [ref=e53]: 退出
+  - main [ref=e54]:
+    - generic [ref=e55]:
+      - generic [ref=e56]:
+        - generic [ref=e57]:
+          - heading "模板管理" [level=1] [ref=e58]
+          - paragraph [ref=e59]: 管理工具模板、中间件模板、环境模板和组件运行配置模板
+        - generic [ref=e60]:
+          - button "同步内置模板" [ref=e61] [cursor=pointer]
+          - button "上传模板" [ref=e62] [cursor=pointer]:
+            - img [ref=e63]
+            - text: 上传模板
+      - navigation "模板分类" [ref=e65]:
+        - button "工具模板 0" [ref=e66] [cursor=pointer]:
+          - generic [ref=e67]: 工具模板
+          - strong [ref=e68]: "0"
+        - button "中间件模板 0" [ref=e69] [cursor=pointer]:
+          - generic [ref=e70]: 中间件模板
+          - strong [ref=e71]: "0"
+        - button "环境模板 0" [ref=e72] [cursor=pointer]:
+          - generic [ref=e73]: 环境模板
+          - strong [ref=e74]: "0"
+        - button "配置模板 0" [ref=e75] [cursor=pointer]:
+          - generic [ref=e76]: 配置模板
+          - strong [ref=e77]: "0"
+      - generic [ref=e78]:
+        - generic [ref=e79]:
+          - generic [ref=e80]: "0"
+          - generic [ref=e81]: 部署模板总数
+        - generic [ref=e82]:
+          - generic [ref=e83]: "0"
+          - generic [ref=e84]: 工具模板
+        - generic [ref=e85]:
+          - generic [ref=e86]: "0"
+          - generic [ref=e87]: 中间件模板
+        - generic [ref=e88]:
+          - generic [ref=e89]: "0"
+          - generic [ref=e90]: 环境模板
+        - generic [ref=e91]:
+          - generic [ref=e92]: "0"
+          - generic [ref=e93]: 配置模板
+      - generic [ref=e95]:
+        - generic [ref=e96]:
+          - heading "工具模板" [level=2] [ref=e97]
+          - paragraph [ref=e98]: 代码仓库、镜像仓库、部署、监控、日志和 CI 等平台工具模板。
+        - button "刷新" [ref=e99] [cursor=pointer]:
+          - img [ref=e100]
+          - text: 刷新

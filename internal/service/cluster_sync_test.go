@@ -67,6 +67,16 @@ func userSQLRows() *sqlmock.Rows {
 	return sqlmock.NewRows([]string{"id", "created_at", "updated_at", "deleted_at", "username", "email", "password"})
 }
 
+func TestClusterSyncObjectIsDeleting(t *testing.T) {
+	deletingAt := metav1.Now()
+	if !clusterSyncObjectIsDeleting(&paapv1.Environment{ObjectMeta: metav1.ObjectMeta{DeletionTimestamp: &deletingAt}}) {
+		t.Fatalf("object with deletionTimestamp should be treated as deleting")
+	}
+	if clusterSyncObjectIsDeleting(&paapv1.Environment{}) {
+		t.Fatalf("object without deletionTimestamp should not be treated as deleting")
+	}
+}
+
 func TestSyncClusterStateRestoresDBFromExistingCRs(t *testing.T) {
 	db, err := openTestDB(t)
 	if err != nil {
@@ -908,6 +918,117 @@ func TestSyncClusterStatePrunesDBRecordsMissingFromCluster(t *testing.T) {
 	}
 	if componentCount != 0 {
 		t.Fatalf("expected stale component pruned, got %d components", componentCount)
+	}
+}
+
+func TestSyncClusterStateIgnoresDeletingEnvironmentResources(t *testing.T) {
+	db, err := openTestDB(t)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := db.AutoMigrate(
+		&model.User{},
+		&model.Application{},
+		&model.AppMember{},
+		&model.Environment{},
+		&model.ServiceInstallation{},
+		&model.Component{},
+	); err != nil {
+		t.Fatalf("migrate db: %v", err)
+	}
+	admin := model.User{Username: "admin", Email: "admin@example.local", Password: "x"}
+	if err := db.Create(&admin).Error; err != nil {
+		t.Fatalf("seed admin: %v", err)
+	}
+	app := model.Application{Name: "Billing", Identifier: "billing", OwnerID: admin.ID}
+	if err := db.Create(&app).Error; err != nil {
+		t.Fatalf("seed app: %v", err)
+	}
+	env := model.Environment{ApplicationID: app.ID, Name: "生产", Identifier: "prod", Namespace: "billing-prod", Status: "running"}
+	if err := db.Create(&env).Error; err != nil {
+		t.Fatalf("seed env: %v", err)
+	}
+	if err := db.Create(&model.ServiceInstallation{EnvironmentID: env.ID, ServiceType: "redis", Status: "running", Namespace: "billing-prod-redis"}).Error; err != nil {
+		t.Fatalf("seed service: %v", err)
+	}
+	if err := db.Create(&model.Component{EnvironmentID: env.ID, Name: "api", Type: "backend", Image: "registry/api:v1", Version: "v1", Status: "running"}).Error; err != nil {
+		t.Fatalf("seed component: %v", err)
+	}
+
+	scheme := runtime.NewScheme()
+	if err := clientgoscheme.AddToScheme(scheme); err != nil {
+		t.Fatalf("add client-go scheme: %v", err)
+	}
+	if err := paapv1.AddToScheme(scheme); err != nil {
+		t.Fatalf("add paap scheme: %v", err)
+	}
+	deletingAt := metav1.Now()
+	k8sClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(
+			&paapv1.Application{
+				ObjectMeta: metav1.ObjectMeta{Name: "billing", Namespace: "paap-system"},
+				Spec:       paapv1.ApplicationSpec{Name: "Billing", Identifier: "billing"},
+				Status:     paapv1.ApplicationStatus{Phase: "Active"},
+			},
+			&paapv1.Environment{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              "prod",
+					Namespace:         "paap-app-billing",
+					Labels:            map[string]string{"paap.io/app": "billing", "paap.io/env": "prod"},
+					DeletionTimestamp: &deletingAt,
+					Finalizers:        []string{"paap.io/environment"},
+				},
+				Spec:   paapv1.EnvironmentSpec{Name: "生产", Identifier: "prod", PrimaryNamespace: "billing-prod"},
+				Status: paapv1.EnvironmentStatus{Phase: "Running"},
+			},
+			&paapv1.ServiceInstance{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              "prod-redis",
+					Namespace:         "paap-app-billing",
+					Labels:            map[string]string{"paap.io/app": "billing", "paap.io/env": "prod", "paap.io/tool": "redis"},
+					DeletionTimestamp: &deletingAt,
+					Finalizers:        []string{"paap.io/service"},
+				},
+				Spec: paapv1.ServiceInstanceSpec{
+					EnvironmentRef: paapv1.ObjectReference{Name: "prod"},
+					Type:           "redis",
+					ToolNamespace:  "billing-prod-redis",
+				},
+				Status: paapv1.ServiceInstanceStatus{Phase: "Running"},
+			},
+			&paapv1.Component{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              "prod-api",
+					Namespace:         "paap-app-billing",
+					Labels:            map[string]string{"paap.io/app": "billing", "paap.io/env": "prod", "paap.io/component": "api"},
+					DeletionTimestamp: &deletingAt,
+					Finalizers:        []string{"paap.io/component"},
+				},
+				Spec: paapv1.ComponentSpec{
+					EnvironmentRef: paapv1.ObjectReference{Name: "prod"},
+					Name:           "api",
+					Identifier:     "api",
+					Type:           "backend",
+					Deployment:     paapv1.DeploymentSpec{Namespace: "billing-prod", Image: "registry/api:v1", Tag: "v1", Replicas: 1},
+				},
+				Status: paapv1.ComponentStatus{Phase: "Running"},
+			},
+		).
+		Build()
+
+	if err := SyncClusterState(context.Background(), db, k8sClient); err != nil {
+		t.Fatalf("sync cluster state: %v", err)
+	}
+
+	for _, table := range []interface{}{&model.Environment{}, &model.ServiceInstallation{}, &model.Component{}} {
+		var count int64
+		if err := db.Model(table).Count(&count).Error; err != nil {
+			t.Fatalf("count %T: %v", table, err)
+		}
+		if count != 0 {
+			t.Fatalf("%T rows after deleting CR sync = %d, want 0", table, count)
+		}
 	}
 }
 

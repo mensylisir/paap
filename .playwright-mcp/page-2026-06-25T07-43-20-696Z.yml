@@ -1,0 +1,63 @@
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - generic [ref=e5]:
+      - link "PAAP" [ref=e6] [cursor=pointer]:
+        - /url: /apps
+        - img [ref=e8]
+        - generic [ref=e12]: PAAP
+      - navigation "环境菜单" [ref=e14]:
+        - link "概览" [ref=e15] [cursor=pointer]:
+          - /url: /apps/5/environments/5
+          - img [ref=e16]
+          - generic [ref=e18]: 概览
+        - link "组件" [ref=e19] [cursor=pointer]:
+          - /url: /apps/5/environments/5?tab=components
+          - img [ref=e20]
+          - generic [ref=e22]: 组件
+    - link "返回环境列表" [ref=e24] [cursor=pointer]:
+      - /url: /apps/5/environments
+      - img [ref=e25]
+      - generic [ref=e27]: 返回环境列表
+  - main [ref=e28]:
+    - generic [ref=e29]:
+      - button "应 应用 应用" [ref=e31] [cursor=pointer]:
+        - generic [ref=e32]: 应
+        - generic [ref=e33]:
+          - generic [ref=e34]: 应用
+          - strong [ref=e35]: 应用
+        - img [ref=e36]
+      - generic [ref=e38]: /
+      - button "环境 环境" [ref=e40] [cursor=pointer]:
+        - generic [ref=e42]:
+          - generic [ref=e43]: 环境
+          - strong [ref=e44]: 环境
+        - img [ref=e45]
+    - main [ref=e49]:
+      - generic [ref=e50]:
+        - generic [ref=e51]:
+          - button "环境拓扑" [ref=e52] [cursor=pointer]
+          - button "环境详情" [ref=e53] [cursor=pointer]
+        - generic [ref=e55]:
+          - generic [ref=e56]:
+            - heading "环境拓扑" [level=2] [ref=e57]
+            - generic [ref=e58]: 组件、平台工具、中间件和数据库的环境视图
+          - generic [ref=e60]:
+            - generic [ref=e61]:
+              - button "放大" [ref=e62] [cursor=pointer]:
+                - img [ref=e63]
+              - button "缩小" [ref=e65] [cursor=pointer]:
+                - img [ref=e66]
+              - button "重置视图" [ref=e68] [cursor=pointer]:
+                - img [ref=e69]
+              - generic [ref=e71]: 100%
+            - generic [ref=e72]:
+              - img [ref=e73]
+              - generic:
+                - strong: 空环境
+                - generic: 在画布空白处右键创建组件、工具、数据库或中间件。
+                - generic [ref=e74]:
+                  - button "安装代码仓库" [ref=e75] [cursor=pointer]
+                  - button "安装镜像仓库" [ref=e76] [cursor=pointer]
+                  - button "安装部署工具" [ref=e77] [cursor=pointer]
+                  - button "安装监控" [ref=e78] [cursor=pointer]
+                  - button "安装日志" [ref=e79] [cursor=pointer]

@@ -490,6 +490,9 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 - [x] `componentTopology.ts` 扩展为可配置 zone，并由 `EnvDetailView.vue` 渲染背景分区与图例
 - [ ] 扩展 `ListAdoptableResources` 可扫指定 namespace / 全集群
 - [x] 业务环境画布右键新增共享资源和外部资源入口；共享资源生成只读卡片，外部资源右侧栏编辑 endpoint、认证方式、用户名、密码/token、`credentialSecretRef`
+  - 2026-06-26 验证：业务环境中的共享/外部资源卡片支持画布本地重命名，显示名写入当前环境 canvas-state `names`，不修改共享资源池本体服务名、`refServiceId`、外部 endpoint 或凭据。
+  - [x] 2026-06-26 验证：业务环境引用共享资源后的右侧栏展示共享资源连接信息，包含地址、端口、用户名、密码和连接串；不把 namespace、StatefulSet 等 Kubernetes 元数据作为主信息展示；业务环境不出现保存、部署、卸载共享服务本体的入口，仅保留断开引用。
+  - [x] 2026-06-26 验证：外部资源右键二级菜单不再展示示例域名/endpoint，避免用户误解为平台写死地址；shared `linked` 状态在卡片和抽屉状态点都使用绿色。
 - [x] external 卡片只支持"断开"，不删真实资源
 - [ ] 环境模板声明所需 capabilities
 - [x] 创建环境阶段不再选择 capability 来源，只选择环境形态；从模板/基础环境安装本环境默认资源，后续在画布上引用共享或接入外部
@@ -1069,10 +1072,12 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 - [x] 对应文件：`internal/handler/environment.go`、`internal/handler/environment_test.go`
 - [x] 工作量：S（半天）
 
-### Task 7.9: KubeVirt 虚拟机
-- [ ] 将 VM 作为新服务类型纳入 `ServiceCatalog`
-- [ ] 用 KubeVirt CRD（`VirtualMachine`）而非 Helm chart 部署
-- [ ] 需要集群已装 KubeVirt operator
+### Task 7.9: KubeVirt 服务模板
+- [ ] 将 KubeVirt 作为平台基础设施能力，而不是面向用户的裸虚拟机创建入口
+- [ ] 服务产品支持 `provisionMode=kubevirt`，用户创建的是 PostgreSQL、Redis、MySQL 等服务实例
+- [ ] 平台管理员维护 KubeVirt 服务模板：基础镜像/DataVolume、CPU、内存、磁盘、cloud-init/启动脚本、服务端口、凭据生成、readiness、监控 agent/exporter、备份/快照策略
+- [ ] 创建服务实例时由模板生成 KubeVirt `VirtualMachine`、Kubernetes `Service`、Secret、连接输出和监控目标
+- [ ] 需要集群已装 KubeVirt operator/CRD
 - [ ] 当前状态：全项目零基础
 - [ ] 工作量：3-4 周
 
@@ -1374,8 +1379,276 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 
 ---
 
+## 阶段八：领导新需求（2026-06-26 提出）
+
+> 来源：领导对现有 UI 和产品方向的新意见，共 15 项需求。以下按优先级和依赖组织。
+>
+> 总体判断：这批需求不是简单改几个菜单名，而是要求把 PAAP 从“中间件安装器”提升成“平台服务目录 + 服务实例运营”的产品形态。后续页面和接口应围绕三层对象设计：
+> - **服务产品**：平台支持什么服务，例如工具、数据库、中间件、环境服务、网络服务、存储服务、DNS、Ingress。服务目录展示的是服务产品，不再叫中间件目录。
+> - **服务实例**：某个环境、共享资源池、外部接入或 KubeVirt 服务模板中真实存在的一份服务，例如 `shared-redis`、某个业务环境内 PostgreSQL、外部 S3、KubeVirt 模板交付的 Redis。
+> - **服务使用关系**：哪些应用/环境/组件在使用这个实例，使用来源是环境内、平台公共、外部连接或 KubeVirt 模板交付。统计实例数、使用次数、监控入口、连接信息都从这层聚合。
+>
+> 推荐信息架构：
+> - 左侧菜单保留全局入口：应用、共享资源池、服务目录、配置模板、用户管理。共享资源池从应用列表中弱化，作为平台级资源池直接进入 `default/shared` 画布。
+> - 服务目录是平台服务总入口，面向“这个服务是什么、怎么部署、有哪些参数、有哪些实例、被谁使用、有没有监控”，不是 Helm chart 或模板文件列表，也不是直接修改实例配置的入口。
+> - 配置模板只承载应用配置文件模板和组件配置模板；Helm chart / 服务包模板迁移到 Git 后作为服务产品的交付包，不在主导航继续叫“模板”。
+> - 业务用户在实例详情里默认看到连接地址、端口、用户名、密码、连接串、使用示例、监控入口；namespace、StatefulSet、CRD 等 Kubernetes 元数据只放“高级/运维信息”，不作为主信息。
+
+### Task 8.1: 左侧菜单栏增加共享资源池入口（S）
+> 当前：`/shared-resources` 是独立路由但只做了一个 redirect 页，侧边栏无入口。
+
+- [ ] MainLayout.vue sidebar nav 增加"共享资源池"菜单项（平台管理员可见）
+- [ ] `/shared-resources` 路由保留，PlatformSharedResourcesView 逻辑不变（redirect 到 default/shared 环境画布）
+- [ ] 共享环境当前应用名显示"共享资源池"而非普通应用名
+- [ ] 非平台管理员不显示此菜单项（同"用户"菜单逻辑）
+- [ ] 应用列表保留系统共享资源池卡片时只作为兼容入口，主入口以左侧菜单为准
+- [ ] 对应文件：`frontend/src/layouts/MainLayout.vue`、`frontend/src/router/index.ts`
+- [ ] 工作量：S（半天）
+
+### Task 8.2: "模板"更名为"配置模板"（S）
+> 领导要求改名，明确聚焦应用配置模板而非 Helm chart 模板。
+
+- [ ] MainLayout.vue nav label `模板` → `配置模板`
+- [ ] 路由 `/templates` 不变，视图名不依赖硬编码字符串
+- [ ] 页面标题 `TemplatesView.vue` 中 "模板" → "配置模板"
+- [ ] 页面说明明确：配置模板用于组件/应用配置生成，不承载服务 Helm chart 管理
+- [ ] 关联：Task 7.21（配置模板覆盖扩展）和 7.15（配置模板导入 UI）是此改名的实质内容
+- [ ] 工作量：S（30 分钟）
+
+### Task 8.3: 服务目录扩展（含环境服务）（M）
+> 当前目录只显示 ServiceCatalog 中的工具/中间件。领导要求目录也是"服务目录"，增加环境级别的服务实例（environment capability）。
+
+- [ ] 左侧菜单和页面标题统一为"服务目录"，不再出现"中间件目录"
+- [ ] 目录 tab 采用：工具、数据库、中间件、环境服务、网络服务、存储服务
+- [ ] CatalogView 增加"环境服务" tab，展示当前环境注册的能力实例（PostgreSQL 实例、Redis 实例等）
+- [ ] 每个服务产品卡片显示：服务类型、版本、功能标签、可用来源（环境内 / 平台公共 / 外部连接 / KubeVirt 模板交付）、说明入口、实例/监控入口
+- [ ] 服务产品详情不是“在线配置实例”，而是类似 Helm 包 README 的说明界面：服务介绍、适用场景、部署手册、参数说明、默认 values、示例 values、连接方式说明、常见问题
+- [ ] 服务产品详情中的“参数说明”只解释字段含义和示例，不直接保存到现有实例；真正配置发生在创建实例、引用共享资源、接入外部资源或实例工作区中
+- [ ] 每个服务实例卡片显示：实例名、状态、所属应用/环境、来源、连接入口、监控入口；默认不展示 namespace、StatefulSet 等 K8s 细节
+- [ ] 后端：GET `/api/v1/catalog/services` 返回环境能力统计数据（每个类型被多少环境使用）
+- [ ] 服务卡片增加"使用统计"：被 X 个环境安装，Y 个环境引用
+- [ ] 服务产品详情页增加"怎么用"区：环境内创建、引用共享资源、接入外部资源、使用 KubeVirt 服务模板四种路径，按服务支持能力显示
+- [ ] 对应文件：`frontend/src/views/CatalogView.vue`、`frontend/src/utils/catalogGroups.ts`、`internal/handler/`
+- [ ] 工作量：M（3-4 天）
+
+### Task 8.4: Redis 工作区数据精简（S）
+> 领导觉得 Redis 界面信息过载。
+
+- [ ] 审计 RedisWorkspace 当前展示内容，识别低价值数据（过多 key 列表、内部统计指标）
+- [ ] 精简为：连接状态、key 搜索/CRUD、基本信息（内存使用、命中率）
+- [ ] 隐藏/折叠细节数据：cluster nodes 列表、慢查询日志、config 参数
+- [ ] 与 Mongo/DB workspace 保持一致的简化风格
+- [ ] 对应文件：`frontend/src/components/workspaces/RedisWorkspace.vue`
+- [ ] 工作量：S（半天）
+
+### Task 8.5: 服务使用统计（M）
+> 领导想要看到每个服务被安装了多少次、被多少个环境使用。
+
+- [ ] 后端：`ServiceUsageStats` API — `GET /api/v1/catalog/stats`
+  - 按 service type 统计：`total_installations`、`active_installations`、`unique_environments`、`unique_applications`
+  - 按应用/服务维度统计：应用中有多少组件实例、服务产品有多少服务实例、每个共享/外部实例被引用多少次
+  - 按来源统计：环境内实例数、平台公共引用数、外部连接数、KubeVirt 模板交付实例数
+  - 可选：按时间维度（近 7 天、近 30 天）
+- [ ] 后端增加服务使用关系表或视图，统一聚合 `service_installations`、`environment_capabilities`、组件依赖配置、外部资源引用
+- [ ] 后端：服务实例增加 `last_used_at` 字段（每次 workspace 访问、凭据读取、组件引用时更新）
+- [ ] 目录页服务卡片显示使用统计（小角标或 tooltip）
+- [ ] 应用概览/组件页显示当前应用使用了多少服务实例，以及每个服务实例被哪些组件使用
+- [ ] 平台管理页面增加"服务使用概览" tab（与 Task 8.12 协同）
+- [ ] 对应文件：`internal/model/service_catalog.go`、`internal/handler/catalog.go`、`frontend/src/views/CatalogView.vue`
+- [ ] 工作量：M（3 天）
+
+### Task 8.6: 服务分类重构（M）
+> 当前分类：tool / database / cache / mq / objectStorage / middleware。领导要求：工具、数据库、中间件、环境。
+
+- [ ] 重新设计分类体系：
+  ```
+  工具: Gitea, Harbor, ArgoCD, Jenkins, Registry, Prometheus, Grafana, Loki（粒度更细，属于平台工具）
+  数据库: PostgreSQL, MySQL, MongoDB
+  中间件: Redis(缓存 子类), RabbitMQ(消息队列 子类), Kafka(消息队列 子类), MinIO(对象存储 子类)
+  网络服务: Firewall, Network Exposure, WAF, MetalLB（新增 Task 8.7）
+  存储服务: Block, Object(MinIO), File（新增 Task 8.8）
+  环境服务: 环境本身、环境能力、基础服务套餐（Task 8.3）
+  ```
+- [ ] 更新 `frontend/src/utils/catalogGroups.ts` 分类映射表
+- [ ] 更新 `seedServiceCatalog()` 中的 category 标记
+- [ ] 数据库中的 `service_catalog.category` 同步新分类
+- [ ] 分类支持嵌套（子分类让领导理解，UI 上一级平铺即可）
+- [ ] 对应文件：`frontend/src/utils/catalogGroups.ts`、`internal/model/template.go`、`internal/database/seed.go`
+- [ ] 工作量：M（2 天）
+
+### Task 8.7: 网络服务（L）
+> 新增"网络服务"能力，包含：防火墙规则、网络暴露（Ingress/Gateway）、WAF、MetalLB（LoadBalancer IP）。
+
+- [ ] ServiceCatalog 增加网络服务条目
+- [ ] **MetalLB 集成**：
+  - [ ] 检测集群是否安装 MetalLB
+  - [ ] 创建/管理 IPAddressPool 和 L2Advertisement
+  - [ ] 用户可申请 LoadBalancer IP（指定池/自动分配）
+- [ ] **防火墙规则**：
+  - [ ] UI 管理 NetworkPolicy 规则（允许/拒绝、来源/目的、端口）
+  - [ ] 预置规则模板（允许 ingress from monitor、允许 egress to internet）
+  - [ ] 展示规则影响范围，避免用户必须理解原始 NetworkPolicy YAML
+- [ ] **WAF**：
+  - [ ] 集成可选 WAF（如 ModSecurity/CoreWAF 作为 DaemonSet）
+  - [ ] 管理规则集和策略
+- [ ] **网络暴露（复用 Task 7.6 Ingress/Gateway）**：
+  - [ ] 将 Ingress/Gateway 配置纳入"网络服务"范畴
+  - [ ] 组件暴露操作统一归到网络服务配置
+- [ ] 网络服务实例工作区展示：域名/IP、暴露端口、TLS、WAF 策略、健康状态、访问日志入口
+- [ ] 每个服务需要独立的配置 workspace/drawer
+- [ ] 对应文件：`internal/k8s/`（新建 metallb.go、networkpolicy.go、waf.go）、`frontend/src/components/workspaces/`（新建 NetworkWorkspace.vue）、`internal/model/service_catalog.go`
+- [ ] 工作量：L（2-3 周），MetalLB 先做（1 周）
+
+### Task 8.8: 存储服务（L）
+> 新增"存储服务"能力，包含：块存储（PVC）、对象存储（MinIO）、文件存储（NFS/SMB）。用户可"申请"（request）使用。
+
+- [ ] ServiceCatalog 增加存储服务条目
+- [ ] **块存储**：
+  - [ ] UI 创建/管理 PVC，选择 StorageClass（高速/普通 == Task 8.11）
+  - [ ] 支持扩容（如果 StorageClass allowVolumeExpansion）
+  - [ ] 展示 PV/PVC 状态、容量、访问模式
+- [ ] **对象存储**（复用 MinIO，增加外部 S3 兼容存储支持）：
+  - [ ] MinIO 作为 managed 对象存储
+  - [ ] 外部 S3（MinIO/Ceph/AWS S3）作为 external 对象存储
+  - [ ] Bucket 管理 UI（当前 MinIO workspace 已有，需统一）
+- [ ] **文件存储**：
+  - [ ] NFS 服务提供（如 nfs-server-provisioner）
+  - [ ] 或对接已有 NAS 作为 external 文件存储
+  - [ ] PVC 挂载模式 `ReadWriteMany`
+- [ ] "申请"流程：用户选择类型 → 填写规格 → 创建 → 状态跟踪 → 连接信息展示
+- [ ] 存储服务实例工作区展示：容量、存储类型（高速/普通）、访问模式、挂载方式、凭据/Endpoint、使用组件
+- [ ] 对应文件：`internal/k8s/`（新建 storage.go）、`frontend/src/components/workspaces/`（新建 StorageWorkspace.vue）、`internal/model/`
+- [ ] 工作量：L（2-3 周），块存储先做（1 周）
+
+### Task 8.9: 服务产品说明与实例工作区统一（M）
+> 领导要求每个服务都需要配置界面，但目录里的界面不是直接改配置，而是服务产品说明、部署手册和参数文档；真实配置仍在实例创建或实例工作区中完成。
+
+- [ ] 服务目录产品详情统一包含：服务介绍、架构/适用场景、部署手册、参数说明、默认 values、示例 values、版本说明、使用限制、常见问题
+- [ ] 参数说明支持从服务包元数据生成，优先读取 `platform-manifest.yaml`、`values.schema.json`、`README.md` 或 Git 模板仓库中的文档
+- [ ] 产品详情页提供“创建实例 / 使用共享 / 接入外部 / 查看实例”动作，但不直接修改已有实例配置
+- [ ] 审计所有 14 个实例 workspace 的运行管理完整度：
+  - [ ] ArgocdWorkspace（490 行 CSS）— 达标
+  - [ ] GiteaWorkspace（302 行）— 达标
+  - [ ] DatabaseWorkspace（222 行）— 达标
+  - [ ] RedisWorkspace（184 行）— 需精简(Task 8.4)
+  - [ ] LogWorkspace（125 行）— 检查
+  - [ ] MonitorWorkspace（85 行）— 检查
+  - [ ] PipelineWorkspace（67 行）— 检查
+  - [ ] KafkaWorkspace（38 行）— ⚠️ 简陋，补充
+  - [ ] MinioWorkspace（22 行）— ⚠️ 简陋，补充
+  - [ ] MongoWorkspace（25 行）— ⚠️ 简陋，补充
+  - [ ] RabbitWorkspace（21 行）— ⚠️ 简陋，补充
+- [ ] 统一产品详情页和实例 workspace 的样式基线（复用 ToolWorkspaceFrame 的 CSS token 和 Carbon white 主题）
+- [ ] 每个实例 workspace 至少包含：状态展示 + 连接信息 + 配置查看/编辑 + 核心操作 + 监控入口 + 使用关系
+- [ ] 实例 workspace 主视图面向业务用户，优先展示地址、端口、用户名、密码/Token、连接串、使用示例；K8s 原始对象信息放"高级/运维信息"折叠区
+- [ ] 对应文件：所有 `frontend/src/components/workspaces/*.vue`
+- [ ] 工作量：M（1 周）
+
+### Task 8.10: DNS/Ingress 作为服务（M）
+> 领导要求 DNS 和 Ingress 作为独立服务条目。
+
+- [ ] **DNS 服务**：
+  - [ ] DNS 记录管理（A/AAAA/CNAME/TXT 记录）
+  - [ ] 集成 external-dns 或 CoreDNS 管理
+  - [ ] 自动为组件分配子域名
+- [ ] **Ingress 服务**（复用 Task 7.6）：
+  - [ ] 作为独立服务类型展示
+  - [ ] 配置：域名、路径、TLS 证书
+  - [ ] 展示当前 Ingress 列表和状态
+- [ ] 对应文件：`frontend/src/components/workspaces/DNSWorkspace.vue`（新建）、`frontend/src/components/workspaces/IngressWorkspace.vue`（新建）、`internal/k8s/`
+- [ ] 工作量：M（1 周）
+
+### Task 8.11: 存储分层（S）
+> 高速存储（SSD）和普通存储（HDD）区分。与 Task 8.8 存储服务协同。
+
+- [ ] 后端定义 StorageClass 标签：`高速` / `普通`
+- [ ] 块存储申请时让用户选择存储类型（下拉选择 StorageClass）
+- [ ] 目录页存储卡片展示支持的分层
+- [ ] 对应文件：结合 Task 8.8 实现
+- [ ] 工作量：S（半天，与 Task 8.8 合并）
+
+### Task 8.12: 平台服务概览页面（M）
+> 平台级页面，展示每个服务类型：被实例化次数、活跃实例列表、监控入口。
+
+- [ ] 新建 `PlatformServicesView.vue`（平台管理的一个 tab）
+- [ ] 表格展示：服务类型 / 怎么用 / 总实例数 / 活跃实例数 / 使用应用数 / 使用环境数 / 监控入口
+- [ ] 点击某行展开该类型所有实例列表（所属环境、状态、版本、创建时间）
+- [ ] 服务详情右侧栏展示：创建方式、连接方式、支持 feature（外部连接、KubeVirt 模板交付、公共服务）、最近使用、告警/指标
+- [ ] 监控入口链接到 Prometheus/Grafana（如果已安装）
+- [ ] 后端：`GET /api/v1/platform/services/stats` — 聚合 ServiceInstallation 数据
+- [ ] 后端：`GET /api/v1/platform/services/:type/instances` — 某类型所有实例详情
+- [ ] 后端：`GET /api/v1/platform/services/:type/usage` — 某类型被哪些应用/环境/组件使用
+- [ ] 路由：`/platform/services`（或作为平台管理 tab）
+- [ ] 对应文件：`frontend/src/views/PlatformServicesView.vue`、`internal/handler/platform.go`、`frontend/src/router/index.ts`
+- [ ] 工作量：M（3 天）
+
+### Task 8.13: 平台服务用户与Feature支持（L）
+> 三项核心 Feature：外部连接、KubeVirt 模板交付、公共服务。
+
+- [ ] 服务目录和平台服务概览统一显示 feature 矩阵：
+  - 外部连接：使用已有外部系统，只保存 endpoint 和凭据引用
+  - KubeVirt 模板交付：使用平台维护的 KubeVirt 服务模板创建数据库、缓存等服务实例
+  - 公共服务：使用共享资源池中的平台公共服务
+- [ ] 用户选择服务时先选使用方式，再进入对应创建/接入流程，避免把三类能力混在一个表单里
+
+- **Feature 1: 外部连接**（External Capability Source，复用 Task 7.5）
+  - [ ] 当前已实现 external source（环境画布右键添加外部资源）
+  - [ ] 补充：外部连接验证（endpoint可达性测试、credential验证）
+  - [ ] 外部资源断开后清理 Canvas 状态和服务引用
+  - [ ] 对应文件：`internal/handler/environment.go`、`frontend/src/composables/envCapabilities.ts`
+
+- **Feature 2: KubeVirt 服务模板**（复用 Task 7.9）
+  - [ ] 当前 Task 7.9 从“创建裸 VM”调整为“通过 KubeVirt 模板交付服务实例”
+  - [ ] KubeVirt 是平台基础设施，用户创建的是 PostgreSQL、Redis、MySQL 等服务，不是单纯虚拟机
+  - [ ] 平台管理员维护服务模板：镜像/DataVolume、规格、启动脚本、端口、凭据、readiness、监控和备份策略
+  - [ ] 创建服务实例时生成 `VirtualMachine`、Kubernetes `Service`、Secret、连接输出和监控目标
+  - [ ] 对应文件：`internal/k8s/kubevirt.go`（新建），后续可扩展 `ServiceInstanceController`
+
+- **Feature 3: 公共服务**（Shared Capability Source）
+  - [ ] 当前已实现 shared source（default/shared 环境）
+  - [ ] 补充：环境创建时的"使用平台公共服务"一键配置引导
+  - [ ] 提升 shared 来源的可见性：目录页标记"平台已预装"
+  - [ ] 对应文件：`frontend/src/views/CatalogView.vue`
+
+- 工作量：L（2-3 周，三个 Feature 可并行）
+
+### Task 8.14: 模板存储迁移至Git（XL）
+> 领导要求模板（配置模板 + Helm charts）从 MinIO/DB 迁移到 Git 仓库管理。
+
+- **当前现状**：
+  - Helm charts 存储在 `data/charts/*.tar.gz`，启动时 seed 到 MinIO
+  - 配置模板存储在 `data/config-templates/`（待实现，Task 7.21）
+  - 用户在 UI 上传的模板存数据库 `config_templates` 表
+- **目标方案**：
+  - Git 仓库作为模板的唯一来源（source of truth）
+  - PAAP Server 增加"从 Git 同步模板"功能（cron 或 webhook 触发）
+  - 内置模板 → Git 仓库 `templates/charts/` 和 `templates/config/`
+  - 用户自定义模板 → Git 仓库用户分支或 fork
+  - 保留 MinIO 作为运行时缓存（加速读取，Git 变更时自动更新缓存）
+- **关键设计**：
+  - 模板 Git 仓库结构规范
+  - 同步策略（定时同步 / webhook 触发 / GitOps Reconciliation）
+  - 版本管理（Git tag/semver 映射到 ServiceTemplate.AppVersion）
+  - 回滚（Git revert 触发模板回滚）
+  - 权限（谁可以 push 模板到 Git）
+- **迁移路径**：
+  1. 创建模板 Git 仓库 + 目录结构 + CI 验证
+  2. 后端 Git 客户端（clone/pull/read 文件）
+  3. 同步引擎（定期同步 + webhook 模式）
+  4. 将现有 MinIO 数据迁移到 Git
+  5. 用户上传 → Git push（而非写数据库）
+- **对应文件**：全栈涉及
+  - `internal/git/`（新建—Git 客户端和同步引擎）
+  - `internal/service/template_sync.go`（新建—模板同步服务）
+  - `internal/database/seed.go`（修改—改为从 Git 读取而非硬编码路径）
+  - `data/charts/`（移入独立 Git 仓库）
+- **工作量**：XL（1 个月+），需独立专项
+
+---
+
 ## 执行顺序
 
+### 原路线图（阶段七及以前）
 ```
 Week 0  : ~~Task 7.1(版本号)~~ ✅ → Task 7.2(目录页)
 Week 1-2: Task 7.3+7.4(平台管理+角色) → Task 7.8(认证鉴权)
@@ -1385,3 +1658,270 @@ Week 8+  : Task 7.13~7.15(配置模板) 并行 Task 7.9+7.10(KubeVirt+KEDA)
 季度级   : Task 7.11(多集群) → Task 7.12(VM纳管)
 穿插     : Task 7.17~7.18(验证与审计)
 ```
+
+### 增量计划（阶段八—领导新需求）
+```
+Week 1  : 8.1(共享菜单) + 8.2(改名) + 8.4(Redis精简) + 8.6(分类重构)   ← 快速见效
+Week 2-3: 8.3(目录扩展) + 8.5(服务统计) + 8.9(Workspace统一)           ← 前后端配合
+Week 3-4: 8.7(网络服务-MetalLB先) + 8.8(存储服务-块存储先)             ← 新服务类型
+Week 4-5: 8.10(DNS/Ingress) + 8.11(存储分层) + 8.12(平台服务概览)      ← 平台页面
+Week 6-8: 8.13(外部连接/KubeVirt模板/公共服务)     并行 8.14(模板Git迁移)评估设计
+季度级   : 8.14(模板Git迁移) → 需求稳定后启动专项
+```
+
+---
+
+## 阶段九：当前收敛范围与四分支执行方案（2026-06-26）
+
+> 领导最新口径：先做平台服务和平台服务用户相关能力。其它服务目录大改、模板 Git 化、网络服务、存储服务、DNS/Ingress 等先记录但不进入这四个 PR。
+>
+> 本阶段需求主要是平台管理员视角，但必须保留应用成员的局部视角：平台管理员看全局服务、实例、使用方和监控；应用成员只看自己有权限的应用/环境内使用了哪些服务、如何连接、是否可用。
+
+### 9.1 架构兼容性判断
+
+- [ ] 当前 PAAP 三段式架构（Vue 前端 → PAAP Server/GORM/PostgreSQL → CRD/Operator/K8s）可以承接这批需求，不需要推翻重写。
+- [ ] 这批需求不是单纯 UI 改造，需要新增“平台服务域模型/读模型”，否则统计逻辑会分散到各页面。
+- [ ] 当前 `ServiceInstallation` 是环境级安装记录，且 `environment_id + service_type` 唯一；后续若一个环境允许多个 Redis/PostgreSQL，需要调整唯一约束或引入更通用的服务实例模型。
+- [ ] 当前 `EnvironmentCapability` 是环境级能力引用，且 `environment_id + capability` 唯一；后续若一个环境允许多个 database/cache 外部连接，也需要扩展为实例级能力。
+- [ ] 组件和服务使用关系不能只依赖画布连线，必须有结构化关系表或稳定读模型。
+- [ ] 监控、日志、凭据发现当前大量依赖 Kubernetes namespace；外部服务和 KubeVirt 模板交付服务不能假设和 Helm 服务拥有同样的 namespace 结构，必须抽象为 source-aware monitoring target / connection output。
+- [ ] 新增平台服务 API 时预留 `clusterId` / `clusterName` 字段，避免后续多集群返工。
+
+推荐抽象：
+
+- **服务产品**：平台支持什么服务，例如 PostgreSQL、Redis、Gitea、Harbor、Jenkins、Prometheus、Loki。
+- **服务实例**：某个环境、共享资源池、外部系统或 KubeVirt 服务模板中真实存在的一份服务。
+- **服务使用关系**：哪个应用/环境/组件使用了哪个服务实例，来源是环境内、平台公共、外部连接或 KubeVirt 模板交付。
+- **监控目标**：服务实例的监控入口，不能假设一定来自当前集群 namespace。
+
+### 9.2 分支与 PR 拆分
+
+> 每个功能一个 feature 分支，走 PR 合并。分支名必须符合 `feature/<kebab-case-name>`。
+
+| 顺序 | 分支 | 目标 |
+|---|---|---|
+| 1 | `feature/platform-service-usage` | 平台服务概览：每个服务怎么用、实例化次数、活跃实例、使用方、监控入口、服务使用读模型。 |
+| 2 | `feature/shared-service-consumption` | 公共/共享服务：业务环境引用共享资源池服务，只读连接信息、使用关系统计、断开引用语义。 |
+| 3 | `feature/external-service-connections` | 外部连接：外部数据库、缓存、消息、对象存储、代码仓、镜像仓库等接入、凭据引用、真实校验。 |
+| 4 | `feature/kubevirt-service-templates` | KubeVirt 服务模板：通过平台维护的 KubeVirt 模板交付数据库、缓存等服务实例，并纳入使用关系和监控统计。 |
+
+推荐顺序：
+
+1. 先做 `feature/platform-service-usage`，建立统计和读模型底座。
+2. 再做 `feature/shared-service-consumption`，因为共享资源池和 `EnvironmentCapability.Source=shared` 已有基础。
+3. 再做 `feature/external-service-connections`，重点补真实连接验证和凭据语义。
+4. 最后做 `feature/kubevirt-service-templates`，因为它引入 KubeVirt 模板、`VirtualMachine` 生命周期和服务连接输出，技术风险最高。
+
+开分支前必须先处理当前工作区状态：
+
+- [ ] 运行 `git status --short --branch`。
+- [ ] 明确哪些是上一轮需要提交的改动，哪些是用户或运行时产生的改动。
+- [ ] 不要把 `.omo`、`.playwright-mcp`、`runtime/`、临时 issue 文件混进新功能 PR。
+- [ ] 不要在脏 `main` 上直接切四个功能分支并带入无关改动。
+
+### 9.3 PR 1：平台服务使用统计
+
+分支：`feature/platform-service-usage`
+
+目标：平台管理员能看到每个服务怎么用、实例化多少次、活跃多少、被哪些应用/环境/组件使用，以及监控入口。
+
+后端任务：
+
+- [ ] 新增平台管理员 API：`GET /api/v1/platform/services/stats`。
+- [ ] 新增平台管理员 API：`GET /api/v1/platform/services/:type/instances`。
+- [ ] 新增平台管理员 API：`GET /api/v1/platform/services/:type/usage`。
+- [ ] 聚合 `ServiceInstallation` 为 managed 服务实例。
+- [ ] 聚合 `EnvironmentCapability` 为 shared/external/deferred 能力引用。
+- [ ] 返回字段包含 service type、service name、provider、source、status、application、environment、component、usage count、monitoring target。
+- [ ] API 响应预留 `clusterId` 或 `clusterName`，当前单集群可为空或默认值。
+- [ ] 全局统计 API 不返回密码/token 等敏感值。
+- [ ] 平台 API 必须要求平台管理员权限。
+
+前端任务：
+
+- [ ] 新增平台服务页面或平台管理 tab。
+- [ ] 表格展示：服务类型、怎么用、总实例数、活跃实例数、使用应用数、使用环境数、支持 feature、监控入口。
+- [ ] 点击服务类型后展示实例列表和使用方列表。
+- [ ] 空状态、失败状态、权限不足状态都来自真实 API，不写假数据。
+
+验收：
+
+- [ ] 平台管理员能看到跨应用/环境的服务统计。
+- [ ] 非平台管理员访问全局平台服务 API 返回 403。
+- [ ] 统计不依赖画布连线。
+- [ ] 后端测试覆盖 managed installation 聚合和 capability reference 聚合。
+- [ ] 前端测试覆盖统计表、展开实例、无权限状态。
+
+不纳入：
+
+- [ ] 不完整实现外部连接校验。
+- [ ] 不实现 KubeVirt 生命周期。
+- [ ] 不做服务目录全量重构。
+
+### 9.4 PR 2：公共/共享服务消费
+
+分支：`feature/shared-service-consumption`
+
+目标：业务环境可以使用共享资源池中的平台公共服务，引用后能查看只读连接信息，并进入平台服务使用统计。
+
+后端任务：
+
+- [ ] 共享资源池继续使用系统应用/系统环境中的真实 `ServiceInstallation`。
+- [ ] 业务环境通过 `EnvironmentCapability.Source=shared` + `RefServiceID` 引用共享服务。
+- [ ] PR 1 的统计接口把 shared 引用单独统计，不与 managed installation 混淆。
+- [ ] 共享服务在业务环境中的凭据/连接信息从被引用的服务实例解析，但业务环境 API 不允许修改共享服务本体。
+- [ ] 断开共享能力时只删除当前环境引用和相关 canvas 状态，不删除共享服务。
+
+前端任务：
+
+- [ ] 共享资源池是平台管理员入口。
+- [ ] 共享环境只允许添加工具/中间件，不允许创建业务组件、不允许再添加共享/外部资源。
+- [ ] 业务环境可以从共享资源列表中添加共享资源。
+- [ ] 业务环境中的共享资源卡片允许本地重命名和断开引用。
+- [ ] 业务环境中的共享资源右侧栏只读展示地址、端口、用户名、密码/token、连接串、状态和监控入口。
+
+验收：
+
+- [ ] 业务环境引用共享 Redis/PostgreSQL 后，组件配置解析到真实共享服务 endpoint，不出现 `service:<id>` 这类占位地址。
+- [ ] 共享资源本体名称和业务环境本地显示名可以不同。
+- [ ] 全局平台服务统计能看到共享实例被哪些应用/环境引用。
+- [ ] 删除引用不会删除共享服务实例。
+
+不纳入：
+
+- [ ] 不做跨集群共享可达性。
+- [ ] 不做外部连接校验。
+
+### 9.5 PR 3：外部服务连接
+
+分支：`feature/external-service-connections`
+
+目标：外部服务成为平台服务的一种消费方式。PAAP 只保存连接记录和凭据引用，不拥有真实外部资源。
+
+后端任务：
+
+- [ ] 外部资源类型覆盖：数据库、缓存、消息中间件、对象存储、代码仓、镜像仓库、CI/CD、日志、监控、自定义。
+- [ ] `EnvironmentCapability` 保存 endpoint、provider、serviceType、validationStatus、validationMessage、credentialSecretRef。
+- [ ] 凭据写入 Kubernetes Secret 或后续凭据后端，数据库只保存引用。
+- [ ] 增加真实连接校验：
+  - [ ] PostgreSQL/MySQL/MongoDB：连接和权限探测。
+  - [ ] Redis：ping/auth 探测。
+  - [ ] RabbitMQ/Kafka：连接和基础权限探测。
+  - [ ] MinIO/S3：bucket/list 权限探测。
+  - [ ] Git：token/list repo 或 webhook 权限探测。
+  - [ ] Registry/Harbor：login/pull 或可用权限探测。
+  - [ ] Prometheus/Loki：query 探测。
+- [ ] 删除 external capability 只删除 PAAP 记录和 PAAP 生成的本地 Secret，不删除真实外部系统。
+
+前端任务：
+
+- [ ] 右键添加外部资源的二级菜单只显示类型，不展示示例域名，避免用户误解为写死地址。
+- [ ] 外部资源右侧栏保存后继续显示 endpoint、用户名、密码/token，密码用眼睛按钮显示/隐藏。
+- [ ] 展示验证状态和重新验证入口。
+- [ ] 外部资源卡片允许重命名和删除连接。
+- [ ] 外部连接进入组件绑定和平台服务统计。
+
+验收：
+
+- [ ] 外部资源删除不会触发真实外部系统删除。
+- [ ] 保存后刷新页面，endpoint 和凭据显示逻辑正常。
+- [ ] 校验失败展示真实后端探测错误，不写占位文案。
+- [ ] 平台服务统计把 external connection 单独计数。
+
+不纳入：
+
+- [ ] 不做全命名空间自动扫描。
+- [ ] 不做跨集群网络。
+
+### 9.6 PR 4：KubeVirt 服务模板
+
+分支：`feature/kubevirt-service-templates`
+
+目标：把 KubeVirt 作为平台基础设施，通过服务模板交付 PostgreSQL、Redis、MySQL 等服务实例；用户不创建裸虚拟机，平台统计的仍然是具体服务产品和服务实例。
+
+推荐首版：
+
+- [ ] 服务产品支持 `provisionMode=kubevirt`，同一服务产品可区分 Helm 托管、共享引用、外部连接、KubeVirt 模板交付。
+- [ ] 平台管理员维护 KubeVirt 服务模板，例如 `postgresql-vm-template`、`redis-vm-template`、`mysql-vm-template`。
+- [ ] 模板记录基础镜像/DataVolume、CPU、内存、磁盘、cloud-init/启动脚本、服务端口、凭据生成方式、readiness、监控 agent/exporter 和备份/快照策略。
+- [ ] 创建服务实例时生成 KubeVirt `VirtualMachine`、Kubernetes `Service`、Secret、标准连接输出和监控目标。
+- [ ] 服务实例仍按真实服务类型统计，例如 `serviceType=redis`、`provisionMode=kubevirt`，不要把“虚拟机”作为业务服务类型。
+- [ ] 进入平台服务统计和使用关系统计。
+
+建议：
+
+- [ ] 第一版不提供“创建空白 VM”入口，避免变成 IaaS 虚拟机管理平台。
+- [ ] 优先做 PostgreSQL/Redis 这类模板化服务，跑通连接输出、使用关系和监控。
+- [ ] KubeVirt 逻辑第一版可以扩展现有 `ServiceInstanceController`，因为用户创建的仍然是服务实例；后续复杂度上来再拆独立 controller。
+
+验收：
+
+- [ ] KubeVirt 模板交付的 Redis/PostgreSQL 出现在对应服务产品的实例列表中。
+- [ ] 应用/环境/组件可以通过同一套服务使用关系引用 KubeVirt 模板交付的服务。
+- [ ] 连接输出与 Helm 托管、共享、外部连接使用同一契约：地址、端口、用户名、密码/Token、连接串、状态、监控入口。
+- [ ] 服务统计主视角显示 PostgreSQL/Redis 等服务实例数量；虚拟机数量只作为高级/运维信息。
+
+不纳入首版：
+
+- [ ] 不做创建空白虚拟机。
+- [ ] 不做跨集群 KubeVirt 网络。
+- [ ] 不做完整备份/快照自动化，除非需求明确。
+
+### 9.7 多集群预留方案
+
+> 领导后续可能增加“管理其他集群 / 部署应用到其他集群”。这需要架构扩展，但不阻塞当前四个 PR。
+
+当前单集群假设：
+
+- [ ] 没有 `Cluster` 模型。
+- [ ] `Environment` 只有 `Namespace`，没有 `ClusterID`。
+- [ ] `ServiceInstallation` 只有 namespace，没有 cluster。
+- [ ] 多数运行态、凭据、日志、监控逻辑使用全局 `k8s.GetClient()`。
+- [ ] Operator 只调谐当前集群。
+- [ ] 共享资源池 `default/shared` 目前是单集群语义。
+
+现在就要避免的新坑：
+
+- [ ] 新增平台服务统计 API 响应预留 `clusterId` / `clusterName`。
+- [ ] 新增服务使用关系时不要写死全局单集群。
+- [ ] 共享资源池语义按集群隔离：未来应是每个集群一个 shared 环境，跨集群只能通过 external 或显式跨集群网络。
+- [ ] 新增 Kubernetes 访问逻辑尽量收敛到可替换 client/provider，避免继续扩散全局 client。
+
+未来独立专项：
+
+- [ ] 新增 `Cluster` 模型和平台管理员集群注册页面。
+- [ ] `Environment` 增加 `ClusterID`。
+- [ ] `ServiceInstallation` 增加 `ClusterID`。
+- [ ] `ServiceUsageRelation` 增加 `ClusterID`。
+- [ ] 引入 cluster-aware Kubernetes client factory。
+- [ ] 每个目标集群部署 PAAP Operator/Agent，由中心控制面下发期望状态，目标集群回传状态、指标、日志和资源清单。
+
+建议未来分支：
+
+```text
+feature/multi-cluster-control-plane
+```
+
+### 9.8 从 CLAUDE.md 迁出的有价值待办
+
+> 以下不是当前四个 PR 的全部范围，但仍是后续产品化必须关注的任务。后续不要继续把这些只放在 `CLAUDE.md`。
+
+- [ ] 所有具体工具/中间件抽屉继续做产品级审计：Gitea、Registry、Harbor、Argo CD、Jenkins、Prometheus/Grafana、Loki、PostgreSQL、MySQL、MongoDB、Redis、RabbitMQ、Kafka、MinIO。
+- [ ] 不允许假数据或占位数据。workspace 资源、指标、日志、备份、key、queue、topic、bucket、部署行必须来自真实后端/API/集群。
+- [ ] 每张卡片的 metrics/logs 需要验证真实数据、空状态、时间范围、图表缩放和错误信息。
+- [ ] Console 需要继续用可见 Chrome/CDP 覆盖常见工具和中间件 Pod。
+- [ ] 数据库备份的 restore/download/list 需要产品决策和验证。
+- [ ] 拓扑模式和持久卷配置需要逐 chart 验证，不能只看 UI 配置项。
+- [ ] Kubernetes 术语默认隐藏到高级/运维信息，不应出现在普通用户主视图。
+- [ ] 配置模板导入/预览仍是重要待办，但不属于当前四个领导收敛 PR，除非重新排优先级。
+
+### 9.9 验证规则
+
+每个 PR 至少完成：
+
+- [ ] 后端涉及的 handler/service/model 单测。
+- [ ] 前端涉及页面/组件的 Vitest。
+- [ ] 用户界面变更运行 `npm --prefix frontend run build`。
+- [ ] 需要部署验证时构建新镜像、kind load、更新 tag，并等待 rollout。
+- [ ] 重要 UI 路径用可见 Chrome/CDP 验证，不只跑 headless。
+- [ ] PR 说明中明确哪些路径已验证，哪些是后续风险。

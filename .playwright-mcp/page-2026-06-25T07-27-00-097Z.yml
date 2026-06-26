@@ -1,0 +1,78 @@
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - generic [ref=e5]:
+      - link "PAAP" [ref=e6] [cursor=pointer]:
+        - /url: /apps
+        - img [ref=e8]
+        - generic [ref=e12]: PAAP
+      - navigation [ref=e14]:
+        - link "概览" [ref=e15] [cursor=pointer]:
+          - /url: /apps/5/overview
+          - img [ref=e16]
+          - generic [ref=e21]: 概览
+        - link "环境" [ref=e22] [cursor=pointer]:
+          - /url: /apps/5/environments
+          - img [ref=e23]
+          - generic [ref=e26]: 环境
+        - link "成员" [ref=e27] [cursor=pointer]:
+          - /url: /apps/5/members
+          - img [ref=e28]
+          - generic [ref=e33]: 成员
+    - link "返回应用列表" [ref=e35] [cursor=pointer]:
+      - /url: /apps
+      - img [ref=e36]
+      - generic [ref=e38]: 返回应用列表
+  - main [ref=e39]:
+    - generic [ref=e40]:
+      - button "R 应用 Real Fullstack PostgreSQL Redis Demo" [ref=e42] [cursor=pointer]:
+        - generic [ref=e43]: R
+        - generic [ref=e44]:
+          - generic [ref=e45]: 应用
+          - strong [ref=e46]: Real Fullstack PostgreSQL Redis Demo
+        - img [ref=e47]
+      - generic [ref=e49]: /
+      - button "环境 生产环境" [ref=e51] [cursor=pointer]:
+        - generic [ref=e53]:
+          - generic [ref=e54]: 环境
+          - strong [ref=e55]: 生产环境
+        - img [ref=e56]
+    - generic [ref=e58]:
+      - generic [ref=e59]:
+        - generic [ref=e60]:
+          - heading "应用概览" [level=1] [ref=e61]
+          - paragraph [ref=e62]: 管理应用的运行环境和部署状态
+        - button "创建环境" [ref=e63] [cursor=pointer]:
+          - img [ref=e64]
+          - text: 创建环境
+      - generic [ref=e66]:
+        - generic [ref=e67]:
+          - generic [ref=e68]: "0"
+          - generic [ref=e69]: 环境总数
+        - generic [ref=e70]:
+          - generic [ref=e71]: "0"
+          - generic [ref=e72]: 运行中
+        - generic [ref=e74]:
+          - generic [ref=e75]: "0"
+          - generic [ref=e76]: 已安装工具
+        - generic [ref=e78]:
+          - generic [ref=e79]: "0"
+          - generic [ref=e80]: 中间件
+        - generic [ref=e82]:
+          - generic [ref=e83]: "0"
+          - generic [ref=e84]: 业务组件
+        - generic [ref=e86]:
+          - generic [ref=e87]: "0"
+          - generic [ref=e88]: 待处理
+      - generic [ref=e90]:
+        - generic [ref=e92]:
+          - heading "环境" [level=2] [ref=e93]
+          - paragraph [ref=e94]: 管理应用的运行环境
+        - generic [ref=e95]:
+          - img [ref=e96]
+          - paragraph [ref=e100]: 暂无环境。创建第一个环境来开始部署服务。
+          - button "创建第一个环境" [ref=e101] [cursor=pointer]
+      - generic [ref=e102]:
+        - generic [ref=e104]:
+          - heading "最近事件" [level=2] [ref=e105]
+          - paragraph [ref=e106]: 关键操作记录
+        - paragraph [ref=e108]: 暂无事件记录

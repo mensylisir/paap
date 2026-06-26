@@ -1,0 +1,163 @@
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - generic [ref=e5]:
+      - link "PAAP" [ref=e6] [cursor=pointer]:
+        - /url: /apps
+        - img [ref=e8]
+        - generic [ref=e12]: PAAP
+      - navigation [ref=e13]:
+        - link "应用" [ref=e14] [cursor=pointer]:
+          - /url: /apps
+          - img [ref=e15]
+          - generic [ref=e20]: 应用
+        - link "模板" [ref=e21] [cursor=pointer]:
+          - /url: /templates
+          - img [ref=e22]
+          - generic [ref=e25]: 模板
+        - link "目录" [ref=e26] [cursor=pointer]:
+          - /url: /catalog
+          - img [ref=e27]
+          - generic [ref=e37]: 目录
+        - link "共享资源" [ref=e38] [cursor=pointer]:
+          - /url: /shared-resources
+          - img [ref=e39]
+          - generic [ref=e43]: 共享资源
+        - link "用户" [ref=e44] [cursor=pointer]:
+          - /url: /users
+          - img [ref=e45]
+          - generic [ref=e50]: 用户
+    - generic [ref=e51]:
+      - generic [ref=e52]:
+        - generic [ref=e53]: A
+        - generic [ref=e54]: admin
+      - button "退出" [ref=e55] [cursor=pointer]:
+        - img [ref=e56]
+        - generic [ref=e59]: 退出
+  - main [ref=e60]:
+    - generic [ref=e61]:
+      - generic [ref=e62]:
+        - generic [ref=e63]:
+          - heading "模板管理" [level=1] [ref=e64]
+          - paragraph [ref=e65]: 管理工具模板、中间件模板、环境模板和组件运行配置模板
+        - generic [ref=e66]:
+          - button "同步内置模板" [ref=e67] [cursor=pointer]
+          - button "上传模板" [ref=e68] [cursor=pointer]:
+            - img [ref=e69]
+            - text: 上传模板
+      - navigation "模板分类" [ref=e71]:
+        - button "工具模板 7" [ref=e72] [cursor=pointer]:
+          - generic [ref=e73]: 工具模板
+          - strong [ref=e74]: "7"
+        - button "中间件模板 7" [ref=e75] [cursor=pointer]:
+          - generic [ref=e76]: 中间件模板
+          - strong [ref=e77]: "7"
+        - button "环境模板 5" [ref=e78] [cursor=pointer]:
+          - generic [ref=e79]: 环境模板
+          - strong [ref=e80]: "5"
+        - button "配置模板 0" [ref=e81] [cursor=pointer]:
+          - generic [ref=e82]: 配置模板
+          - strong [ref=e83]: "0"
+      - generic [ref=e84]:
+        - generic [ref=e85]:
+          - generic [ref=e86]: "14"
+          - generic [ref=e87]: 部署模板总数
+        - generic [ref=e88]:
+          - generic [ref=e89]: "7"
+          - generic [ref=e90]: 工具模板
+        - generic [ref=e91]:
+          - generic [ref=e92]: "7"
+          - generic [ref=e93]: 中间件模板
+        - generic [ref=e94]:
+          - generic [ref=e95]: "5"
+          - generic [ref=e96]: 环境模板
+        - generic [ref=e97]:
+          - generic [ref=e98]: "0"
+          - generic [ref=e99]: 配置模板
+      - generic [ref=e100]:
+        - generic [ref=e101]:
+          - generic [ref=e102]:
+            - heading "工具模板" [level=2] [ref=e103]
+            - paragraph [ref=e104]: 代码仓库、镜像仓库、部署、监控、日志和 CI 等平台工具模板。
+          - button "刷新" [ref=e105] [cursor=pointer]:
+            - img [ref=e106]
+            - text: 刷新
+        - generic [ref=e108]:
+          - generic [ref=e110]:
+            - generic [ref=e111]:
+              - generic [ref=e112]:
+                - generic [ref=e113]: ArgoCD (官方)
+                - generic [ref=e114]: 内置
+              - generic [ref=e115]: 仅工具命名空间
+            - generic [ref=e116]:
+              - generic [ref=e117]: deploy
+              - generic [ref=e118]: 工具
+              - generic [ref=e119]: 已上传
+            - paragraph [ref=e120]: ArgoCD - GitOps 持续部署工具
+          - generic [ref=e122]:
+            - generic [ref=e123]:
+              - generic [ref=e124]:
+                - generic [ref=e125]: Docker Registry v2
+                - generic [ref=e126]: 内置
+                - generic [ref=e127]: 重型
+              - generic [ref=e128]: 仅工具命名空间
+            - generic [ref=e129]:
+              - generic [ref=e130]: registry
+              - generic [ref=e131]: 工具
+              - generic [ref=e132]: 已上传
+            - paragraph [ref=e133]: Docker Registry v2 - 轻量 OCI 镜像仓库，适合开发测试环境
+          - generic [ref=e135]:
+            - generic [ref=e136]:
+              - generic [ref=e137]:
+                - generic [ref=e138]: Gitea
+                - generic [ref=e139]: 内置
+              - generic [ref=e140]: 仅工具命名空间
+            - generic [ref=e141]:
+              - generic [ref=e142]: git
+              - generic [ref=e143]: 工具
+              - generic [ref=e144]: 已上传
+            - paragraph [ref=e145]: Gitea - 轻量 Git 代码仓库
+          - generic [ref=e147]:
+            - generic [ref=e148]:
+              - generic [ref=e149]:
+                - generic [ref=e150]: Jenkins (官方)
+                - generic [ref=e151]: 内置
+              - generic [ref=e152]: 仅工具命名空间
+            - generic [ref=e153]:
+              - generic [ref=e154]: ci
+              - generic [ref=e155]: 工具
+              - generic [ref=e156]: 已上传
+            - paragraph [ref=e157]: Jenkins - CI/CD 服务器
+          - generic [ref=e159]:
+            - generic [ref=e160]:
+              - generic [ref=e161]:
+                - generic [ref=e162]: Prometheus+Grafana (官方)
+                - generic [ref=e163]: 内置
+              - generic [ref=e164]: 仅工具命名空间
+            - generic [ref=e165]:
+              - generic [ref=e166]: monitor
+              - generic [ref=e167]: 工具
+              - generic [ref=e168]: 已上传
+            - paragraph [ref=e169]: Prometheus + Grafana - 全栈监控
+          - generic [ref=e171]:
+            - generic [ref=e172]:
+              - generic [ref=e173]:
+                - generic [ref=e174]: Loki+Promtail (官方)
+                - generic [ref=e175]: 内置
+              - generic [ref=e176]: 仅工具命名空间
+            - generic [ref=e177]:
+              - generic [ref=e178]: log
+              - generic [ref=e179]: 工具
+              - generic [ref=e180]: 已上传
+            - paragraph [ref=e181]: Loki + Promtail - 日志收集与查询
+          - generic [ref=e183]:
+            - generic [ref=e184]:
+              - generic [ref=e185]:
+                - generic [ref=e186]: Harbor (官方)
+                - generic [ref=e187]: 内置
+                - generic [ref=e188]: 重型
+              - generic [ref=e189]: 仅工具命名空间
+            - generic [ref=e190]:
+              - generic [ref=e191]: harbor
+              - generic [ref=e192]: 工具
+              - generic [ref=e193]: 已上传
+            - paragraph [ref=e194]: Harbor - 企业级镜像仓库，组件多、镜像大，建议生产或资源充足环境使用

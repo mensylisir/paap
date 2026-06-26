@@ -1,0 +1,103 @@
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - generic [ref=e5]:
+      - link "PAAP" [ref=e6] [cursor=pointer]:
+        - /url: /apps
+        - img [ref=e8]
+        - generic [ref=e12]: PAAP
+      - navigation [ref=e13]:
+        - link "应用" [ref=e14] [cursor=pointer]:
+          - /url: /apps
+          - img [ref=e15]
+          - generic [ref=e20]: 应用
+        - link "模板" [ref=e21] [cursor=pointer]:
+          - /url: /templates
+          - img [ref=e22]
+          - generic [ref=e25]: 模板
+        - link "目录" [ref=e26] [cursor=pointer]:
+          - /url: /catalog
+          - img [ref=e27]
+          - generic [ref=e37]: 目录
+        - link "用户" [ref=e38] [cursor=pointer]:
+          - /url: /users
+          - img [ref=e39]
+          - generic [ref=e44]: 用户
+    - generic [ref=e45]:
+      - generic [ref=e46]:
+        - generic [ref=e47]: A
+        - generic [ref=e48]: admin
+      - button "退出" [ref=e49] [cursor=pointer]:
+        - img [ref=e50]
+        - generic [ref=e53]: 退出
+  - main [ref=e54]:
+    - generic [ref=e55]:
+      - generic [ref=e57]:
+        - heading "用户" [level=1] [ref=e58]
+        - paragraph [ref=e59]: 管理所有平台用户的角色
+      - table [ref=e61]:
+        - rowgroup [ref=e62]:
+          - row "用户名 邮箱 角色 操作" [ref=e63]:
+            - columnheader "用户名" [ref=e64]
+            - columnheader "邮箱" [ref=e65]
+            - columnheader "角色" [ref=e66]
+            - columnheader "操作" [ref=e67]
+        - rowgroup [ref=e68]:
+          - row "admin admin@paap.local 应用管理员 平台管理员 当前用户" [ref=e69]:
+            - cell "admin" [ref=e70]
+            - cell "admin@paap.local" [ref=e71]
+            - cell "应用管理员 平台管理员" [ref=e72]:
+              - generic [ref=e73]:
+                - generic [ref=e74]: 应用管理员
+                - generic [ref=e75]: 平台管理员
+            - cell "当前用户" [ref=e76]
+          - row "user user@paap.local 普通用户 平台管理员 应用管理员 普通用户" [ref=e77]:
+            - cell "user" [ref=e78]
+            - cell "user@paap.local" [ref=e79]
+            - cell "普通用户" [ref=e80]:
+              - generic [ref=e82]: 普通用户
+            - cell "平台管理员 应用管理员 普通用户" [ref=e83]:
+              - generic [ref=e84]:
+                - generic [ref=e85]:
+                  - checkbox "平台管理员" [ref=e86]
+                  - generic [ref=e87]: 平台管理员
+                - generic [ref=e88]:
+                  - checkbox "应用管理员" [ref=e89]
+                  - generic [ref=e90]: 应用管理员
+                - generic [ref=e91]:
+                  - checkbox "普通用户" [checked] [ref=e92]
+                  - generic [ref=e93]: 普通用户
+          - row "cdp_member_1782337966577 cdp_member_1782337966577@paap.local 普通用户 平台管理员 应用管理员 普通用户" [ref=e94]:
+            - cell "cdp_member_1782337966577" [ref=e95]
+            - cell "cdp_member_1782337966577@paap.local" [ref=e96]
+            - cell "普通用户" [ref=e97]:
+              - generic [ref=e99]: 普通用户
+            - cell "平台管理员 应用管理员 普通用户" [ref=e100]:
+              - generic [ref=e101]:
+                - generic [ref=e102]:
+                  - checkbox "平台管理员" [ref=e103]
+                  - generic [ref=e104]: 平台管理员
+                - generic [ref=e105]:
+                  - checkbox "应用管理员" [ref=e106]
+                  - generic [ref=e107]: 应用管理员
+                - generic [ref=e108]:
+                  - checkbox "普通用户" [checked] [ref=e109]
+                  - generic [ref=e110]: 普通用户
+          - row "paap-admin paap-admin@example.local 应用管理员 平台管理员 普通用户 平台管理员 应用管理员 普通用户" [ref=e111]:
+            - cell "paap-admin" [ref=e112]
+            - cell "paap-admin@example.local" [ref=e113]
+            - cell "应用管理员 平台管理员 普通用户" [ref=e114]:
+              - generic [ref=e115]:
+                - generic [ref=e116]: 应用管理员
+                - generic [ref=e117]: 平台管理员
+                - generic [ref=e118]: 普通用户
+            - cell "平台管理员 应用管理员 普通用户" [ref=e119]:
+              - generic [ref=e120]:
+                - generic [ref=e121]:
+                  - checkbox "平台管理员" [checked] [ref=e122]
+                  - generic [ref=e123]: 平台管理员
+                - generic [ref=e124]:
+                  - checkbox "应用管理员" [checked] [ref=e125]
+                  - generic [ref=e126]: 应用管理员
+                - generic [ref=e127]:
+                  - checkbox "普通用户" [checked] [ref=e128]
+                  - generic [ref=e129]: 普通用户
