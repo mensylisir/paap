@@ -262,7 +262,7 @@ const goEnvs = () => router.push(`/apps/${appId}/environments`)
 .badge.orange { background: var(--paap-orange-bg); color: var(--paap-orange-text); }
 .badge.gray { background: var(--paap-bg-01); color: var(--paap-text-02); }
 
-.rail-btn { display: inline-flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 600; height: 36px; padding: 0 16px; border-radius: 6px; border: 1px solid var(--paap-border-01); background: #fff; color: var(--paap-text-01); cursor: pointer; }
+.rail-btn { display: inline-flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 500; height: 36px; padding: 0 16px; border-radius: var(--paap-radius-sm); border: 1px solid var(--paap-border-01); background: #fff; color: var(--paap-text-01); cursor: pointer; }
 .rail-btn--primary { background: var(--cds-button-primary, var(--paap-accent)); color: var(--cds-text-on-color, #fff); border-color: var(--cds-button-primary, var(--paap-accent)); }
 .rail-btn--primary:hover { background: var(--cds-button-primary-hover, var(--paap-accent-hover)); border-color: var(--cds-button-primary-hover, var(--paap-accent-hover)); }
 </style>
