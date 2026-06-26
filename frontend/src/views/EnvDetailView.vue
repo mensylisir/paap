@@ -9540,13 +9540,13 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   align-items: center;
   padding: 12px 14px;
   border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
-  border-radius: 0;
+  border-radius: var(--paap-radius, 8px);
   background: var(--cds-layer-01, #ffffff);
-  box-shadow: none;
+  box-shadow: var(--paap-shadow-md, 0 1px 3px rgba(0,0,0,0.05));
   box-sizing: border-box;
   text-align: left;
   cursor: grab;
-  transition: border-color 110ms, background 110ms;
+  transition: border-color 110ms, background 110ms, box-shadow var(--paap-transition-normal, 200ms ease);
   touch-action: none;
 }
 .component-topology-node:active {
@@ -9556,6 +9556,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 .component-topology-node.active {
   border-color: var(--cds-border-interactive, #0f62fe);
   background: var(--cds-layer-01, #ffffff);
+  box-shadow: 0 1px 4px 1px rgba(0,0,0,0.08), 0 0 0 2px rgba(15,98,244,0.15);
   z-index: 10;
 }
 .component-topology-node strong { color: var(--paap-text); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -9588,7 +9589,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   min-height: 18px;
   padding: 0 6px;
   border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
-  border-radius: 0;
+  border-radius: var(--paap-radius-xs, 4px);
   background: var(--cds-layer-01, #ffffff);
   color: var(--cds-text-secondary, #525252);
   font-size: 10px;
@@ -9658,7 +9659,10 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 }
 .component-topology-node.selected {
   border-color: var(--cds-border-interactive, #0f62fe);
-  box-shadow: inset 0 0 0 1px var(--cds-border-interactive, #0f62fe);
+  box-shadow:
+    inset 0 0 0 1px var(--cds-border-interactive, #0f62fe),
+    0 0 0 2px rgba(15, 98, 244, 0.15),
+    var(--paap-shadow-md, 0 1px 3px rgba(0,0,0,0.05));
 }
 .topology-marquee {
   fill: rgba(15, 98, 254, 0.08);
