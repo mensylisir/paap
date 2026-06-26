@@ -101,11 +101,20 @@ html {
   --paap-space-12: 48px;
   --paap-space-16: 64px;
 
-  /* Radius */
-  --paap-radius: 0;
-  --paap-radius-sm: 0;
-  --paap-radius-xs: 0;
+  /* Radius — Railway-inspired (4px/6px/8px base) */
+  --paap-radius: 8px;       /* cards, dialogs, drawers */
+  --paap-radius-sm: 6px;    /* buttons, inputs, selects */
+  --paap-radius-xs: 4px;    /* tags, badges, small elements */
   --paap-radius-full: 9999px;
+
+  /* Shadows (3-tier, Railway-inspired) */
+  --paap-shadow-sm: 0 0 1px rgba(0,0,0,0.03), 0 1px 2px rgba(0,0,0,0.06);
+  --paap-shadow-md: 0 1px 3px rgba(0,0,0,0.05);
+  --paap-shadow-lg: 0 4px 12px rgba(0,0,0,0.1);
+
+  /* Transitions */
+  --paap-transition-fast: 150ms ease;
+  --paap-transition-normal: 200ms ease;
 
   /* Layout */
   --paap-content-max: 9999px;
@@ -226,10 +235,12 @@ a:hover {
   background: var(--paap-panel);
   border: 1px solid var(--paap-border);
   border-radius: var(--paap-radius);
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  box-shadow: var(--paap-shadow-md);
+  transition: border-color var(--paap-transition-normal), box-shadow var(--paap-transition-normal);
 }
 .rail-card:hover {
   border-color: var(--paap-border-strong);
+  box-shadow: var(--paap-shadow-lg);
 }
 
 /* ===== Buttons ===== */
