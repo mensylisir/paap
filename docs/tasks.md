@@ -459,13 +459,16 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 - [ ] 当前状态：`ListServiceCatalog` 仅只读
 - [ ] 工作量：1 周
 
-### Task 7.4: 三种角色体系
-- [ ] 角色定义：`platform_admin` / `app_admin` / `user`
-- [ ] 后端 `internal/middleware/` 增加 auth + role 检查中间件（当前仅 `cors.go`）
-- [ ] 路由分公开/应用/平台三层
-- [ ] 前端按 `role` 显隐平台管理入口
-- [ ] 当前状态：`User.Role` 只有 `user`/`admin`（`user.go:17`）
-- [ ] 工作量：1 周（与 Task 7.3 合并做）
+### Task 7.4: 三种角色体系 ✅
+- [x] 角色定义：`platform_admin` / `app_admin` / `user`
+- [x] 用户角色从单字段升级为 `user_roles` 多角色表，`User.Role` 兼容字段已移除
+- [x] 后端 `internal/middleware/auth.go` 统一认证并把当前用户 ID、角色写入 Gin context
+- [x] 应用列表/详情/环境/组件/服务等应用域接口通过 `AppMember` 做资源域鉴权，平台管理员保留全局可见性
+- [x] 创建应用要求 `app_admin`，`platform_admin` 单独不能创建业务应用；创建后自动给创建者写入 `AppMember.role=admin`
+- [x] 前端按 `platform_admin` 显隐用户管理等平台入口
+- [x] Keycloak 登录回调从 realm roles、client roles、groups 提取 `platform_admin` / `app_admin` / `user` 并同步到 `user_roles`
+- [x] 验证：`go test ./internal/handler ./internal/model ./internal/service -run 'Test(AuthenticatedUserCanCreateAppRequiresAppAdminRole|ListApplicationsFiltersByAppMemberForRegularUsers|ListApplicationsIncludesSystemAppsForPlatformAdmins|ListApplicationsDoesNotCreateSharedResourcePool|CreateApplicationUsesAuthenticatedUserAsOwner|CreateApplicationRejectsRegularUser|RolesFromKeycloak|ReplaceUserRoles|SyncCluster)' -count=1` 通过
+- [x] 当前边界：已完成三种平台主角色、Keycloak 对接和应用成员域鉴权；权限点表/Casbin 自定义角色体系按 Task 6.13 的评估作为后续增强，不在本任务内一次性替换现有鉴权链路
 
 ### Task 7.5: Capability 来源模型（环境内/共享/外部）
 > 领导需求 2+3+4 的统一模型，也是 External Capability Design Direction 的落地
