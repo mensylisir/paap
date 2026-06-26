@@ -173,8 +173,11 @@ const appResourceSummary = (app: any) => sumApplicationResources(app)
 const appComponentCount = (app: any) =>
   appResourceSummary(app).componentCount
 
+const isSystemSharedResourcePool = (app: any) =>
+  Boolean(app?.isSystem) && String(app?.identifier || '') === 'default'
+
 const appDisplayName = (app: any) =>
-  app?.isSystem && String(app?.identifier || '') === 'default'
+  isSystemSharedResourcePool(app)
     ? '共享资源池'
     : (app?.name || app?.identifier || '未命名应用')
 
@@ -225,6 +228,10 @@ function goToDefaultWorkspace(app: any) {
 }
 
 function goToAppHome(app: any) {
+  if (isSystemSharedResourcePool(app)) {
+    router.push('/shared-resources')
+    return
+  }
   router.push(`/apps/${app.id}/overview`)
 }
 

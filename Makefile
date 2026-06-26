@@ -2,7 +2,7 @@ GO_VERSION := go1.25.7
 SHELL := /bin/bash
 GOPATH := $(shell source ~/.gvm/scripts/gvm && gvm use $(GO_VERSION) >/dev/null && go env GOPATH)
 CONTROLLER_GEN := $(GOPATH)/bin/controller-gen
-SERVER_IMAGE ?= paap-server:v0.1.526
+SERVER_IMAGE ?= paap-server:v0.1.528
 OPERATOR_IMAGE ?= paap-operator:v0.1.54
 
 .PHONY: run run-operator build build-operator test scripts-test frontend-test frontend-build frontend-smoke frontend-verify verify clean deps fmt lint manifests generate install uninstall install-kpack uninstall-kpack package-built-in-templates preload-kind-images check-disk-space verify-server-image

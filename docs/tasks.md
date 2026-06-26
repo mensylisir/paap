@@ -383,12 +383,13 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 - [x] 创建环境只选择环境形态：创建空环境 / 创建基础环境 / 从模板创建；能力来源不在创建环境弹窗选择
   - 2026-06-25 验证：复用 Chrome tab，`/apps/5/overview?createEnvironment=true` 与 `/apps/5/environments?create=true` 均使用同一弹窗，创建方式为“创建空环境 / 创建基础环境 / 从模板创建”，无“能力来源”字段。
 - [x] 平台共享资源池通过 `/shared-resources` 进入同一套环境画布，目标为系统 `default/shared` 应用和环境；平台管理员在该画布创建、部署和维护共享工具/中间件
-  - 2026-06-25 验证：`/shared-resources` 跳转到 `/apps/62/environments/64`，页面显示“共享资源池 / 共享环境”，无 `environment not found`。
+  - 2026-06-26 验证：`/shared-resources` 跳转到 `/apps/62/environments/64`，页面显示“共享资源池 / 共享环境”，无 `environment not found`；应用列表中的系统共享资源池卡片也先进入 `/shared-resources`，再解析固定 `shared` 环境进入画布。
 - [x] 业务环境画布右键添加共享资源或外部资源，生成 capability 卡片；共享资源只读，外部资源在右侧栏编辑 endpoint/auth
 - [x] 外部资源凭据写入当前环境 Kubernetes Secret，数据库只保存 `credentialSecretRef`；右侧栏用眼睛按钮显示/隐藏已保存用户名、密码或 token
 - [x] default 共享环境只允许安装工具/中间件，不允许部署业务组件，且不可被普通用户删除
   - 2026-06-25 验证：共享环境画布右键菜单只显示“添加工具 / 添加中间件”，工具二级菜单含 ArgoCD、Registry、Gitea、Jenkins、Prometheus+Grafana、Loki、Harbor，中间件二级菜单含 PostgreSQL、MySQL、MongoDB、Redis、RabbitMQ、Kafka、MinIO；未出现创建组件、共享资源、外部资源、纳管入口。
-- [ ] 卡片和抽屉明确展示 `platform managed`、`shared`、`external` 来源和断开/卸载语义
+- [x] 卡片和抽屉明确展示 `platform managed`、`shared`、`external` 来源和断开/卸载语义
+  - 2026-06-26 验证：新增 focused markup 测试覆盖卡片/抽屉的来源与移除语义；环境 5 可见 Chrome 验证平台托管卡片显示“平台托管 / 卸载服务”，共享资源显示“共享资源 / 断开引用”，临时 external custom 显示“外部资源 / 断开外部连接”且抽屉提示不会删除外部系统；临时 external custom 已删除，环境能力恢复为 shared cache/database。
 - [ ] 对 external Git、Registry、Argo CD、Jenkins、Prometheus、Loki、PostgreSQL、Redis、RabbitMQ、Kafka、MinIO 做真实连接与权限验证
 - [x] external 来源删除只移除 PAAP 连接记录和本地凭据，不能删除真实外部资源
   - 2026-06-25 验证：在环境 5 创建临时 `custom` 外部资源卡片，页面确认删除后 `/api/v1/environments/5/capabilities` 只剩原有 `mq` 外部资源；删除弹窗文案明确“只会移除当前环境中的共享或外部资源卡片”。

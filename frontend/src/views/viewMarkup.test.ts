@@ -194,8 +194,10 @@ describe('Vue view markup', () => {
 
     expect(appList.default).toContain('app.isSystem')
     expect(appList.default).toContain('系统应用')
+    expect(appList.default).toContain('isSystemSharedResourcePool')
     expect(appList.default).toContain('appDisplayName')
     expect(appList.default).toContain('共享资源池')
+    expect(appList.default).toContain("router.push('/shared-resources')")
     expect(appList.default).toContain('v-if="!app.isSystem"')
     expect(appList.default).toContain('firstBusinessApp')
     expect(appList.default).toContain("goToDefaultWorkspace(firstBusinessApp())")
@@ -481,6 +483,19 @@ describe('Vue view markup', () => {
     expect(client.default).toContain('listEnvironmentCapabilities')
     expect(client.default).toContain('updateEnvironmentCapability')
     expect(client.default).toContain('getEnvironmentCapabilityCredentials')
+  })
+
+  it('makes resource source and removal semantics explicit on topology cards and drawers', async () => {
+    const envDetail = await import('./EnvDetailView.vue?raw')
+
+    expect(envDetail.default).toContain('topologySourceBadge')
+    expect(envDetail.default).toContain('resourceSourceSummaryRows')
+    expect(envDetail.default).toContain('平台托管')
+    expect(envDetail.default).toContain('断开引用')
+    expect(envDetail.default).toContain('断开外部连接')
+    expect(envDetail.default).toContain('不会删除外部系统')
+    expect(envDetail.default).toContain('source-semantics-card')
+    expect(envDetail.default).toContain('node-source-badge')
   })
 
   it('renders environment canvas zones for local shared and external resources', async () => {

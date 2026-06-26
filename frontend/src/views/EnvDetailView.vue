@@ -161,6 +161,13 @@
                   <strong v-else>{{ node.name }}</strong>
                   <small>{{ environmentTopologyNodeSubtitle(node) }}</small>
                   <span
+                    v-if="topologySourceBadge(node)"
+                    class="node-source-badge"
+                    :class="`node-source-badge--${topologySourceBadge(node)?.tone}`"
+                  >
+                    {{ topologySourceBadge(node)?.label }}
+                  </span>
+                  <span
                     class="node-delete-action"
                     role="button"
                     tabindex="0"
@@ -613,6 +620,13 @@
                   <strong v-else>{{ node.name }}</strong>
                   <small>{{ topologyNodeSubtitle(node) }}</small>
                   <span
+                    v-if="topologySourceBadge(node)"
+                    class="node-source-badge"
+                    :class="`node-source-badge--${topologySourceBadge(node)?.tone}`"
+                  >
+                    {{ topologySourceBadge(node)?.label }}
+                  </span>
+                  <span
                     class="node-delete-action"
                     role="button"
                     tabindex="0"
@@ -880,6 +894,13 @@
                 <div v-if="configDrawer.kind !== 'capability'" class="config-deployment-actions">
                   <button type="button" class="rail-btn rail-btn--secondary rail-btn--sm" @click="openDrawerLogs">查看日志</button>
                   <button type="button" class="rail-btn rail-btn--secondary rail-btn--sm" @click="openDrawerMonitoring">查看监控</button>
+                </div>
+              </div>
+              <div v-if="resourceSourceSummaryRows.length" class="source-semantics-card">
+                <div v-for="row in resourceSourceSummaryRows" :key="row.label" class="source-semantics-row">
+                  <span>{{ row.label }}</span>
+                  <strong>{{ row.value }}</strong>
+                  <small v-if="row.hint">{{ row.hint }}</small>
                 </div>
               </div>
               <div v-if="configDrawer.kind === 'capability'" class="service-access-stack capability-access-stack">
@@ -1899,8 +1920,8 @@
 
           <footer class="config-drawer-footer">
             <button v-if="configDrawer.kind === 'component'" type="button" class="text-btn danger" :disabled="configDrawer.saving" @click="deleteDrawerComponent">删除组件</button>
-            <button v-if="configDrawer.kind === 'service'" type="button" class="text-btn danger" :disabled="uninstallSubmitting" @click="deleteDrawerService">删除卡片</button>
-            <button v-if="configDrawer.kind === 'capability'" type="button" class="text-btn danger" :disabled="configDrawer.saving" @click="deleteDrawerCapability">删除卡片</button>
+            <button v-if="configDrawer.kind === 'service'" type="button" class="text-btn danger" :disabled="uninstallSubmitting" @click="deleteDrawerService">卸载服务</button>
+            <button v-if="configDrawer.kind === 'capability'" type="button" class="text-btn danger" :disabled="configDrawer.saving" @click="deleteDrawerCapability">{{ capabilityRemovalActionLabel(drawerCapability) }}</button>
             <button type="button" class="bx--btn bx--btn--secondary" @click="closeConfigDrawer">取消</button>
             <button v-if="configDrawer.kind === 'component'" type="button" class="bx--btn bx--btn--secondary" :disabled="configDrawer.saving" @click="() => saveConfigDrawer()">
               {{ configDrawer.saving ? '保存中...' : '保存配置' }}
@@ -2171,8 +2192,8 @@
         <div class="modal-container confirm-modal">
           <div class="modal-header">
             <div>
-              <p class="modal-label">删除{{ pendingDeleteDialog.label }}</p>
-              <p class="modal-heading">确认删除 {{ pendingDeleteDialog.name }}</p>
+              <p class="modal-label">{{ pendingDeleteDialog.actionLabel || `删除${pendingDeleteDialog.label}` }}</p>
+              <p class="modal-heading">确认{{ pendingDeleteDialog.actionLabel || '删除' }} {{ pendingDeleteDialog.name }}</p>
             </div>
             <button type="button" class="modal-close" aria-label="关闭" @click="closeDeleteDialog">
               <svg focusable="false" width="20" height="20" viewBox="0 0 32 32" fill="currentColor"><path d="M24 9.4L22.6 8 16 14.6 9.4 8 8 9.4l6.6 6.6L8 22.6 9.4 24l6.6-6.6 6.6 6.6 1.4-1.4-6.6-6.6L24 9.4z"/></svg>
@@ -2185,7 +2206,7 @@
           <div class="modal-footer">
             <button type="button" class="bx--btn bx--btn--secondary" :disabled="pendingDeleteDialog.submitting" @click="closeDeleteDialog">取消</button>
             <button type="button" class="bx--btn bx--btn--danger" :disabled="pendingDeleteDialog.submitting" @click="runPendingDelete">
-              {{ pendingDeleteDialog.submitting ? '删除中...' : '确认删除' }}
+              {{ pendingDeleteDialog.submitting ? '处理中...' : `确认${pendingDeleteDialog.actionLabel || '删除'}` }}
             </button>
           </div>
         </div>
@@ -2682,6 +2703,7 @@ type RegistryRepositoryOption = { repository: string; tags: string[]; resource: 
 type PendingDeleteDialog = {
   kind: 'component' | 'capability'
   label: string
+  actionLabel?: string
   name: string
   message: string
   target: any
@@ -2973,6 +2995,32 @@ const capabilitySourceLabel = (source:string) => ({
   external: '外部资源',
   deferred: '稍后配置',
 }[source] || source)
+const capabilityRemovalActionLabel = (cap:any) => {
+  if (cap?.source === 'shared') return '断开引用'
+  if (cap?.source === 'external') return '断开外部连接'
+  return '删除卡片'
+}
+const capabilityRemovalMessage = (cap:any) => {
+  if (cap?.source === 'external') {
+    return '断开后只会移除当前环境中的外部资源连接记录和本地凭据，不会删除外部系统。'
+  }
+  if (cap?.source === 'shared') {
+    return '断开后只会移除当前环境对共享资源的引用，不会删除共享资源池中的服务。'
+  }
+  return '删除后只会移除当前环境中的资源卡片。'
+}
+const topologySourceBadge = (node:any): { label: string; tone: string } | null => {
+  if (!node) return null
+  if (node.topologyKind === 'capability') {
+    if (node.source === 'shared') return { label: '共享资源', tone: 'shared' }
+    if (node.source === 'external') return { label: '外部资源', tone: 'external' }
+    if (node.source === 'managed') return { label: '平台托管', tone: 'managed' }
+    return { label: capabilitySourceLabel(node.source || 'deferred'), tone: 'deferred' }
+  }
+  if (node.topologyKind === 'service') return { label: '平台托管', tone: 'managed' }
+  if (node.topologyKind === 'component') return { label: '应用组件', tone: 'component' }
+  return null
+}
 const capabilityDisplayName = (cap:any) => {
   if (cap?.source === 'shared' && cap?.refService) return `${capabilityLabel(cap.capability)} · ${cap.refService.serviceName || cap.refService.serviceType}`
   if (cap?.source === 'external' && cap?.externalEndpoint) return `${capabilityLabel(cap.capability)} · 外部`
@@ -5596,6 +5644,41 @@ const drawerDeploymentSubtitle = computed(() => {
 const drawerDeploymentRows = computed(() => {
   return [] as Array<{ label: string; value: string }>
 })
+const resourceSourceSummaryRows = computed(() => {
+  if (configDrawer.value.kind === 'capability') {
+    const cap = drawerCapability.value || {}
+    const source = String(cap.source || '')
+    if (source === 'shared') {
+      return [
+        { label: '来源类型', value: '共享资源', hint: '由平台公共环境提供，业务环境只读引用。' },
+        { label: '移除动作', value: '断开引用', hint: '只解除当前环境引用，不会删除共享资源池中的服务。' },
+      ]
+    }
+    if (source === 'external') {
+      return [
+        { label: '来源类型', value: '外部资源', hint: '连接到集群外已有系统，由当前环境保存连接信息。' },
+        { label: '移除动作', value: '断开外部连接', hint: '只删除连接记录和本地凭据，不会删除外部系统。' },
+      ]
+    }
+    return [
+      { label: '来源类型', value: '平台托管', hint: '由 PAAP 在当前环境内安装和管理。' },
+      { label: '移除动作', value: '删除卡片', hint: '移除当前环境内的能力记录。' },
+    ]
+  }
+  if (configDrawer.value.kind === 'service') {
+    return [
+      { label: '来源类型', value: '平台托管', hint: '由 PAAP 在当前环境内安装、升级和卸载。' },
+      { label: '移除动作', value: '卸载服务', hint: '会卸载当前环境中的工具或中间件实例。' },
+    ]
+  }
+  if (configDrawer.value.kind === 'component') {
+    return [
+      { label: '来源类型', value: '应用组件', hint: '属于当前应用在本环境中的业务工作负载。' },
+      { label: '移除动作', value: '删除组件', hint: '会删除组件记录并清理该组件在集群中的运行态资源。' },
+    ]
+  }
+  return [] as Array<{ label: string; value: string; hint?: string }>
+})
 const serviceDrawerVariableRows = computed(() => {
   const svc = drawerService.value
   if (!svc) return []
@@ -7652,7 +7735,11 @@ const runPendingDelete = async () => {
     if (pendingDeleteDialog.value) pendingDeleteDialog.value.submitting = false
   }
 }
-const topologyDeleteTitle = (node:any) => node?.topologyKind === 'service' || node?.topologyKind === 'capability' ? '删除卡片' : '删除组件'
+const topologyDeleteTitle = (node:any) => {
+  if (node?.topologyKind === 'capability') return capabilityRemovalActionLabel(node)
+  if (node?.topologyKind === 'service') return '卸载服务'
+  return '删除组件'
+}
 const resolveTopologyService = (node:any) => {
   if (!node) return null
   const serviceId = Number(node.serviceId || node.id)
@@ -7738,8 +7825,9 @@ const deleteCapabilityById = async (cap:any) => {
   openDeleteDialog({
     kind: 'capability',
     label: '资源卡片',
+    actionLabel: capabilityRemovalActionLabel(cap),
     name: capabilityDisplayName(cap),
-    message: '删除后只会移除当前环境中的共享或外部资源卡片，不会删除共享资源池中的服务。',
+    message: capabilityRemovalMessage(cap),
     target: cap,
     submitting: false,
     error: '',
@@ -9326,6 +9414,47 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   box-sizing: border-box;
 }
 .component-topology-node small { grid-column: 3; color: var(--paap-muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.node-source-badge {
+  position: absolute;
+  right: 8px;
+  bottom: 6px;
+  display: inline-flex;
+  align-items: center;
+  max-width: 82px;
+  min-height: 18px;
+  padding: 0 6px;
+  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  border-radius: 0;
+  background: var(--cds-layer-01, #ffffff);
+  color: var(--cds-text-secondary, #525252);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.node-source-badge--managed {
+  border-color: var(--cds-blue-20, #d0e2ff);
+  background: var(--cds-blue-10, #edf5ff);
+  color: var(--cds-blue-70, #0043ce);
+}
+.node-source-badge--shared {
+  border-color: var(--cds-green-20, #a7f0ba);
+  background: var(--cds-green-10, #defbe6);
+  color: var(--cds-green-70, #0e6027);
+}
+.node-source-badge--external {
+  border-color: var(--cds-purple-20, #e8daff);
+  background: var(--cds-purple-10, #f6f2ff);
+  color: var(--cds-purple-70, #6929c4);
+}
+.node-source-badge--component,
+.node-source-badge--deferred {
+  border-color: var(--cds-gray-20, #e0e0e0);
+  background: var(--cds-gray-10, #f4f4f4);
+  color: var(--cds-gray-70, #525252);
+}
 .node-delete-action {
   position: absolute;
   top: 6px;
@@ -9844,6 +9973,37 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   justify-content: flex-end;
   gap: var(--paap-space-2);
   flex-wrap: wrap;
+}
+.source-semantics-card {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--paap-space-2);
+}
+.source-semantics-row {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  border-radius: 0;
+  background: var(--cds-layer-01, #ffffff);
+}
+.source-semantics-row > span {
+  color: var(--cds-text-secondary, #525252);
+  font-size: 11px;
+  font-weight: 600;
+}
+.source-semantics-row > strong {
+  min-width: 0;
+  color: var(--cds-text-primary, #161616);
+  font-size: 13px;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+.source-semantics-row > small {
+  color: var(--cds-text-secondary, #525252);
+  font-size: 12px;
+  line-height: 1.4;
 }
 .config-variable-list {
   display: grid;
