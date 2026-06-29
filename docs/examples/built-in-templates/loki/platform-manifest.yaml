@@ -1,6 +1,44 @@
 name: loki
 version: v2.9.4
 description: "Loki + Promtail - 日志收集与查询"
+catalog:
+  docs:
+    overview: |
+      # Loki
+
+      Loki 是面向 Kubernetes 的日志聚合与查询系统，通常配合 Promtail/Agent 收集 Pod 日志，并通过 Grafana 或平台日志入口进行 LogQL 查询。它更关注标签索引和日志流过滤，适合按 namespace、pod、container、component、serviceType 等维度快速定位错误。
+
+      在 PAAP 中，Loki 是服务目录“日志” tab 的基础来源。平台会根据服务实例、环境、组件和命名空间生成带条件的日志跳转链接，让用户一键打开当前服务过滤后的错误日志。
+
+      适用场景：
+
+      - 查看组件错误日志、异常堆栈和启动失败原因。
+      - 按环境、服务类型、应用组件过滤日志。
+      - 将日志入口和服务目录、组件详情、运行状态联动。
+      - 共享资源池集中采集多个业务环境日志。
+    install: |
+      ## 安装方式
+
+      在环境或共享资源池安装 Loki。普通环境安装默认采集本环境命名空间；共享资源池安装时，需要明确它可以采集哪些业务环境命名空间，并通过平台 RBAC/ServiceAccount 投射权限。
+
+      安装后确认：
+
+      - Promtail/Agent 是否能读取目标 namespace 的 Pod 日志。
+      - Grafana 或平台代理是否能访问 Loki 查询 API。
+      - 日志标签包含 namespace、pod、container 等基础维度。
+      - 外部日志系统接入时，外部资源需要提供可查询地址和认证信息。
+    quickstart: |
+      ## Quick Start
+
+      常用 LogQL：
+
+      ```logql
+      {namespace="$namespace"} |~ "(?i)(error|exception|panic|failed)"
+      ```
+
+      在服务目录中打开某个服务的日志 tab，平台会基于模板中的 `log_query_template` 替换 `$namespace` 和 `$service`。如果实例没有日志入口，先确认环境中是否安装或引用 Loki，再检查服务实例是否有监控/日志目标。
+
+      如果日志为空，优先检查 Pod 是否真的输出到 stdout/stderr、Promtail 是否运行、namespace 是否在采集范围内。
 permissions:
   toolNamespace:
     rules:

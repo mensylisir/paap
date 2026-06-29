@@ -1,6 +1,46 @@
 name: kube-prometheus-stack
 version: v0.78.2
 description: "Prometheus + Grafana + Alertmanager 全栈监控"
+catalog:
+  docs:
+    overview: |
+      # Prometheus + Grafana
+
+      kube-prometheus-stack 提供 Prometheus、Grafana、Alertmanager、kube-state-metrics 和 node-exporter，是 PAAP 环境监控、服务目录专属指标和组件运行指标的基础能力。它不只是通用主机监控，还负责承载 Redis、Kafka、MySQL、PostgreSQL 等服务特异性指标入口。
+
+      在 PAAP 中，监控服务可以部署在普通环境或共享资源池。普通环境默认监控本环境；共享资源池需要具备跨环境 namespace 发现和采集能力，才能服务多个业务环境。
+
+      适用场景：
+
+      - 查看环境资源总览、组件 CPU/内存、Pod 状态和告警。
+      - 为服务目录提供类型特异性指标卡和 Grafana 大盘链接。
+      - 为 HPA/KEDA 提供 Prometheus 指标触发源。
+      - 统一管理告警规则和通知渠道。
+    install: |
+      ## 安装方式
+
+      在共享资源池安装时，建议作为多环境监控中心；在普通环境安装时，作为该环境的独立监控栈。安装前确认集群资源足够，Grafana、Prometheus 和 Alertmanager 都需要持久化和合适的保留周期。
+
+      安装后平台会：
+
+      1. 创建或更新 ServiceMonitor/PodMonitor 采集目标。
+      2. 为服务目录生成大盘入口和指标卡。
+      3. 将环境、服务和组件标签写入采集配置。
+      4. 暴露 Grafana 外部入口供用户查看。
+    quickstart: |
+      ## Quick Start
+
+      1. 在环境画布安装 Prometheus+Grafana。
+      2. 安装 Redis、Kafka、数据库等服务。
+      3. 打开服务目录中的具体服务详情。
+      4. 在“监控”tab 查看专属指标卡和 Grafana 大盘入口。
+      5. 在组件详情查看资源趋势、Pod 状态和告警。
+
+      常见排查：
+
+      - 大盘空白：检查 ServiceMonitor 是否生成、目标是否 up。
+      - 指标缺失：检查服务是否启用 exporter 或 metrics 端口。
+      - 共享资源池监控不到业务环境：检查 RBAC 投射和 namespace selector。
 permissions:
   clusterResources:
     rules:

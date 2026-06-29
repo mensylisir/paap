@@ -85,7 +85,7 @@ describe('Vue view markup', () => {
     const appOverview = await import('./AppOverviewView.vue?raw')
 
     expect(envDetail.default).toContain('environmentCanvasAllNodes.length === 0')
-    expect(envDetail.default).toContain('在画布空白处右键创建组件、工具、数据库或中间件。')
+    expect(envDetail.default).toContain('在画布空白处右键创建组件、工具、中间件或虚拟机。')
     expect(envDetail.default).not.toContain('v-if="environmentTopologyAllNodes.length"')
     expect(envDetail.default).not.toContain('当前环境还没有业务组件，先创建组件再进入源码/镜像到集群的交付流程。')
 
@@ -694,6 +694,27 @@ describe('Vue view markup', () => {
     expect(client.default).toContain("platformServiceStats: () => request('/platform/services/stats')")
     expect(client.default).toContain("platformServiceInstances: (type: string) => request(`/platform/services/${encodeURIComponent(type)}/instances`)")
     expect(client.default).toContain("platformServiceUsage: (type: string) => request(`/platform/services/${encodeURIComponent(type)}/usage`)")
+  })
+
+  it('renders catalog service details as a lifecycle and observability portal', async () => {
+    const detailView = await import('./CatalogServiceDetailView.vue?raw')
+    const client = await import('../api/client.ts?raw')
+
+    expect(detailView.default).toContain('service-detail-portal')
+    expect(detailView.default).toContain('api.getCatalogServiceDetail(type)')
+    expect(detailView.default).toContain('api.getCatalogServiceResources(type)')
+    expect(detailView.default).toContain('api.getCatalogServiceObservability(type)')
+    expect(detailView.default).toContain('renderMarkdown')
+    expect(detailView.default).toContain('markdown-body')
+    expect(detailView.default).toContain('环境与资源统计')
+    expect(detailView.default).toContain('Grafana 大盘')
+    expect(detailView.default).toContain('Loki 条件跳转')
+    expect(detailView.default).toContain('metricCards')
+    expect(detailView.default).toContain('errorLogsUrl')
+    expect(detailView.default).toContain('snapshotSource')
+    expect(client.default).toContain("getCatalogServiceDetail: (type: string) => request(`/catalog/services/${encodeURIComponent(type)}/detail`)")
+    expect(client.default).toContain("getCatalogServiceResources: (type: string) => request(`/catalog/services/${encodeURIComponent(type)}/resources`)")
+    expect(client.default).toContain("getCatalogServiceObservability: (type: string) => request(`/catalog/services/${encodeURIComponent(type)}/observability`)")
   })
 
   it('matches catalog search queries against product group names', async () => {
@@ -1331,6 +1352,9 @@ describe('Vue view markup', () => {
     expect(envDetail.default).toContain(`v-if="componentContextMenu.kind === 'canvas' && !isSystemSharedEnvironment" type="button" @click="adoptCanvasResource"`)
     expect(envDetail.default).toContain('<span>添加工具</span>')
     expect(envDetail.default).toContain('<span>添加中间件</span>')
+    expect(envDetail.default).toContain('<span>虚拟机</span>')
+    expect(envDetail.default).toContain('openKubeVirtServiceModal')
+    expect(envDetail.default).toContain("serviceModalMode.value === 'kubevirt'")
     expect(envDetail.default).toContain('connectorSides')
     expect(envDetail.default).toContain('canvasNodesForStage')
     expect(envDetail.default).toContain('node-connector--left')
@@ -1349,8 +1373,11 @@ describe('Vue view markup', () => {
 
     expect(envDetail.default).toContain('安装工具')
     expect(envDetail.default).toContain('添加中间件')
+    expect(envDetail.default).toContain('创建虚拟机服务')
+    expect(envDetail.default).toContain('选择 KubeVirt 服务模板')
     expect(envDetail.default).toContain('@click="openServiceModal"')
     expect(envDetail.default).toContain('openInfraSubmenu')
+    expect(envDetail.default).toContain("openServiceInstallModal('kubevirt')")
     expect(envDetail.default).not.toContain("activeCapabilityTab && activeCapabilityTab.category !== 'infra'")
     expect(envDetail.default).not.toContain("activeCapabilityTab?.category === 'infra'")
     expect(envDetail.default).not.toContain('添加基础设施')
@@ -1961,5 +1988,32 @@ describe('Vue view markup', () => {
     expect(templatesView.default).not.toContain('#0f172a')
     expect(templatesView.default).not.toContain('%23687076')
     expect(templatesView.default).not.toContain('0 20px 40px')
+  })
+
+  it('keeps service catalog monitor and log as separate tabs without an empty topology tab', async () => {
+    const catalogDetail = await import('./CatalogServiceDetailView.vue?raw')
+
+    expect(catalogDetail.default).not.toContain("{ key: 'topology', label: '拓扑' }")
+    expect(catalogDetail.default).toContain("{ key: 'monitor', label: '监控' }")
+    expect(catalogDetail.default).toContain("{ key: 'logs', label: '日志' }")
+    expect(catalogDetail.default).toContain("activeTab === 'monitor'")
+    expect(catalogDetail.default).toContain("activeTab === 'logs'")
+    expect(catalogDetail.default).not.toContain('服务自身拓扑')
+    expect(catalogDetail.default).not.toContain('topology?.edges?.length')
+    expect(catalogDetail.default).toContain('Grafana 大盘')
+    expect(catalogDetail.default).toContain('Loki 条件跳转')
+    expect(catalogDetail.default).not.toContain("label: '监控日志'")
+    expect(catalogDetail.default).not.toContain('应用依赖')
+  })
+
+  it('exposes HPA and KEDA autoscaling controls on component deployment forms', async () => {
+    const envDetail = await import('./EnvDetailView.vue?raw')
+
+    expect(envDetail.default).toContain('启用 HPA/KEDA 弹性伸缩')
+    expect(envDetail.default).toContain('启用弹性伸缩')
+    expect(envDetail.default).toContain("mode: 'hpa'")
+    expect(envDetail.default).toContain("triggerType: 'rabbitmq'")
+    expect(envDetail.default).toContain('autoscalingPayload')
+    expect(envDetail.default).toContain('cfg.autoscaling')
   })
 })

@@ -1,6 +1,46 @@
 name: mysql-galera
 version: 16.0.1
 description: "MariaDB Galera 多主 MySQL 协议数据库集群"
+catalog:
+  docs:
+    overview: |
+      # MySQL Galera
+
+      MySQL Galera 模板提供兼容 MySQL 协议的多主数据库集群能力，适合需要更高可用性、节点间同步复制和故障切换的关系型数据库场景。它比单节点 MySQL 更复杂，对网络、存储和资源要求也更高。
+
+      在 PAAP 中，该模板适合测试高可用数据库拓扑、验证多节点数据库运行方式，或为需要 MySQL 协议但希望提高可用性的环境提供托管服务。
+
+      适用场景：
+
+      - 业务依赖 MySQL 协议并希望减少单点风险。
+      - 需要验证数据库节点故障恢复。
+      - 测试环境需要接近生产的多节点数据库。
+      - 单节点 MySQL 已不能满足可用性要求。
+    install: |
+      ## 安装方式
+
+      在资源充足的环境中选择 MySQL Galera 模板安装。安装前应规划节点数、CPU、内存、持久化存储、数据库账号和备份策略。
+
+      注意事项：
+
+      - 不建议在内存紧张的 kind 或本地环境部署多节点 Galera。
+      - 所有节点需要稳定网络和持久化卷。
+      - 业务连接应通过 Service 访问，不应直连单个 Pod。
+      - 生产使用前必须验证备份恢复和故障切换。
+    quickstart: |
+      ## Quick Start
+
+      应用配置与 MySQL 基本一致：
+
+      ```yaml
+      spring:
+        datasource:
+          url: jdbc:mysql://${MYSQL_HOST}:${MYSQL_PORT}/${MYSQL_DATABASE}
+          username: ${MYSQL_USERNAME}
+          password: ${MYSQL_PASSWORD}
+      ```
+
+      部署组件时选择 MySQL Galera 服务引用，平台会注入 host、port、database、username、password。若应用对事务一致性要求高，应先确认 Galera 写入模式、连接池重试策略和故障切换行为。
 permissions:
   toolNamespace:
     rules:

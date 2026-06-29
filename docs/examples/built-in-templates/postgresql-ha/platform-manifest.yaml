@@ -1,6 +1,46 @@
 name: postgresql-ha
 version: 16.3.2
 description: "PostgreSQL HA 集群，包含 repmgr 和 Pgpool"
+catalog:
+  docs:
+    overview: |
+      # PostgreSQL HA
+
+      PostgreSQL HA 模板提供带 repmgr 和 Pgpool 的高可用 PostgreSQL 集群能力，用于需要主从复制、故障切换和读写入口治理的关系型数据库场景。它比单节点 PostgreSQL 更适合稳定环境，但对资源、存储和运维要求更高。
+
+      在 PAAP 中，该模板适合测试或交付高可用数据库实例。服务目录会展示 PostgreSQL HA 实例的运行情况、资源消耗和监控入口，帮助用户区分单节点数据库与 HA 数据库的使用成本。
+
+      适用场景：
+
+      - 业务需要 PostgreSQL 但不能接受单节点故障。
+      - 需要验证数据库故障切换和只读流量。
+      - 测试环境希望接近生产数据库拓扑。
+      - 需要统一通过平台管理连接信息和监控入口。
+    install: |
+      ## 安装方式
+
+      在资源充足的环境中选择 PostgreSQL HA 模板。安装前规划节点数、持久化容量、账号、数据库名、备份策略和 Pgpool 暴露方式。
+
+      注意事项：
+
+      - 本地 kind 或低内存环境不建议部署多节点 HA 数据库。
+      - 生产使用前必须演练备份恢复和 failover。
+      - 业务连接优先使用 Pgpool/Service 地址，不应绑定单个数据库 Pod。
+      - 与应用连接池一起验证故障期间的重连行为。
+    quickstart: |
+      ## Quick Start
+
+      应用连接配置与 PostgreSQL 单节点基本一致：
+
+      ```yaml
+      spring:
+        datasource:
+          url: jdbc:postgresql://${POSTGRESQL_HOST}:${POSTGRESQL_PORT}/${POSTGRESQL_DATABASE}
+          username: ${POSTGRESQL_USERNAME}
+          password: ${POSTGRESQL_PASSWORD}
+      ```
+
+      在组件部署页选择 PostgreSQL HA 服务引用，平台会注入连接参数。若出现偶发连接中断，检查 Pgpool 状态、主从切换事件、应用连接池重试配置和数据库日志。
 permissions:
   toolNamespace:
     rules:

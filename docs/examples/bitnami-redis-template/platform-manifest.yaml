@@ -4,6 +4,55 @@
 name: "Redis"
 version: "7.2.4"
 description: "Bitnami Redis 缓存服务，高性能键值存储，支持主从复制"
+catalog:
+  docs:
+    overview: |
+      # Bitnami Redis 示例模板
+
+      这是一个用户自定义服务模板示例，用于展示如何把第三方 Bitnami Redis Chart 接入 PAAP。模板作者通过 `platform-manifest.yaml` 声明权限、监控、变量映射和服务目录文档，平台只负责解析和渲染这些模板资产。
+
+      该模板适合学习自定义服务模板的基本结构：根目录包含 `platform-manifest.yaml`、`preset-values.yaml`、`chart/` 和可选的 `dashboards/`。上传后，用户就能在服务目录看到 Redis 的介绍、安装方式和 Quick Start。
+
+      使用该示例可以验证：
+
+      - 自定义 Helm Chart 上传和 RBAC 校验。
+      - 服务目录文档由模板提供，而不是代码兜底。
+      - Grafana dashboard 通过 `dashboard_path` 绑定。
+      - 平台变量映射到 Helm values。
+    install: |
+      ## 安装方式
+
+      将该目录打包为 `.tar.gz` 后，通过 PAAP 模板上传页面上传。压缩包根目录必须包含：
+
+      ```text
+      platform-manifest.yaml
+      preset-values.yaml
+      chart/
+      dashboards/
+      ```
+
+      上传时填写服务类型、显示名称和分类。平台会渲染 chart 并扫描禁止的 ClusterRole/ClusterRoleBinding，RBAC 应通过 `platform-manifest.yaml` 交给平台管理。
+
+      安装到环境时，用户在环境画布选择该 Redis 模板并提交，平台会使用 preset values 和运行时变量生成最终 Helm 安装参数。
+    quickstart: |
+      ## Quick Start
+
+      1. 打包模板目录。
+      2. 在“模板管理”上传压缩包。
+      3. 打开服务目录确认 Redis 示例模板展示正常。
+      4. 在环境画布安装 Redis。
+      5. 在组件配置模板中引用 Redis 服务。
+
+      应用配置示例：
+
+      ```yaml
+      redis:
+        host: ${REDIS_HOST}
+        port: ${REDIS_PORT}
+        password: ${REDIS_PASSWORD}
+      ```
+
+      如果上传失败，检查 `platform-manifest.yaml` 是否有 `catalog.docs.overview/install/quickstart`，以及 chart 渲染后是否仍包含集群级 RBAC。
 
 permissions:
   toolNamespace:

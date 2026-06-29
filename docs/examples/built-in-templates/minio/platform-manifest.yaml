@@ -1,6 +1,49 @@
 name: minio
 version: 13.0.0
 description: "MinIO 对象存储"
+catalog:
+  docs:
+    overview: |
+      # MinIO
+
+      MinIO 是兼容 S3 API 的对象存储服务，适合保存构建产物、上传文件、报表、备份文件、模型文件和应用附件。它可以作为环境内中间件、共享资源池服务或外部对象存储的替代入口。
+
+      在 PAAP 中，MinIO 常用于开发测试环境的对象存储能力，也可作为模板包、chart 包或应用业务附件的存储后端。服务目录会展示 MinIO 实例的资源占用、访问入口和日志监控。
+
+      适用场景：
+
+      - 应用需要 S3 兼容存储但不希望依赖公网云。
+      - 开发测试环境需要快速创建 bucket 和访问密钥。
+      - 服务需要存储较大文件，不适合放数据库。
+      - 平台需要内部对象存储保存模板和制品。
+    install: |
+      ## 安装方式
+
+      在目标环境或共享资源池选择 MinIO 模板安装。生产环境应重点规划持久化存储、容量、备份和访问域名；开发环境可以使用单节点小规格。
+
+      安装后建议：
+
+      1. 创建业务 bucket。
+      2. 生成 AccessKey/SecretKey，并以 Secret 形式绑定到组件。
+      3. 配置外部访问地址，供开发人员或业务系统访问。
+      4. 为关键 bucket 配置备份策略。
+    quickstart: |
+      ## Quick Start
+
+      组件配置示例：
+
+      ```yaml
+      storage:
+        s3:
+          endpoint: ${S3_ENDPOINT}
+          accessKey: ${S3_ACCESS_KEY}
+          secretKey: ${S3_SECRET_KEY}
+          bucket: ${S3_BUCKET}
+      ```
+
+      在组件部署页选择 MinIO 服务引用后，配置模板会注入 endpoint、bucket 和凭据。若应用运行在集群内，优先使用内部 Service 地址；若用户或外部系统访问，则使用外部路由地址。
+
+      上传失败时，检查 bucket 是否存在、凭据权限是否正确、endpoint 是否和访问场景匹配。
 permissions:
   toolNamespace:
     rules:

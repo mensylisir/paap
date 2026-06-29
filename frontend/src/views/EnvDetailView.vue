@@ -116,7 +116,7 @@
                 </svg>
                 <div v-if="environmentCanvasAllNodes.length === 0" class="component-canvas-empty-hint">
                   <strong>空环境</strong>
-                  <span>{{ isSystemSharedEnvironment ? '在画布空白处右键添加工具或中间件。' : '在画布空白处右键创建组件、工具、数据库或中间件。' }}</span>
+                  <span>{{ isSystemSharedEnvironment ? '在画布空白处右键添加工具或中间件。' : '在画布空白处右键创建组件、工具、中间件或虚拟机。' }}</span>
                   <div v-if="missingRequiredEnvironmentCapabilities.length" class="component-canvas-empty-actions">
                     <button
                       v-for="item in missingRequiredEnvironmentCapabilities"
@@ -788,6 +788,57 @@
             <div class="bx--form-item">
               <label class="bx--label">副本数量</label>
               <input type="number" v-model="compForm.replicas" class="bx--text-input" min="1" />
+            </div>
+            <div class="component-autoscaling-compact">
+              <label class="component-autoscaling-toggle">
+                <input v-model="compForm.autoscaling.enabled" type="checkbox" />
+                <span>启用弹性伸缩</span>
+              </label>
+              <div v-if="compForm.autoscaling.enabled" class="form-row">
+                <div class="bx--form-item">
+                  <label class="bx--label">模式</label>
+                  <select v-model="compForm.autoscaling.mode" class="bx--select-input">
+                    <option value="hpa">HPA</option>
+                    <option value="keda">KEDA</option>
+                  </select>
+                </div>
+                <div class="bx--form-item">
+                  <label class="bx--label">最小副本</label>
+                  <input v-model.number="compForm.autoscaling.minReplicas" type="number" min="1" class="bx--text-input" />
+                </div>
+                <div class="bx--form-item">
+                  <label class="bx--label">最大副本</label>
+                  <input v-model.number="compForm.autoscaling.maxReplicas" type="number" min="1" class="bx--text-input" />
+                </div>
+              </div>
+              <div v-if="compForm.autoscaling.enabled && compForm.autoscaling.mode === 'hpa'" class="form-row">
+                <div class="bx--form-item">
+                  <label class="bx--label">CPU 目标</label>
+                  <input v-model.number="compForm.autoscaling.targetCPU" type="number" min="1" max="100" class="bx--text-input" />
+                </div>
+                <div class="bx--form-item">
+                  <label class="bx--label">内存目标</label>
+                  <input v-model.number="compForm.autoscaling.targetMemory" type="number" min="0" max="100" class="bx--text-input" />
+                </div>
+              </div>
+              <div v-if="compForm.autoscaling.enabled && compForm.autoscaling.mode === 'keda'" class="form-row">
+                <div class="bx--form-item">
+                  <label class="bx--label">触发器</label>
+                  <select v-model="compForm.autoscaling.triggerType" class="bx--select-input">
+                    <option value="rabbitmq">RabbitMQ 队列</option>
+                    <option value="kafka">Kafka Lag</option>
+                    <option value="prometheus">Prometheus</option>
+                  </select>
+                </div>
+                <div class="bx--form-item">
+                  <label class="bx--label">指标/队列</label>
+                  <input v-model="compForm.autoscaling.triggerMetric" class="bx--text-input" placeholder="queue / lag query" />
+                </div>
+                <div class="bx--form-item">
+                  <label class="bx--label">阈值</label>
+                  <input v-model="compForm.autoscaling.triggerValue" class="bx--text-input" placeholder="100" />
+                </div>
+              </div>
             </div>
             <p v-if="componentModalError" class="modal-error" role="alert">{{ componentModalError }}</p>
           </div>
@@ -1767,6 +1818,53 @@
                   <input v-model.trim="configForm.memory" class="bx--text-input" placeholder="128Mi" />
                 </label>
               </div>
+              <div class="component-autoscaling-panel">
+                <label class="component-autoscaling-toggle">
+                  <input v-model="configForm.autoscaling.enabled" type="checkbox" />
+                  <span>启用 HPA/KEDA 弹性伸缩</span>
+                </label>
+                <div v-if="configForm.autoscaling.enabled" class="config-form-grid">
+                  <label>
+                    <span>模式</span>
+                    <select v-model="configForm.autoscaling.mode" class="bx--select-input">
+                      <option value="hpa">HPA</option>
+                      <option value="keda">KEDA</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>最小副本</span>
+                    <input v-model.number="configForm.autoscaling.minReplicas" type="number" min="1" class="bx--text-input" />
+                  </label>
+                  <label>
+                    <span>最大副本</span>
+                    <input v-model.number="configForm.autoscaling.maxReplicas" type="number" min="1" class="bx--text-input" />
+                  </label>
+                  <label v-if="configForm.autoscaling.mode === 'hpa'">
+                    <span>CPU 目标(%)</span>
+                    <input v-model.number="configForm.autoscaling.targetCPU" type="number" min="1" max="100" class="bx--text-input" />
+                  </label>
+                  <label v-if="configForm.autoscaling.mode === 'hpa'">
+                    <span>内存目标(%)</span>
+                    <input v-model.number="configForm.autoscaling.targetMemory" type="number" min="0" max="100" class="bx--text-input" />
+                  </label>
+                  <label v-if="configForm.autoscaling.mode === 'keda'">
+                    <span>触发器</span>
+                    <select v-model="configForm.autoscaling.triggerType" class="bx--select-input">
+                      <option value="rabbitmq">RabbitMQ 队列</option>
+                      <option value="kafka">Kafka Lag</option>
+                      <option value="prometheus">Prometheus</option>
+                    </select>
+                  </label>
+                  <label v-if="configForm.autoscaling.mode === 'keda'">
+                    <span>指标/队列</span>
+                    <input v-model.trim="configForm.autoscaling.triggerMetric" class="bx--text-input" placeholder="queue / topic / promql" />
+                  </label>
+                  <label v-if="configForm.autoscaling.mode === 'keda'">
+                    <span>阈值</span>
+                    <input v-model.trim="configForm.autoscaling.triggerValue" class="bx--text-input" placeholder="100" />
+                  </label>
+                </div>
+              </div>
               <details class="config-advanced-details">
                 <summary>高级启动配置</summary>
                 <label class="config-stack-field">
@@ -2072,6 +2170,11 @@
           <small>数据库、缓存、消息队列</small>
           <svg class="submenu-arrow" width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M6 4l4 4-4 4V4z"/></svg>
         </button>
+        <button v-if="componentContextMenu.kind === 'canvas' && !isSystemSharedEnvironment" type="button" @click="openKubeVirtServiceModal">
+          <MenuIconVirtualMachine class="menu-icon" />
+          <span>虚拟机</span>
+          <small>通过 KubeVirt 模板交付服务</small>
+        </button>
         <button v-if="componentContextMenu.kind === 'canvas' && !isSystemSharedEnvironment" type="button" @mouseenter="openSharedCapabilitySubmenu" @click="openSharedCapabilitySubmenu">
           <MenuIconShared class="menu-icon" />
           <span>添加共享资源</span>
@@ -2235,11 +2338,11 @@
     <!-- Install Service Modal -->
     <Teleport to="body">
       <div v-if="showServiceModal" class="modal-overlay" role="dialog" aria-modal="true" @click.self="closeServiceInstallModal">
-        <div class="modal-container" :style="{ maxWidth: serviceModalMode === 'tool' ? '720px' : '600px' }">
+        <div class="modal-container" :style="{ maxWidth: serviceModalMaxWidth }">
           <div class="modal-header">
             <div>
-              <p class="modal-label">{{ serviceModalMode === 'infra' ? '安装中间件' : '安装工具' }}</p>
-              <p class="modal-heading">{{ serviceModalMode === 'infra' ? '选择要安装的中间件' : '选择要安装的工具' }}</p>
+              <p class="modal-label">{{ serviceModalLabel }}</p>
+              <p class="modal-heading">{{ serviceModalHeading }}</p>
             </div>
             <button type="button" class="modal-close" aria-label="关闭" @click="closeServiceInstallModal">
               <svg focusable="false" width="20" height="20" viewBox="0 0 32 32" fill="currentColor"><path d="M24 9.4L22.6 8 16 14.6 9.4 8 8 9.4l6.6 6.6L8 22.6 9.4 24l6.6-6.6 6.6 6.6 1.4-1.4-6.6-6.6L24 9.4z"/></svg>
@@ -2250,7 +2353,7 @@
             <p v-else-if="serviceModalError" class="bx--type-body-short-01 no-data error-text">{{ serviceModalError }}</p>
             <p v-else-if="serviceModalNotice" class="bx--type-body-short-01 no-data">{{ serviceModalNotice }}</p>
             <div v-else class="service-picker-summary">
-              <span class="summary-pill">{{ serviceModalMode === 'infra' ? '中间件' : '工具' }}</span>
+              <span class="summary-pill">{{ serviceModalSummaryPill }}</span>
               <span class="summary-text">先选择使用方式，再选择服务产品；不可用路径不会进入安装表单。</span>
             </div>
             <div v-if="!serviceModalLoading && !serviceModalError" class="service-provision-mode-grid" aria-label="服务使用方式">
@@ -2511,6 +2614,7 @@ import MenuIconDeploy from '@carbon/icons-vue/es/rocket/16'
 import MenuIconDelete from '@carbon/icons-vue/es/trash-can/16'
 import MenuIconMonitor from '@carbon/icons-vue/es/chart--line/16'
 import MenuIconLogs from '@carbon/icons-vue/es/list/16'
+import MenuIconVirtualMachine from '@carbon/icons-vue/es/virtual-machine/16'
 import SubmenuIconFrontend from '@carbon/icons-vue/es/application/16'
 import SubmenuIconBackend from '@carbon/icons-vue/es/api/16'
 import SubmenuIconGit from '@carbon/icons-vue/es/branch/16'
@@ -2547,8 +2651,20 @@ const showServiceModal = ref(false)
 const serviceModalLoading = ref(false)
 const serviceModalError = ref('')
 const serviceModalNotice = ref('')
-const serviceModalMode = ref<'tool' | 'infra'>('tool')
+type ServiceModalMode = 'tool' | 'infra' | 'kubevirt'
+const serviceModalMode = ref<ServiceModalMode>('tool')
 const serviceSubmitting = ref(false)
+const defaultAutoscalingForm = () => ({
+  enabled: false,
+  mode: 'hpa' as 'hpa' | 'keda',
+  minReplicas: 1,
+  maxReplicas: 3,
+  targetCPU: 70,
+  targetMemory: 0,
+  triggerType: 'rabbitmq',
+  triggerMetric: '',
+  triggerValue: '100',
+})
 const defaultComponentForm = () => ({
   name: '',
   type: 'backend',
@@ -2561,6 +2677,7 @@ const defaultComponentForm = () => ({
   buildContext: '.',
   buildModule: '',
   dockerfilePath: '',
+  autoscaling: defaultAutoscalingForm(),
 })
 const compForm = ref(defaultComponentForm())
 const componentModalError = ref('')
@@ -2591,6 +2708,19 @@ const serviceProvisionModes: Array<{ key: ServiceProvisionMode; label: string; d
   { key: 'external', label: '接入外部连接', description: '保存外部 endpoint 和凭据引用，PAAP 不拥有外部系统。' },
   { key: 'kubevirt', label: 'KubeVirt 模板交付', description: '通过虚拟机模板交付具体数据库或缓存服务。' },
 ]
+const serviceModalMeta = computed(() => {
+  if (serviceModalMode.value === 'infra') {
+    return { label: '安装中间件', heading: '选择要安装的中间件', pill: '中间件', maxWidth: '600px' }
+  }
+  if (serviceModalMode.value === 'kubevirt') {
+    return { label: '创建虚拟机服务', heading: '选择 KubeVirt 服务模板', pill: '虚拟机服务', maxWidth: '640px' }
+  }
+  return { label: '安装工具', heading: '选择要安装的工具', pill: '工具', maxWidth: '720px' }
+})
+const serviceModalLabel = computed(() => serviceModalMeta.value.label)
+const serviceModalHeading = computed(() => serviceModalMeta.value.heading)
+const serviceModalSummaryPill = computed(() => serviceModalMeta.value.pill)
+const serviceModalMaxWidth = computed(() => serviceModalMeta.value.maxWidth)
 const parseServiceFeatures = (raw: unknown) => {
   const fallback = [
     { key: 'managed', enabled: true },
@@ -2812,6 +2942,7 @@ const defaultConfigForm = () => ({
   bindingMode: 'recommended',
   commandText: '',
   argsText: '',
+  autoscaling: defaultAutoscalingForm(),
 })
 const configForm = ref(defaultConfigForm())
 const normalizeUserComponentConfigTemplate = (raw:any): UserComponentConfigTemplate | null => {
@@ -3801,6 +3932,7 @@ const parseRuntimeConfig = (raw:any) => {
     dependencies: [] as string[],
     command: [] as string[],
     args: [] as string[],
+    autoscaling: null as any,
   }
   if (!raw) return emptyConfig
   if (typeof raw === 'object') return {
@@ -3818,6 +3950,7 @@ const parseRuntimeConfig = (raw:any) => {
     dependencies: Array.isArray(raw.dependencies) ? raw.dependencies.map((item:any) => String(item).trim()).filter(Boolean) : [],
     command: Array.isArray(raw.command) ? raw.command.map((item:any) => String(item).trim()).filter(Boolean) : [],
     args: Array.isArray(raw.args) ? raw.args.map((item:any) => String(item).trim()).filter(Boolean) : [],
+    autoscaling: raw.autoscaling || null,
   }
   try {
     const parsed = JSON.parse(String(raw))
@@ -3836,6 +3969,7 @@ const parseRuntimeConfig = (raw:any) => {
       dependencies: Array.isArray(parsed?.dependencies) ? parsed.dependencies.map((item:any) => String(item).trim()).filter(Boolean) : [],
       command: Array.isArray(parsed?.command) ? parsed.command.map((item:any) => String(item).trim()).filter(Boolean) : [],
       args: Array.isArray(parsed?.args) ? parsed.args.map((item:any) => String(item).trim()).filter(Boolean) : [],
+      autoscaling: parsed?.autoscaling || null,
     }
   } catch {
     return emptyConfig
@@ -4145,7 +4279,7 @@ const openCanvasContextMenu = (event: MouseEvent) => {
   const stageEl = (event.target as HTMLElement | null)?.closest?.('.component-canvas-stage') as HTMLElement | null
   canvasCreatePoint.value = stageEl ? canvasPointFromEvent(event, stageEl) : null
   canvasCreateScope.value = canvasScopeForStage(stageEl)
-  const pos = contextMenuPosition(event, 220, 288)
+  const pos = contextMenuPosition(event, 220, 336)
   componentContextMenu.value = {
     visible: true,
     x: pos.x,
@@ -5397,14 +5531,19 @@ const deliverySteps = computed(() => [
     targetTab: tabForServiceTypes(['log']),
   },
 ])
-const serviceProvisionModeOptions = computed(() => serviceProvisionModes.map((mode) => {
-  const hasSupportedService = availableServices.value.some((svc:any) => serviceSupportsProvisionMode(svc, mode.key))
-  const enabled = mode.key === 'managed'
-      ? hasSupportedService
-      : !isSystemSharedEnvironment.value && hasSupportedService
-  const description = mode.description
-  return { ...mode, enabled, description }
-}))
+const serviceProvisionModeOptions = computed(() => {
+  const modes = serviceModalMode.value === 'kubevirt'
+    ? serviceProvisionModes.filter((mode) => mode.key === 'kubevirt')
+    : serviceProvisionModes
+  return modes.map((mode) => {
+    const hasSupportedService = availableServices.value.some((svc:any) => serviceSupportsProvisionMode(svc, mode.key))
+    const enabled = mode.key === 'managed'
+        ? hasSupportedService
+        : !isSystemSharedEnvironment.value && hasSupportedService
+    const description = mode.description
+    return { ...mode, enabled, description }
+  })
+})
 const serviceStatusForProvisionMode = (serviceType:string, mode: ServiceProvisionMode) => {
   const normalizedType = String(serviceType || '').toLowerCase()
   const normalizedMode = mode === 'kubevirt' ? 'kubevirt' : 'managed'
@@ -5415,10 +5554,13 @@ const serviceStatusForProvisionMode = (serviceType:string, mode: ServiceProvisio
     return provisionMode !== 'kubevirt'
   }) || null
 }
-const visibleServiceOptions = computed(() =>
-  availableServices.value
+const visibleServiceOptions = computed(() => {
+  const options = availableServices.value
     .filter((svc:any) => serviceSupportsProvisionMode(svc, serviceProvisionMode.value))
-    .map((svc:any) => {
+  const normalizedOptions = serviceProvisionMode.value === 'kubevirt'
+    ? dedupeKubeVirtTemplates(options)
+    : options
+  return normalizedOptions.map((svc:any) => {
       if (serviceProvisionMode.value === 'shared' || serviceProvisionMode.value === 'external') return svc
       const active = serviceStatusForProvisionMode(svc.type, serviceProvisionMode.value)
       return {
@@ -5427,7 +5569,7 @@ const visibleServiceOptions = computed(() =>
         statusText: active ? (active.status === 'installing' ? '安装中' : active.status === 'draft' || active.status === 'pending' ? '已添加' : active.status === 'failed' || active.status === 'error' ? '安装失败' : '已安装') : '可添加',
       }
     })
-)
+})
 const selectedServiceTemplate = computed(() =>
   visibleServiceOptions.value.find((svc:any) => svc.type === serviceForm.value.serviceType) || null
 )
@@ -5572,8 +5714,45 @@ const loadServiceTemplates = async () => {
   templates.value = serviceTemplatesFromResponse(tmplRes)
 }
 
-const filterTemplates = (mode:'tool'|'infra') =>
-  buildPickerTemplates(templates.value, services.value, mode)
+const servicePickerBaseMode = (mode: ServiceModalMode) => mode === 'tool' ? 'tool' : 'infra'
+const isKubeVirtTemplate = (svc:any) => {
+  const installer = String(svc?.installer || '').toLowerCase()
+  const s3Key = String(svc?.s3Key || '').toLowerCase()
+  const name = String(svc?.name || svc?.serviceName || '').toLowerCase()
+  return (installer === 'raw-yaml' && s3Key.includes('service-templates/kubevirt/')) || name.includes('kubevirt')
+}
+const kubeVirtTemplateScore = (svc:any) => {
+  const s3Key = String(svc?.s3Key || '').toLowerCase()
+  const installer = String(svc?.installer || '').toLowerCase()
+  return (installer === 'raw-yaml' ? 20 : 0)
+    + (s3Key.endsWith('.yaml') ? 10 : 0)
+    + (Number(svc?.id) || 0) / 1000
+}
+const kubeVirtTemplateKey = (svc:any) => {
+  const name = String(svc?.name || svc?.serviceName || '').toLowerCase()
+  const nameKey = name.replace(/\s*kubevirt.*/, '').replace(/[^a-z0-9]+/g, '')
+  if (nameKey) return nameKey
+  return String(svc?.type || svc?.serviceType || '').toLowerCase()
+}
+const dedupeKubeVirtTemplates = (items:any[]) => {
+  const selected = new Map<string, any>()
+  for (const item of items.filter((svc:any) => isKubeVirtTemplate(svc))) {
+    const key = kubeVirtTemplateKey(item)
+    const current = selected.get(key)
+    if (!current || kubeVirtTemplateScore(item) > kubeVirtTemplateScore(current)) selected.set(key, item)
+  }
+  return Array.from(selected.values())
+}
+const filterTemplates = (mode: ServiceModalMode) => {
+  const items = buildPickerTemplates(templates.value, services.value, servicePickerBaseMode(mode))
+  if (mode !== 'kubevirt') return items
+  return dedupeKubeVirtTemplates(items)
+}
+const servicePickerNotice = (mode: ServiceModalMode, templateCount: number, selectedType: string) => {
+  if (mode !== 'kubevirt') return pickerNotice(servicePickerBaseMode(mode), templateCount, selectedType)
+  if (templateCount === 0) return '当前没有可用的虚拟机服务模板。'
+  return !selectedType ? '当前环境中的虚拟机服务均已添加、安装或正在安装。' : ''
+}
 
 const notifyEnvUpdated = () => {
   window.dispatchEvent(new CustomEvent('paap-env-updated', { detail: { envId: envId.value } }))
@@ -5615,26 +5794,28 @@ const loadSharedCapabilityResources = async () => {
   }
 }
 
-const prepareServicePicker = async (mode:'tool'|'infra', preferredType = '') => {
+const prepareServicePicker = async (mode: ServiceModalMode, preferredType = '') => {
   serviceModalMode.value = mode
-  serviceProvisionMode.value = 'managed'
+  const requestedProvisionMode: ServiceProvisionMode = mode === 'kubevirt' ? 'kubevirt' : 'managed'
+  serviceProvisionMode.value = requestedProvisionMode
   selectedSharedResourceId.value = ''
   showServiceModal.value = true
   serviceModalError.value = ''
-  const session = createPickerSessionState(templates.value, services.value, mode)
+  const session = createPickerSessionState(templates.value, services.value, servicePickerBaseMode(mode))
   availableServices.value = session.availableServices
   serviceForm.value.serviceType = preferredServiceTypeForProvisionMode(preferredType) || session.selectedType
   serviceModalLoading.value = session.loading
-  serviceModalNotice.value = session.notice
+  serviceModalNotice.value = servicePickerNotice(mode, availableServices.value.length, serviceForm.value.serviceType) || session.notice
   serviceModalError.value = session.error
   try {
     await refreshServices()
     if (templates.value.length === 0) await loadServiceTemplates()
     availableServices.value = filterTemplates(mode)
+    const preferredMode = serviceProvisionModeOptions.value.find(item => item.key === requestedProvisionMode && item.enabled)
     const firstEnabledMode = serviceProvisionModeOptions.value.find(item => item.enabled)
-    serviceProvisionMode.value = firstEnabledMode?.key || 'managed'
+    serviceProvisionMode.value = preferredMode?.key || firstEnabledMode?.key || requestedProvisionMode
     serviceForm.value.serviceType = preferredServiceTypeForProvisionMode(preferredType)
-    serviceModalNotice.value = pickerNotice(mode, availableServices.value.length, serviceForm.value.serviceType)
+    serviceModalNotice.value = servicePickerNotice(mode, availableServices.value.length, serviceForm.value.serviceType)
   } catch (e:any) {
     serviceModalError.value = '服务加载失败：' + (e?.message || '未知错误')
   } finally {
@@ -6942,11 +7123,32 @@ const loadComponentConfigForm = (comp:any) => {
     bindingMode: 'recommended',
     commandText: linesFromArray(cfg.command?.length ? cfg.command : runtime.command),
     argsText: linesFromArray(cfg.args?.length ? cfg.args : runtime.args),
+    autoscaling: autoscalingFormFromConfig(cfg.autoscaling, Number(runtime.replicas ?? comp?.replicas ?? 1)),
   }
   nginxRouteRows.value = nginxRoutesFromCurrentConfig()
   selectedComponentConfigTemplateId.value = componentConfigTemplateSelectionFromConfig(cfg)
   componentTemplateFieldValues.value = {}
   selectRecommendedComponentConfigTemplate()
+}
+const autoscalingFormFromConfig = (raw:any, replicas:number) => {
+  const defaults = defaultAutoscalingForm()
+  if (!raw?.enabled) {
+    return { ...defaults, minReplicas: Math.max(1, Number(replicas || 1)), maxReplicas: Math.max(3, Number(replicas || 1)) }
+  }
+  const firstTrigger = Array.isArray(raw.triggers) ? raw.triggers[0] || {} : {}
+  const metadata = firstTrigger.metadata || {}
+  return {
+    ...defaults,
+    enabled: true,
+    mode: String(raw.mode || 'hpa').toLowerCase() === 'keda' ? 'keda' as const : 'hpa' as const,
+    minReplicas: Math.max(1, Number(raw.minReplicas || replicas || 1)),
+    maxReplicas: Math.max(1, Number(raw.maxReplicas || Math.max(3, replicas || 1))),
+    targetCPU: Number(raw.targetCPU || 0) || defaults.targetCPU,
+    targetMemory: Number(raw.targetMemory || 0),
+    triggerType: String(firstTrigger.type || defaults.triggerType),
+    triggerMetric: String(firstTrigger.metric || metadata.query || metadata.queueName || metadata.topic || metadata.metricName || ''),
+    triggerValue: String(firstTrigger.value || metadata.threshold || metadata.value || metadata.queueLength || metadata.lagThreshold || defaults.triggerValue),
+  }
 }
 const componentContainerPortForForm = (comp:any, cfg:any) => {
   const saved = Number(cfg?.containerPort || 0)
@@ -8239,7 +8441,38 @@ const configFormPayload = () => {
     containerPort: ['saved', 'user'].includes(configForm.value.containerPortSource) && Number(configForm.value.containerPort || 0) > 0 ? Number(configForm.value.containerPort || 0) : 0,
     command: arrayFromLines(configForm.value.commandText),
     args: arrayFromLines(configForm.value.argsText),
+    autoscaling: autoscalingPayload(configForm.value.autoscaling),
   }
+}
+const autoscalingPayload = (form:any) => {
+  if (!form?.enabled) return undefined
+  const mode = form.mode === 'keda' ? 'keda' : 'hpa'
+  const base:any = {
+    enabled: true,
+    mode,
+    minReplicas: Math.max(1, Number(form.minReplicas || 1)),
+    maxReplicas: Math.max(Math.max(1, Number(form.minReplicas || 1)), Number(form.maxReplicas || 1)),
+  }
+  if (mode === 'hpa') {
+    base.targetCPU = Number(form.targetCPU || 0)
+    base.targetMemory = Number(form.targetMemory || 0)
+    return base
+  }
+  const triggerType = String(form.triggerType || 'rabbitmq').trim()
+  const metric = String(form.triggerMetric || '').trim()
+  const value = String(form.triggerValue || '100').trim()
+  const metadata:any = {}
+  if (triggerType === 'rabbitmq') {
+    metadata.queueName = metric
+    metadata.queueLength = value
+  } else if (triggerType === 'kafka') {
+    metadata.topic = metric
+    metadata.lagThreshold = value
+  } else if (triggerType === 'prometheus') {
+    metadata.query = metric
+    metadata.threshold = value
+  }
+  return { ...base, triggers: [{ type: triggerType, metric, value, metadata }] }
 }
 const validateConfigFileMountPaths = () => {
   const missing = configForm.value.files.find((item:any) =>
@@ -9054,13 +9287,18 @@ const closeServiceInstallModal = () => {
   selectedSharedResourceId.value = ''
 }
 
-const openServiceInstallModal = (mode:'tool'|'infra' = 'tool') => {
+const openServiceInstallModal = (mode: ServiceModalMode = 'tool') => {
   enterModalContext()
   void prepareServicePicker(mode)
 }
 
 const openServiceModal = () => {
   openServiceInstallModal('tool')
+}
+
+const openKubeVirtServiceModal = () => {
+  closeComponentContextMenu()
+  openServiceInstallModal('kubevirt')
 }
 
 const envStatusText = (status: string | undefined) => {
@@ -9101,9 +9339,10 @@ const submitComponent = async () => {
   if (deliveryMode === 'source' && version && version.toLowerCase() === 'latest') { componentModalError.value = '源码交付版本不能使用 latest'; return }
   if (deliveryMode === 'image' && !image) { componentModalError.value = '请填写镜像地址'; return }
   if (deliveryMode === 'source' && !sourceRepoUrl) { componentModalError.value = '请填写源码仓库地址'; return }
+  const createConfig = { autoscaling: autoscalingPayload(compForm.value.autoscaling) }
   const payload = deliveryMode === 'source'
-    ? { ...compForm.value, deliveryMode, sourceRepoUrl, sourceBranch, buildContext, buildModule, image: '', version, draftOnly: true }
-    : { ...compForm.value, deliveryMode, image, version, draftOnly: true }
+    ? { ...compForm.value, deliveryMode, sourceRepoUrl, sourceBranch, buildContext, buildModule, image: '', version, draftOnly: true, config: createConfig }
+    : { ...compForm.value, deliveryMode, image, version, draftOnly: true, config: createConfig }
   try {
     await api.createComponent(envId.value, payload)
     const res = await api.getEnv(envId.value)
@@ -9128,7 +9367,7 @@ const submitManagedServiceInstall = async (selectedType: string) => {
     || services.value.find((item:any) => item.serviceType === selectedType)
   availableServices.value = filterTemplates(serviceModalMode.value)
   serviceForm.value.serviceType = preferredServiceTypeForProvisionMode()
-  serviceModalNotice.value = pickerNotice(serviceModalMode.value, visibleServiceOptions.value.length, serviceForm.value.serviceType)
+  serviceModalNotice.value = servicePickerNotice(serviceModalMode.value, visibleServiceOptions.value.length, serviceForm.value.serviceType)
   showServiceModal.value = false
   if (installed) {
     setActiveTab('components')
@@ -9168,7 +9407,7 @@ const submitKubeVirtServiceInstall = async (selectedType: string) => {
     || services.value.find((item:any) => item.serviceType === selectedType)
   availableServices.value = filterTemplates(serviceModalMode.value)
   serviceForm.value.serviceType = preferredServiceTypeForProvisionMode()
-  serviceModalNotice.value = pickerNotice(serviceModalMode.value, visibleServiceOptions.value.length, serviceForm.value.serviceType)
+  serviceModalNotice.value = servicePickerNotice(serviceModalMode.value, visibleServiceOptions.value.length, serviceForm.value.serviceType)
   showServiceModal.value = false
   if (installed) {
     setActiveTab('components')
@@ -10789,6 +11028,25 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   font-size: var(--paap-fs-label);
   font-weight: 600;
   text-decoration: none;
+}
+.component-autoscaling-panel,
+.component-autoscaling-compact {
+  display: grid;
+  gap: var(--paap-space-3);
+  padding: var(--paap-space-3);
+  border: 1px solid var(--paap-border);
+  background: var(--paap-panel-subtle);
+}
+.component-autoscaling-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--paap-space-2);
+  color: var(--paap-text);
+  font-size: var(--paap-fs-compact);
+  font-weight: 600;
+}
+.component-autoscaling-toggle input {
+  margin: 0;
 }
 .config-section--workspace {
   gap: var(--paap-space-4);

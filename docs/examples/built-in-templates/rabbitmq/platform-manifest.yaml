@@ -1,6 +1,48 @@
 name: rabbitmq
 version: 12.0.0
 description: "RabbitMQ 消息队列"
+catalog:
+  docs:
+    overview: |
+      # RabbitMQ
+
+      RabbitMQ 是基于 AMQP 的消息队列，适合任务队列、异步通知、削峰填谷、业务事件解耦和可靠投递。它提供 exchange、queue、binding、routing key、ack、dead letter 等机制，适合传统业务消息场景。
+
+      在 PAAP 中，RabbitMQ 可作为环境内中间件、共享服务或外部资源。平台会将 host、port、username、password、vhost 等连接参数通过配置模板注入应用，并在服务目录提供队列积压、连接数和错误日志入口。
+
+      适用场景：
+
+      - 订单、通知、邮件、异步任务处理。
+      - 需要确认消费、死信队列和路由规则。
+      - 吞吐要求中等但可靠性要求高。
+      - Spring Boot、Celery、NestJS 等应用使用队列。
+    install: |
+      ## 安装方式
+
+      在目标环境或共享资源池选择 RabbitMQ 模板安装。安装前规划 vhost、账号、队列命名、持久化和资源规格。
+
+      安装后建议：
+
+      1. 创建业务 vhost 和最小权限账号。
+      2. 在组件部署页选择 RabbitMQ 服务引用。
+      3. 配置模板注入连接参数。
+      4. 通过管理控制台查看 queue、exchange 和 consumer。
+    quickstart: |
+      ## Quick Start
+
+      Spring Boot 配置示例：
+
+      ```yaml
+      spring:
+        rabbitmq:
+          host: ${RABBITMQ_HOST}
+          port: ${RABBITMQ_PORT}
+          username: ${RABBITMQ_USERNAME}
+          password: ${RABBITMQ_PASSWORD}
+          virtual-host: ${RABBITMQ_VHOST:/}
+      ```
+
+      如果队列积压持续增长，检查消费者副本数、消费异常、死信队列、ack 设置和消息处理耗时。后续接入 KEDA 后，可基于队列长度触发组件自动扩容。
 permissions:
   toolNamespace:
     rules:

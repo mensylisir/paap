@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	appsv1 "k8s.io/api/apps/v1"
+	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -93,6 +94,82 @@ func TestBuildComponentDeploymentAndServiceManifestsAreSeparateFiles(t *testing.
 	}
 	if !strings.Contains(service, "kind: Service") || strings.Contains(service, "kind: Deployment") {
 		t.Fatalf("service manifest should contain only Service:\n%s", service)
+	}
+}
+
+func TestBuildComponentAutoscalingManifestBuildsHPA(t *testing.T) {
+	cfg, err := (model.ComponentConfig{
+		Autoscaling: &model.ComponentAutoscaling{
+			Enabled:     true,
+			Mode:        "hpa",
+			MinReplicas: 2,
+			MaxReplicas: 5,
+			TargetCPU:   70,
+		},
+	}).JSON()
+	if err != nil {
+		t.Fatalf("config json: %v", err)
+	}
+	app := model.Application{Identifier: "billing"}
+	env := model.Environment{Identifier: "prod"}
+	comp := model.Component{Name: "Orders API", Type: "backend", Image: "registry.local/orders:v1", Version: "v1", Replicas: 2, Config: cfg}
+
+	manifest := BuildComponentAutoscalingManifest(app, env, comp, "orders-api", "billing-prod")
+	if !strings.Contains(manifest, "kind: HorizontalPodAutoscaler") {
+		t.Fatalf("expected HPA manifest:\n%s", manifest)
+	}
+	var hpa autoscalingv2.HorizontalPodAutoscaler
+	if err := yaml.Unmarshal([]byte(manifest), &hpa); err != nil {
+		t.Fatalf("unmarshal hpa: %v\n%s", err, manifest)
+	}
+	if hpa.Spec.MaxReplicas != 5 || hpa.Spec.MinReplicas == nil || *hpa.Spec.MinReplicas != 2 {
+		t.Fatalf("replica bounds = %#v", hpa.Spec)
+	}
+	if len(hpa.Spec.Metrics) != 1 || hpa.Spec.Metrics[0].Resource == nil || hpa.Spec.Metrics[0].Resource.Name != corev1.ResourceCPU {
+		t.Fatalf("expected cpu metric, got %#v", hpa.Spec.Metrics)
+	}
+}
+
+func TestBuildComponentAutoscalingManifestBuildsKEDAScaledObject(t *testing.T) {
+	cfg, err := (model.ComponentConfig{
+		Autoscaling: &model.ComponentAutoscaling{
+			Enabled:         true,
+			Mode:            "keda",
+			MinReplicas:     1,
+			MaxReplicas:     8,
+			PollingInterval: 15,
+			CooldownPeriod:  120,
+			Triggers: []model.ComponentAutoscalingTrigger{{
+				Type:  "rabbitmq",
+				Value: "100",
+				Metadata: map[string]string{
+					"queueName":   "orders",
+					"queueLength": "100",
+				},
+			}},
+		},
+	}).JSON()
+	if err != nil {
+		t.Fatalf("config json: %v", err)
+	}
+	app := model.Application{Identifier: "billing"}
+	env := model.Environment{Identifier: "prod"}
+	comp := model.Component{Name: "Orders API", Type: "backend", Image: "registry.local/orders:v1", Version: "v1", Replicas: 1, Config: cfg}
+
+	manifest := BuildComponentAutoscalingManifest(app, env, comp, "orders-api", "billing-prod")
+	if !strings.Contains(manifest, "kind: ScaledObject") {
+		t.Fatalf("expected KEDA ScaledObject manifest:\n%s", manifest)
+	}
+	var obj unstructured.Unstructured
+	if err := yaml.Unmarshal([]byte(manifest), &obj.Object); err != nil {
+		t.Fatalf("unmarshal scaledobject: %v\n%s", err, manifest)
+	}
+	if obj.GetAPIVersion() != "keda.sh/v1alpha1" || obj.GetKind() != "ScaledObject" {
+		t.Fatalf("unexpected gvk %s/%s", obj.GetAPIVersion(), obj.GetKind())
+	}
+	triggers, ok, err := unstructured.NestedSlice(obj.Object, "spec", "triggers")
+	if err != nil || !ok || len(triggers) != 1 {
+		t.Fatalf("scaledobject triggers missing: ok=%v err=%v obj=%#v", ok, err, obj.Object)
 	}
 }
 

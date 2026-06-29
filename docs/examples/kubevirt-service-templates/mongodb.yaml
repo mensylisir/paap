@@ -1,0 +1,50 @@
+type: mongodb
+name: MongoDB KubeVirt 模板
+version: kubevirt-mongodb-7
+category: database
+description: 基于 KubeVirt 虚拟机模板创建 MongoDB 服务实例
+icon: database
+installer: raw-yaml
+s3Key: service-templates/kubevirt/mongodb.yaml
+installOrder: 120
+enabled: true
+catalog:
+  docs:
+    overview: |
+      # MongoDB KubeVirt 模板
+
+      该模板通过 KubeVirt 虚拟机交付 MongoDB 服务实例。用户在 PAAP 中创建、绑定和监控的仍然是 MongoDB 服务，平台内部负责生成 VirtualMachine、Service、Secret、连接输出和基础观测入口。
+
+      KubeVirt MongoDB 适合需要 VM 隔离边界、传统数据库运维方式、特殊系统依赖或需要验证虚拟机中间件生命周期的场景。对于普通开发测试环境，容器化 MongoDB 模板通常更轻量；对于需要单独运行边界的数据库实例，可以选择该模板。
+    install: |
+      ## 安装方式
+
+      在环境画布右键选择“虚拟机”，打开 KubeVirt 服务模板弹窗，然后选择 MongoDB KubeVirt 模板。平台会读取该模板中的镜像、CPU、内存、磁盘、端口和凭据规则，生成 VM 运行资源和连接信息。
+
+      前置条件：
+
+      - 集群已安装 KubeVirt operator/CRD。
+      - 如使用 DataVolume，集群需安装 CDI。
+      - 目标环境命名空间具备创建 VirtualMachine、Service 和 Secret 的权限。
+      - MongoDB 镜像能被集群节点拉取。
+    quickstart: |
+      ## Quick Start
+
+      1. 在环境画布右键选择“虚拟机”。
+      2. 选择 MongoDB KubeVirt 模板并创建服务。
+      3. 等待 VM 进入 Running，确认 Service 和 Secret 已生成。
+      4. 在应用组件配置中选择该 MongoDB 服务引用。
+      5. 配置模板注入 `MONGODB_HOST`、`MONGODB_PORT`、`MONGODB_USERNAME`、`MONGODB_PASSWORD` 和 `MONGODB_DATABASE`。
+
+      如果应用无法连接，优先检查 VM 状态、Service selector、端口、Secret 凭据和组件右侧配置模板反选的服务引用。
+runtimeSpec:
+  image: docker.io/library/mongo:7
+  cpu: "1"
+  memory: 2Gi
+  diskSize: 20Gi
+  database: admin
+  ports:
+    - name: mongodb
+      port: 27017
+  credentials:
+    username: root

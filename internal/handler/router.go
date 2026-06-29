@@ -65,6 +65,10 @@ func SetupRouter(r *gin.Engine) {
 		protected.DELETE("/templates/:id", middleware.RequireSystemPermission(permission.SystemTemplateManage), DeleteTemplate)
 		protected.GET("/service-templates", ListServiceTemplates)
 		protected.GET("/catalog/services", ListCatalogServices)
+		protected.GET("/catalog/services/:type/detail", GetCatalogServiceDetail)
+		protected.GET("/catalog/services/:type/resources", GetCatalogServiceResources)
+		protected.GET("/catalog/services/:type/topology", GetCatalogServiceTopology)
+		protected.GET("/catalog/services/:type/observability", GetCatalogServiceObservability)
 		protected.POST("/service-templates/upload", middleware.RequireSystemPermission(permission.SystemTemplateManage), UploadTemplate)     // BYO custom template upload
 		protected.POST("/service-templates/sync", middleware.RequireSystemPermission(permission.SystemTemplateManage), SyncBuiltinTemplates) // Force re-sync built-in templates to S3 + DB
 		protected.GET("/service-templates/:id", GetServiceTemplate)

@@ -1,6 +1,9 @@
 package model
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"strings"
+)
 
 // PlatformManifest is the metadata file (platform-manifest.yaml) that users include
 // in their custom Helm chart upload. It declares what the tool "wants" from the platform
@@ -23,11 +26,35 @@ type PlatformManifest struct {
 	// +optional
 	Observability *ObservabilitySpec `json:"observability,omitempty" yaml:"observability,omitempty"`
 
+	// Catalog declares service catalog detail-page content. Template authors own
+	// this copy; PAAP only renders it.
+	// +optional
+	Catalog *CatalogSpec `json:"catalog,omitempty" yaml:"catalog,omitempty"`
+
 	// VariableMapping allows users to map platform context variables to Helm values.
 	// This gives users fine-grained control over which platform variables their chart receives.
 	// Platform-injected global.* variables are always included; this adds custom mappings on top.
 	// +optional
 	VariableMapping []VariableMappingEntry `json:"variable_mapping,omitempty" yaml:"variable_mapping,omitempty"`
+}
+
+// CatalogSpec describes the service detail page content bundled with a template.
+type CatalogSpec struct {
+	Docs         CatalogDocsSpec           `json:"docs,omitempty" yaml:"docs,omitempty"`
+	Architecture []CatalogArchitectureSpec `json:"architecture,omitempty" yaml:"architecture,omitempty"`
+}
+
+type CatalogDocsSpec struct {
+	Overview   string `json:"overview,omitempty" yaml:"overview,omitempty"`
+	Install    string `json:"install,omitempty" yaml:"install,omitempty"`
+	Quickstart string `json:"quickstart,omitempty" yaml:"quickstart,omitempty"`
+}
+
+type CatalogArchitectureSpec struct {
+	ID    string `json:"id,omitempty" yaml:"id,omitempty"`
+	Type  string `json:"type,omitempty" yaml:"type,omitempty"`
+	Label string `json:"label,omitempty" yaml:"label,omitempty"`
+	Group string `json:"group,omitempty" yaml:"group,omitempty"`
 }
 
 // VariableMappingEntry maps a platform variable to a Helm value key.
@@ -93,11 +120,37 @@ type ObservabilitySpec struct {
 	// +optional
 	Metrics *MetricsSpec `json:"metrics,omitempty" yaml:"metrics,omitempty"`
 
+	// DashboardUID is the Grafana dashboard UID exposed in service detail pages.
+	// If omitted, PAAP falls back to a generic workload dashboard.
+	// +optional
+	DashboardUID string `json:"dashboardUid,omitempty" yaml:"dashboard_uid,omitempty"`
+
+	// DashboardTitle is the human-readable dashboard title in the catalog portal.
+	// +optional
+	DashboardTitle string `json:"dashboardTitle,omitempty" yaml:"dashboard_title,omitempty"`
+
 	// DashboardPath is a path (relative to the archive root) to a Grafana dashboard JSON file.
 	// The platform will auto-provision this dashboard into the environment's Grafana instance.
 	// Example: "./dashboards/main-metrics.json"
 	// +optional
 	DashboardPath string `json:"dashboard_path,omitempty" yaml:"dashboard_path,omitempty"`
+
+	// LogQueryTemplate is a Loki query template. Supported placeholders:
+	// $namespace and $service.
+	// +optional
+	LogQueryTemplate string `json:"logQueryTemplate,omitempty" yaml:"log_query_template,omitempty"`
+
+	// MetricCards declares component-specific metric cards for the catalog portal.
+	// +optional
+	MetricCards []ObservabilityMetricCardSpec `json:"metricCards,omitempty" yaml:"metric_cards,omitempty"`
+}
+
+type ObservabilityMetricCardSpec struct {
+	Key         string `json:"key,omitempty" yaml:"key,omitempty"`
+	Title       string `json:"title,omitempty" yaml:"title,omitempty"`
+	Unit        string `json:"unit,omitempty" yaml:"unit,omitempty"`
+	Description string `json:"description,omitempty" yaml:"description,omitempty"`
+	PromQL      string `json:"promql,omitempty" yaml:"promql,omitempty"`
 }
 
 // MetricsSpec describes how to scrape Prometheus metrics from the tool.
@@ -172,6 +225,25 @@ func (m *PlatformManifest) Validate() error {
 	}
 	if err := validateClusterResourceRules(m.Permissions.ClusterResources.Rules); err != nil {
 		return err
+	}
+	return nil
+}
+
+// ValidateCatalogDocs enforces the service catalog contract for service templates.
+// Template authors own these Markdown documents; PAAP renders them but does not
+// synthesize service descriptions in program code.
+func (m *PlatformManifest) ValidateCatalogDocs() error {
+	if m.Catalog == nil {
+		return &ValidationError{Field: "catalog.docs", Message: "catalog.docs is required"}
+	}
+	if strings.TrimSpace(m.Catalog.Docs.Overview) == "" {
+		return &ValidationError{Field: "catalog.docs.overview", Message: "catalog.docs.overview is required"}
+	}
+	if strings.TrimSpace(m.Catalog.Docs.Install) == "" {
+		return &ValidationError{Field: "catalog.docs.install", Message: "catalog.docs.install is required"}
+	}
+	if strings.TrimSpace(m.Catalog.Docs.Quickstart) == "" {
+		return &ValidationError{Field: "catalog.docs.quickstart", Message: "catalog.docs.quickstart is required"}
 	}
 	return nil
 }

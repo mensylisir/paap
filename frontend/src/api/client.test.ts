@@ -127,6 +127,21 @@ describe('api client', () => {
     expect(fetchMock).toHaveBeenCalledWith('/api/v1/catalog/services', expect.objectContaining({ method: 'GET' }))
   })
 
+  it('calls catalog service lifecycle portal endpoints', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => ({ data: {} }),
+    } as Response)
+
+    await api.getCatalogServiceDetail('postgresql')
+    await api.getCatalogServiceResources('postgresql')
+    await api.getCatalogServiceObservability('postgresql')
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/v1/catalog/services/postgresql/detail', expect.objectContaining({ method: 'GET' }))
+    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/v1/catalog/services/postgresql/resources', expect.objectContaining({ method: 'GET' }))
+    expect(fetchMock).toHaveBeenNthCalledWith(3, '/api/v1/catalog/services/postgresql/observability', expect.objectContaining({ method: 'GET' }))
+  })
+
   it('calls application member management endpoints', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
       ok: true,

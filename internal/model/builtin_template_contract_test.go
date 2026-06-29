@@ -36,6 +36,29 @@ func TestDocsExamplesPlatformManifestsUseExplicitNamespacePermissionTypes(t *tes
 	}
 }
 
+func TestDocsExamplesServiceTemplatesDeclareCatalogDocs(t *testing.T) {
+	paths := findExamplePlatformManifests(t)
+	if len(paths) == 0 {
+		t.Fatal("expected docs/examples platform manifests")
+	}
+
+	for _, path := range paths {
+		t.Run(path, func(t *testing.T) {
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatalf("read platform manifest: %v", err)
+			}
+			var manifest PlatformManifest
+			if err := yaml.Unmarshal(data, &manifest); err != nil {
+				t.Fatalf("unmarshal platform manifest: %v", err)
+			}
+			if err := manifest.ValidateCatalogDocs(); err != nil {
+				t.Fatalf("platform manifest must declare service catalog docs in template asset: %v", err)
+			}
+		})
+	}
+}
+
 func findExamplePlatformManifests(t *testing.T) []string {
 	t.Helper()
 	var paths []string

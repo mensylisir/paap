@@ -61,6 +61,27 @@ type ComponentConfig struct {
 	Files              []ComponentConfigFile       `json:"files,omitempty"`
 	Bindings           []ComponentBinding          `json:"bindings,omitempty"`
 	Dependencies       []string                    `json:"dependencies,omitempty"`
+	Autoscaling        *ComponentAutoscaling       `json:"autoscaling,omitempty"`
+}
+
+type ComponentAutoscaling struct {
+	Enabled           bool                          `json:"enabled,omitempty"`
+	Mode              string                        `json:"mode,omitempty"` // hpa or keda
+	MinReplicas       int32                         `json:"minReplicas,omitempty"`
+	MaxReplicas       int32                         `json:"maxReplicas,omitempty"`
+	TargetCPU         int32                         `json:"targetCPU,omitempty"`
+	TargetMemory      int32                         `json:"targetMemory,omitempty"`
+	PollingInterval   int32                         `json:"pollingInterval,omitempty"`
+	CooldownPeriod    int32                         `json:"cooldownPeriod,omitempty"`
+	Triggers          []ComponentAutoscalingTrigger `json:"triggers,omitempty"`
+	RestoreToOriginal bool                          `json:"restoreToOriginalReplicaCount,omitempty"`
+}
+
+type ComponentAutoscalingTrigger struct {
+	Type     string            `json:"type"`
+	Metric   string            `json:"metric,omitempty"`
+	Value    string            `json:"value,omitempty"`
+	Metadata map[string]string `json:"metadata,omitempty"`
 }
 
 type ComponentConfigTemplateRef struct {
@@ -158,6 +179,11 @@ func NormalizeComponentConfig(cfg ComponentConfig) (ComponentConfig, error) {
 		Files:              make([]ComponentConfigFile, 0, len(cfg.Files)),
 		Bindings:           make([]ComponentBinding, 0, len(cfg.Bindings)),
 		Dependencies:       make([]string, 0, len(cfg.Dependencies)),
+	}
+	if autoscaling, err := NormalizeComponentAutoscaling(cfg.Autoscaling); err != nil {
+		return ComponentConfig{}, err
+	} else {
+		out.Autoscaling = autoscaling
 	}
 	if cfg.ConfigTemplate != nil {
 		out.ConfigTemplate = &ComponentConfigTemplateRef{
@@ -315,6 +341,91 @@ func NormalizeComponentConfig(cfg ComponentConfig) (ComponentConfig, error) {
 		}
 		seenDeps[dep] = struct{}{}
 		out.Dependencies = append(out.Dependencies, dep)
+	}
+	return out, nil
+}
+
+func NormalizeComponentAutoscaling(input *ComponentAutoscaling) (*ComponentAutoscaling, error) {
+	if input == nil || !input.Enabled {
+		return nil, nil
+	}
+	mode := strings.ToLower(strings.TrimSpace(input.Mode))
+	if mode == "" {
+		mode = "hpa"
+	}
+	if mode != "hpa" && mode != "keda" {
+		return nil, fmt.Errorf("autoscaling mode must be hpa or keda")
+	}
+	minReplicas := input.MinReplicas
+	if minReplicas <= 0 {
+		minReplicas = 1
+	}
+	maxReplicas := input.MaxReplicas
+	if maxReplicas <= 0 {
+		maxReplicas = minReplicas
+	}
+	if maxReplicas < minReplicas {
+		return nil, fmt.Errorf("autoscaling maxReplicas must be greater than or equal to minReplicas")
+	}
+	out := &ComponentAutoscaling{
+		Enabled:           true,
+		Mode:              mode,
+		MinReplicas:       minReplicas,
+		MaxReplicas:       maxReplicas,
+		TargetCPU:         input.TargetCPU,
+		TargetMemory:      input.TargetMemory,
+		PollingInterval:   input.PollingInterval,
+		CooldownPeriod:    input.CooldownPeriod,
+		RestoreToOriginal: input.RestoreToOriginal,
+		Triggers:          make([]ComponentAutoscalingTrigger, 0, len(input.Triggers)),
+	}
+	if out.TargetCPU < 0 || out.TargetCPU > 100 {
+		return nil, fmt.Errorf("autoscaling targetCPU must be between 1 and 100")
+	}
+	if out.TargetMemory < 0 || out.TargetMemory > 100 {
+		return nil, fmt.Errorf("autoscaling targetMemory must be between 1 and 100")
+	}
+	if mode == "hpa" && out.TargetCPU == 0 && out.TargetMemory == 0 {
+		return nil, fmt.Errorf("hpa autoscaling requires targetCPU or targetMemory")
+	}
+	seen := map[string]struct{}{}
+	for _, trigger := range input.Triggers {
+		trigger.Type = strings.ToLower(strings.TrimSpace(trigger.Type))
+		trigger.Metric = strings.TrimSpace(trigger.Metric)
+		trigger.Value = strings.TrimSpace(trigger.Value)
+		metadata := map[string]string{}
+		for key, value := range trigger.Metadata {
+			key = strings.TrimSpace(key)
+			if key == "" {
+				continue
+			}
+			metadata[key] = strings.TrimSpace(value)
+		}
+		trigger.Metadata = metadata
+		if trigger.Type == "" && trigger.Metric == "" && trigger.Value == "" && len(trigger.Metadata) == 0 {
+			continue
+		}
+		if trigger.Type == "" {
+			return nil, fmt.Errorf("autoscaling trigger type is required")
+		}
+		if mode == "keda" && len(trigger.Metadata) == 0 && trigger.Metric == "" {
+			return nil, fmt.Errorf("keda trigger %s requires metadata or metric", trigger.Type)
+		}
+		key := trigger.Type + "|" + trigger.Metric + "|" + trigger.Value
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out.Triggers = append(out.Triggers, trigger)
+	}
+	if mode == "keda" && len(out.Triggers) == 0 {
+		return nil, fmt.Errorf("keda autoscaling requires at least one trigger")
+	}
+	if out.PollingInterval <= 0 {
+		out.PollingInterval = 30
+	}
+	if out.CooldownPeriod <= 0 {
+		out.CooldownPeriod = 300
 	}
 	return out, nil
 }

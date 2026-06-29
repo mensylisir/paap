@@ -1,0 +1,49 @@
+type: postgresql
+name: PostgreSQL KubeVirt 模板
+version: kubevirt-postgresql-16
+category: database
+description: 基于 KubeVirt 虚拟机模板创建 PostgreSQL 服务实例
+icon: database
+installer: raw-yaml
+s3Key: service-templates/kubevirt/postgresql.yaml
+installOrder: 100
+enabled: true
+catalog:
+  docs:
+    overview: |
+      # PostgreSQL KubeVirt 模板
+
+      该模板通过 KubeVirt 虚拟机交付 PostgreSQL 服务实例。用户创建的仍然是 PostgreSQL 服务，而不是裸虚拟机；PAAP 会负责生成 VirtualMachine、Service、Secret、连接输出和监控目标。
+
+      KubeVirt 交付适合需要 VM 隔离、特殊内核/系统依赖、传统数据库运维习惯或希望数据库运行边界与容器工作负载不同的场景。它与 Helm PostgreSQL 模板共享同一套服务引用、配置模板和服务目录统计。
+    install: |
+      ## 安装方式
+
+      在环境服务弹窗中选择 PostgreSQL，并选择 `KubeVirt 模板交付`。平台会读取该模板中的镜像、CPU、内存、磁盘、端口和凭据规则，生成 KubeVirt 运行资源。
+
+      前置条件：
+
+      - 集群已安装 KubeVirt operator/CRD。
+      - 如使用 DataVolume，集群需安装 CDI。
+      - 环境命名空间具备创建 VirtualMachine、Service 和 Secret 的权限。
+    quickstart: |
+      ## Quick Start
+
+      1. 在环境画布添加 PostgreSQL。
+      2. 创建方式选择 KubeVirt 模板交付。
+      3. 等待 VM 进入 Running。
+      4. 在组件配置中选择该 PostgreSQL 服务引用。
+      5. 配置模板注入 `POSTGRESQL_HOST`、`POSTGRESQL_PORT`、`POSTGRESQL_USERNAME`、`POSTGRESQL_PASSWORD`。
+
+      应用连接方式与普通 PostgreSQL 一致，差异只在运行载体是虚拟机。
+runtimeSpec:
+  image: docker.io/library/postgres:16
+  cpu: "1"
+  memory: 2Gi
+  diskSize: 20Gi
+  database: postgres
+  ports:
+    - name: postgresql
+      port: 5432
+  credentials:
+    username: postgres

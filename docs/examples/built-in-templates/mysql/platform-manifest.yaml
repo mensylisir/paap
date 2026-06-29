@@ -1,6 +1,52 @@
 name: mysql
 version: 9.12.0
 description: "MySQL 关系型数据库"
+catalog:
+  docs:
+    overview: |
+      # MySQL
+
+      MySQL 是常用关系型数据库，适合保存业务交易数据、用户数据、配置数据和审计数据。它生态成熟、客户端丰富，适合多数 Web 应用和微服务的默认关系型存储需求。
+
+      在 PAAP 中，MySQL 可作为环境内数据库、共享资源或外部数据库引用。平台会把连接地址、端口、数据库名、用户名和密码通过配置模板注入到应用组件，同时在服务目录展示实例、资源占用、监控入口和错误日志入口。
+
+      适用场景：
+
+      - Java、Go、Node.js、Python 业务系统需要关系型数据库。
+      - 开发测试环境需要快速创建独立数据库。
+      - 应用配置模板需要自动绑定数据库连接参数。
+      - 需要通过服务目录统一查看数据库实例和使用情况。
+    install: |
+      ## 安装方式
+
+      在目标环境画布中选择 MySQL 模板安装，填写数据库名、账号、存储容量和资源规格。开发环境可以使用单节点；生产或准生产应配合备份、高可用或外部托管数据库。
+
+      安装后建议：
+
+      1. 确认 Service、Secret 和 PVC 状态正常。
+      2. 在组件部署页选择该 MySQL 实例。
+      3. 使用配置模板把数据库参数注入到应用。
+      4. 在监控 tab 查看连接数、慢查询和错误日志。
+    quickstart: |
+      ## Quick Start
+
+      Spring Boot 配置示例：
+
+      ```yaml
+      spring:
+        datasource:
+          url: jdbc:mysql://${MYSQL_HOST}:${MYSQL_PORT}/${MYSQL_DATABASE}?useSSL=false&serverTimezone=UTC
+          username: ${MYSQL_USERNAME}
+          password: ${MYSQL_PASSWORD}
+      ```
+
+      Go 应用 DSN 示例：
+
+      ```text
+      ${MYSQL_USERNAME}:${MYSQL_PASSWORD}@tcp(${MYSQL_HOST}:${MYSQL_PORT})/${MYSQL_DATABASE}?parseTime=true
+      ```
+
+      如果应用无法连接，先检查配置模板是否反选了正确 MySQL 服务，再检查 Secret、Service DNS 和数据库账号权限。
 permissions:
   toolNamespace:
     rules:

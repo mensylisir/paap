@@ -108,6 +108,16 @@ permissions:
 
 # 2. 可观测性声明（可选）
 observability:
+  dashboard_uid: "custom-prometheus"
+  dashboard_title: "Custom Prometheus 大盘"
+  log_query_template: '{namespace="$namespace"} |~ "(?i)(error|exception|panic|fail)"'
+  metric_cards:
+    - key: "scrape_errors"
+      title: "采集错误"
+      unit: "count"
+      description: "最近 5 分钟采集失败数量"
+      promql: 'sum(rate(prometheus_target_scrapes_exceeded_sample_limit_total{namespace="$namespace"}[5m]))'
+
   # Grafana 面板路径（相对于压缩包根目录）
   dashboard_path: "./dashboards/main-metrics.json"
   
@@ -116,7 +126,30 @@ observability:
     port: 9090
     path: "/metrics"
 
-# 3. 变量映射（可选）
+# 3. 服务目录展示内容（可选）
+catalog:
+  docs:
+    overview: |
+      # CustomPrometheus
+
+      这里写模板自己的服务介绍，支持 Markdown。
+    install: |
+      ## 安装方式
+
+      这里写安装前提、参数说明和适用环境。
+    quickstart: |
+      ## Quick Start
+
+      这里写应用如何接入该服务、需要绑定哪些配置项。
+  architecture:
+    - id: "server"
+      type: "prometheus-server"
+      label: "Server"
+    - id: "alertmanager"
+      type: "alertmanager"
+      label: "Alertmanager"
+
+# 4. 变量映射（可选）
 # 将平台变量映射到 Helm values
 variable_mapping:
   # 把平台当前环境的名字传给 Helm 里的 global.envName 变量
@@ -178,15 +211,33 @@ rules:
 
 | 字段 | 类型 | 必需 | 说明 |
 |------|------|------|------|
+| `dashboard_uid` | string | ❌ | 服务目录中打开的 Grafana dashboard UID |
+| `dashboard_title` | string | ❌ | 服务目录展示的大盘标题 |
 | `dashboard_path` | string | ❌ | Grafana 面板 JSON 文件路径 |
+| `log_query_template` | string | ❌ | Loki 查询模板，支持 `$namespace`、`$service` 占位符 |
+| `metric_cards` | array | ❌ | 服务详情页指标卡定义，包含 key/title/unit/description/promql |
 | `metrics.port` | int | ❌ | Prometheus 指标端口 |
 | `metrics.path` | string | ❌ | Prometheus 指标路径 |
 
 **平台行为：**
 - 如果提供了 `dashboard_path`，平台会在安装时自动调用 Grafana API 导入面板
 - 如果提供了 `metrics`，平台会自动配置 Prometheus ServiceMonitor
+- 如果提供了 `dashboard_uid`、`metric_cards`、`log_query_template`，服务目录详情页会直接使用模板声明的专属大盘、指标卡和日志查询。
 
-#### 3.2.4 variable_mapping（变量映射）
+#### 3.2.4 catalog（服务目录内容）
+
+| 字段 | 类型 | 必需 | 说明 |
+|------|------|------|------|
+| `docs.overview` | string | ❌ | 服务介绍 Markdown |
+| `docs.install` | string | ❌ | 安装方式 Markdown |
+| `docs.quickstart` | string | ❌ | Quick Start Markdown |
+| `architecture` | array | ❌ | 服务自身架构节点，服务目录拓扑会按实例展开 |
+
+**平台行为：**
+- 服务目录不会在代码里写死具体中间件介绍；模板作者应把服务说明、Quick Start、架构节点写入 `catalog`。
+- `catalog.docs.overview`、`catalog.docs.install`、`catalog.docs.quickstart` 是服务模板必填内容；平台不会在代码中为具体服务生成兜底介绍，缺失时模板校验失败。
+
+#### 3.2.5 variable_mapping（变量映射）
 
 允许将平台上下文变量映射到 Helm values。
 

@@ -4,6 +4,51 @@
 name: "CustomPrometheus"
 version: "v2.45.0"
 description: "自定义 Prometheus 监控服务，支持环境级动态权限同步，自动抓取所有 namespace 的指标"
+catalog:
+  docs:
+    overview: |
+      # Custom Prometheus 示例模板
+
+      这是一个自定义监控服务模板示例，用于展示用户如何把自己的 Prometheus Chart 接入 PAAP。模板将监控能力声明为服务资产，平台根据 manifest 注入权限、环境命名空间列表、监控入口和服务目录文档。
+
+      该示例重点展示环境级动态权限：Prometheus 需要读取目标环境中的 Pod、Service、Endpoint 和工作负载指标，但不应该在 Chart 中自带无限制 ClusterRole。权限边界应写在 `platform-manifest.yaml`，由 PAAP 根据环境范围生成 Role/RoleBinding 或 ClusterRoleBinding。
+
+      适合学习：
+
+      - 自定义工具模板如何声明 `clusterResources`、`toolNamespace` 和 `environmentNamespaces`。
+      - 如何把 dashboard JSON 作为模板资产一起上传。
+      - 如何用变量映射把 `env_namespaces` 注入 Helm values。
+      - 服务目录如何展示用户自定义服务的概览和 Quick Start。
+    install: |
+      ## 安装方式
+
+      将模板目录打包并通过模板上传页面上传。平台会读取 `platform-manifest.yaml`，校验 catalog 文档、权限声明和 chart 渲染结果。
+
+      上传前确认：
+
+      - `preset-values.yaml` 已关闭 chart 自带集群级 RBAC。
+      - `dashboard_path` 指向压缩包中的 Grafana dashboard JSON。
+      - `variable_mapping` 能把 PAAP 环境变量映射到 chart values。
+      - Prometheus Service 暴露 metrics 或 Web UI 所需端口。
+
+      安装到环境或共享资源池后，平台会按当前环境命名空间生成采集范围。
+    quickstart: |
+      ## Quick Start
+
+      1. 上传 Custom Prometheus 模板。
+      2. 在目标环境安装该服务。
+      3. 确认 Prometheus Pod、Service 和 RBAC 资源正常。
+      4. 打开服务目录详情页，查看 dashboard 和监控入口。
+      5. 在环境中安装其他服务，确认 Prometheus 能采集对应指标。
+
+      values 映射示例：
+
+      ```yaml
+      prometheus:
+        scrapeNamespaces: ${ENV_NAMESPACES}
+      ```
+
+      如果监控目标为空，检查 `env_namespaces` 是否注入、ServiceMonitor/采集配置是否生成、以及 Prometheus ServiceAccount 是否拥有目标 namespace 的只读权限。
 
 permissions:
   clusterResources:

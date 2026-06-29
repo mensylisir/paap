@@ -1,6 +1,48 @@
 name: harbor
 version: v2.12.0
 description: "Harbor - 企业级容器镜像仓库"
+catalog:
+  docs:
+    overview: |
+      # Harbor
+
+      Harbor 是企业级 OCI 镜像仓库，提供项目隔离、访问控制、镜像扫描、复制策略和审计能力。相比轻量 Docker Registry，Harbor 更适合生产环境、团队协作和需要安全治理的镜像管理场景。
+
+      在 PAAP 中，Harbor 可作为环境内、共享资源池或外部来源的镜像仓库。源码构建流程中 Jenkins/Buildpacks 应优先使用集群内 Service 地址推送镜像；部署 YAML 中则使用业务节点能拉取到的外部地址。
+
+      适用场景：
+
+      - 生产或准生产环境需要镜像项目、机器人账号和扫描策略。
+      - 多团队共享镜像仓库，需要权限分区和审计。
+      - 镜像需要复制到其他集群或外部仓库。
+      - 公司已有 Harbor，希望 PAAP 作为外部资源引用。
+    install: |
+      ## 安装方式
+
+      Harbor 组件较多，包含 core、portal、registry、jobservice、database、redis、trivy 等，建议部署在共享资源池或资源充足的环境。开发环境资源有限时可优先使用轻量 Registry。
+
+      安装前确认：
+
+      - 存储容量足够支撑镜像层。
+      - 外部访问地址可被开发机和 Kubernetes 节点解析。
+      - 内部 Service 地址可被 Jenkins/Buildpacks 访问。
+      - 如果启用 TLS，需要提前准备证书或由平台生成内网可信配置。
+    quickstart: |
+      ## Quick Start
+
+      1. 安装 Harbor 或在外部资源中登记现有 Harbor。
+      2. 在环境画布确认镜像仓库卡片可用。
+      3. 创建组件时选择该仓库。
+      4. 源码构建流程会把镜像推送到 Harbor 内部地址。
+      5. 平台生成部署文件时使用可被节点拉取的外部镜像地址。
+
+      镜像地址示例：
+
+      ```text
+      harbor.example.com/billing/gateway:20260629-001
+      ```
+
+      如果构建成功但部署拉取失败，检查部署 YAML 中镜像地址是否为节点可解析地址，镜像项目是否公开或已配置 imagePullSecret。
 permissions:
   toolNamespace:
     rules:

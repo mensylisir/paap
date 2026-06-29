@@ -127,7 +127,10 @@ func TestBuiltInServiceTemplatesExposeFeatureMatrix(t *testing.T) {
 }
 
 func TestBuiltInKubeVirtServiceTemplatesAreSeedable(t *testing.T) {
-	templates := builtInKubeVirtServiceTemplates()
+	templates, err := loadBuiltInKubeVirtServiceTemplates()
+	if err != nil {
+		t.Fatalf("load kubevirt templates: %v", err)
+	}
 	byType := map[string]model.ServiceTemplate{}
 	for _, tmpl := range templates {
 		byType[tmpl.Type] = tmpl

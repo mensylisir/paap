@@ -301,7 +301,7 @@ func SeedServiceCatalog() {
 
 func SeedServiceTemplates() {
 	migrateServiceTemplateUniqueIndex()
-	chartsDir := "data/charts"
+	chartsDir := firstExistingDir("data/charts", "../../data/charts", "/charts")
 
 	for _, archive := range builtInTemplateArchives() {
 		tmplBase, ok := builtInServiceTemplateByType(archive.ServiceType)
@@ -331,7 +331,12 @@ func SeedServiceTemplates() {
 }
 
 func seedKubeVirtServiceTemplates() {
-	for _, tmpl := range builtInKubeVirtServiceTemplates() {
+	templates, err := loadBuiltInKubeVirtServiceTemplates()
+	if err != nil {
+		log.Printf("[SeedServiceTemplates] failed to load kubevirt service templates: %v", err)
+		return
+	}
+	for _, tmpl := range templates {
 		if err := service.UpsertSeedServiceTemplate(database.DB, tmpl); err != nil {
 			log.Printf("[SeedServiceTemplates] failed to upsert kubevirt %s: %v", tmpl.Type, err)
 		}
@@ -365,17 +370,49 @@ func builtInManifestJSON(templateType string) string {
 }
 
 func readBuiltInManifest(templateType string) (*model.PlatformManifest, error) {
-	examplePath := filepath.Join("docs", "examples", "built-in-templates", templateType, "platform-manifest.yaml")
-	if data, err := os.ReadFile(examplePath); err == nil {
+	for _, examplePath := range []string{
+		filepath.Join("docs", "examples", "built-in-templates", templateType, "platform-manifest.yaml"),
+		filepath.Join("..", "..", "docs", "examples", "built-in-templates", templateType, "platform-manifest.yaml"),
+	} {
+		data, err := os.ReadFile(examplePath)
+		if err != nil {
+			continue
+		}
 		var manifest model.PlatformManifest
 		if err := yaml.Unmarshal(data, &manifest); err != nil {
+			return nil, err
+		}
+		if err := manifest.Validate(); err != nil {
+			return nil, err
+		}
+		if err := manifest.ValidateCatalogDocs(); err != nil {
 			return nil, err
 		}
 		return &manifest, nil
 	}
 
-	chartPath := filepath.Join("/charts", templateType+".tar.gz")
-	return extractManifestFromTar(chartPath)
+	for _, chartPath := range []string{
+		filepath.Join("/charts", templateType+".tar.gz"),
+		filepath.Join("data", "charts", templateType+".tar.gz"),
+		filepath.Join("..", "..", "data", "charts", templateType+".tar.gz"),
+	} {
+		if _, err := os.Stat(chartPath); err == nil {
+			return extractManifestFromTar(chartPath)
+		}
+	}
+	return nil, fmt.Errorf("built-in manifest %s not found", templateType)
+}
+
+func firstExistingDir(paths ...string) string {
+	for _, path := range paths {
+		if info, err := os.Stat(path); err == nil && info.IsDir() {
+			return path
+		}
+	}
+	if len(paths) == 0 {
+		return ""
+	}
+	return paths[0]
 }
 
 type builtInTemplateArchive struct {
@@ -631,82 +668,120 @@ func builtInServiceTemplateByType(serviceType string) (model.ServiceTemplate, bo
 	return tmpl, ok
 }
 
-func builtInKubeVirtServiceTemplates() []model.ServiceTemplate {
-	return []model.ServiceTemplate{
-		{
-			Type:          "postgresql",
-			Name:          "PostgreSQL KubeVirt 模板",
-			Category:      "database",
-			Description:   "基于 KubeVirt 虚拟机模板创建 PostgreSQL 服务",
-			Icon:          "database",
-			Installer:     "raw-yaml",
-			ProvisionMode: model.ServiceProvisionModeKubeVirt,
-			RuntimeSpec: toJSON(map[string]interface{}{
-				"image":    "docker.io/library/postgres:16",
-				"cpu":      "1",
-				"memory":   "2Gi",
-				"diskSize": "20Gi",
-				"database": "postgres",
-				"ports": []map[string]interface{}{
-					{"name": "postgresql", "port": 5432},
-				},
-				"credentials": map[string]string{"username": "postgres"},
-			}),
-			SupportedFeatures: serviceFeatureMatrixJSON("postgresql", "database"),
-			IsCustom:          false,
-			S3Key:             "service-templates/kubevirt/postgresql.json",
-			InstallOrder:      100,
-			Enabled:           true,
-		},
-		{
-			Type:          "mysql",
-			Name:          "MySQL KubeVirt 模板",
-			Category:      "database",
-			Description:   "基于 KubeVirt 虚拟机模板创建 MySQL 服务",
-			Icon:          "database",
-			Installer:     "raw-yaml",
-			ProvisionMode: model.ServiceProvisionModeKubeVirt,
-			RuntimeSpec: toJSON(map[string]interface{}{
-				"image":    "docker.io/library/mysql:8",
-				"cpu":      "1",
-				"memory":   "2Gi",
-				"diskSize": "20Gi",
-				"database": "mysql",
-				"ports": []map[string]interface{}{
-					{"name": "mysql", "port": 3306},
-				},
-				"credentials": map[string]string{"username": "root"},
-			}),
-			SupportedFeatures: serviceFeatureMatrixJSON("mysql", "database"),
-			IsCustom:          false,
-			S3Key:             "service-templates/kubevirt/mysql.json",
-			InstallOrder:      110,
-			Enabled:           true,
-		},
-		{
-			Type:          "redis",
-			Name:          "Redis KubeVirt 模板",
-			Category:      "middleware",
-			Description:   "基于 KubeVirt 虚拟机模板创建 Redis 服务",
-			Icon:          "cloud",
-			Installer:     "raw-yaml",
-			ProvisionMode: model.ServiceProvisionModeKubeVirt,
-			RuntimeSpec: toJSON(map[string]interface{}{
-				"image":    "docker.io/library/redis:7",
-				"cpu":      "500m",
-				"memory":   "1Gi",
-				"diskSize": "5Gi",
-				"ports": []map[string]interface{}{
-					{"name": "redis", "port": 6379},
-				},
-			}),
-			SupportedFeatures: serviceFeatureMatrixJSON("redis", "middleware"),
-			IsCustom:          false,
-			S3Key:             "service-templates/kubevirt/redis.json",
-			InstallOrder:      130,
-			Enabled:           true,
-		},
+type kubeVirtServiceTemplateAsset struct {
+	Type         string                 `yaml:"type"`
+	Name         string                 `yaml:"name"`
+	Version      string                 `yaml:"version"`
+	Category     string                 `yaml:"category"`
+	Description  string                 `yaml:"description"`
+	Icon         string                 `yaml:"icon"`
+	Installer    string                 `yaml:"installer"`
+	S3Key        string                 `yaml:"s3Key"`
+	InstallOrder int                    `yaml:"installOrder"`
+	Enabled      *bool                  `yaml:"enabled"`
+	Catalog      *model.CatalogSpec     `yaml:"catalog"`
+	RuntimeSpec  map[string]interface{} `yaml:"runtimeSpec"`
+}
+
+func loadBuiltInKubeVirtServiceTemplates() ([]model.ServiceTemplate, error) {
+	for _, dir := range builtInKubeVirtTemplateDirs() {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return nil, err
+		}
+		templates := make([]model.ServiceTemplate, 0, len(entries))
+		for _, entry := range entries {
+			if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".yaml") {
+				continue
+			}
+			tmpl, err := readKubeVirtServiceTemplateAsset(filepath.Join(dir, entry.Name()))
+			if err != nil {
+				return nil, err
+			}
+			templates = append(templates, tmpl)
+		}
+		if len(templates) > 0 {
+			return templates, nil
+		}
 	}
+	return nil, fmt.Errorf("no kubevirt service template assets found")
+}
+
+func builtInKubeVirtTemplateDirs() []string {
+	return []string{
+		filepath.Join("docs", "examples", "kubevirt-service-templates"),
+		filepath.Join("..", "..", "docs", "examples", "kubevirt-service-templates"),
+		filepath.Join("data", "service-templates", "kubevirt"),
+		filepath.Join("..", "..", "data", "service-templates", "kubevirt"),
+		filepath.Join("/service-templates", "kubevirt"),
+	}
+}
+
+func readKubeVirtServiceTemplateAsset(path string) (model.ServiceTemplate, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return model.ServiceTemplate{}, err
+	}
+	var asset kubeVirtServiceTemplateAsset
+	if err := yaml.Unmarshal(data, &asset); err != nil {
+		return model.ServiceTemplate{}, fmt.Errorf("parse %s: %w", path, err)
+	}
+	runtimeSpec, err := json.Marshal(asset.RuntimeSpec)
+	if err != nil {
+		return model.ServiceTemplate{}, fmt.Errorf("marshal %s runtimeSpec: %w", path, err)
+	}
+	category := service.ProductServiceCategory(asset.Type, asset.Category)
+	enabled := true
+	if asset.Enabled != nil {
+		enabled = *asset.Enabled
+	}
+	tmpl := model.ServiceTemplate{
+		Type:              strings.TrimSpace(asset.Type),
+		Name:              strings.TrimSpace(asset.Name),
+		Category:          category,
+		Description:       strings.TrimSpace(asset.Description),
+		Icon:              strings.TrimSpace(asset.Icon),
+		Installer:         strings.TrimSpace(asset.Installer),
+		ProvisionMode:     model.ServiceProvisionModeKubeVirt,
+		RuntimeSpec:       string(runtimeSpec),
+		SupportedFeatures: serviceFeatureMatrixJSON(asset.Type, category),
+		IsCustom:          false,
+		S3Key:             strings.TrimSpace(asset.S3Key),
+		InstallOrder:      asset.InstallOrder,
+		Enabled:           enabled,
+	}
+	if tmpl.Type == "" || tmpl.Name == "" || tmpl.Installer == "" || tmpl.S3Key == "" {
+		return model.ServiceTemplate{}, fmt.Errorf("%s must declare type, name, installer and s3Key", path)
+	}
+	if tmpl.Icon == "" {
+		tmpl.Icon = "database"
+	}
+	if tmpl.InstallOrder == 0 {
+		tmpl.InstallOrder = builtInInstallOrder(tmpl.Type)
+	}
+	if err := k8s.ValidateKubeVirtRuntimeSpec(tmpl.RuntimeSpec); err != nil {
+		return model.ServiceTemplate{}, fmt.Errorf("%s runtimeSpec: %w", path, err)
+	}
+	if asset.Catalog != nil {
+		manifest := model.PlatformManifest{
+			Name:        tmpl.Type,
+			Version:     firstNonEmpty(asset.Version, "kubevirt"),
+			Description: tmpl.Description,
+			Catalog:     asset.Catalog,
+		}
+		if err := manifest.ValidateCatalogDocs(); err != nil {
+			return model.ServiceTemplate{}, fmt.Errorf("%s catalog docs: %w", path, err)
+		}
+		data, err := json.Marshal(manifest)
+		if err != nil {
+			return model.ServiceTemplate{}, fmt.Errorf("%s catalog docs marshal: %w", path, err)
+		}
+		tmpl.PlatformManifestJSON = string(data)
+	}
+	return tmpl, nil
 }
 
 func removeObsoleteDockerRegistryTemplate() {
@@ -810,12 +885,18 @@ func SyncBuiltinTemplatesNow(ctx context.Context, forceUpload bool) (BuiltInTemp
 		} else if description := builtInDescriptionOverride(archive.ServiceType); description != "" {
 			updates["description"] = description
 		}
+		if strings.TrimSpace(manifest.Description) != "" {
+			updates["description"] = strings.TrimSpace(manifest.Description)
+		}
 
 		fallbackTemplate, canCreate := builtInServiceTemplateByType(archive.ServiceType)
 		if canCreate {
 			fallbackTemplate.ChartVersion = chartVersion
 			fallbackTemplate.AppVersion = appVersion
 			fallbackTemplate.PlatformManifestJSON = string(manifestJSON)
+			if strings.TrimSpace(manifest.Description) != "" {
+				fallbackTemplate.Description = strings.TrimSpace(manifest.Description)
+			}
 		}
 		refreshedTemplate, changed, err := service.SyncBuiltinServiceTemplateRecord(database.DB, archive.ServiceType, builtinS3Key, updates, fallbackTemplate, canCreate)
 		if err != nil {
@@ -965,27 +1046,45 @@ func extractManifestFromTar(tarPath string) (*model.PlatformManifest, error) {
 	defer gz.Close()
 
 	tr := tar.NewReader(gz)
+	var manifest *model.PlatformManifest
 	for {
 		header, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
 		if err != nil {
-			return nil, fmt.Errorf("platform-manifest.yaml not found in tar")
+			return nil, err
 		}
-		name := header.Name
-		if len(name) > 2 && name[:2] == "./" {
-			name = name[2:]
+		name := strings.TrimPrefix(header.Name, "./")
+		if header.Typeflag != tar.TypeReg {
+			continue
 		}
-		if name == "platform-manifest.yaml" {
+		if name == "platform-manifest.yaml" || name == "platform-manifest.yml" {
 			data, err := io.ReadAll(tr)
 			if err != nil {
 				return nil, err
 			}
-			var manifest model.PlatformManifest
-			if err := yaml.Unmarshal(data, &manifest); err != nil {
+			var parsed model.PlatformManifest
+			if err := yaml.Unmarshal(data, &parsed); err != nil {
 				return nil, err
 			}
-			return &manifest, nil
+			manifest = &parsed
+			continue
+		}
+		if strings.EqualFold(name, "README.md") {
+			continue
 		}
 	}
+	if manifest == nil {
+		return nil, fmt.Errorf("platform-manifest.yaml not found in tar")
+	}
+	if err := manifest.Validate(); err != nil {
+		return nil, err
+	}
+	if err := manifest.ValidateCatalogDocs(); err != nil {
+		return nil, err
+	}
+	return manifest, nil
 }
 
 type chartYamlMeta struct {
@@ -1106,6 +1205,10 @@ func UploadTemplate(c *gin.Context) {
 		return
 	}
 	if err := manifest.Validate(); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if err := manifest.ValidateCatalogDocs(); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}

@@ -1,6 +1,50 @@
 name: nacos
 version: 2.3.2
 description: "Nacos 注册中心与配置中心"
+catalog:
+  docs:
+    overview: |
+      # Nacos
+
+      Nacos 是注册中心与配置中心，常用于 Spring Cloud Alibaba 体系。它可以同时管理服务发现、动态配置、命名空间、配置分组和配置发布历史。
+
+      在 PAAP 中，Nacos 适合替代 Eureka + Config Server 的组合，作为微服务统一服务发现和配置管理入口。组件配置模板可注入 Nacos 地址、namespace、group、用户名和密码。
+
+      适用场景：
+
+      - Spring Cloud Alibaba 微服务。
+      - 需要动态配置发布和回滚。
+      - 需要按环境隔离 namespace。
+      - 希望服务注册和配置中心使用同一个中间件。
+    install: |
+      ## 安装方式
+
+      在目标环境或共享资源池安装 Nacos。安装前确认是否需要外部控制台访问、是否启用数据库持久化、是否配置账号密码和 namespace。
+
+      推荐做法：
+
+      1. 为每个环境创建独立 namespace。
+      2. 通过配置模板把 Nacos 地址和 namespace 注入组件。
+      3. 重要配置变更通过 Nacos 控制台或平台流程审计。
+      4. 生产环境使用外部数据库持久化 Nacos 配置。
+    quickstart: |
+      ## Quick Start
+
+      Spring Cloud Alibaba 配置示例：
+
+      ```yaml
+      spring:
+        cloud:
+          nacos:
+            discovery:
+              server-addr: ${NACOS_SERVER_ADDR}
+              namespace: ${NACOS_NAMESPACE}
+            config:
+              server-addr: ${NACOS_SERVER_ADDR}
+              namespace: ${NACOS_NAMESPACE}
+      ```
+
+      部署组件时选择 Nacos 服务引用后，平台会注入 server address、namespace、group 和认证信息。服务未注册时，检查应用依赖、配置项和 Nacos 控制台命名空间是否一致。
 permissions:
   toolNamespace:
     rules:

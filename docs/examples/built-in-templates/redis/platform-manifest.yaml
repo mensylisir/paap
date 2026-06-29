@@ -1,6 +1,91 @@
 name: redis
 version: 18.6.0
 description: "Redis 缓存服务"
+catalog:
+  docs:
+    overview: |
+      # Redis
+
+      Redis 是面向应用缓存、分布式锁、会话存储、排行榜、限流计数和轻量队列场景的内存数据服务。它读写延迟低、数据结构丰富，适合承载高频访问但可通过业务逻辑重建的数据。
+
+      在 PAAP 中，Redis 可以来自环境内创建、共享资源池、外部连接或 KubeVirt 模板交付。组件部署时选择 Redis 服务引用后，平台会把 host、port、password、database 等参数注入配置模板。
+
+      服务目录会展示 Redis 实例分布、资源占用、命中率、淘汰 key、内存使用、连接数和错误日志入口。后续结合 KEDA 时，也可以基于队列长度或自定义 Prometheus 指标触发应用扩缩容。
+
+      适用场景：
+
+      - 缓存热点数据，降低数据库压力。
+      - 分布式锁、幂等控制、短期 token 和验证码。
+      - 会话存储、排行榜、计数器。
+      - 开发测试环境快速提供缓存能力。
+      - 需要将缓存实例与应用配置模板自动绑定。
+    install: |
+      ## 安装方式
+
+      在目标环境画布中选择 Redis 服务模板，按业务容量填写内存、持久化、密码、副本和访问参数后安装。开发环境可以使用单节点；需要高可用或分片时选择 Redis Cluster 模板。
+
+      安装方式选择：
+
+      - 环境内创建：当前环境独占 Redis，适合开发测试隔离。
+      - 共享资源：多个环境复用共享资源池 Redis，适合公共缓存或低成本环境。
+      - 外部连接：接入公司已有 Redis、云 Redis 或哨兵/集群入口。
+      - KubeVirt 模板交付：通过虚拟机模板创建 Redis，适合需要 VM 隔离的场景。
+
+      安装完成后检查 Pod、Service、Secret 和持久化卷状态，再在组件部署页选择该 Redis 引用。
+    quickstart: |
+      ## Quick Start
+
+      应用组件绑定 Redis 后，配置模板可以把 host、port、password 注入到 ConfigMap/Secret。Spring Boot 示例：
+
+      ```yaml
+      spring:
+        data:
+          redis:
+            host: ${REDIS_HOST}
+            port: ${REDIS_PORT:6379}
+            password: ${REDIS_PASSWORD}
+            timeout: 3s
+      ```
+
+      Node.js 示例：
+
+      ```text
+      redis://:${REDIS_PASSWORD}@${REDIS_HOST}:${REDIS_PORT}/0
+      ```
+
+      使用建议：
+
+      - 缓存 key 需要设计过期时间，避免无限增长。
+      - 锁类场景必须设置过期时间并处理释放失败。
+      - 内存持续上涨时查看 big key、淘汰策略和命中率。
+      - 连接失败先检查组件右侧配置是否选择了 Redis 服务，以及 Secret 中密码是否正确。
+  architecture:
+    - id: primary
+      type: redis-primary
+      label: Primary
+    - id: replica
+      type: redis-replica
+      label: Replica
+observability:
+  dashboard_uid: paap-redis-service
+  dashboard_title: Redis 专属大盘
+  log_query_template: '{namespace="$namespace"} |~ "(?i)(error|exception|panic|fail|oom|denied)"'
+  metric_cards:
+    - key: hit_ratio
+      title: 缓存命中率
+      unit: "%"
+      description: keyspace hits / (hits + misses)
+      promql: 'sum(rate(redis_keyspace_hits_total{namespace="$namespace"}[5m])) / (sum(rate(redis_keyspace_hits_total{namespace="$namespace"}[5m])) + sum(rate(redis_keyspace_misses_total{namespace="$namespace"}[5m]))) * 100'
+    - key: evicted_keys
+      title: 淘汰 Key
+      unit: keys/s
+      description: 内存压力导致的 key 淘汰速率
+      promql: 'sum(rate(redis_evicted_keys_total{namespace="$namespace"}[5m]))'
+    - key: replication_lag
+      title: 主从延迟
+      unit: s
+      description: Replica 相对 Primary 的延迟
+      promql: 'max(redis_master_repl_offset{namespace="$namespace"} - redis_slave_repl_offset{namespace="$namespace"})'
 permissions:
   toolNamespace:
     rules:

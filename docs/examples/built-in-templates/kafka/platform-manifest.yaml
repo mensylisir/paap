@@ -1,6 +1,48 @@
 name: kafka
 version: 26.0.0
 description: "Apache Kafka 流处理平台"
+catalog:
+  docs:
+    overview: |
+      # Kafka
+
+      Kafka 是分布式事件流平台，适合处理日志流、业务事件、异步解耦、订单流水、消息回放和实时数据管道。它提供 topic、partition、consumer group、offset 等模型，适合吞吐量高、需要持久化和可回放的消息场景。
+
+      在 PAAP 中，Kafka 可作为应用环境内中间件、共享资源或外部资源。服务目录会展示 Kafka 在各环境中的实例、资源占用和专属监控入口；组件配置模板可引用 Kafka bootstrap servers、认证信息和 topic 参数。
+
+      适用场景：
+
+      - 业务事件流和异步处理。
+      - 消费者需要按 consumer group 独立消费进度。
+      - 需要查看消费积压、分区状态和 broker 健康。
+      - 需要跨服务解耦而 RabbitMQ 的队列模型不够合适。
+    install: |
+      ## 安装方式
+
+      在目标环境或共享资源池中安装 Kafka。生产或压测环境应根据吞吐量规划 broker 数量、partition 数量、存储容量和副本因子；开发环境可以使用较小规格。
+
+      安装前确认：
+
+      - 是否需要外部访问 bootstrap 地址。
+      - 是否需要启用认证和 ACL。
+      - 存储容量是否满足消息保留策略。
+      - 监控组件是否能采集 broker 和 consumer lag 指标。
+    quickstart: |
+      ## Quick Start
+
+      应用配置示例：
+
+      ```yaml
+      spring:
+        kafka:
+          bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS}
+          consumer:
+            group-id: ${KAFKA_CONSUMER_GROUP}
+      ```
+
+      组件部署时选择 Kafka 服务引用后，平台配置模板可注入 bootstrap servers、用户名、密码和 topic。运行后在服务目录监控 tab 查看 broker 在线状态、请求速率、consumer lag 和错误日志入口。
+
+      如果消费积压持续增加，优先检查 consumer group 实例数、分区数量、单条消息处理耗时和应用日志中的反序列化错误。
 permissions:
   toolNamespace:
     rules:

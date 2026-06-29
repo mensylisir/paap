@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 
 	"paap/internal/database"
@@ -60,14 +61,73 @@ func openPlatformServiceUsageTestDB(t *testing.T) *gorm.DB {
 func seedPlatformServiceUsageFixture(t *testing.T, db *gorm.DB) platformServiceUsageFixture {
 	t.Helper()
 	features := serviceFeatureMatrixJSON("postgresql", "infra")
+	manifest := model.PlatformManifest{
+		Name:        "postgresql",
+		Version:     "15.4.0",
+		Description: "fixture postgres manifest",
+		Catalog: &model.CatalogSpec{
+			Docs: model.CatalogDocsSpec{
+				Overview:   "# PostgreSQL Fixture\n\n模板提供的服务介绍。",
+				Install:    "## 安装\n\n模板提供的安装说明。",
+				Quickstart: "## Quick Start\n\n模板提供的接入说明。",
+			},
+			Architecture: []model.CatalogArchitectureSpec{
+				{ID: "primary", Type: "postgres-primary", Label: "Primary"},
+				{ID: "replica", Type: "postgres-replica", Label: "Replica"},
+			},
+		},
+		Observability: &model.ObservabilitySpec{
+			DashboardUID:     "fixture-postgres-dashboard",
+			DashboardTitle:   "Fixture PostgreSQL 大盘",
+			LogQueryTemplate: `{namespace="$namespace"} |~ "(?i)(fixture-postgres-error|slow)"`,
+			MetricCards: []model.ObservabilityMetricCardSpec{
+				{Key: "fixture_connections", Title: "模板连接数", Unit: "count", Description: "模板声明的连接数", PromQL: `sum(fixture_pg_connections{namespace="$namespace"})`},
+				{Key: "fixture_slow", Title: "模板慢查询", Unit: "qps", Description: "模板声明的慢查询", PromQL: `sum(rate(fixture_pg_slow_queries{namespace="$namespace"}[5m]))`},
+			},
+		},
+	}
+	manifestJSON, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatalf("marshal manifest: %v", err)
+	}
+	kubeVirtManifest := model.PlatformManifest{
+		Name:        "postgresql",
+		Version:     "kubevirt-postgresql-16",
+		Description: "fixture kubevirt postgres manifest",
+		Catalog: &model.CatalogSpec{
+			Docs: model.CatalogDocsSpec{
+				Overview:   "# PostgreSQL KubeVirt Fixture\n\n不应该覆盖普通 PostgreSQL 服务介绍。",
+				Install:    "## KubeVirt 安装\n\n不应该覆盖普通 PostgreSQL 安装说明。",
+				Quickstart: "## KubeVirt Quick Start\n\n不应该覆盖普通 PostgreSQL 接入说明。",
+			},
+		},
+	}
+	kubeVirtManifestJSON, err := json.Marshal(kubeVirtManifest)
+	if err != nil {
+		t.Fatalf("marshal kubevirt manifest: %v", err)
+	}
 	if err := db.Create(&model.ServiceTemplate{
-		Type:              "postgresql",
-		Name:              "PostgreSQL",
-		Category:          "infra",
-		Installer:         "helm",
-		AppVersion:        "15.4.0",
-		SupportedFeatures: features,
-		Enabled:           true,
+		Type:                 "postgresql",
+		Name:                 "PostgreSQL KubeVirt",
+		Category:             "database",
+		Installer:            "raw-yaml",
+		ProvisionMode:        model.ServiceProvisionModeKubeVirt,
+		RuntimeSpec:          `{"image":"docker.io/library/postgres:16","ports":[{"name":"postgresql","port":5432}]}`,
+		SupportedFeatures:    serviceFeatureMatrixJSON("postgresql", "database"),
+		PlatformManifestJSON: string(kubeVirtManifestJSON),
+		Enabled:              true,
+	}).Error; err != nil {
+		t.Fatalf("seed kubevirt template: %v", err)
+	}
+	if err := db.Create(&model.ServiceTemplate{
+		Type:                 "postgresql",
+		Name:                 "PostgreSQL",
+		Category:             "infra",
+		Installer:            "helm",
+		AppVersion:           "15.4.0",
+		SupportedFeatures:    features,
+		PlatformManifestJSON: string(manifestJSON),
+		Enabled:              true,
 	}).Error; err != nil {
 		t.Fatalf("seed template: %v", err)
 	}
@@ -87,7 +147,21 @@ func seedPlatformServiceUsageFixture(t *testing.T, db *gorm.DB) platformServiceU
 	if err := db.Create(&sharedEnv).Error; err != nil {
 		t.Fatalf("seed shared env: %v", err)
 	}
-	managed := model.ServiceInstallation{EnvironmentID: env.ID, ServiceType: "postgresql", ServiceName: "billing-postgresql", Status: "running", Namespace: "billing-dev-postgresql"}
+	managed := model.ServiceInstallation{
+		EnvironmentID: env.ID,
+		ServiceType:   "postgresql",
+		ServiceName:   "billing-postgresql",
+		Status:        "running",
+		Namespace:     "billing-dev-postgresql",
+		Values: `primary:
+  resources:
+    requests:
+      cpu: 750m
+      memory: 1536Mi
+  persistence:
+    size: 30Gi
+`,
+	}
 	if err := db.Create(&managed).Error; err != nil {
 		t.Fatalf("seed managed service: %v", err)
 	}
@@ -236,9 +310,12 @@ func TestBuildPlatformServiceInstancesReturnsManagedAndExternalInstances(t *test
 	if managed.Source != model.CapabilitySourceManaged || managed.ProvisionMode != model.ServiceProvisionModeManaged || managed.ApplicationName != "Billing" || managed.MonitoringTarget != "namespace:billing-dev-postgresql" {
 		t.Fatalf("unexpected managed instance: %#v", managed)
 	}
-	wantMonitoringURL := "/api/v1/environments/" + strconv.FormatUint(uint64(fixture.Env.ID), 10) + "/services/" + strconv.FormatUint(uint64(fixture.Monitor.ID), 10) + "/proxy/d/paap-middleware-workload?orgId=1&theme=light&var-namespace=billing-dev-postgresql"
+	wantMonitoringURL := "/api/v1/environments/" + strconv.FormatUint(uint64(fixture.Env.ID), 10) + "/services/" + strconv.FormatUint(uint64(fixture.Monitor.ID), 10) + "/proxy/d/fixture-postgres-dashboard?orgId=1&theme=light&var-namespace=billing-dev-postgresql"
 	if managed.MonitoringURL != wantMonitoringURL {
 		t.Fatalf("managed monitoring URL = %q, want %q", managed.MonitoringURL, wantMonitoringURL)
+	}
+	if !strings.Contains(managed.ErrorLogsURL, "/explore?") || !strings.Contains(managed.ErrorLogsURL, "billing-dev-postgresql") {
+		t.Fatalf("managed error logs URL = %q, want grafana explore URL scoped to namespace", managed.ErrorLogsURL)
 	}
 	kubeVirt := byID["managed:"+strconv.FormatUint(uint64(fixture.KubeVirt.ID), 10)]
 	if kubeVirt.Source != model.CapabilitySourceManaged || kubeVirt.ProvisionMode != model.ServiceProvisionModeKubeVirt || kubeVirt.ServiceType != "postgresql" {
@@ -296,6 +373,108 @@ func TestBuildPlatformServiceUsageReturnsSharedAndExternalRelations(t *testing.T
 	componentExternal := byID["component:"+strconv.FormatUint(uint64(fixture.Component.ID), 10)+":binding:2:capability-"+strconv.FormatUint(uint64(fixture.ExternalCap.ID), 10)]
 	if componentExternal.ComponentType != "backend" || componentExternal.Source != model.CapabilitySourceExternal || componentExternal.Endpoint != "postgres.example:5432" {
 		t.Fatalf("unexpected component external usage: %#v", componentExternal)
+	}
+}
+
+func TestCatalogServiceDetailReturnsDocsAndInstallMethods(t *testing.T) {
+	db := openPlatformServiceUsageTestDB(t)
+	fixture := seedPlatformServiceUsageFixture(t, db)
+
+	detail, err := service.GetCatalogServiceDetail(db, "postgresql")
+	if err != nil {
+		t.Fatalf("catalog service detail: %v", err)
+	}
+	if detail.Product.Name != "PostgreSQL" || detail.Product.Features != fixture.Features {
+		t.Fatalf("unexpected detail product: %#v", detail.Product)
+	}
+	if !strings.Contains(detail.Docs.Overview.Markdown, "模板提供的服务介绍") {
+		t.Fatalf("overview markdown = %q, want template-provided overview", detail.Docs.Overview.Markdown)
+	}
+	if !strings.Contains(detail.Docs.Install.Markdown, "模板提供的安装说明") || !strings.Contains(detail.Docs.Quickstart.Markdown, "模板提供的接入说明") {
+		t.Fatalf("docs = %#v, want template-provided install and quickstart", detail.Docs)
+	}
+	byKey := map[string]service.CatalogInstallPath{}
+	for _, item := range detail.InstallMethods {
+		byKey[item.Key] = item
+	}
+	if !byKey["managed"].Enabled || !byKey["shared"].Enabled || !byKey["external"].Enabled || !byKey["kubevirt"].Enabled {
+		t.Fatalf("unexpected install methods: %#v", detail.InstallMethods)
+	}
+}
+
+func TestCatalogServiceResourcesTopologyAndObservability(t *testing.T) {
+	db := openPlatformServiceUsageTestDB(t)
+	fixture := seedPlatformServiceUsageFixture(t, db)
+
+	resources, err := service.GetCatalogServiceResources(db, "postgresql")
+	if err != nil {
+		t.Fatalf("catalog service resources: %v", err)
+	}
+	if resources.Total.Instances != 4 || resources.Total.RunningInstances != 3 {
+		t.Fatalf("resource total = %#v, want 4 instances and 3 running", resources.Total)
+	}
+	if resources.Total.CPURequestMillicores < 750 || resources.Total.StorageRequestBytes < 30*1024*1024*1024 {
+		t.Fatalf("resource total = %#v, want install-values footprint included", resources.Total)
+	}
+	if len(resources.Groups) == 0 || len(resources.Instances) == 0 {
+		t.Fatalf("resources missing groups or instances: %#v", resources)
+	}
+	foundInstallValues := false
+	for _, item := range resources.Instances {
+		if item.ID == "managed:"+strconv.FormatUint(uint64(fixture.Managed.ID), 10) && item.SnapshotSource == "install-values" {
+			foundInstallValues = true
+			break
+		}
+	}
+	if !foundInstallValues {
+		t.Fatalf("resources instances = %#v, want managed instance sourced from install values", resources.Instances)
+	}
+
+	topology, err := service.GetCatalogServiceTopology(db, "postgresql")
+	if err != nil {
+		t.Fatalf("catalog service topology: %v", err)
+	}
+	nodeIDs := map[string]struct{}{}
+	for _, node := range topology.Nodes {
+		nodeIDs[node.ID] = struct{}{}
+	}
+	if _, ok := nodeIDs["service:postgresql"]; !ok {
+		t.Fatalf("topology missing product node: %#v", topology.Nodes)
+	}
+	if _, ok := nodeIDs["component:"+strconv.FormatUint(uint64(fixture.Component.ID), 10)]; ok {
+		t.Fatalf("topology should not include application dependency nodes: %#v", topology.Nodes)
+	}
+	if _, ok := nodeIDs["instance:managed:"+strconv.FormatUint(uint64(fixture.Managed.ID), 10)+":primary"]; !ok {
+		t.Fatalf("topology missing template architecture primary node: %#v", topology.Nodes)
+	}
+	if _, ok := nodeIDs["instance:managed:"+strconv.FormatUint(uint64(fixture.Managed.ID), 10)+":replica"]; !ok {
+		t.Fatalf("topology missing template architecture replica node: %#v", topology.Nodes)
+	}
+	for _, edge := range topology.Edges {
+		if edge.Type == "uses" {
+			t.Fatalf("topology should only describe service-internal topology, got application uses edge: %#v", edge)
+		}
+	}
+
+	observability, err := service.GetCatalogServiceObservability(db, "postgresql")
+	if err != nil {
+		t.Fatalf("catalog service observability: %v", err)
+	}
+	if observability.DashboardUID != "fixture-postgres-dashboard" {
+		t.Fatalf("dashboard uid = %q, want fixture-postgres-dashboard", observability.DashboardUID)
+	}
+	if len(observability.MetricCards) == 0 || observability.MetricCards[1].Title != "模板慢查询" {
+		t.Fatalf("metric cards = %#v, want template-provided metric cards", observability.MetricCards)
+	}
+	foundManaged := false
+	for _, item := range observability.Instances {
+		if item.InstanceID == "managed:"+strconv.FormatUint(uint64(fixture.Managed.ID), 10) {
+			foundManaged = strings.Contains(item.DashboardURL, "fixture-postgres-dashboard") && strings.Contains(item.ErrorLogsURL, "fixture-postgres-error")
+			break
+		}
+	}
+	if !foundManaged {
+		t.Fatalf("observability instances = %#v, want managed instance dashboard and error log URLs", observability.Instances)
 	}
 }
 
@@ -360,6 +539,7 @@ func TestCatalogServicesAPIAllowsAuthenticatedUsers(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	router.GET("/api/v1/catalog/services", withTestAuthUserContext(user.ID), ListCatalogServices)
+	router.GET("/api/v1/catalog/services/:type/detail", withTestAuthUserContext(user.ID), GetCatalogServiceDetail)
 
 	ok := httptest.NewRecorder()
 	router.ServeHTTP(ok, httptest.NewRequest(http.MethodGet, "/api/v1/catalog/services", nil))
@@ -374,5 +554,26 @@ func TestCatalogServicesAPIAllowsAuthenticatedUsers(t *testing.T) {
 	}
 	if len(response.Data) == 0 {
 		t.Fatalf("catalog services response is empty")
+	}
+
+	detail := httptest.NewRecorder()
+	router.ServeHTTP(detail, httptest.NewRequest(http.MethodGet, "/api/v1/catalog/services/postgresql/detail", nil))
+	if detail.Code != http.StatusOK {
+		t.Fatalf("catalog service detail status = %d, want %d; body=%s", detail.Code, http.StatusOK, detail.Body.String())
+	}
+	var detailResponse struct {
+		Data service.CatalogServiceDetail `json:"data"`
+	}
+	if err := json.Unmarshal(detail.Body.Bytes(), &detailResponse); err != nil {
+		t.Fatalf("decode catalog service detail response: %v", err)
+	}
+	if detailResponse.Data.Product.Type != "postgresql" || detailResponse.Data.Docs.Quickstart.Markdown == "" {
+		t.Fatalf("unexpected catalog service detail response: %#v", detailResponse.Data)
+	}
+	if strings.Contains(detailResponse.Data.Product.Description, "KubeVirt") {
+		t.Fatalf("catalog service product should prefer managed template description, got %#v", detailResponse.Data.Product.Description)
+	}
+	if strings.Contains(detailResponse.Data.Docs.Overview.Markdown, "KubeVirt Fixture") {
+		t.Fatalf("catalog service detail should prefer managed template docs, got %#v", detailResponse.Data.Docs.Overview.Markdown)
 	}
 }

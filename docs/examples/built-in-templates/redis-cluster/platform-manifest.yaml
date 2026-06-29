@@ -1,6 +1,47 @@
 name: redis-cluster
 version: 13.0.4
 description: "Redis Cluster cache service"
+catalog:
+  docs:
+    overview: |
+      # Redis Cluster
+
+      Redis Cluster 提供分片缓存能力，适合数据量或吞吐量超过单节点 Redis 的场景。它通过 hash slot 将 key 分布到多个 master，并可配置 replica 提升可用性。
+
+      在 PAAP 中，Redis Cluster 适合压测、准生产或需要分片缓存的业务环境。相比单节点 Redis，它需要客户端支持 cluster mode，也需要更多 Pod、存储和监控资源。
+
+      适用场景：
+
+      - key 数量大、单节点内存不足。
+      - 缓存吞吐高，需要横向扩展。
+      - 应用客户端支持 Redis Cluster。
+      - 需要观察 slot、节点状态和主从复制情况。
+    install: |
+      ## 安装方式
+
+      在目标环境选择 Redis Cluster 模板，配置节点数、内存、持久化和密码。安装前确认业务客户端已经启用 cluster 模式，不能把 Redis Cluster 当作普通单节点 Redis 使用。
+
+      注意事项：
+
+      - 本地低资源环境不建议部署过多节点。
+      - 需要规划每个节点内存和 PVC。
+      - 客户端必须能处理 MOVED/ASK 重定向。
+      - 监控应关注节点健康、slot 分布、命中率和淘汰 key。
+    quickstart: |
+      ## Quick Start
+
+      Spring Boot Redis Cluster 配置示例：
+
+      ```yaml
+      spring:
+        data:
+          redis:
+            cluster:
+              nodes: ${REDIS_CLUSTER_NODES}
+            password: ${REDIS_PASSWORD}
+      ```
+
+      部署组件时选择 Redis Cluster 服务引用，平台会提供节点列表和密码。连接失败时，检查客户端是否支持 cluster、节点地址是否可达、密码是否正确。
 permissions:
   toolNamespace:
     rules:

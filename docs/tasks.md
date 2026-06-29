@@ -440,7 +440,9 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 
 ### Task 6.15: 弹性、多集群与虚拟化路线图
 - [ ] 引入 KEDA 伸缩配置：最小/最大副本、触发器、生成 `ScaledObject` 和状态展示
+- [ ] 应用交付支持 HPA/KEDA 事件驱动扩缩容：组件部署配置应允许声明 CPU/内存 HPA、队列积压、Kafka lag、HTTP 并发、自定义 PromQL 等触发器，并在运行态回读当前副本数、期望副本数和触发原因
 - [ ] 评估并接入 KubeVirt，将 VM 数据库作为服务类型纳入生命周期和备份管理
+- [ ] 架构决策：KubeVirt 与 KEDA 是随 PAAP 安装包作为平台基础能力自动安装，还是作为 PAAP 服务目录中的平台服务安装；需要明确默认策略、可禁用策略、升级边界和 CRD/operator 生命周期归属
 - [ ] 引入 `Cluster` 模型，支持注册集群、存储 kubeconfig、按标签选择部署目标
 - [ ] 为环境增加 `ClusterID`，让 Application/Environment/ServiceInstance/Component 能面向多集群调和
 - [ ] 规划双集群 Argo CD 主从或主控多集群模式，并验证跨集群部署链路
@@ -1121,12 +1123,15 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
   - 2026-06-28 验证：`go test -count=1 ./internal/k8s ./internal/service -run 'Test(Discover|Delete|Upsert|Build)KubeVirtService|TestListServiceInstancesEnrichesKubeVirtRuntimeState|TestDiscoverServiceCredentialsReadsKubeVirtCredentialSecret'` 通过。
 - [ ] Operator/GitOps 接入 KubeVirt 分支，将上述资源纳入 controller 调谐和真实集群联调
 - [ ] 需要集群已装 KubeVirt operator/CRD
+- [ ] 架构决策：KubeVirt operator/CRD 是 PAAP 安装时自动部署，还是在 PAAP 服务目录中作为平台基础服务安装；需要定义安装前置检查、版本升级、卸载保护和多集群安装范围
 - [ ] 当前状态：模型、统计、安装 API、服务模板校验、资源生成、卸载清理和基础运行态读取已具备，controller/GitOps 调谐和真实集群联调仍未完成
 - [ ] 工作量：3-4 周
 
 ### Task 7.10: KEDA 水平扩展
 - [ ] 组件配置加弹性伸缩段：最小/最大副本、触发器（CPU/Q/自定义）
 - [ ] 后端生成 `ScaledObject`（KEDA CRD）而非固定副本数 Deployment
+- [ ] 应用部署流程支持 HPA/KEDA 事件驱动扩缩容：从源码交付和从镜像交付生成部署文件时可生成 HPA 或 KEDA `ScaledObject`，并在组件详情展示当前副本、目标指标、触发器状态和最近扩缩容事件
+- [ ] 架构决策：KEDA operator/CRD 是 PAAP 安装时自动部署，还是在 PAAP 服务目录中作为平台基础服务安装；需要定义默认启用策略、离线环境处理、升级边界和无 KEDA 时的 HPA 降级策略
 - [ ] 当前状态：`Component.Replicas` 固定值（`component.go:25`）
 - [ ] 需要集群已装 KEDA
 - [ ] 工作量：2-3 周

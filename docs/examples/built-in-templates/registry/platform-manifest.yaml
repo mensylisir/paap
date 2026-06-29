@@ -1,6 +1,47 @@
 name: registry
 version: "2.8.3"
 description: "Docker Registry - lightweight OCI image registry"
+catalog:
+  docs:
+    overview: |
+      # Docker Registry
+
+      Docker Registry v2 是轻量 OCI 镜像仓库，适合开发测试、演示环境和本地 kind 集群。它部署简单、资源占用低，能够满足 PAAP 从源码构建和从镜像交付流程中的镜像存储需求。
+
+      在 PAAP 中，Registry 可以作为环境内或共享资源池镜像仓库。源码构建时 Jenkins/Buildpacks 应使用内部 Service 地址推送镜像；部署文件中应写入节点可拉取的外部地址，例如 NodeIP:NodePort 或生产域名。
+
+      适用场景：
+
+      - 本地开发环境没有 Harbor。
+      - kind 集群需要快速推送和拉取镜像。
+      - 示例应用验证从源码构建和从镜像交付流程。
+      - 资源有限，不适合部署完整 Harbor。
+    install: |
+      ## 安装方式
+
+      在目标环境或共享资源池中选择 Docker Registry 模板安装。安装后应确认两个地址：
+
+      - 内部地址：供 Jenkins/Buildpacks 推送镜像，例如 `registry.<namespace>.svc.cluster.local:5000`。
+      - 外部地址：写入部署 YAML，供 containerd/kubelet 拉取镜像，例如 `172.20.0.2:32575` 或正式域名。
+
+      如果是 kind 测试环境，还需要把 registry 配置为 containerd insecure registry。
+    quickstart: |
+      ## Quick Start
+
+      从镜像交付时：
+
+      1. 在组件部署页选择 Registry 中的镜像。
+      2. 平台使用 UI 选择的镜像地址生成部署文件。
+      3. 部署文件推送到 Gitea。
+      4. ArgoCD 同步部署。
+
+      从源码构建时：
+
+      1. Jenkins 构建镜像。
+      2. 镜像推送到 Registry 内部地址。
+      3. 平台生成部署 YAML 时写入外部可拉取地址。
+
+      如果 Pod `ImagePullBackOff`，检查部署 YAML 中镜像地址是否与页面选择一致，并确认节点能解析或访问该地址。
 permissions:
   toolNamespace:
     rules:

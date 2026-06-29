@@ -1,6 +1,52 @@
 name: gitea
 version: "1.23.8"
 description: "Gitea - lightweight Git service for PAAP generated manifests"
+catalog:
+  docs:
+    overview: |
+      # Gitea
+
+      Gitea 是 PAAP 内置流程推荐的轻量 Git 服务，负责保存平台生成的 Jenkinsfile、部署 YAML、配置模板渲染结果和 GitOps 目录结构。它是从源码构建和从镜像交付流程中的代码仓库锚点。
+
+      PAAP 不应依赖 Jenkins 直接推送部署文件。正确链路是平台生成文件、推送到 Gitea、配置 ArgoCD Application，再由 ArgoCD 执行 GitOps 同步。Gitea 因此承担审计、版本追踪和回滚入口的职责。
+
+      适用场景：
+
+      - 本地开发、演示环境或离线环境需要内置 Git 服务。
+      - 每个应用环境需要独立 GitOps 目录保存部署文件。
+      - 希望平台完整托管源码构建和镜像交付产生的清单文件。
+      - 不希望直接使用公司主代码仓库存储平台生成的运行态 YAML。
+    install: |
+      ## 安装方式
+
+      在共享资源池或目标环境中安装 Gitea。共享资源池安装更适合多环境复用，业务环境只引用同一个代码仓库服务；单环境安装适合隔离开发或演示。
+
+      安装后平台需要完成：
+
+      1. 初始化管理员账号或访问 token。
+      2. 创建应用对应仓库。
+      3. 写入 Jenkinsfile、README 和 GitOps 部署目录。
+      4. 为 Jenkins/ArgoCD 配置访问凭据。
+
+      如果对接外部 Git 服务，则不需要安装 Gitea，但必须在外部资源中配置仓库地址和认证信息。
+    quickstart: |
+      ## Quick Start
+
+      从镜像交付时，Gitea 中会出现类似目录：
+
+      ```text
+      apps/
+        billing/
+          dev/
+            gateway/
+              deployment.yaml
+              service.yaml
+              configmap.yaml
+      ```
+
+      从源码构建时，平台会先写入 Jenkinsfile，再触发 Jenkins 拉取源码、构建镜像；镜像推送完成后，平台继续生成部署文件并推送到 Gitea。
+
+      如果页面提示仓库目录 Unauthorized，优先检查平台保存的 Gitea token、仓库权限以及 ArgoCD/Jenkins 使用的凭据是否与 Gitea 账号匹配。
 permissions:
   toolNamespace:
     rules:

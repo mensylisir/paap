@@ -1,0 +1,48 @@
+type: mysql
+name: MySQL KubeVirt 模板
+version: kubevirt-mysql-8
+category: database
+description: 基于 KubeVirt 虚拟机模板创建 MySQL 服务实例
+icon: database
+installer: raw-yaml
+s3Key: service-templates/kubevirt/mysql.yaml
+installOrder: 110
+enabled: true
+catalog:
+  docs:
+    overview: |
+      # MySQL KubeVirt 模板
+
+      该模板通过 KubeVirt 虚拟机交付 MySQL 服务实例。用户在 PAAP 中看到和引用的是 MySQL 服务，平台内部根据模板创建 VirtualMachine、Service、Secret 和连接输出。
+
+      KubeVirt MySQL 适合需要 VM 运行边界、传统数据库初始化脚本、特殊系统依赖或数据库运维团队习惯以虚拟机方式管理 MySQL 的场景。它可以与容器化 MySQL 模板并存，用户在服务安装时选择交付方式。
+    install: |
+      ## 安装方式
+
+      在环境服务弹窗选择 MySQL，并切换到 `KubeVirt 模板交付`。模板会提供默认镜像、CPU、内存、磁盘、端口和 root 账号规则。
+
+      前置条件：
+
+      - 集群已安装 KubeVirt operator/CRD。
+      - 目标环境允许创建 VM 相关资源。
+      - 镜像能被集群节点拉取。
+    quickstart: |
+      ## Quick Start
+
+      1. 安装 MySQL KubeVirt 服务。
+      2. 等待 VM 和 Service 就绪。
+      3. 在组件配置中选择该 MySQL 服务。
+      4. 平台注入 `MYSQL_HOST`、`MYSQL_PORT`、`MYSQL_USERNAME`、`MYSQL_PASSWORD`。
+
+      如果应用无法连接，先检查 VM 状态、Service 端口、Secret 凭据和 MySQL 容器启动日志。
+runtimeSpec:
+  image: docker.io/library/mysql:8
+  cpu: "1"
+  memory: 2Gi
+  diskSize: 20Gi
+  database: mysql
+  ports:
+    - name: mysql
+      port: 3306
+  credentials:
+    username: root

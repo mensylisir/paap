@@ -1,6 +1,91 @@
 name: postgresql
 version: 12.12.10
 description: "PostgreSQL 关系型数据库"
+catalog:
+  docs:
+    overview: |
+      # PostgreSQL
+
+      PostgreSQL 是面向业务系统的关系型数据库服务，适合保存强一致事务数据、配置数据、审计数据、报表数据和需要复杂查询的数据。它支持事务、索引、视图、JSONB、扩展插件和成熟的备份恢复工具，是多数企业应用的通用关系型数据库选择。
+
+      在 PAAP 中，PostgreSQL 可以作为环境内数据库、共享资源池数据库、外部数据库引用或 KubeVirt 模板交付的数据库实例。平台会把连接地址、端口、数据库名、用户名、密码和 Secret 引用统一纳入服务引用模型，供应用配置模板使用。
+
+      服务目录会展示 PostgreSQL 在哪些环境被使用、消耗多少 CPU/内存/存储、有哪些应用绑定了它，并提供数据库特异性监控入口，例如连接数、慢查询、复制延迟、事务回滚和错误日志。
+
+      适用场景：
+
+      - Go、Java、Python、Node.js 等后端服务需要关系型数据库。
+      - 业务需要事务一致性、SQL 查询、索引和外键约束。
+      - 应用配置模板需要自动注入数据库连接参数。
+      - 开发测试环境需要快速创建独立数据库实例。
+      - 生产环境使用外部 PostgreSQL 时，希望 PAAP 只托管连接关系和凭据。
+    install: |
+      ## 安装方式
+
+      在目标环境画布中选择 PostgreSQL 服务模板，按环境容量填写 CPU、内存、存储、账号、数据库名和访问方式后安装。开发环境可以使用单节点小规格；测试和生产环境应规划备份、存储容量、连接池和高可用方案。
+
+      安装方式选择：
+
+      - 环境内创建：由 PAAP 在当前环境安装 PostgreSQL，适合隔离开发和测试。
+      - 共享资源：引用共享资源池中的 PostgreSQL，适合多个环境复用公共数据库。
+      - 外部连接：接入公司已有 RDS、自建 PostgreSQL 或云数据库，PAAP 只保存连接元数据和凭据引用。
+      - KubeVirt 模板交付：通过虚拟机模板交付 PostgreSQL，适合需要 VM 边界或特殊数据库运行环境的场景。
+
+      安装完成后应检查 Service、Secret、PVC 和 Pod 状态，并在组件部署页选择该 PostgreSQL 实例。
+    quickstart: |
+      ## Quick Start
+
+      应用组件绑定 PostgreSQL 后，配置模板可以把连接地址、用户名、密码和数据库名注入到 ConfigMap/Secret。Spring Boot 示例：
+
+      ```yaml
+      spring:
+        datasource:
+          url: jdbc:postgresql://${POSTGRESQL_HOST}:${POSTGRESQL_PORT}/${POSTGRESQL_DATABASE}
+          username: ${POSTGRESQL_USERNAME}
+          password: ${POSTGRESQL_PASSWORD}
+          hikari:
+            maximum-pool-size: 20
+      ```
+
+      Go 应用 DSN 示例：
+
+      ```text
+      postgres://${POSTGRESQL_USERNAME}:${POSTGRESQL_PASSWORD}@${POSTGRESQL_HOST}:${POSTGRESQL_PORT}/${POSTGRESQL_DATABASE}?sslmode=disable
+      ```
+
+      使用建议：
+
+      - 开发环境优先使用环境内数据库，便于一键删除环境时清理资源。
+      - 多个组件共享数据库时，建议每个组件使用独立 schema 或独立账号。
+      - 连接失败先检查组件右侧配置是否选中 PostgreSQL 服务、Secret 是否生成、Service DNS 是否可解析。
+      - 性能问题优先看连接池、慢查询和索引，服务目录监控 tab 会提供对应入口。
+  architecture:
+    - id: primary
+      type: postgresql-primary
+      label: Primary
+    - id: replica
+      type: postgresql-replica
+      label: Replica
+observability:
+  dashboard_uid: paap-postgresql-service
+  dashboard_title: PostgreSQL 专属大盘
+  log_query_template: '{namespace="$namespace"} |~ "(?i)(error|exception|slow|deadlock|replication|timeout)"'
+  metric_cards:
+    - key: connections
+      title: 连接数
+      unit: count
+      description: 当前活跃连接数量
+      promql: 'sum(pg_stat_activity_count{namespace="$namespace"})'
+    - key: slow_queries
+      title: 慢查询
+      unit: qps
+      description: 慢查询或慢操作速率
+      promql: 'sum(rate(pg_stat_database_tup_returned{namespace="$namespace"}[5m]))'
+    - key: replication_lag
+      title: 复制延迟
+      unit: s
+      description: 主从复制延迟
+      promql: 'max(pg_replication_lag{namespace="$namespace"})'
 permissions:
   toolNamespace:
     rules:

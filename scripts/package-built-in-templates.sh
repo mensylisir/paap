@@ -45,3 +45,12 @@ for template_dir in "${template_dirs[@]}"; do
 done
 
 "$ROOT_DIR/scripts/package-built-in-config-templates.sh"
+
+KUBEVIRT_SOURCE_DIR="$ROOT_DIR/docs/examples/kubevirt-service-templates"
+KUBEVIRT_TARGET_DIR="$ROOT_DIR/data/service-templates/kubevirt"
+if [[ -d "$KUBEVIRT_SOURCE_DIR" ]]; then
+  mkdir -p "$KUBEVIRT_TARGET_DIR"
+  find "$KUBEVIRT_TARGET_DIR" -type f -name '*.yaml' -delete
+  cp "$KUBEVIRT_SOURCE_DIR"/*.yaml "$KUBEVIRT_TARGET_DIR"/
+  chmod 0644 "$KUBEVIRT_TARGET_DIR"/*.yaml
+fi

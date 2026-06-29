@@ -1,6 +1,55 @@
 name: mongodb
 version: 14.0.0
 description: "MongoDB 文档型数据库"
+catalog:
+  docs:
+    overview: |
+      # MongoDB
+
+      MongoDB 是文档型数据库，适合保存结构灵活的 JSON/BSON 数据，例如用户画像、事件文档、配置文档、审计详情和非强事务型业务数据。它支持集合、索引、副本集和丰富查询能力。
+
+      在 PAAP 中，MongoDB 可作为环境内数据库、共享服务或外部数据库引用。组件配置模板可从服务引用中读取 host、port、database、username、password，并注入到 Spring、Node.js、Python 等应用配置中。
+
+      适用场景：
+
+      - 数据结构变化快，不适合频繁改关系型表结构。
+      - 需要按文档整体读写。
+      - 示例应用或微服务需要独立文档库。
+      - 需要通过服务目录查看数据库实例、资源占用和日志入口。
+    install: |
+      ## 安装方式
+
+      在目标环境或共享资源池中安装 MongoDB。开发环境可以使用单节点；稳定环境建议启用持久化、备份和副本集。
+
+      安装前确认：
+
+      - 数据库名称和账号策略。
+      - 存储容量和备份周期。
+      - 是否需要外部客户端访问。
+      - 配置模板是否绑定正确的 MongoDB 服务引用。
+    quickstart: |
+      ## Quick Start
+
+      Spring Boot 配置示例：
+
+      ```yaml
+      spring:
+        data:
+          mongodb:
+            host: ${MONGODB_HOST}
+            port: ${MONGODB_PORT}
+            database: ${MONGODB_DATABASE}
+            username: ${MONGODB_USERNAME}
+            password: ${MONGODB_PASSWORD}
+      ```
+
+      Node.js 连接示例：
+
+      ```text
+      mongodb://${MONGODB_USERNAME}:${MONGODB_PASSWORD}@${MONGODB_HOST}:${MONGODB_PORT}/${MONGODB_DATABASE}
+      ```
+
+      如果应用启动时报认证失败，优先检查 Secret 中密码、database/authSource 设置以及服务引用是否选到了正确实例。
 permissions:
   toolNamespace:
     rules:

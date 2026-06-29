@@ -19,6 +19,7 @@ import (
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
+	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -128,6 +129,9 @@ func BuildComponentManifest(app model.Application, env model.Environment, comp m
 	}
 	parts = append(parts, BuildComponentDeploymentManifest(app, env, comp, identifier, namespace))
 	parts = append(parts, BuildComponentServiceManifest(app, env, comp, identifier, namespace))
+	if autoscaling := BuildComponentAutoscalingManifest(app, env, comp, identifier, namespace); strings.TrimSpace(autoscaling) != "" {
+		parts = append(parts, autoscaling)
+	}
 	return strings.Join(parts, "---\n")
 }
 
@@ -207,6 +211,151 @@ func componentDeploymentImage(comp model.Component) string {
 		return image
 	}
 	return strings.TrimSpace(comp.Image)
+}
+
+func BuildComponentAutoscalingManifest(app model.Application, env model.Environment, comp model.Component, identifier, namespace string) string {
+	if componentUsesSourcePlaceholderImage(comp) {
+		return ""
+	}
+	cfg, err := model.ParseComponentConfig(comp.Config)
+	if err != nil || cfg.Autoscaling == nil || !cfg.Autoscaling.Enabled {
+		return ""
+	}
+	labels := map[string]string{
+		"app":                identifier,
+		"paap.io/app":        app.Identifier,
+		"paap.io/env":        env.Identifier,
+		"paap.io/component":  identifier,
+		"paap.io/managed-by": "argocd",
+	}
+	if cfg.Autoscaling.Mode == "keda" {
+		return buildComponentKEDAScaledObjectManifest(cfg.Autoscaling, identifier, namespace, labels)
+	}
+	return buildComponentHPAManifest(cfg.Autoscaling, identifier, namespace, labels)
+}
+
+func buildComponentHPAManifest(spec *model.ComponentAutoscaling, identifier, namespace string, labels map[string]string) string {
+	metrics := make([]autoscalingv2.MetricSpec, 0, 2)
+	if spec.TargetCPU > 0 {
+		target := int32(spec.TargetCPU)
+		metrics = append(metrics, autoscalingv2.MetricSpec{
+			Type: autoscalingv2.ResourceMetricSourceType,
+			Resource: &autoscalingv2.ResourceMetricSource{
+				Name: corev1.ResourceCPU,
+				Target: autoscalingv2.MetricTarget{
+					Type:               autoscalingv2.UtilizationMetricType,
+					AverageUtilization: &target,
+				},
+			},
+		})
+	}
+	if spec.TargetMemory > 0 {
+		target := int32(spec.TargetMemory)
+		metrics = append(metrics, autoscalingv2.MetricSpec{
+			Type: autoscalingv2.ResourceMetricSourceType,
+			Resource: &autoscalingv2.ResourceMetricSource{
+				Name: corev1.ResourceMemory,
+				Target: autoscalingv2.MetricTarget{
+					Type:               autoscalingv2.UtilizationMetricType,
+					AverageUtilization: &target,
+				},
+			},
+		})
+	}
+	if len(metrics) == 0 {
+		return ""
+	}
+	hpa := autoscalingv2.HorizontalPodAutoscaler{
+		TypeMeta: metav1.TypeMeta{APIVersion: "autoscaling/v2", Kind: "HorizontalPodAutoscaler"},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      identifier,
+			Namespace: namespace,
+			Labels:    labels,
+		},
+		Spec: autoscalingv2.HorizontalPodAutoscalerSpec{
+			ScaleTargetRef: autoscalingv2.CrossVersionObjectReference{
+				APIVersion: "apps/v1",
+				Kind:       "Deployment",
+				Name:       identifier,
+			},
+			MinReplicas: &spec.MinReplicas,
+			MaxReplicas: spec.MaxReplicas,
+			Metrics:     metrics,
+		},
+	}
+	data, _ := yaml.Marshal(hpa)
+	return string(data)
+}
+
+func buildComponentKEDAScaledObjectManifest(spec *model.ComponentAutoscaling, identifier, namespace string, labels map[string]string) string {
+	triggers := make([]interface{}, 0, len(spec.Triggers))
+	for _, trigger := range spec.Triggers {
+		metadata := map[string]string{}
+		for key, value := range trigger.Metadata {
+			if strings.TrimSpace(key) != "" {
+				metadata[key] = strings.TrimSpace(value)
+			}
+		}
+		if trigger.Metric != "" {
+			switch trigger.Type {
+			case "prometheus":
+				if metadata["query"] == "" {
+					metadata["query"] = trigger.Metric
+				}
+			default:
+				if metadata["metricName"] == "" {
+					metadata["metricName"] = trigger.Metric
+				}
+			}
+		}
+		if trigger.Value != "" {
+			switch trigger.Type {
+			case "prometheus":
+				if metadata["threshold"] == "" {
+					metadata["threshold"] = trigger.Value
+				}
+			case "cpu", "memory":
+				if metadata["value"] == "" {
+					metadata["value"] = trigger.Value
+				}
+			default:
+				if metadata["value"] == "" {
+					metadata["value"] = trigger.Value
+				}
+			}
+		}
+		triggers = append(triggers, map[string]interface{}{
+			"type":     trigger.Type,
+			"metadata": metadata,
+		})
+	}
+	if len(triggers) == 0 {
+		return ""
+	}
+	obj := map[string]interface{}{
+		"apiVersion": "keda.sh/v1alpha1",
+		"kind":       "ScaledObject",
+		"metadata": map[string]interface{}{
+			"name":      identifier,
+			"namespace": namespace,
+			"labels":    labels,
+		},
+		"spec": map[string]interface{}{
+			"scaleTargetRef":  map[string]interface{}{"name": identifier},
+			"minReplicaCount": spec.MinReplicas,
+			"maxReplicaCount": spec.MaxReplicas,
+			"pollingInterval": spec.PollingInterval,
+			"cooldownPeriod":  spec.CooldownPeriod,
+			"triggers":        triggers,
+		},
+	}
+	if spec.RestoreToOriginal {
+		obj["spec"].(map[string]interface{})["advanced"] = map[string]interface{}{
+			"restoreToOriginalReplicaCount": true,
+		}
+	}
+	data, _ := yaml.Marshal(obj)
+	return string(data)
 }
 
 func BuildComponentConfigResourceManifest(app model.Application, env model.Environment, comp model.Component, identifier, namespace string) string {
@@ -850,7 +999,10 @@ func stepPublishComponentDeploymentFiles(ctx context.Context, flow componentFlow
 	if err := actionWriteComponentConfigManifest(ctx, flow); err != nil {
 		return err
 	}
-	return actionWriteComponentServiceManifest(ctx, flow)
+	if err := actionWriteComponentServiceManifest(ctx, flow); err != nil {
+		return err
+	}
+	return actionWriteComponentAutoscalingManifest(ctx, flow)
 }
 
 func stepConfigureComponentArgoCD(ctx context.Context, flow componentFlowContext) error {
@@ -979,6 +1131,14 @@ func actionWriteComponentConfigManifest(ctx context.Context, flow componentFlowC
 func actionWriteComponentServiceManifest(ctx context.Context, flow componentFlowContext) error {
 	serviceManifest := BuildComponentServiceManifest(flow.App, flow.Env, flow.Component, flow.Identifier, flow.DestinationNamespace)
 	return putGiteaFile(ctx, flow.GiteaBaseURL, flow.RepositoryName, flow.RepositoryPath+"/service.yaml", serviceManifest, fmt.Sprintf("sync service for %s", flow.Identifier))
+}
+
+func actionWriteComponentAutoscalingManifest(ctx context.Context, flow componentFlowContext) error {
+	autoscalingManifest := BuildComponentAutoscalingManifest(flow.App, flow.Env, flow.Component, flow.Identifier, flow.DestinationNamespace)
+	if strings.TrimSpace(autoscalingManifest) == "" {
+		autoscalingManifest = fmt.Sprintf("# autoscaling disabled for %s\n", flow.Identifier)
+	}
+	return putGiteaFile(ctx, flow.GiteaBaseURL, flow.RepositoryName, flow.RepositoryPath+"/autoscaling.yaml", autoscalingManifest, fmt.Sprintf("sync autoscaling for %s", flow.Identifier))
 }
 
 func actionWriteComponentJenkinsfile(ctx context.Context, flow componentFlowContext, buildImage string, includeRegistryCABinding bool) error {

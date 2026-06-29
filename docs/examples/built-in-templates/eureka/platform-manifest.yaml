@@ -1,6 +1,54 @@
 name: eureka
 version: 1.0.0
 description: "Eureka 服务注册中心"
+catalog:
+  docs:
+    overview: |
+      # Eureka
+
+      Eureka 是 Spring Cloud Netflix 体系中的服务注册中心，适合仍在使用 Eureka Client 的 Java 微服务。业务服务启动后向 Eureka 注册自身实例，网关或其他服务通过 Eureka 获取服务列表并完成客户端负载均衡。
+
+      在 PAAP 中，Eureka 通常作为应用环境内的基础中间件存在，供 gateway、account-service、statistics-service、notification-service 等 Spring Cloud 组件注册和发现。平台会把 Eureka 的服务地址作为配置模板变量注入到组件 ConfigMap/Secret 中，避免用户手动填写 `defaultZone`。
+
+      适用场景：
+
+      - 迁移或部署 Spring Cloud Netflix 老项目。
+      - 示例应用或开发环境需要轻量服务发现。
+      - 应用已经依赖 `eureka.client.serviceUrl.defaultZone`，暂未切换到 Nacos、Kubernetes Service Discovery 或服务网格。
+    install: |
+      ## 安装方式
+
+      在目标环境画布中选择 Eureka 模板安装。Eureka 应在依赖它的业务组件之前安装，尤其是 Spring Cloud config、gateway 和各业务服务。
+
+      推荐部署顺序：
+
+      1. 安装 Eureka。
+      2. 安装 Config Server，并把 `EUREKA_URL` 指向 Eureka 服务。
+      3. 部署 gateway 和业务服务，让它们通过配置模板读取 Eureka 地址。
+      4. 在 Eureka 控制台确认服务实例是否已注册。
+
+      如果 Eureka 来自共享资源池或外部系统，组件配置页应选择对应服务引用，平台会把选中的连接参数带入配置模板。
+    quickstart: |
+      ## Quick Start
+
+      Spring Boot 服务的典型配置：
+
+      ```yaml
+      eureka:
+        client:
+          serviceUrl:
+            defaultZone: ${EUREKA_URL}
+        instance:
+          preferIpAddress: true
+      ```
+
+      在组件部署时，选择 Eureka 服务引用后，平台会提供：
+
+      - `EUREKA_URL`：例如 `http://eureka:8761/eureka/`
+      - 服务控制台入口：用于查看已注册实例。
+      - 健康状态：用于判断注册中心是否可用。
+
+      如果服务启动后没有注册，优先检查组件日志中的 Eureka Client 报错、配置模板是否正确反选，以及 Eureka Service 是否能在业务命名空间访问。
 permissions:
   toolNamespace:
     rules:

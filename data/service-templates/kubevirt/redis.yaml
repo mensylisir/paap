@@ -1,0 +1,45 @@
+type: redis
+name: Redis KubeVirt 模板
+version: kubevirt-redis-7
+category: middleware
+description: 基于 KubeVirt 虚拟机模板创建 Redis 服务实例
+icon: cloud
+installer: raw-yaml
+s3Key: service-templates/kubevirt/redis.yaml
+installOrder: 130
+enabled: true
+catalog:
+  docs:
+    overview: |
+      # Redis KubeVirt 模板
+
+      该模板通过 KubeVirt 虚拟机交付 Redis 服务实例。用户创建和绑定的仍然是 Redis 服务，平台内部根据模板维护 VM、Service、Secret 和连接输出。
+
+      KubeVirt Redis 适合需要 VM 隔离、传统运维边界或验证虚拟机中间件生命周期的场景。对于普通缓存场景，容器化 Redis 通常更轻量；对于特殊隔离需求，可选择该模板。
+    install: |
+      ## 安装方式
+
+      在环境服务弹窗选择 Redis，并选择 `KubeVirt 模板交付`。平台按模板生成虚拟机、服务端口和连接凭据。
+
+      前置条件：
+
+      - 集群已安装 KubeVirt operator/CRD。
+      - 目标环境具备 VM 资源创建权限。
+      - Redis 镜像能被节点拉取。
+    quickstart: |
+      ## Quick Start
+
+      1. 创建 Redis KubeVirt 服务。
+      2. 等待 VM 进入 Running。
+      3. 在组件配置中选择该 Redis。
+      4. 配置模板注入 `REDIS_HOST`、`REDIS_PORT` 和密码变量。
+
+      如果连接失败，检查 VM 状态、Service selector、端口和应用配置模板反选的服务引用。
+runtimeSpec:
+  image: docker.io/library/redis:7
+  cpu: 500m
+  memory: 1Gi
+  diskSize: 5Gi
+  ports:
+    - name: redis
+      port: 6379

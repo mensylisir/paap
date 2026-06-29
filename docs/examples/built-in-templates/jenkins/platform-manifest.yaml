@@ -1,6 +1,47 @@
 name: jenkins
 version: v2.440.3
 description: "Jenkins - 经典 CI/CD 服务器"
+catalog:
+  docs:
+    overview: |
+      # Jenkins
+
+      Jenkins 是 PAAP 源码构建流程的执行器，用于拉取源码、运行测试、调用 Buildpacks 构建镜像并推送到当前环境选择的镜像仓库。平台负责生成 Jenkinsfile、配置仓库凭据、触发 job 和读取构建结果；Jenkins 不负责生成最终部署 YAML。
+
+      PAAP 的源码交付链路应保持职责清晰：平台生成 Jenkinsfile 并推送到 Gitea，Jenkins 只做源码构建和镜像推送，平台感知镜像产物后生成部署文件，再由 ArgoCD 执行 GitOps 部署。
+
+      适用场景：
+
+      - 应用从 Git 源码构建镜像。
+      - 需要复用企业已有 Jenkins 插件生态。
+      - 需要查看构建日志、构建历史和失败原因。
+      - 开发测试环境需要快速打通源码到镜像的闭环。
+    install: |
+      ## 安装方式
+
+      在环境或共享资源池安装 Jenkins。共享资源池安装适合多个业务环境复用同一个 CI 控制面；单环境安装适合完全隔离的研发沙箱。
+
+      安装后平台需要配置：
+
+      1. Jenkins API 访问凭据。
+      2. Gitea/Git 源码仓库访问密钥。
+      3. 镜像仓库内部推送地址和认证信息。
+      4. Buildpacks 或构建容器运行所需权限。
+
+      Jenkins 与 Registry/Harbor 位于同集群或共享环境时，构建推送应使用内部 Service DNS，减少外部网络依赖。
+    quickstart: |
+      ## Quick Start
+
+      从源码构建组件时：
+
+      1. 在组件部署页选择源码仓库和分支。
+      2. 选择目标镜像仓库。
+      3. 平台生成 Jenkinsfile 并提交到 Gitea。
+      4. 平台通过 Jenkins API 创建或更新 job，并触发构建。
+      5. Jenkins 构建镜像并推送到镜像仓库内部地址。
+      6. 平台生成部署 YAML、推送到 Gitea，并配置 ArgoCD 同步。
+
+      构建失败时，优先查看 Jenkins 控制台日志；部署失败时，查看 ArgoCD 和组件运行事件，不要把部署文件生成职责放到 Jenkins 里。
 permissions:
   toolNamespace:
     rules:

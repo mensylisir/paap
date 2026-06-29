@@ -1,6 +1,48 @@
 name: argocd
 version: v2.13.3
 description: "ArgoCD - GitOps 持续部署工具"
+catalog:
+  docs:
+    overview: |
+      # ArgoCD
+
+      ArgoCD 是 PAAP 推荐的 GitOps 持续部署控制面，用来把 Gitea 中的 Kubernetes 部署文件同步到目标业务命名空间。它适合管理从源码构建和从镜像交付两条内置流程生成的 Deployment、Service、Ingress、ConfigMap、Secret、HPA/KEDA 等运行资源。
+
+      在 PAAP 中，ArgoCD 不是一个孤立工具。平台会负责为它注入环境命名空间范围、仓库凭据、Application 配置和同步策略；业务用户只需要在组件交付页面选择镜像、配置模板和部署参数。ArgoCD 负责持续对齐 Git 中的期望状态与集群中的实际状态，并把健康状态、同步状态和资源拓扑回传给平台。
+
+      适用场景：
+
+      - 多环境应用发布，需要 Dev/Test/Prod 保持清晰的 GitOps 审计链路。
+      - 希望所有部署文件进入代码仓库，避免人工 kubectl 修改线上资源。
+      - 需要回滚、对比差异、同步状态查看和部署资源健康检查。
+      - 共享资源池集中部署 ArgoCD，用同一套控制面管理多个业务环境。
+    install: |
+      ## 安装方式
+
+      在环境或共享资源池中选择 ArgoCD 模板安装。平台会创建独立工具命名空间，安装 argocd-server、repo-server、application-controller、applicationset-controller 等组件，并按当前环境注入可管理的 workload namespace 列表。
+
+      建议安装顺序：
+
+      1. 先安装 Gitea 或配置外部 Git 仓库，确保部署文件有写入目标。
+      2. 再安装 Registry/Harbor，确保镜像地址能被部署文件引用。
+      3. 安装 ArgoCD，并确认它能访问 Git 仓库和目标业务命名空间。
+      4. 如果需要自动同步，在组件交付流程中开启 autosync；如果需要人工确认，则保留手动同步。
+
+      共享资源池安装时，需要确认 ArgoCD 的 ServiceAccount 能按平台规则投射到业务环境命名空间。普通业务环境安装时，默认只管理本环境的 workload namespace。
+    quickstart: |
+      ## Quick Start
+
+      1. 在环境画布安装或引用 ArgoCD。
+      2. 在应用组件中选择“从镜像交付”或“从源码构建交付”。
+      3. 平台生成部署文件并推送到 Gitea，例如 `apps/<app>/<env>/<component>/deployment.yaml`。
+      4. 平台调用 ArgoCD API 创建或更新 Application，目标路径指向上一步的 Git 目录。
+      5. ArgoCD 同步后，回到组件详情查看同步状态、健康状态和运行事件。
+
+      常见排查：
+
+      - 如果显示仓库认证失败，检查 Gitea 私钥或 token 是否已由平台配置到 ArgoCD。
+      - 如果同步成功但 Pod 拉镜像失败，检查部署文件中的镜像地址是否是当前环境可拉取的外部地址。
+      - 如果资源未出现在画布，先查看 ArgoCD Application 的 health/sync 状态，再检查平台同步回调。
 permissions:
   toolNamespace:
     rules:
