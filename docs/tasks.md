@@ -1768,8 +1768,10 @@ Week 6-8: 8.13(外部连接/KubeVirt模板/公共服务)     并行 8.14(模板G
   - 2026-06-28 已调整为 `environment_id + service_type + provision_mode`，先支持同一环境内 Helm 托管实例与 KubeVirt 模板交付实例并存；多个同模式同类型实例仍需后续服务实例模型。
 - [x] 当前 `EnvironmentCapability` 是环境级能力引用，且 `environment_id + capability` 唯一；后续若一个环境允许多个 database/cache 外部连接，也需要扩展为实例级能力。
   - 2026-06-27 已改为 `environment_id + capability_key` 唯一，`capability` 保留为能力类别；同一环境可同时存在多个 database/cache 外部连接或共享引用。
-- [ ] 组件和服务使用关系不能只依赖画布连线，必须有结构化关系表或稳定读模型。
+- [x] 组件和服务使用关系不能只依赖画布连线，必须有结构化关系表或稳定读模型。
+  - 2026-06-29 补齐：平台服务使用读模型从 `Component.Config.Bindings` 解析 `service:<id>` / `capability:<id>`，`GET /api/v1/platform/services/:type/usage` 返回组件级 `componentId/componentName/componentType`，实例 `usageCount` 也计入组件绑定引用；不再只依赖画布连线判断组件和服务关系。
 - [ ] 监控、日志、凭据发现当前大量依赖 Kubernetes namespace；外部服务和 KubeVirt 模板交付服务不能假设和 Helm 服务拥有同样的 namespace 结构，必须抽象为 source-aware monitoring target / connection output。
+  - 当前状态：平台服务统计/实例/使用 API 已返回 source-aware `monitoringTarget` / `monitoringUrl`，KubeVirt 生成层已有连接输出契约；组件运行日志、运行控制台和部分工具工作区仍需继续拆出通用 source-aware runtime target。
 - [x] 新增平台服务 API 时预留 `clusterId` / `clusterName` 字段，避免后续多集群返工。
   - 2026-06-28 平台服务统计、实例、使用关系响应已预留 `clusterId` / `clusterName`，当前单集群为空。
 
@@ -1818,7 +1820,7 @@ Week 6-8: 8.13(外部连接/KubeVirt模板/公共服务)     并行 8.14(模板G
 - [x] 新增平台管理员 API：`GET /api/v1/platform/services/:type/usage`。
 - [x] 聚合 `ServiceInstallation` 为 managed 服务实例。
 - [x] 聚合 `EnvironmentCapability` 为 shared/external/deferred 能力引用。
-- [x] 返回字段包含 service type、service name、provider、source、status、application、environment、usage count、monitoring target；component 字段等待结构化组件使用关系落地。
+- [x] 返回字段包含 service type、service name、provider、source、status、application、environment、component、usage count、monitoring target；component 字段来自组件运行配置 bindings 的稳定读模型。
 - [x] API 响应预留 `clusterId` 或 `clusterName`，当前单集群可为空或默认值。
 - [x] 全局统计 API 不返回密码/token 等敏感值。
 - [x] 平台 API 必须要求平台管理员权限。
@@ -1835,8 +1837,8 @@ Week 6-8: 8.13(外部连接/KubeVirt模板/公共服务)     并行 8.14(模板G
 - [x] 平台管理员能看到跨应用/环境的服务统计。
 - [x] 非平台管理员访问全局平台服务 API 返回 403。
 - [x] 统计不依赖画布连线。
-- [x] 后端测试覆盖 managed installation 聚合和 capability reference 聚合。
-- [x] 前端测试覆盖统计表和展开实例入口；无权限状态由后端路由权限测试覆盖。
+- [x] 后端测试覆盖 managed installation、capability reference 和组件 binding 关系聚合。
+- [x] 前端测试覆盖统计表、展开实例入口和“应用 / 环境 / 组件”使用方展示；无权限状态由后端路由权限测试覆盖。
 - [x] 2026-06-27 验证：`/api/v1/platform/services/stats` 返回平台服务统计；浏览器验证左侧 `平台服务` 页面加载统计表，`目录` 页面展示 14 个服务和 feature chips
 
 不纳入：
@@ -1872,7 +1874,8 @@ Week 6-8: 8.13(外部连接/KubeVirt模板/公共服务)     并行 8.14(模板G
 
 - [ ] 业务环境引用共享 Redis/PostgreSQL 后，组件配置解析到真实共享服务 endpoint，不出现 `service:<id>` 这类占位地址。
 - [ ] 共享资源本体名称和业务环境本地显示名可以不同。
-- [ ] 全局平台服务统计能看到共享实例被哪些应用/环境引用。
+- [x] 全局平台服务统计能看到共享实例被哪些应用/环境/组件引用。
+  - 2026-06-29 补齐：共享 capability 引用会映射到被引用的 managed service instance，组件配置中的 `capability:<id>` binding 会在平台服务使用方列表中显示组件名称，并计入实例 usageCount。
 - [x] 删除引用不会删除共享服务实例。
 
 不纳入：

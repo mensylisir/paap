@@ -67,6 +67,9 @@ type PlatformServiceUsage struct {
 	EnvironmentID         uint   `json:"environmentId,omitempty"`
 	EnvironmentName       string `json:"environmentName,omitempty"`
 	EnvironmentIdentifier string `json:"environmentIdentifier,omitempty"`
+	ComponentID           uint   `json:"componentId,omitempty"`
+	ComponentName         string `json:"componentName,omitempty"`
+	ComponentType         string `json:"componentType,omitempty"`
 	Capability            string `json:"capability,omitempty"`
 	ServiceInstanceID     string `json:"serviceInstanceId,omitempty"`
 	RefServiceID          uint   `json:"refServiceId,omitempty"`
@@ -345,12 +348,16 @@ func buildPlatformServiceInstances(db *gorm.DB, serviceType string) ([]PlatformS
 	if err != nil {
 		return nil, err
 	}
+	componentCounts, err := componentBindingUsageCounts(db, installations, capabilities)
+	if err != nil {
+		return nil, err
+	}
 	refCounts := sharedReferenceCounts(capabilities)
 	out := make([]PlatformServiceInstance, 0, len(installations)+len(capabilities))
 	for _, inst := range installations {
 		env := envs[inst.EnvironmentID]
 		app := apps[env.ApplicationID]
-		usageCount := 1 + refCounts[inst.ID]
+		usageCount := 1 + refCounts[inst.ID] + componentCounts[managedServiceInstanceID(inst.ID)]
 		out = append(out, PlatformServiceInstance{
 			ID:                    managedServiceInstanceID(inst.ID),
 			ServiceType:           inst.ServiceType,
@@ -391,7 +398,7 @@ func buildPlatformServiceInstances(db *gorm.DB, serviceType string) ([]PlatformS
 			Endpoint:              capability.ExternalEndpoint,
 			MonitoringTarget:      monitoringTargetForCapability(capability),
 			MonitoringURL:         monitoringURLForCapability(monitoringServices, capability, nil),
-			UsageCount:            1,
+			UsageCount:            1 + componentCounts[capabilityServiceInstanceID(capability.ID)],
 		})
 	}
 	sort.Slice(out, func(i, j int) bool {
@@ -481,12 +488,20 @@ func buildPlatformServiceUsage(db *gorm.DB, serviceType string) ([]PlatformServi
 			MonitoringURL:         monitoringURLForCapability(monitoringServices, capability, installationsByID),
 		})
 	}
+	componentUsage, err := buildComponentBindingServiceUsage(db, serviceType, installations, capabilities, envs, apps, monitoringServices, installationsByID)
+	if err != nil {
+		return nil, err
+	}
+	out = append(out, componentUsage...)
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].ApplicationName != out[j].ApplicationName {
 			return out[i].ApplicationName < out[j].ApplicationName
 		}
 		if out[i].EnvironmentName != out[j].EnvironmentName {
 			return out[i].EnvironmentName < out[j].EnvironmentName
+		}
+		if out[i].ComponentName != out[j].ComponentName {
+			return out[i].ComponentName < out[j].ComponentName
 		}
 		return out[i].ID < out[j].ID
 	})
@@ -580,6 +595,174 @@ func sharedReferenceCounts(capabilities []model.EnvironmentCapability) map[uint]
 		}
 	}
 	return counts
+}
+
+func componentBindingUsageCounts(db *gorm.DB, installations []model.ServiceInstallation, capabilities []model.EnvironmentCapability) (map[string]int, error) {
+	usage, err := buildComponentBindingServiceUsage(db, "", installations, capabilities, nil, nil, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	counts := map[string]int{}
+	for _, item := range usage {
+		if item.ServiceInstanceID != "" {
+			counts[item.ServiceInstanceID]++
+		}
+	}
+	return counts, nil
+}
+
+func buildComponentBindingServiceUsage(
+	db *gorm.DB,
+	serviceType string,
+	installations []model.ServiceInstallation,
+	capabilities []model.EnvironmentCapability,
+	envs map[uint]model.Environment,
+	apps map[uint]model.Application,
+	monitoringServices map[uint]model.ServiceInstallation,
+	installationsByID map[uint]model.ServiceInstallation,
+) ([]PlatformServiceUsage, error) {
+	serviceType = strings.TrimSpace(serviceType)
+	installationsByKey := map[string]model.ServiceInstallation{}
+	installationsByIDLocal := map[uint]model.ServiceInstallation{}
+	for _, inst := range installations {
+		installationsByKey[managedServiceInstanceID(inst.ID)] = inst
+		installationsByKey["service:"+strconvFormatUint(inst.ID)] = inst
+		installationsByIDLocal[inst.ID] = inst
+	}
+	capabilitiesByKey := map[string]model.EnvironmentCapability{}
+	for _, capability := range capabilities {
+		capabilitiesByKey[capabilityServiceInstanceID(capability.ID)] = capability
+		capabilitiesByKey["capability:"+strconvFormatUint(capability.ID)] = capability
+	}
+
+	envIDs := environmentIDsFromInstallationsAndCapabilities(installations, capabilities)
+	if len(envIDs) == 0 {
+		return nil, nil
+	}
+	if envs == nil {
+		loaded, err := environmentsByID(db, envIDs)
+		if err != nil {
+			return nil, err
+		}
+		envs = loaded
+	}
+	if apps == nil {
+		loaded, err := applicationsByEnvironment(db, envs)
+		if err != nil {
+			return nil, err
+		}
+		apps = loaded
+	}
+	if monitoringServices == nil {
+		loaded, err := monitoringServicesByEnvironment(db, envIDs)
+		if err != nil {
+			return nil, err
+		}
+		monitoringServices = loaded
+	}
+	if installationsByID == nil {
+		installationsByID = installationsByIDLocal
+	}
+
+	var components []model.Component
+	if err := db.Where("environment_id IN ?", envIDs).Find(&components).Error; err != nil {
+		return nil, err
+	}
+	out := make([]PlatformServiceUsage, 0)
+	seen := map[string]struct{}{}
+	for _, comp := range components {
+		cfg, err := model.ParseComponentConfig(comp.Config)
+		if err != nil {
+			return nil, fmt.Errorf("parse component %d config: %w", comp.ID, err)
+		}
+		env := envs[comp.EnvironmentID]
+		app := apps[env.ApplicationID]
+		for idx, binding := range cfg.Bindings {
+			key := strings.TrimSpace(binding.TargetKey)
+			if key == "" {
+				continue
+			}
+			if inst, ok := installationsByKey[key]; ok {
+				if serviceType != "" && inst.ServiceType != serviceType {
+					continue
+				}
+				rowID := fmt.Sprintf("component:%d:binding:%d:%s", comp.ID, idx, strings.ReplaceAll(key, ":", "-"))
+				if _, exists := seen[rowID]; exists {
+					continue
+				}
+				seen[rowID] = struct{}{}
+				out = append(out, PlatformServiceUsage{
+					ID:                    rowID,
+					ServiceType:           inst.ServiceType,
+					ServiceName:           firstNonEmpty(inst.ServiceName, inst.ServiceType),
+					Source:                model.CapabilitySourceManaged,
+					ProvisionMode:         NormalizeServiceProvisionMode(inst.ProvisionMode),
+					Status:                inst.Status,
+					ApplicationID:         app.ID,
+					ApplicationName:       app.Name,
+					EnvironmentID:         env.ID,
+					EnvironmentName:       env.Name,
+					EnvironmentIdentifier: env.Identifier,
+					ComponentID:           comp.ID,
+					ComponentName:         comp.Name,
+					ComponentType:         comp.Type,
+					ServiceInstanceID:     managedServiceInstanceID(inst.ID),
+					MonitoringTarget:      monitoringTargetForNamespace(inst.Namespace),
+					MonitoringURL:         monitoringURLForInstallation(monitoringServices, inst),
+				})
+				continue
+			}
+			capability, ok := capabilitiesByKey[key]
+			if !ok {
+				continue
+			}
+			capServiceType := platformCapabilityServiceType(capability)
+			if serviceType != "" && capServiceType != serviceType {
+				continue
+			}
+			refServiceID := uint(0)
+			instanceID := capabilityServiceInstanceID(capability.ID)
+			serviceName := firstNonEmpty(capability.Provider, capServiceType)
+			provisionMode := capability.Source
+			if capability.RefServiceID != nil {
+				refServiceID = *capability.RefServiceID
+				instanceID = managedServiceInstanceID(refServiceID)
+				if ref, ok := installationsByID[refServiceID]; ok {
+					serviceName = firstNonEmpty(ref.ServiceName, ref.ServiceType)
+					provisionMode = NormalizeServiceProvisionMode(ref.ProvisionMode)
+				}
+			}
+			rowID := fmt.Sprintf("component:%d:binding:%d:%s", comp.ID, idx, strings.ReplaceAll(key, ":", "-"))
+			if _, exists := seen[rowID]; exists {
+				continue
+			}
+			seen[rowID] = struct{}{}
+			out = append(out, PlatformServiceUsage{
+				ID:                    rowID,
+				ServiceType:           capServiceType,
+				ServiceName:           serviceName,
+				Provider:              capability.Provider,
+				Source:                capability.Source,
+				ProvisionMode:         provisionMode,
+				Status:                firstNonEmpty(capability.ValidationStatus, "pending"),
+				ApplicationID:         app.ID,
+				ApplicationName:       app.Name,
+				EnvironmentID:         env.ID,
+				EnvironmentName:       env.Name,
+				EnvironmentIdentifier: env.Identifier,
+				ComponentID:           comp.ID,
+				ComponentName:         comp.Name,
+				ComponentType:         comp.Type,
+				Capability:            capability.Capability,
+				ServiceInstanceID:     instanceID,
+				RefServiceID:          refServiceID,
+				Endpoint:              capability.ExternalEndpoint,
+				MonitoringTarget:      monitoringTargetForCapability(capability),
+				MonitoringURL:         monitoringURLForCapability(monitoringServices, capability, installationsByID),
+			})
+		}
+	}
+	return out, nil
 }
 
 func stringSliceContains(values []string, needle string) bool {

@@ -29,6 +29,7 @@ type platformServiceUsageFixture struct {
 	SharedService model.ServiceInstallation
 	SharedCap     model.EnvironmentCapability
 	ExternalCap   model.EnvironmentCapability
+	Component     model.Component
 }
 
 func openPlatformServiceUsageTestDB(t *testing.T) *gorm.DB {
@@ -45,6 +46,7 @@ func openPlatformServiceUsageTestDB(t *testing.T) *gorm.DB {
 		&model.ServiceCatalog{},
 		&model.ServiceInstallation{},
 		&model.EnvironmentCapability{},
+		&model.Component{},
 		&model.Permission{},
 		&model.Role{},
 		&model.RolePermission{},
@@ -117,6 +119,20 @@ func seedPlatformServiceUsageFixture(t *testing.T, db *gorm.DB) platformServiceU
 	if err := db.Create(&externalCap).Error; err != nil {
 		t.Fatalf("seed external capability: %v", err)
 	}
+	componentConfig, err := model.ComponentConfig{
+		Bindings: []model.ComponentBinding{
+			{TargetKey: "service:" + strconv.FormatUint(uint64(managed.ID), 10), TargetKind: "service", TargetName: managed.ServiceName, TargetType: "postgresql", Role: "database"},
+			{TargetKey: "capability:" + strconv.FormatUint(uint64(sharedCap.ID), 10), TargetKind: "capability", TargetName: sharedCap.CapabilityKey, TargetType: "postgresql", Role: "database"},
+			{TargetKey: "capability:" + strconv.FormatUint(uint64(externalCap.ID), 10), TargetKind: "capability", TargetName: externalCap.CapabilityKey, TargetType: "postgresql", Role: "database"},
+		},
+	}.JSON()
+	if err != nil {
+		t.Fatalf("component config: %v", err)
+	}
+	component := model.Component{EnvironmentID: env.ID, Name: "billing-api", Type: "backend", Config: componentConfig}
+	if err := db.Create(&component).Error; err != nil {
+		t.Fatalf("seed component: %v", err)
+	}
 	return platformServiceUsageFixture{
 		Features:      features,
 		App:           app,
@@ -129,6 +145,7 @@ func seedPlatformServiceUsageFixture(t *testing.T, db *gorm.DB) platformServiceU
 		SharedService: sharedService,
 		SharedCap:     sharedCap,
 		ExternalCap:   externalCap,
+		Component:     component,
 	}
 }
 
@@ -228,11 +245,11 @@ func TestBuildPlatformServiceInstancesReturnsManagedAndExternalInstances(t *test
 		t.Fatalf("unexpected kubevirt instance: %#v", kubeVirt)
 	}
 	shared := byID["managed:"+strconv.FormatUint(uint64(fixture.SharedService.ID), 10)]
-	if shared.UsageCount != 2 || shared.ApplicationName != "Default" {
+	if shared.UsageCount != 3 || shared.ApplicationName != "Default" {
 		t.Fatalf("unexpected shared managed instance usage: %#v", shared)
 	}
 	external := byID["capability:"+strconv.FormatUint(uint64(fixture.ExternalCap.ID), 10)]
-	if external.Source != model.CapabilitySourceExternal || external.Endpoint != "postgres.example:5432" || external.UsageCount != 1 {
+	if external.Source != model.CapabilitySourceExternal || external.Endpoint != "postgres.example:5432" || external.UsageCount != 2 {
 		t.Fatalf("unexpected external instance: %#v", external)
 	}
 	if _, ok := byID["capability:"+strconv.FormatUint(uint64(fixture.SharedCap.ID), 10)]; ok {
@@ -267,6 +284,18 @@ func TestBuildPlatformServiceUsageReturnsSharedAndExternalRelations(t *testing.T
 	kubeVirt := byID["managed:"+strconv.FormatUint(uint64(fixture.KubeVirt.ID), 10)]
 	if kubeVirt.ProvisionMode != model.ServiceProvisionModeKubeVirt || kubeVirt.ServiceType != "postgresql" {
 		t.Fatalf("unexpected kubevirt usage: %#v", kubeVirt)
+	}
+	componentManaged := byID["component:"+strconv.FormatUint(uint64(fixture.Component.ID), 10)+":binding:0:service-"+strconv.FormatUint(uint64(fixture.Managed.ID), 10)]
+	if componentManaged.ComponentName != "billing-api" || componentManaged.ServiceInstanceID != "managed:"+strconv.FormatUint(uint64(fixture.Managed.ID), 10) || componentManaged.Source != model.CapabilitySourceManaged {
+		t.Fatalf("unexpected component managed usage: %#v", componentManaged)
+	}
+	componentShared := byID["component:"+strconv.FormatUint(uint64(fixture.Component.ID), 10)+":binding:1:capability-"+strconv.FormatUint(uint64(fixture.SharedCap.ID), 10)]
+	if componentShared.ComponentID != fixture.Component.ID || componentShared.Source != model.CapabilitySourceShared || componentShared.RefServiceID != fixture.SharedService.ID {
+		t.Fatalf("unexpected component shared usage: %#v", componentShared)
+	}
+	componentExternal := byID["component:"+strconv.FormatUint(uint64(fixture.Component.ID), 10)+":binding:2:capability-"+strconv.FormatUint(uint64(fixture.ExternalCap.ID), 10)]
+	if componentExternal.ComponentType != "backend" || componentExternal.Source != model.CapabilitySourceExternal || componentExternal.Endpoint != "postgres.example:5432" {
+		t.Fatalf("unexpected component external usage: %#v", componentExternal)
 	}
 }
 

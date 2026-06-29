@@ -179,7 +179,7 @@
             <table class="detail-table">
               <thead>
                 <tr>
-                  <th>应用 / 环境</th>
+                  <th>应用 / 环境 / 组件</th>
                   <th>来源</th>
                   <th>交付方式</th>
                   <th>能力</th>
@@ -189,7 +189,7 @@
               </thead>
               <tbody>
                 <tr v-for="item in usage" :key="item.id">
-                  <td>{{ item.applicationName || '-' }} / {{ item.environmentName || '-' }}</td>
+                  <td>{{ usageSubjectLabel(item) }}</td>
                   <td>{{ sourceLabel(item.source) }}</td>
                   <td>{{ provisionModeLabel(item.provisionMode || item.source) }}</td>
                   <td>{{ item.capability || '-' }}</td>
@@ -265,6 +265,9 @@ type PlatformServiceUsage = {
   status: string
   applicationName?: string
   environmentName?: string
+  componentId?: number
+  componentName?: string
+  componentType?: string
   capability?: string
   serviceInstanceId?: string
   endpoint?: string
@@ -374,6 +377,9 @@ const usagePathLabel = (key: string, fallback: string) => ({
   external: '接入外部连接',
   kubevirt: 'KubeVirt 模板交付',
 }[key] || fallback || key)
+
+const usageSubjectLabel = (item: PlatformServiceUsage) =>
+  [item.applicationName || '-', item.environmentName || '-', item.componentName || '环境级引用'].join(' / ')
 
 const provisionModeLabel = (mode: string) => ({
   managed: '环境内托管',
