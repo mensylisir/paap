@@ -1220,8 +1220,10 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 - [ ] PV 配置 chart-by-chart 验证
 - [ ] 拓扑模式端到端验证（Redis/PostgreSQL/MySQL 各模式）
 - [ ] Runtime 配置更新验证
-- [ ] Registry 镜像源端到端验证
-- [ ] Source 交付端到端验证
+- [x] Registry 镜像源端到端验证
+  - 2026-06-29 验证：浏览器在 PiggyMetrics 开发环境右侧栏选择本环境 `dev-registry` 执行镜像交付，UI 反选镜像仓库并生成外部运行镜像 `registry.piggymetrics-dev.paap.local/piggymetrics-dev/notification-service:6bb2cf9`，集群回读 `notification-service` Pod `1/1 Running`。
+- [x] Source 交付端到端验证
+  - 2026-06-29 验证：浏览器在 PiggyMetrics 开发环境右侧栏对 `gateway` 选择源码交付并提交，Jenkins/kpack 使用内部 registry 完成构建，GitOps 部署生成外部运行镜像，Deployment `1/1` ready，浏览器打开 `http://172.20.0.2:32575/` 成功加载 PiggyMetrics 页面。
 - [ ] CDP 测试覆盖：每次 UI 变更后用可见 Chrome 测试
 
 ### Task 7.19: Keycloak 部署 + 用户认证集成
@@ -1234,6 +1236,7 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 - [x] 部署修复：Keycloak 默认 realm 用户增加 `emailVerified`、`firstName`、`lastName`，避免 Keycloak 25 首次登录触发 `VERIFY_PROFILE`
 - [x] 2026-06-27 验证：`kind-rbac-manager-test` 中 PAAP `http://172.20.0.2:30091`、Keycloak `http://172.20.0.2:30080`，回调地址为 `http://172.20.0.2:30091/api/v1/auth/keycloak/callback`；Keycloak realm 默认管理员已统一为 `admin/Def@u1tpwd`，`admin/admin` 返回 401，`admin/Def@u1tpwd` token 端点返回 200
 - [x] 2026-06-28 验证：`deploy/k8s/configure-auth-endpoints.test.sh` 通过；`paap-runtime-endpoints` 当前值为 PAAP `http://172.20.0.2:30091`、Keycloak `http://172.20.0.2:30080`、issuer `http://172.20.0.2:30080/realms/paap`、redirect `http://172.20.0.2:30091/api/v1/auth/keycloak/callback`；浏览器点击“Keycloak 登录”进入 `172.20.0.2:30080`，使用 `admin/Def@u1tpwd` 登录后回到 PAAP，服务日志显示 `/api/v1/auth/keycloak/login` 和 `/api/v1/auth/keycloak/callback` 均 302 成功，回调后 `/api/v1/auth/me`、`/api/v1/auth/permissions` 返回 200
+- [x] 2026-06-29 复核：当前 kind 环境通过浏览器打开 `http://172.20.0.2:30091/login`，点击 `Keycloak 登录` 跳转到 `http://172.20.0.2:30080/realms/paap/...`，redirect_uri 为 `http://172.20.0.2:30091/api/v1/auth/keycloak/callback`；使用 `admin/Def@u1tpwd` 登录后回到 PAAP `PiggyMetrics` 开发环境页面，证明当前部署没有写死旧 IP。
 - [x] 对应文件：`deploy/k8s/`、`deploy/k8s/configure-auth-endpoints.sh`、`internal/handler/auth_keycloak.go`、`internal/authz/`、`internal/model/authz.go`
 - [x] 工作量：1-2 周
 
