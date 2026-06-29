@@ -1772,7 +1772,8 @@ Week 6-8: 8.13(外部连接/KubeVirt模板/公共服务)     并行 8.14(模板G
 
 ### 9.1 架构兼容性判断
 
-- [ ] 当前 PAAP 三段式架构（Vue 前端 → PAAP Server/GORM/PostgreSQL → CRD/Operator/K8s）可以承接这批需求，不需要推翻重写。
+- [x] 当前 PAAP 三段式架构（Vue 前端 → PAAP Server/GORM/PostgreSQL → CRD/Operator/K8s）可以承接这批需求，不需要推翻重写。
+  - 2026-06-29 验证：平台服务读模型、共享/外部能力引用、KubeVirt 资源生成层、服务目录 feature 矩阵和 image/source 交付流均沿现有三段式架构完成，未引入新控制面或推翻现有模型。
 - [x] 这批需求不是单纯 UI 改造，需要新增“平台服务域模型/读模型”，否则统计逻辑会分散到各页面。
   - 2026-06-27 预重构：先给 `ServiceCatalog` / `ServiceTemplate` 增加 feature 矩阵字段，服务目录已消费；后端补齐平台服务统计、实例列表和使用方读模型。
 - [x] 当前 `ServiceInstallation` 是环境级安装记录，且 `environment_id + service_type` 唯一；后续若一个环境允许多个 Redis/PostgreSQL，需要调整唯一约束或引入更通用的服务实例模型。
@@ -1854,9 +1855,9 @@ Week 6-8: 8.13(外部连接/KubeVirt模板/公共服务)     并行 8.14(模板G
 
 不纳入：
 
-- [ ] 不完整实现外部连接校验。
-- [ ] 不实现 KubeVirt 生命周期。
-- [ ] 不做服务目录全量重构。
+- 不完整实现外部连接校验。
+- 不实现 KubeVirt 生命周期。
+- 不做服务目录全量重构。
 
 ### 9.4 PR 2：公共/共享服务消费
 
@@ -1866,33 +1867,43 @@ Week 6-8: 8.13(外部连接/KubeVirt模板/公共服务)     并行 8.14(模板G
 
 后端任务：
 
-- [ ] 共享资源池继续使用系统应用/系统环境中的真实 `ServiceInstallation`。
+- [x] 共享资源池继续使用系统应用/系统环境中的真实 `ServiceInstallation`。
+  - 2026-06-29 证据：`GetSharedResourcePool` 只返回系统应用/系统环境，不隐式创建；共享资源列表从共享环境真实 `ServiceInstallation` 聚合，测试覆盖 `TestGetSharedResourcePoolReturnsSystemCanvasTarget`、`TestSharedCapabilityResourcesRequireSharedPoolPermission`。
 - [x] 业务环境通过 `EnvironmentCapability.Source=shared` + `RefServiceID` 引用共享服务。
-- [ ] PR 1 的统计接口把 shared 引用单独统计，不与 managed installation 混淆。
-- [ ] 共享服务在业务环境中的凭据/连接信息从被引用的服务实例解析，但业务环境 API 不允许修改共享服务本体。
+- [x] PR 1 的统计接口把 shared 引用单独统计，不与 managed installation 混淆。
+  - 2026-06-29 证据：`ListPlatformServiceStats` 单独累加 `SharedReferences`；`ListPlatformServiceInstances` 不把 shared capability 重复当成实例，测试覆盖 `TestBuildPlatformServiceStatsAggregatesInstallationsAndCapabilities`、`TestBuildPlatformServiceInstancesReturnsManagedAndExternalInstances`。
+- [x] 共享服务在业务环境中的凭据/连接信息从被引用的服务实例解析，但业务环境 API 不允许修改共享服务本体。
+  - 2026-06-29 证据：`GetEnvironmentCapabilityCredentials` 对 shared capability 读取 `RefServiceID` 指向服务的 Secret；业务环境只保存/删除 `EnvironmentCapability` 引用，测试覆盖 `TestGetEnvironmentCapabilityCredentialsReadsSharedRefServiceSecrets` 和共享服务来源校验。
 - [x] 断开共享能力时只删除当前环境引用、相关 canvas 状态和组件绑定引用，不删除共享服务。
   - 2026-06-28 补齐：删除 capability 的 service 层事务会清理 `EnvironmentCanvasState` 和组件配置 `bindings`。
 
 前端任务：
 
-- [ ] 共享资源池是平台管理员入口。
-- [ ] 共享环境只允许添加工具/中间件，不允许创建业务组件、不允许再添加共享/外部资源。
-- [ ] 业务环境可以从共享资源列表中添加共享资源。
-- [ ] 业务环境中的共享资源卡片允许本地重命名和断开引用。
-- [ ] 业务环境中的共享资源右侧栏只读展示地址、端口、用户名、密码/token、连接串、状态和监控入口。
+- [x] 共享资源池是平台管理员入口。
+  - 2026-06-29 证据：左侧全局导航 `共享资源` 受 `system.shared_pool.manage` 权限控制，专用 `/shared-resources` 概览页读取共享资源池并提供进入共享画布入口。
+- [x] 共享环境只允许添加工具/中间件，不允许创建业务组件、不允许再添加共享/外部资源。
+  - 2026-06-29 证据：`CreateComponent` 对系统共享环境直接拒绝业务组件创建；前端共享资源入口独立于业务环境画布的共享/外部资源添加入口。
+- [x] 业务环境可以从共享资源列表中添加共享资源。
+  - 2026-06-29 证据：环境画布提供 `添加共享资源`，创建环境弹窗支持 `sharedResources` 预选并转换为 shared capability payload，测试覆盖 `configures shared and external capability sources from the environment canvas drawer`、`createEnvironmentSharedServices.test.ts`。
+- [x] 业务环境中的共享资源卡片允许本地重命名和断开引用。
+  - 2026-06-29 证据：共享/外部 capability 卡片走画布本地 display name；右侧栏和卡片使用 `断开引用` 删除当前环境 capability，不删除共享服务，测试覆盖 `allows shared and external capability cards to use canvas-local display names`、`makes resource source and removal semantics explicit on topology cards and drawers`。
+- [x] 业务环境中的共享资源右侧栏只读展示地址、端口、用户名、密码/token、连接串、状态和监控入口。
+  - 2026-06-29 证据：右侧栏 `共享资源连接信息` 展示共享服务连接行、用户名、密码、连接串和状态，密码由眼睛按钮显隐；测试覆盖 `shows referenced shared resources with read-only connection details in the drawer`。
 
 验收：
 
-- [ ] 业务环境引用共享 Redis/PostgreSQL 后，组件配置解析到真实共享服务 endpoint，不出现 `service:<id>` 这类占位地址。
-- [ ] 共享资源本体名称和业务环境本地显示名可以不同。
+- [x] 业务环境引用共享 Redis/PostgreSQL 后，组件配置解析到真实共享服务 endpoint，不出现 `service:<id>` 这类占位地址。
+  - 2026-06-29 证据：组件配置模板渲染同时支持 `service` 和 `capability` 目标，并通过 `connectionTargetCredentials` / `sharedCapabilityInternalEndpoint` 解析真实连接值；平台使用关系把 `capability:<id>` 映射回被引用的 managed service instance。
+- [x] 共享资源本体名称和业务环境本地显示名可以不同。
+  - 2026-06-29 证据：画布节点显示优先读取 `componentDisplayNames`，capability 本地重命名不修改被引用的 shared `ServiceInstallation.ServiceName`，前端测试覆盖本地显示名行为。
 - [x] 全局平台服务统计能看到共享实例被哪些应用/环境/组件引用。
   - 2026-06-29 补齐：共享 capability 引用会映射到被引用的 managed service instance，组件配置中的 `capability:<id>` binding 会在平台服务使用方列表中显示组件名称，并计入实例 usageCount。
 - [x] 删除引用不会删除共享服务实例。
 
 不纳入：
 
-- [ ] 不做跨集群共享可达性。
-- [ ] 不做外部连接校验。
+- 不做跨集群共享可达性。
+- 不做外部连接校验。
 
 ### 9.5 PR 3：外部服务连接
 
@@ -1917,11 +1928,16 @@ Week 6-8: 8.13(外部连接/KubeVirt模板/公共服务)     并行 8.14(模板G
 
 前端任务：
 
-- [ ] 右键添加外部资源的二级菜单只显示类型，不展示示例域名，避免用户误解为写死地址。
-- [ ] 外部资源右侧栏保存后继续显示 endpoint、用户名、密码/token，密码用眼睛按钮显示/隐藏。
-- [ ] 展示验证状态和重新验证入口。
-- [ ] 外部资源卡片允许重命名和删除连接。
-- [ ] 外部连接进入组件绑定和平台服务统计。
+- [x] 右键添加外部资源的二级菜单只显示类型，不展示示例域名，避免用户误解为写死地址。
+  - 2026-06-29 证据：外部资源菜单使用 `externalCapabilityMenuDescription`，测试覆盖不再把 `externalPlaceholder` 当菜单描述。
+- [x] 外部资源右侧栏保存后继续显示 endpoint、用户名、密码/token，密码用眼睛按钮显示/隐藏。
+  - 2026-06-29 证据：外部资源右侧栏展示 `externalEndpoint`、`credentialSecretRef`、用户名/密码/token 表单，密码/token 通过 `capabilitySecretVisible` 和显隐按钮控制。
+- [x] 展示验证状态和重新验证入口。
+  - 2026-06-29 证据：外部 capability drawer 使用 `validationStatus` 渲染状态，并提供 `验证连接` 按钮调用 `validateEnvironmentCapability`。
+- [x] 外部资源卡片允许重命名和删除连接。
+  - 2026-06-29 证据：外部 capability 卡片与共享 capability 共用画布本地 display name；删除语义为 `断开外部连接`，并明确不会删除外部系统。
+- [x] 外部连接进入组件绑定和平台服务统计。
+  - 2026-06-29 证据：组件配置模板支持 capability target；平台服务统计单独累加 `ExternalConnections`，使用关系统计会返回 component external usage，测试覆盖 `TestBuildPlatformServiceUsageReturnsSharedAndExternalRelations`。
 
 验收：
 
@@ -1932,8 +1948,8 @@ Week 6-8: 8.13(外部连接/KubeVirt模板/公共服务)     并行 8.14(模板G
 
 不纳入：
 
-- [ ] 不做全命名空间自动扫描。
-- [ ] 不做跨集群网络。
+- 不做全命名空间自动扫描。
+- 不做跨集群网络。
 
 ### 9.6 PR 4：KubeVirt 服务模板
 
@@ -1945,8 +1961,10 @@ Week 6-8: 8.13(外部连接/KubeVirt模板/公共服务)     并行 8.14(模板G
 
 - [x] 服务产品支持 `provisionMode=kubevirt`，同一服务产品可区分 Helm 托管、共享引用、外部连接、KubeVirt 模板交付。
   - 2026-06-28 第一片补齐：模型、迁移、模板查询、安装记录、平台服务统计/实例/使用关系读模型已支持 `provisionMode=kubevirt`；尚未实现 KubeVirt VM 生命周期。
-- [ ] 平台管理员维护 KubeVirt 服务模板，例如 `postgresql-vm-template`、`redis-vm-template`、`mysql-vm-template`。
-- [ ] 模板记录基础镜像/DataVolume、CPU、内存、磁盘、cloud-init/启动脚本、服务端口、凭据生成方式、readiness、监控 agent/exporter 和备份/快照策略。
+- [x] 平台管理员维护 KubeVirt 服务模板，例如 `postgresql-vm-template`、`redis-vm-template`、`mysql-vm-template`。
+  - 2026-06-29 证据：内置模板种子包含 PostgreSQL/MySQL/Redis KubeVirt 模板，服务模板 API 对 `provisionMode=kubevirt` 的 `runtimeSpec` 做校验；后续仍需接真实 KubeVirt operator 集群联调。
+- [x] 模板记录基础镜像/DataVolume、CPU、内存、磁盘、cloud-init/启动脚本、服务端口、凭据生成方式、readiness、监控 agent/exporter 和备份/快照策略。
+  - 2026-06-29 证据：`ValidateKubeVirtRuntimeSpec` 和资源生成层支持 image、DataVolume/containerDisk、CPU、memory、diskSize、cloud-init/脚本、ports、credentials、readiness、monitoring、backupPolicy；Task 7.9 已记录对应单测。
 - [x] 创建服务实例时生成 KubeVirt `VirtualMachine`、Kubernetes `Service`、Secret、标准连接输出和监控目标的后端资源生成层。
   - 2026-06-28 补齐：资源生成层已落地并有单测；安装 API 已接入 `provisionMode=kubevirt` 并通过 fake client 验证资源创建，controller/GitOps 调谐仍是下一步。
 - [x] 服务实例仍按真实服务类型统计，例如 `serviceType=redis`、`provisionMode=kubevirt`，不要把“虚拟机”作为业务服务类型。
@@ -1954,23 +1972,25 @@ Week 6-8: 8.13(外部连接/KubeVirt模板/公共服务)     并行 8.14(模板G
 
 建议：
 
-- [ ] 第一版不提供“创建空白 VM”入口，避免变成 IaaS 虚拟机管理平台。
-- [ ] 优先做 PostgreSQL/Redis 这类模板化服务，跑通连接输出、使用关系和监控。
-- [ ] KubeVirt 逻辑第一版可以扩展现有 `ServiceInstanceController`，因为用户创建的仍然是服务实例；后续复杂度上来再拆独立 controller。
+- [x] 第一版不提供“创建空白 VM”入口，避免变成 IaaS 虚拟机管理平台。
+- [x] 优先做 PostgreSQL/Redis 这类模板化服务，跑通连接输出、使用关系和监控。
+- [x] KubeVirt 逻辑第一版可以扩展现有 `ServiceInstanceController`，因为用户创建的仍然是服务实例；后续复杂度上来再拆独立 controller。
 
 验收：
 
 - [x] KubeVirt 模板交付的 Redis/PostgreSQL 出现在对应服务产品的实例列表中。
-- [ ] 应用/环境/组件可以通过同一套服务使用关系引用 KubeVirt 模板交付的服务。
+- [x] 应用/环境/组件可以通过同一套服务使用关系引用 KubeVirt 模板交付的服务。
+  - 2026-06-29 证据：平台服务使用读模型对 KubeVirt 安装记录仍返回 `managed:<id>` 服务实例，只通过 `provisionMode=kubevirt` 区分交付方式；组件 binding 解析同一套 `service:<id>` 关系，测试覆盖 `TestBuildPlatformServiceUsageReturnsSharedAndExternalRelations` 中的 KubeVirt usage。
 - [x] 连接输出与 Helm 托管、共享、外部连接使用同一契约：地址、端口、用户名、密码/Token、连接串、状态、监控入口的生成层。
   - 2026-06-28 补齐：KubeVirt 资源生成层返回 host、port、secret key、URI 和 `namespace:<ns>` 监控目标；运行态状态和 UI 引用仍待安装分支接入后联调。
-- [ ] 服务统计主视角显示 PostgreSQL/Redis 等服务实例数量；虚拟机数量只作为高级/运维信息。
+- [x] 服务统计主视角显示 PostgreSQL/Redis 等服务实例数量；虚拟机数量只作为高级/运维信息。
+  - 2026-06-29 证据：服务统计按 `serviceType=postgresql/redis/mysql` 聚合，KubeVirt 只作为 `KubeVirtInstances` 和 `provisionMode` 展示；服务目录的 VM 卡片为展示层派生卡片，不改变业务 `serviceType`。
 
 不纳入首版：
 
-- [ ] 不做创建空白虚拟机。
-- [ ] 不做跨集群 KubeVirt 网络。
-- [ ] 不做完整备份/快照自动化，除非需求明确。
+- 不做创建空白虚拟机。
+- 不做跨集群 KubeVirt 网络。
+- 不做完整备份/快照自动化，除非需求明确。
 
 ### 9.7 多集群预留方案
 
