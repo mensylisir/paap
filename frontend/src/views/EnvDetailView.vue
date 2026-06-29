@@ -353,7 +353,7 @@
               <span>{{ activeCapabilityInstallLabel }}</span>
               <small>{{ activeCapabilityInstallHint }}</small>
             </div>
-            <div v-if="capabilityInlineInstallLoading" class="workspace-loading">模板加载中...</div>
+            <div v-if="capabilityInlineInstallLoading" class="workspace-loading">服务加载中...</div>
             <div v-else-if="capabilityInlineInstallError" class="page-error" role="alert">{{ capabilityInlineInstallError }}</div>
             <div v-else-if="activeCapabilityInstallTemplates.length" class="capability-install-grid">
               <button
@@ -374,7 +374,7 @@
                 </span>
               </button>
             </div>
-            <div v-else class="config-empty">当前没有可添加的模板。</div>
+            <div v-else class="config-empty">当前没有可添加的服务。</div>
           </div>
         </div>
         <div v-else class="capability-workspace">
@@ -2246,7 +2246,7 @@
             </button>
           </div>
           <div class="modal-content">
-            <p v-if="serviceModalLoading" class="bx--type-body-short-01 no-data">模板加载中...</p>
+            <p v-if="serviceModalLoading" class="bx--type-body-short-01 no-data">服务加载中...</p>
             <p v-else-if="serviceModalError" class="bx--type-body-short-01 no-data error-text">{{ serviceModalError }}</p>
             <p v-else-if="serviceModalNotice" class="bx--type-body-short-01 no-data">{{ serviceModalNotice }}</p>
             <div v-else class="service-picker-summary">
@@ -2269,7 +2269,7 @@
             </div>
             <div v-if="!serviceModalLoading && !serviceModalError" class="service-picker-summary">
               <span class="summary-pill">{{ serviceProvisionModeLabel }}</span>
-              <span class="summary-text">可选 {{ selectableServiceCount }} 个，已添加、已安装或正在安装的模板会显示为不可选状态。</span>
+              <span class="summary-text">可选 {{ selectableServiceCount }} 个，已添加、已安装或正在安装的服务会显示为不可选状态。</span>
             </div>
             <div class="service-select-grid">
               <div v-for="svc in visibleServiceOptions" :key="svc.type"
@@ -2586,7 +2586,7 @@ const externalCapabilityOptions = [
   { capability: 'custom', label: '自定义外部资源', serviceType: 'custom', provider: 'custom', externalPlaceholder: 'https://service.example.com' },
 ]
 const serviceProvisionModes: Array<{ key: ServiceProvisionMode; label: string; description: string }> = [
-  { key: 'managed', label: '环境内创建', description: '使用服务模板在当前环境安装一份独立实例。' },
+  { key: 'managed', label: '环境内创建', description: '使用服务产品在当前环境安装一份独立实例。' },
   { key: 'shared', label: '使用平台公共服务', description: '引用共享资源池中的实例，不修改共享服务本体。' },
   { key: 'external', label: '接入外部连接', description: '保存外部 endpoint 和凭据引用，PAAP 不拥有外部系统。' },
   { key: 'kubevirt', label: 'KubeVirt 模板交付', description: '通过虚拟机模板交付具体数据库或缓存服务。' },
@@ -3983,7 +3983,7 @@ const openToolSubmenu = async () => {
       x: componentContextMenu.value.x + 230,
       y: componentContextMenu.value.y + 40,
       mode: 'tool',
-      templates: [{ type: 'loading', label: '模板加载中...', description: '正在读取模板中心', disabled: true }],
+      templates: [{ type: 'loading', label: '服务加载中...', description: '正在读取服务目录', disabled: true }],
     }
     try {
       await loadServiceTemplates()
@@ -3993,7 +3993,7 @@ const openToolSubmenu = async () => {
         x: componentContextMenu.value.x + 230,
         y: componentContextMenu.value.y + 40,
         mode: 'tool',
-        templates: [{ type: 'error', label: '模板加载失败', description: e?.message || '请稍后重试', disabled: true }],
+        templates: [{ type: 'error', label: '服务加载失败', description: e?.message || '请稍后重试', disabled: true }],
       }
       return
     }
@@ -4014,7 +4014,7 @@ const openInfraSubmenu = async () => {
       x: componentContextMenu.value.x + 230,
       y: componentContextMenu.value.y + 80,
       mode: 'infra',
-      templates: [{ type: 'loading', label: '模板加载中...', description: '正在读取模板中心', disabled: true }],
+      templates: [{ type: 'loading', label: '服务加载中...', description: '正在读取服务目录', disabled: true }],
     }
     try {
       await loadServiceTemplates()
@@ -4024,7 +4024,7 @@ const openInfraSubmenu = async () => {
         x: componentContextMenu.value.x + 230,
         y: componentContextMenu.value.y + 80,
         mode: 'infra',
-        templates: [{ type: 'error', label: '模板加载失败', description: e?.message || '请稍后重试', disabled: true }],
+        templates: [{ type: 'error', label: '服务加载失败', description: e?.message || '请稍后重试', disabled: true }],
       }
       return
     }
@@ -5399,9 +5399,7 @@ const deliverySteps = computed(() => [
 ])
 const serviceProvisionModeOptions = computed(() => serviceProvisionModes.map((mode) => {
   const hasSupportedService = availableServices.value.some((svc:any) => serviceSupportsProvisionMode(svc, mode.key))
-  const enabled = mode.key === 'kubevirt'
-    ? false
-    : mode.key === 'managed'
+  const enabled = mode.key === 'managed'
       ? hasSupportedService
       : !isSystemSharedEnvironment.value && hasSupportedService
   const description = mode.description
@@ -5495,8 +5493,8 @@ const serviceTypesForCapability = (key = '') => ({
 const activeCapabilityInstallHint = computed(() => {
   const tab = activeCapabilityTab.value
   if (!tab) return ''
-  if (tab.category === 'infra') return '选择模板后会先创建卡片，再在右侧配置规格、连接变量和部署。'
-  return '选择模板后会直接安装工具，并打开对应工具卡片查看状态。'
+  if (tab.category === 'infra') return '选择服务后会先创建卡片，再在右侧配置规格、连接变量和部署。'
+  return '选择服务后会直接安装工具，并打开对应工具卡片查看状态。'
 })
 
 const activeCapabilityInstallTemplates = computed(() => {
@@ -5638,7 +5636,7 @@ const prepareServicePicker = async (mode:'tool'|'infra', preferredType = '') => 
     serviceForm.value.serviceType = preferredServiceTypeForProvisionMode(preferredType)
     serviceModalNotice.value = pickerNotice(mode, availableServices.value.length, serviceForm.value.serviceType)
   } catch (e:any) {
-    serviceModalError.value = '模板加载失败：' + (e?.message || '未知错误')
+    serviceModalError.value = '服务加载失败：' + (e?.message || '未知错误')
   } finally {
     serviceModalLoading.value = false
   }

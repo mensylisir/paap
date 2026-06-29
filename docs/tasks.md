@@ -1459,6 +1459,7 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 - [ ] 关联：Task 7.21（配置模板覆盖扩展）和 7.15（配置模板导入 UI）是此改名的实质内容
 - [x] 工作量：S（30 分钟）
 - [x] 2026-06-28 验证：浏览器 CDP 登录后访问 `/templates`，页面显示“配置模板 / 导入配置模板 / 服务与环境模板统一在服务目录查看”，未出现“工具模板 / 中间件模板 / 新建环境模板 / 上传模板”
+- [x] 2026-06-29 补齐：配置模板页说明调整为“服务产品与环境服务统一在服务目录查看”，避免继续把 Helm/环境服务叫成配置模板。
 
 ### Task 8.3: 服务目录扩展（含环境服务）（M）
 > 当前目录只显示 ServiceCatalog 中的工具/中间件。领导要求目录也是"服务目录"，增加环境级别的服务实例（environment capability）。
@@ -1477,6 +1478,7 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 - [x] 服务产品详情页增加"怎么用"区：环境内创建、引用共享资源、接入外部资源、使用 KubeVirt 服务模板四种路径，按服务支持能力显示
   - 2026-06-28 补齐：服务目录卡片可点击选中，同页右侧服务产品详情显示“怎么用”、支持能力、实例与使用统计和版本；四种使用路径按 `managed/shared/external/kubevirt` feature 矩阵显示“可用/暂不可用”，PostgreSQL 等数据库显示 KubeVirt 模板交付可用。
   - 验证：`npm --prefix frontend run test -- src/views/viewMarkup.test.ts src/utils/catalogGroups.test.ts --run`、`cd frontend && npm exec vue-tsc -- -b --noEmit`、`npm --prefix frontend run build` 通过；浏览器打开 `http://localhost:5173/catalog`，登录 `admin/Def@u1tpwd`，确认服务目录右侧详情栏存在，点击 PostgreSQL 后 `KubeVirt 模板交付` 为“可用”。
+- [x] 2026-06-29 补齐：Catalog 环境服务兜底名称、环境创建弹窗、环境画布服务选择/右键加载状态统一改为服务产品口径，不再在服务目录和服务安装入口显示“工具模板 / 中间件模板 / 环境模板”。
 - [ ] 对应文件：`frontend/src/views/CatalogView.vue`、`frontend/src/utils/catalogGroups.ts`、`internal/handler/`
 - [ ] 工作量：M（3-4 天）
 - [x] 2026-06-28 验证：浏览器 CDP 登录后访问 `/catalog`，页面显示“服务目录”以及 CI/CD/监控/日志/数据库/中间件服务分类；`npm --prefix frontend run test -- src/utils/catalogGroups.test.ts src/views/viewMarkup.test.ts --run` 通过
@@ -1656,6 +1658,7 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 - [x] 用户选择服务时先选使用方式，再进入对应创建/接入流程，避免把三类能力混在一个表单里
   - 2026-06-28 补齐：环境服务弹窗新增“环境内创建 / 使用平台公共服务 / 接入外部连接 / KubeVirt 模板交付”使用方式选择；环境内创建继续走服务模板安装，公共服务进入共享资源引用，外部连接创建 external capability，KubeVirt 模板交付调用 `api.installService(..., { provisionMode: 'kubevirt' })`。
   - 验证：`npm --prefix frontend run test -- src/views/viewMarkup.test.ts -t "service usage mode"`、`npm --prefix frontend run test -- src/views/EnvDetailView.test.ts src/views/viewMarkup.test.ts -t "service|feature|install|capability"`、`cd frontend && npm exec vue-tsc -- -b --noEmit` 通过。
+  - 2026-06-29 修复：环境服务弹窗的 `KubeVirt 模板交付` 不再被前端硬编码禁用，改为按服务产品 feature 矩阵启用；相关静态测试禁止再次出现 `mode.key === 'kubevirt' ? false`。
 - [x] 服务目录从“模板管理”中拆出服务类目，按 `CI服务 / CD服务 / 监控服务 / 日志服务 / 数据库服务 / 中间件服务 / 环境服务 / 虚拟机服务` 展示；配置模板页只保留组件运行配置模板。
   - 2026-06-28 验证：`npm --prefix frontend run test -- src/utils/catalogGroups.test.ts src/views/viewMarkup.test.ts src/views/componentConfigTemplateRuntime.test.ts src/views/configTemplateSyntax.test.ts --run`、`npm --prefix frontend run build` 通过。
 

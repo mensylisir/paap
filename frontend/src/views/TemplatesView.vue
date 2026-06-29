@@ -4,7 +4,7 @@
     <header class="page-header">
       <div class="header-text">
         <h1 class="page-title">配置模板</h1>
-        <p class="page-desc">管理组件运行配置模板，服务与环境模板统一在服务目录查看。</p>
+        <p class="page-desc">管理组件运行配置模板，服务产品与环境服务统一在服务目录查看。</p>
       </div>
       <div class="header-actions">
         <button v-has-perm="'system.template.manage'" class="rail-btn rail-btn--primary" @click="openConfigTemplateImportModal">

@@ -142,8 +142,8 @@ describe('EnvDetailView service picker', () => {
   })
 
   it('shows a notice when no selectable services remain', () => {
-    expect(pickerNotice('tool', 0, '')).toContain('没有可用的工具模板')
-    expect(pickerNotice('infra', 0, '')).toContain('没有可用的中间件模板')
-    expect(pickerNotice('tool', 2, '')).toContain('工具模板')
+    expect(pickerNotice('tool', 0, '')).toContain('没有可用的工具服务')
+    expect(pickerNotice('infra', 0, '')).toContain('没有可用的中间件服务')
+    expect(pickerNotice('tool', 2, '')).toContain('工具服务')
   })
 })

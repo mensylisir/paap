@@ -324,12 +324,12 @@ onMounted(async () => {
     const envTemplates = Array.isArray(envTemplateResult?.data) ? envTemplateResult.data : []
     const environmentItems = envTemplates.map((tmpl: any) => ({
       type: `environment-template-${tmpl.id || tmpl.name}`,
-      name: tmpl.name || '环境模板',
-      description: tmpl.description || '环境服务模板',
+      name: tmpl.name || '环境服务',
+      description: tmpl.description || '环境服务产品',
       category: 'environment',
       catalogSource: 'environment-template',
       features: [
-        { key: 'managed', label: '从模板创建', enabled: true },
+        { key: 'managed', label: '从环境服务创建', enabled: true },
       ],
       managedInstances: 0,
       kubevirtInstances: 0,

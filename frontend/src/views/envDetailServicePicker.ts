@@ -98,7 +98,7 @@ export function createPickerSessionState(templates: PickerTemplate[], services: 
     availableServices,
     selectedType,
     loading: templates.length === 0,
-    notice: templates.length === 0 ? '正在加载可添加模板...' : pickerNotice(mode, availableServices.length, selectedType),
+    notice: templates.length === 0 ? '正在加载可添加服务...' : pickerNotice(mode, availableServices.length, selectedType),
     error: '',
   }
 }
@@ -106,12 +106,12 @@ export function createPickerSessionState(templates: PickerTemplate[], services: 
 export function pickerNotice(mode: PickerMode, templateCount: number, selectedType: string) {
   if (templateCount === 0) {
     return mode === 'infra'
-      ? '当前没有可用的中间件模板。'
-      : '当前没有可用的工具模板。'
+      ? '当前没有可用的中间件服务。'
+      : '当前没有可用的工具服务。'
   }
   return !selectedType
       ? (mode === 'infra'
-        ? '当前环境中的中间件模板均已添加、安装或正在安装。'
-        : '当前环境中的工具模板均已添加、安装或正在安装。')
+        ? '当前环境中的中间件服务均已添加、安装或正在安装。'
+        : '当前环境中的工具服务均已添加、安装或正在安装。')
       : ''
 }

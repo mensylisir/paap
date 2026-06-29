@@ -317,7 +317,7 @@ describe('Vue view markup', () => {
     expect(catalogView.default).toContain('environment-template-${tmpl.id || tmpl.name}')
     expect(catalogView.default).toContain("category: 'environment'")
     expect(catalogView.default).toContain("catalogSource: 'environment-template'")
-    expect(catalogView.default).toContain("label: '从模板创建'")
+    expect(catalogView.default).toContain("label: '从环境服务创建'")
     expect(catalogGroups.default).toContain("label: '环境服务'")
   })
 
@@ -454,7 +454,7 @@ describe('Vue view markup', () => {
     }
     expect(createEnvironmentModal.default).toContain('创建空环境')
     expect(createEnvironmentModal.default).toContain('创建基础环境')
-    expect(createEnvironmentModal.default).toContain('从模板创建')
+    expect(createEnvironmentModal.default).toContain('从环境服务创建')
     expect(createEnvironmentModal.default).toContain('sharedResources')
     expect(createEnvironmentModal.default).toContain('form.sharedResourceIds')
     expect(createEnvironmentModal.default).not.toContain('能力来源')
@@ -474,7 +474,7 @@ describe('Vue view markup', () => {
 
     expect(createEnvironmentModal.default).toContain('创建空环境')
     expect(createEnvironmentModal.default).toContain('创建基础环境')
-    expect(createEnvironmentModal.default).toContain('从模板创建')
+    expect(createEnvironmentModal.default).toContain('从环境服务创建')
     expect(createEnvironmentModal.default).toContain('附加命名空间')
     expect(createEnvironmentModal.default).toContain('网络地址池')
     expect(createEnvironmentModal.default).not.toContain('能力来源')
@@ -1673,6 +1673,10 @@ describe('Vue view markup', () => {
     expect(envDetail.default).not.toContain('模板维护')
     expect(envDetail.default).not.toContain('保存当前为模板')
     expect(envDetail.default).not.toContain('应用配置模板')
+    expect(envDetail.default).not.toContain(`mode.key === 'kubevirt'
+    ? false`)
+    expect(envDetail.default).toContain('服务加载中')
+    expect(envDetail.default).toContain('正在读取服务目录')
     expect(envDetail.default).not.toContain('高级选项')
     expect(envDetail.default).toContain('list="component-config-key-suggestions"')
     expect(envDetail.default).toContain('RABBITMQ_URL')

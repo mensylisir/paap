@@ -87,7 +87,7 @@
                   <span class="deploy-path-icon kubevirt-icon">🖥️</span>
                   <strong>KubeVirt 模板交付</strong>
                 </div>
-                <p>通过平台维护的 KubeVirt 服务模板交付数据库、缓存等服务实例，兼顾性能与平台管理能力。</p>
+                <p>通过平台维护的 KubeVirt 服务产品规格交付数据库、缓存等服务实例，兼顾性能与平台管理能力。</p>
               </div>
             </div>
 

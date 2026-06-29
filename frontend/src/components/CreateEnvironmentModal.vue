@@ -59,12 +59,12 @@
               </label>
               <label class="radio-item" :class="{ active: form.mode === 'template' }">
                 <input type="radio" value="template" :checked="form.mode === 'template'" @change="updateField('mode', 'template')" />
-                <span>从模板创建</span>
+                <span>从环境服务创建</span>
               </label>
             </div>
           </div>
           <div v-if="form.mode === 'template'" class="form-item">
-            <label class="form-label" :for="`${dialogIdPrefix}-environment-template`">选择模板</label>
+            <label class="form-label" :for="`${dialogIdPrefix}-environment-template`">选择环境服务</label>
             <select
               :id="`${dialogIdPrefix}-environment-template`"
               :value="form.templateId"
