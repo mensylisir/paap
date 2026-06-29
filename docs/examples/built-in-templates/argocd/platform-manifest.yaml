@@ -43,6 +43,34 @@ catalog:
       - 如果显示仓库认证失败，检查 Gitea 私钥或 token 是否已由平台配置到 ArgoCD。
       - 如果同步成功但 Pod 拉镜像失败，检查部署文件中的镜像地址是否是当前环境可拉取的外部地址。
       - 如果资源未出现在画布，先查看 ArgoCD Application 的 health/sync 状态，再检查平台同步回调。
+observability:
+  metrics:
+    port: 8083
+    path: /metrics
+  dashboard_uid: paap-argocd-service
+  dashboard_title: Argo CD GitOps 专属大盘
+  log_query_template: '{namespace="$namespace"} |~ "(?i)($service|argocd|application|sync|health|repo|manifest|error|exception|timeout|permission|denied)"'
+  metric_cards:
+    - key: app_health_degraded
+      title: Degraded 应用
+      unit: apps
+      description: 当前处于 Degraded 状态的 Argo CD Application 数量
+      promql: 'sum(argocd_app_info{namespace="$namespace",health_status="Degraded"})'
+    - key: app_out_of_sync
+      title: OutOfSync 应用
+      unit: apps
+      description: 当前 Git 期望状态与集群实际状态不一致的 Application 数量
+      promql: 'sum(argocd_app_info{namespace="$namespace",sync_status="OutOfSync"})'
+    - key: sync_failures
+      title: 同步失败
+      unit: ops/s
+      description: Application 同步失败速率
+      promql: 'sum(rate(argocd_app_sync_total{namespace="$namespace",phase!="Succeeded"}[5m]))'
+    - key: repo_request_latency
+      title: 仓库请求延迟 P95
+      unit: s
+      description: repo-server 拉取仓库和生成 manifest 的 P95 延迟
+      promql: 'histogram_quantile(0.95, sum(rate(argocd_git_request_duration_seconds_bucket{namespace="$namespace"}[5m])) by (le))'
 permissions:
   toolNamespace:
     rules:
@@ -78,10 +106,6 @@ permissions:
       - apiGroups: ["*"]
         resources: ["*"]
         verbs: ["*"]
-observability:
-  metrics:
-    port: 8083
-    path: /metrics
 variable_mapping:
   - platform_var: "primary_namespace"
     helm_var: "global.envNamespace"

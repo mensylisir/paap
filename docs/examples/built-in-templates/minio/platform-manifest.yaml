@@ -44,6 +44,31 @@ catalog:
       在组件部署页选择 MinIO 服务引用后，配置模板会注入 endpoint、bucket 和凭据。若应用运行在集群内，优先使用内部 Service 地址；若用户或外部系统访问，则使用外部路由地址。
 
       上传失败时，检查 bucket 是否存在、凭据权限是否正确、endpoint 是否和访问场景匹配。
+observability:
+  dashboard_uid: paap-minio-service
+  dashboard_title: MinIO 对象存储专属大盘
+  log_query_template: '{namespace="$namespace"} |~ "(?i)($service|minio|s3|bucket|disk|heal|access denied|error|exception|timeout)"'
+  metric_cards:
+    - key: bucket_usage
+      title: Bucket 使用量
+      unit: bytes
+      description: 对象存储已使用容量
+      promql: 'sum(minio_bucket_usage_total_bytes{namespace="$namespace"})'
+    - key: s3_errors
+      title: S3 错误请求
+      unit: req/s
+      description: S3 API 4xx/5xx 错误请求速率
+      promql: 'sum(rate(minio_s3_requests_errors_total{namespace="$namespace"}[5m]))'
+    - key: s3_requests
+      title: S3 请求量
+      unit: req/s
+      description: S3 API 总请求速率
+      promql: 'sum(rate(minio_s3_requests_total{namespace="$namespace"}[5m]))'
+    - key: offline_disks
+      title: 离线磁盘
+      unit: disks
+      description: MinIO 集群不可用磁盘数量
+      promql: 'sum(minio_cluster_drive_offline_total{namespace="$namespace"})'
 permissions:
   toolNamespace:
     rules:

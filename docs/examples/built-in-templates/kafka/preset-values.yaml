@@ -12,3 +12,10 @@ broker:
 zookeeper:
   persistence:
     enabled: false
+metrics:
+  kafka:
+    enabled: true
+  jmx:
+    enabled: true
+  serviceMonitor:
+    enabled: true

@@ -1625,9 +1625,11 @@ func GetServiceRuntimeMetrics(c *gin.Context) {
 		c.JSON(http.StatusFailedDependency, gin.H{"error": err.Error()})
 		return
 	}
+	monitorNamespace := service.MonitorNamespaceForEnvironment(database.DB, env.ID)
 	if !metrics.Available {
-		metrics = k8s.EnrichRuntimeMetricsFromPrometheus(ctx, metrics, service.MonitorNamespaceForEnvironment(database.DB, env.ID))
+		metrics = k8s.EnrichRuntimeMetricsFromPrometheus(ctx, metrics, monitorNamespace)
 	}
+	metrics = k8s.AttachRuntimeMetricSeriesFromPrometheus(ctx, metrics, monitorNamespace)
 	c.JSON(http.StatusOK, gin.H{"data": metrics})
 }
 
@@ -1682,9 +1684,11 @@ func GetComponentRuntimeMetrics(c *gin.Context) {
 		c.JSON(http.StatusFailedDependency, gin.H{"error": err.Error()})
 		return
 	}
+	monitorNamespace := service.MonitorNamespaceForEnvironment(database.DB, env.ID)
 	if !metrics.Available {
-		metrics = k8s.EnrichRuntimeMetricsFromPrometheus(ctx, metrics, service.MonitorNamespaceForEnvironment(database.DB, env.ID))
+		metrics = k8s.EnrichRuntimeMetricsFromPrometheus(ctx, metrics, monitorNamespace)
 	}
+	metrics = k8s.AttachRuntimeMetricSeriesFromPrometheus(ctx, metrics, monitorNamespace)
 	c.JSON(http.StatusOK, gin.H{"data": metrics})
 }
 
@@ -4469,32 +4473,44 @@ func dashboardUIDForSubject(kind, serviceType string) string {
 
 func specificDashboardUID(serviceType string) string {
 	switch serviceType {
-	case "git":
-		return "paap-gitea"
-	case "deploy":
-		return "paap-argocd"
-	case "ci":
-		return "paap-jenkins"
-	case "registry", "harbor":
-		return "paap-registry"
-	case "log":
-		return "paap-loki"
-	case "monitor":
-		return "paap-grafana"
+	case "git", "gitea":
+		return "paap-gitea-service"
+	case "deploy", "argocd":
+		return "paap-argocd-service"
+	case "ci", "jenkins":
+		return "paap-jenkins-service"
+	case "registry":
+		return "paap-registry-service"
+	case "harbor":
+		return "paap-harbor-service"
+	case "log", "loki":
+		return "paap-loki-service"
+	case "monitor", "prometheus", "grafana", "prometheus-grafana":
+		return "paap-monitor-service"
 	case "mysql":
-		return "paap-mysql"
+		return "paap-mysql-service"
+	case "mysql-galera":
+		return "paap-mysql-galera-service"
 	case "postgresql":
-		return "paap-postgresql"
+		return "paap-postgresql-service"
+	case "postgresql-ha":
+		return "paap-postgresql-ha-service"
 	case "mongodb":
-		return "paap-mongodb"
+		return "paap-mongodb-service"
 	case "redis":
-		return "paap-redis"
+		return "paap-redis-service"
+	case "redis-cluster":
+		return "paap-redis-cluster-service"
 	case "rabbitmq":
-		return "paap-rabbitmq"
+		return "paap-rabbitmq-service"
 	case "kafka":
-		return "paap-kafka"
+		return "paap-kafka-service"
 	case "minio":
-		return "paap-minio"
+		return "paap-minio-service"
+	case "eureka":
+		return "paap-eureka-service"
+	case "nacos":
+		return "paap-nacos-service"
 	default:
 		return ""
 	}
@@ -4504,9 +4520,9 @@ func dashboardKindFromUID(uid string) string {
 	switch uid {
 	case "paap-pod-workload":
 		return "component"
-	case "paap-middleware-workload", "paap-mysql", "paap-postgresql", "paap-mongodb", "paap-redis", "paap-rabbitmq", "paap-kafka", "paap-minio":
+	case "paap-middleware-workload", "paap-mysql-service", "paap-mysql-galera-service", "paap-postgresql-service", "paap-postgresql-ha-service", "paap-mongodb-service", "paap-redis-service", "paap-redis-cluster-service", "paap-rabbitmq-service", "paap-kafka-service", "paap-minio-service", "paap-eureka-service", "paap-nacos-service":
 		return "middleware"
-	case "paap-tool-workload", "paap-gitea", "paap-argocd", "paap-jenkins", "paap-registry", "paap-loki", "paap-grafana":
+	case "paap-tool-workload", "paap-gitea-service", "paap-argocd-service", "paap-jenkins-service", "paap-registry-service", "paap-harbor-service", "paap-loki-service", "paap-monitor-service":
 		return "tool"
 	default:
 		return "environment"
@@ -6064,19 +6080,25 @@ func builtinGrafanaDashboardSpecs() []grafanaDashboardSpec {
 		{UID: "paap-pod-workload", Title: "PAAP Pod Workload", Description: "组件 Pod CPU、内存、重启和网络。", Tags: []string{"paap", "component"}, Matcher: "$workload.*"},
 		{UID: "paap-tool-workload", Title: "PAAP Tool Workload", Description: "平台工具通用 Kubernetes 工作负载指标。", Tags: []string{"paap", "tool"}, Matcher: ".*$workload.*"},
 		{UID: "paap-middleware-workload", Title: "PAAP Middleware Workload", Description: "数据库和中间件通用 Kubernetes 工作负载指标。", Tags: []string{"paap", "middleware"}, Matcher: ".*$workload.*"},
-		{UID: "paap-gitea", Title: "PAAP Gitea", Description: "Gitea 服务 Pod、CPU、内存、重启和网络。", Tags: []string{"paap", "tool", "gitea"}, Matcher: ".*gitea.*|.*$workload.*", ServiceType: "gitea"},
-		{UID: "paap-argocd", Title: "PAAP ArgoCD", Description: "ArgoCD server/repo/application controller 工作负载指标。", Tags: []string{"paap", "tool", "argocd"}, Matcher: ".*argocd.*|.*$workload.*", ServiceType: "argocd"},
-		{UID: "paap-jenkins", Title: "PAAP Jenkins", Description: "Jenkins controller 和 agent 工作负载指标。", Tags: []string{"paap", "tool", "jenkins"}, Matcher: ".*jenkins.*|.*$workload.*", ServiceType: "jenkins"},
-		{UID: "paap-registry", Title: "PAAP Registry", Description: "Registry/Harbor 工作负载指标。", Tags: []string{"paap", "tool", "registry"}, Matcher: ".*registry.*|.*harbor.*|.*$workload.*", ServiceType: "registry"},
-		{UID: "paap-loki", Title: "PAAP Loki", Description: "Loki/Promtail 日志系统工作负载指标。", Tags: []string{"paap", "tool", "loki"}, Matcher: ".*loki.*|.*promtail.*|.*$workload.*", ServiceType: "loki"},
-		{UID: "paap-grafana", Title: "PAAP Grafana Prometheus", Description: "Grafana、Prometheus 和 Alertmanager 监控系统工作负载指标。", Tags: []string{"paap", "tool", "grafana", "prometheus"}, Matcher: ".*grafana.*|.*prometheus.*|.*alertmanager.*|.*$workload.*", ServiceType: "grafana"},
-		{UID: "paap-mysql", Title: "PAAP MySQL", Description: "MySQL 工作负载指标。", Tags: []string{"paap", "middleware", "mysql"}, Matcher: ".*mysql.*|.*$workload.*", ServiceType: "mysql"},
-		{UID: "paap-postgresql", Title: "PAAP PostgreSQL", Description: "PostgreSQL 工作负载指标。", Tags: []string{"paap", "middleware", "postgresql"}, Matcher: ".*postgres.*|.*$workload.*", ServiceType: "postgresql"},
-		{UID: "paap-mongodb", Title: "PAAP MongoDB", Description: "MongoDB 工作负载指标。", Tags: []string{"paap", "middleware", "mongodb"}, Matcher: ".*mongo.*|.*$workload.*", ServiceType: "mongodb"},
-		{UID: "paap-redis", Title: "PAAP Redis", Description: "Redis 工作负载指标。", Tags: []string{"paap", "middleware", "redis"}, Matcher: ".*redis.*|.*$workload.*", ServiceType: "redis"},
-		{UID: "paap-rabbitmq", Title: "PAAP RabbitMQ", Description: "RabbitMQ 工作负载指标。", Tags: []string{"paap", "middleware", "rabbitmq"}, Matcher: ".*rabbitmq.*|.*$workload.*", ServiceType: "rabbitmq"},
-		{UID: "paap-kafka", Title: "PAAP Kafka", Description: "Kafka 工作负载指标。", Tags: []string{"paap", "middleware", "kafka"}, Matcher: ".*kafka.*|.*$workload.*", ServiceType: "kafka"},
-		{UID: "paap-minio", Title: "PAAP MinIO", Description: "MinIO 工作负载指标。", Tags: []string{"paap", "middleware", "minio"}, Matcher: ".*minio.*|.*$workload.*", ServiceType: "minio"},
+		{UID: "paap-gitea-service", Title: "PAAP Gitea Service", Description: "Gitea 仓库、HTTP、Git 操作和工作负载指标。", Tags: []string{"paap", "tool", "gitea"}, Matcher: ".*gitea.*|.*$workload.*", ServiceType: "gitea"},
+		{UID: "paap-argocd-service", Title: "PAAP ArgoCD Service", Description: "ArgoCD Application、同步、健康状态和控制器指标。", Tags: []string{"paap", "tool", "argocd"}, Matcher: ".*argocd.*|.*$workload.*", ServiceType: "argocd"},
+		{UID: "paap-jenkins-service", Title: "PAAP Jenkins Service", Description: "Jenkins 构建、队列、失败率和 controller 工作负载指标。", Tags: []string{"paap", "tool", "jenkins"}, Matcher: ".*jenkins.*|.*$workload.*", ServiceType: "jenkins"},
+		{UID: "paap-registry-service", Title: "PAAP Registry Service", Description: "Docker Registry 请求、延迟、存储和工作负载指标。", Tags: []string{"paap", "tool", "registry"}, Matcher: ".*registry.*|.*$workload.*", ServiceType: "registry"},
+		{UID: "paap-harbor-service", Title: "PAAP Harbor Service", Description: "Harbor 项目、镜像推拉、后台任务和组件工作负载指标。", Tags: []string{"paap", "tool", "harbor"}, Matcher: ".*harbor.*|.*registry.*|.*jobservice.*|.*$workload.*", ServiceType: "harbor"},
+		{UID: "paap-loki-service", Title: "PAAP Loki Service", Description: "Loki 写入、查询、延迟和 Promtail 指标。", Tags: []string{"paap", "tool", "loki"}, Matcher: ".*loki.*|.*promtail.*|.*$workload.*", ServiceType: "loki"},
+		{UID: "paap-monitor-service", Title: "PAAP Monitor Service", Description: "Grafana、Prometheus、Alertmanager 和 scrape 健康指标。", Tags: []string{"paap", "tool", "monitor", "prometheus", "grafana"}, Matcher: ".*grafana.*|.*prometheus.*|.*alertmanager.*|.*$workload.*", ServiceType: "monitor"},
+		{UID: "paap-mysql-service", Title: "PAAP MySQL Service", Description: "MySQL 连接、查询、慢查询和 InnoDB 指标。", Tags: []string{"paap", "middleware", "mysql"}, Matcher: ".*mysql.*|.*$workload.*", ServiceType: "mysql"},
+		{UID: "paap-mysql-galera-service", Title: "PAAP MySQL Galera Service", Description: "Galera 集群复制、流控、队列和 MySQL 指标。", Tags: []string{"paap", "middleware", "mysql", "galera"}, Matcher: ".*mysql.*|.*galera.*|.*$workload.*", ServiceType: "mysql-galera"},
+		{UID: "paap-postgresql-service", Title: "PAAP PostgreSQL Service", Description: "PostgreSQL 连接、事务、缓存命中、锁和复制指标。", Tags: []string{"paap", "middleware", "postgresql"}, Matcher: ".*postgres.*|.*$workload.*", ServiceType: "postgresql"},
+		{UID: "paap-postgresql-ha-service", Title: "PAAP PostgreSQL HA Service", Description: "PostgreSQL HA、Pgpool、复制延迟和连接池指标。", Tags: []string{"paap", "middleware", "postgresql", "ha"}, Matcher: ".*postgres.*|.*pgpool.*|.*$workload.*", ServiceType: "postgresql-ha"},
+		{UID: "paap-mongodb-service", Title: "PAAP MongoDB Service", Description: "MongoDB 连接、操作、复制、锁和 WiredTiger 指标。", Tags: []string{"paap", "middleware", "mongodb"}, Matcher: ".*mongo.*|.*$workload.*", ServiceType: "mongodb"},
+		{UID: "paap-redis-service", Title: "PAAP Redis Service", Description: "Redis 客户端、命令、内存、命中率和淘汰指标。", Tags: []string{"paap", "middleware", "redis"}, Matcher: ".*redis.*|.*$workload.*", ServiceType: "redis"},
+		{UID: "paap-redis-cluster-service", Title: "PAAP Redis Cluster Service", Description: "Redis Cluster 节点、槽位、内存、命中率和复制指标。", Tags: []string{"paap", "middleware", "redis", "cluster"}, Matcher: ".*redis.*|.*$workload.*", ServiceType: "redis-cluster"},
+		{UID: "paap-rabbitmq-service", Title: "PAAP RabbitMQ Service", Description: "RabbitMQ 队列积压、消费者、发布投递速率和连接指标。", Tags: []string{"paap", "middleware", "rabbitmq"}, Matcher: ".*rabbitmq.*|.*$workload.*", ServiceType: "rabbitmq"},
+		{UID: "paap-kafka-service", Title: "PAAP Kafka Service", Description: "Kafka 吞吐、消费积压、分区健康和 broker 指标。", Tags: []string{"paap", "middleware", "kafka"}, Matcher: ".*kafka.*|.*$workload.*", ServiceType: "kafka"},
+		{UID: "paap-minio-service", Title: "PAAP MinIO Service", Description: "MinIO 容量、对象、S3 请求、错误和流量指标。", Tags: []string{"paap", "middleware", "minio"}, Matcher: ".*minio.*|.*$workload.*", ServiceType: "minio"},
+		{UID: "paap-eureka-service", Title: "PAAP Eureka Service", Description: "Eureka 注册实例、续约、剔除和 HTTP 错误指标。", Tags: []string{"paap", "middleware", "eureka"}, Matcher: ".*eureka.*|.*$workload.*", ServiceType: "eureka"},
+		{UID: "paap-nacos-service", Title: "PAAP Nacos Service", Description: "Nacos 服务发现、配置、实例数量和 API 错误指标。", Tags: []string{"paap", "middleware", "nacos"}, Matcher: ".*nacos.*|.*$workload.*", ServiceType: "nacos"},
 	}
 }
 
@@ -6125,10 +6147,10 @@ func workloadGrafanaPanels(spec grafanaDashboardSpec) []map[string]interface{} {
 		grafanaPanel(14, "Network Receive", "timeseries", 8, 18, 8, 7, fmt.Sprintf(`sum(rate(container_network_receive_bytes_total{namespace="$namespace", pod=~"%s"}[5m])) by (pod)`, matcher)),
 		grafanaPanel(15, "Network Transmit", "timeseries", 16, 18, 8, 7, fmt.Sprintf(`sum(rate(container_network_transmit_bytes_total{namespace="$namespace", pod=~"%s"}[5m])) by (pod)`, matcher)),
 		grafanaPanel(16, "Filesystem Usage", "timeseries", 0, 25, 8, 7, fmt.Sprintf(`sum(container_fs_usage_bytes{namespace="$namespace", pod=~"%s", container!="POD", container!=""}) by (pod)`, matcher)),
-		grafanaPanel(17, "PVCs", "stat", 8, 25, 8, 7, `count(kube_persistentvolumeclaim_info{namespace="$namespace", persistentvolumeclaim=~".*$workload.*"}) or vector(0)`),
+		grafanaPanel(17, "PVCs", "stat", 8, 25, 8, 7, `count(kube_persistentvolumeclaim_info{namespace="$namespace", persistentvolumeclaim=~".*$workload.*"})`),
 		grafanaPanel(18, "Container Count", "stat", 16, 25, 8, 7, fmt.Sprintf(`count(kube_pod_container_info{namespace="$namespace", pod=~"%s"})`, matcher)),
-		grafanaPanel(19, "Waiting Containers", "stat", 0, 32, 4, 4, fmt.Sprintf(`sum(kube_pod_container_status_waiting{namespace="$namespace", pod=~"%s"}) or vector(0)`, matcher)),
-		grafanaPanel(20, "Terminated Containers", "stat", 4, 32, 4, 4, fmt.Sprintf(`sum(kube_pod_container_status_terminated{namespace="$namespace", pod=~"%s"}) or vector(0)`, matcher)),
+		grafanaPanel(19, "Waiting Containers", "stat", 0, 32, 4, 4, fmt.Sprintf(`sum(kube_pod_container_status_waiting{namespace="$namespace", pod=~"%s"})`, matcher)),
+		grafanaPanel(20, "Terminated Containers", "stat", 4, 32, 4, 4, fmt.Sprintf(`sum(kube_pod_container_status_terminated{namespace="$namespace", pod=~"%s"})`, matcher)),
 		grafanaPanel(21, "CPU Usage / Requests", "timeseries", 8, 32, 8, 7, ratioPromQL(
 			fmt.Sprintf(`sum(rate(container_cpu_usage_seconds_total{namespace="$namespace", pod=~"%s", container!="POD", container!=""}[5m])) by (pod)`, matcher),
 			fmt.Sprintf(`sum(kube_pod_container_resource_requests{namespace="$namespace", pod=~"%s", resource="cpu"}) by (pod)`, matcher),
@@ -6170,26 +6192,38 @@ func serviceSpecificGrafanaPanels(serviceType, matcher string, nextID *int, next
 		}
 	}
 	switch serviceType {
-	case "mysql":
-		return append(
+	case "mysql", "mysql-galera":
+		panels := append(
 			row("Database Connections", `sum(mysql_global_status_threads_connected{namespace="$namespace"})`, "Queries", `sum(rate(mysql_global_status_questions{namespace="$namespace"}[5m]))`, "Slow Queries", `sum(rate(mysql_global_status_slow_queries{namespace="$namespace"}[5m]))`),
 			row("Replication Lag", `max(mysql_slave_status_seconds_behind_master{namespace="$namespace"})`, "InnoDB Buffer Pool Hit", fmt.Sprintf(`100 * (1 - %s)`, ratioPromQL(`sum(rate(mysql_global_status_innodb_buffer_pool_reads{namespace="$namespace"}[5m]))`, `sum(rate(mysql_global_status_innodb_buffer_pool_read_requests{namespace="$namespace"}[5m]))`, 1)), "Table Locks Waited", `sum(rate(mysql_global_status_table_locks_waited{namespace="$namespace"}[5m]))`)...,
 		)
-	case "postgresql":
-		return append(
+		if serviceType == "mysql-galera" {
+			panels = append(panels, row("Galera Cluster Size", `sum(mysql_global_status_wsrep_cluster_size{namespace="$namespace"})`, "Galera Flow Control", `sum(rate(mysql_global_status_wsrep_flow_control_paused{namespace="$namespace"}[5m]))`, "Galera Local Queue", `sum(mysql_global_status_wsrep_local_recv_queue{namespace="$namespace"} + mysql_global_status_wsrep_local_send_queue{namespace="$namespace"})`)...)
+		}
+		return panels
+	case "postgresql", "postgresql-ha":
+		panels := append(
 			row("Database Connections", `sum(pg_stat_activity_count{namespace="$namespace"})`, "Transactions", `sum(rate(pg_stat_database_xact_commit{namespace="$namespace"}[5m]) + rate(pg_stat_database_xact_rollback{namespace="$namespace"}[5m]))`, "Cache Hit Ratio", ratioPromQL(`sum(pg_stat_database_blks_hit{namespace="$namespace"})`, `(sum(pg_stat_database_blks_hit{namespace="$namespace"}) + sum(pg_stat_database_blks_read{namespace="$namespace"}))`, 100)),
 			row("Deadlocks", `sum(increase(pg_stat_database_deadlocks{namespace="$namespace"}[1h]))`, "Replication Lag", `max(pg_replication_lag{namespace="$namespace"})`, "Locks", `sum(pg_locks_count{namespace="$namespace"})`)...,
 		)
+		if serviceType == "postgresql-ha" {
+			panels = append(panels, row("Pgpool Active Connections", `sum(pgpool2_pool_backend_stats{namespace="$namespace"})`, "Pgpool Nodes Up", `sum(pgpool2_pool_nodes_status{namespace="$namespace"})`, "Replication Delay", `max(pgpool2_pool_nodes_replication_delay{namespace="$namespace"})`)...)
+		}
+		return panels
 	case "mongodb":
 		return append(
 			row("Connections", `sum(mongodb_connections{namespace="$namespace", state="current"})`, "Operations", `sum(rate(mongodb_op_counters_total{namespace="$namespace"}[5m])) by (type)`, "Replication Lag", `max(mongodb_mongod_replset_member_replication_lag{namespace="$namespace"})`),
 			row("WiredTiger Cache Used", `sum(mongodb_mongod_wiredtiger_cache_bytes{namespace="$namespace", type="bytes currently in the cache"})`, "Queued Operations", `sum(mongodb_mongod_global_lock_current_queue{namespace="$namespace"})`, "Page Faults", `sum(rate(mongodb_extra_info_page_faults_total{namespace="$namespace"}[5m]))`)...,
 		)
-	case "redis":
-		return append(
+	case "redis", "redis-cluster":
+		panels := append(
 			row("Connected Clients", `sum(redis_connected_clients{namespace="$namespace"})`, "Commands", `sum(rate(redis_commands_processed_total{namespace="$namespace"}[5m]))`, "Memory Used", `sum(redis_memory_used_bytes{namespace="$namespace"})`),
 			row("Keyspace Hits", `sum(rate(redis_keyspace_hits_total{namespace="$namespace"}[5m]))`, "Keyspace Misses", `sum(rate(redis_keyspace_misses_total{namespace="$namespace"}[5m]))`, "Evicted Keys", `sum(rate(redis_evicted_keys_total{namespace="$namespace"}[5m]))`)...,
 		)
+		if serviceType == "redis-cluster" {
+			panels = append(panels, row("Cluster Known Nodes", `sum(redis_cluster_known_nodes{namespace="$namespace"})`, "Cluster Slots OK", `sum(redis_cluster_slots_ok{namespace="$namespace"})`, "Connected Slaves", `sum(redis_connected_slaves{namespace="$namespace"})`)...)
+		}
+		return panels
 	case "rabbitmq":
 		return append(
 			row("Queue Ready Messages", `sum(rabbitmq_queue_messages_ready{namespace="$namespace"}) by (queue)`, "Queue Unacked Messages", `sum(rabbitmq_queue_messages_unacked{namespace="$namespace"}) by (queue)`, "Consumers", `sum(rabbitmq_queue_consumers{namespace="$namespace"}) by (queue)`),
@@ -6213,10 +6247,16 @@ func serviceSpecificGrafanaPanels(serviceType, matcher string, nextID *int, next
 		return row("Builds", `sum(rate(jenkins_runs_total{namespace="$namespace"}[5m])) by (job)`, "Build Failures", `sum(rate(jenkins_runs_failure_total{namespace="$namespace"}[5m])) by (job)`, "Queue Size", `sum(jenkins_queue_size_value{namespace="$namespace"})`)
 	case "registry":
 		return row("Registry Requests", `sum(rate(registry_http_requests_total{namespace="$namespace"}[5m])) by (code, method)`, "Registry Latency P95", `histogram_quantile(0.95, sum(rate(registry_http_request_duration_seconds_bucket{namespace="$namespace"}[5m])) by (le, handler))`, "Storage Used", `sum(registry_storage_cache_total{namespace="$namespace"})`)
+	case "harbor":
+		return row("Projects", `sum(harbor_project_total{namespace="$namespace"})`, "Artifacts Pushed", `sum(rate(harbor_artifact_pushed_total{namespace="$namespace"}[5m]))`, "Artifacts Pulled", `sum(rate(harbor_artifact_pulled_total{namespace="$namespace"}[5m]))`)
 	case "loki":
 		return row("Ingest Rate", `sum(rate(loki_distributor_bytes_received_total{namespace="$namespace"}[5m]))`, "Log Lines", `sum(rate(loki_distributor_lines_received_total{namespace="$namespace"}[5m]))`, "Query Latency P95", `histogram_quantile(0.95, sum(rate(loki_request_duration_seconds_bucket{namespace="$namespace"}[5m])) by (le, route))`)
-	case "grafana":
+	case "monitor", "grafana":
 		return row("Grafana Requests", `sum(rate(grafana_http_request_duration_seconds_count{namespace="$namespace"}[5m])) by (handler, status_code)`, "Prometheus Samples", `sum(rate(prometheus_tsdb_head_samples_appended_total{namespace="$namespace"}[5m]))`, "Alertmanager Alerts", `sum(alertmanager_alerts{namespace="$namespace"})`)
+	case "eureka":
+		return row("Registered Instances", `sum(eureka_server_registry_size{namespace="$namespace"})`, "Renewals", `sum(rate(eureka_server_renewals_total{namespace="$namespace"}[5m]))`, "Evictions", `sum(rate(eureka_server_evictions_total{namespace="$namespace"}[5m]))`)
+	case "nacos":
+		return row("Services", `sum(nacos_monitor{namespace="$namespace", name="serviceCount"})`, "Instances", `sum(nacos_monitor{namespace="$namespace", name="instanceCount"})`, "Configs", `sum(nacos_monitor{namespace="$namespace", name="configCount"})`)
 	default:
 		return nil
 	}
@@ -6228,12 +6268,8 @@ func grafanaPanel(id int, title, panelType string, x, y, w, h int, expr string) 
 		"title":   title,
 		"type":    panelType,
 		"gridPos": map[string]int{"x": x, "y": y, "w": w, "h": h},
-		"targets": []map[string]string{{"expr": promQLZeroFallback(expr)}},
+		"targets": []map[string]string{{"expr": expr}},
 	}
-}
-
-func promQLZeroFallback(expr string) string {
-	return fmt.Sprintf("(%s) or vector(0)", expr)
 }
 
 func ratioPromQL(numerator, denominator string, multiplier int) string {
@@ -6277,7 +6313,7 @@ func buildDefaultGrafanaDashboard(app model.Application, env model.Environment, 
 			grafanaPanel(3, "Workloads", "stat", 8, 0, 4, 4, fmt.Sprintf(`count(count by (namespace, owner_kind, owner_name) (%s))`, runningPodMetricExpr(`kube_pod_owner{namespace=~"%s", owner_is_controller="true"}`, namespacePattern))),
 			grafanaPanel(4, "Running Pods", "stat", 12, 0, 4, 4, fmt.Sprintf(`sum(kube_pod_status_phase{namespace=~"%s", phase="Running"})`, namespacePattern)),
 			grafanaPanel(5, "Unready Pods", "stat", 16, 0, 4, 4, fmt.Sprintf(`sum(%s)`, runningPodMetricExpr(`kube_pod_status_ready{namespace=~"%s", condition="false"}`, namespacePattern))),
-			grafanaPanel(6, "PVCs", "stat", 20, 0, 4, 4, fmt.Sprintf(`count(kube_persistentvolumeclaim_info{namespace=~"%s"}) or vector(0)`, namespacePattern)),
+			grafanaPanel(6, "PVCs", "stat", 20, 0, 4, 4, fmt.Sprintf(`count(kube_persistentvolumeclaim_info{namespace=~"%s"})`, namespacePattern)),
 			grafanaPanel(16, "Containers", "stat", 0, 22, 4, 4, fmt.Sprintf(`count(%s)`, runningPodMetricExpr(`kube_pod_container_info{namespace=~"%s"}`, namespacePattern))),
 			grafanaPanel(7, "CPU Usage by Namespace", "timeseries", 0, 4, 8, 7, fmt.Sprintf(`sum(%s) by (namespace)`, runningPodMetricExpr(`rate(container_cpu_usage_seconds_total{namespace=~"%s", container!="POD", container!=""}[5m])`, namespacePattern))),
 			grafanaPanel(8, "Memory Usage by Namespace", "timeseries", 8, 4, 8, 7, fmt.Sprintf(`sum(%s) by (namespace)`, runningPodMetricExpr(`container_memory_working_set_bytes{namespace=~"%s", container!="POD", container!=""}`, namespacePattern))),

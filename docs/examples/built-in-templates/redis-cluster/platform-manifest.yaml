@@ -42,6 +42,31 @@ catalog:
       ```
 
       部署组件时选择 Redis Cluster 服务引用，平台会提供节点列表和密码。连接失败时，检查客户端是否支持 cluster、节点地址是否可达、密码是否正确。
+observability:
+  dashboard_uid: paap-redis-cluster-service
+  dashboard_title: Redis Cluster 专属大盘
+  log_query_template: '{namespace="$namespace"} |~ "(?i)($service|redis|cluster|slot|failover|oom|denied|error|exception|timeout)"'
+  metric_cards:
+    - key: cluster_slots_ok
+      title: 正常 Slot
+      unit: slots
+      description: Redis Cluster 当前正常分配的 slot 数量
+      promql: 'sum(redis_cluster_slots_ok{namespace="$namespace"})'
+    - key: hit_ratio
+      title: 缓存命中率
+      unit: "%"
+      description: keyspace hits / (hits + misses)
+      promql: 'sum(rate(redis_keyspace_hits_total{namespace="$namespace"}[5m])) / (sum(rate(redis_keyspace_hits_total{namespace="$namespace"}[5m])) + sum(rate(redis_keyspace_misses_total{namespace="$namespace"}[5m]))) * 100'
+    - key: evicted_keys
+      title: 淘汰 Key
+      unit: keys/s
+      description: 内存压力导致的 key 淘汰速率
+      promql: 'sum(rate(redis_evicted_keys_total{namespace="$namespace"}[5m]))'
+    - key: blocked_clients
+      title: 阻塞客户端
+      unit: clients
+      description: 被阻塞的 Redis 客户端数量
+      promql: 'sum(redis_blocked_clients{namespace="$namespace"})'
 permissions:
   toolNamespace:
     rules:

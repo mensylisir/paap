@@ -4,7 +4,9 @@ serviceAccount:
 persistence:
   enabled: false
 metrics:
-  enabled: false
+  enabled: true
+  serviceMonitor:
+    enabled: true
 pgpool:
   replicaCount: 1
 postgresql:

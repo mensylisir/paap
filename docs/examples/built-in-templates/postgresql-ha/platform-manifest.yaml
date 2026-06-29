@@ -41,6 +41,31 @@ catalog:
       ```
 
       在组件部署页选择 PostgreSQL HA 服务引用，平台会注入连接参数。若出现偶发连接中断，检查 Pgpool 状态、主从切换事件、应用连接池重试配置和数据库日志。
+observability:
+  dashboard_uid: paap-postgresql-ha-service
+  dashboard_title: PostgreSQL HA 专属大盘
+  log_query_template: '{namespace="$namespace"} |~ "(?i)($service|postgres|patroni|repmgr|replication|failover|slow|deadlock|error|exception|timeout)"'
+  metric_cards:
+    - key: primary_count
+      title: Primary 数量
+      unit: nodes
+      description: 当前被识别为 primary 的 PostgreSQL 节点数
+      promql: 'sum(pg_replication_is_replica{namespace="$namespace"} == 0)'
+    - key: replication_lag
+      title: 复制延迟
+      unit: s
+      description: Standby 相对 Primary 的最大复制延迟
+      promql: 'max(pg_replication_lag{namespace="$namespace"})'
+    - key: connections
+      title: 连接数
+      unit: connections
+      description: PostgreSQL 当前连接数量
+      promql: 'sum(pg_stat_activity_count{namespace="$namespace"})'
+    - key: deadlocks
+      title: 死锁
+      unit: deadlocks/s
+      description: 数据库死锁发生速率
+      promql: 'sum(rate(pg_stat_database_deadlocks{namespace="$namespace"}[5m]))'
 permissions:
   toolNamespace:
     rules:

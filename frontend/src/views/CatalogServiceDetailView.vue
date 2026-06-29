@@ -184,38 +184,53 @@
         </article>
       </section>
 
-      <section v-else-if="activeTab === 'monitor'" class="content-grid two-col">
+      <section v-else-if="activeTab === 'monitor'" class="content-grid">
         <article class="section-panel">
-          <div class="section-heading">
+          <div class="section-heading split">
             <h2>{{ observability?.dashboardTitle || '服务监控' }}</h2>
+            <span class="muted-text">Grafana Dashboard</span>
           </div>
-          <div class="metric-grid">
-            <div v-for="metric in observability?.metricCards || []" :key="metric.key" class="metric-tile">
-              <div class="metric-title">{{ metric.title }}</div>
-              <p>{{ metric.description }}</p>
-              <code>{{ metric.promql }}</code>
+          <div v-if="monitorFrames.length" class="catalog-grafana-grid">
+            <div v-for="frame in monitorFrames" :key="frame.key" class="catalog-frame-shell">
+              <header class="catalog-frame-head">
+                <div>
+                  <strong>{{ frame.title }}</strong>
+                  <span>{{ frame.subtitle }}</span>
+                </div>
+                <a class="rail-btn rail-btn--secondary" :href="frame.openUrl" target="_blank" rel="noopener noreferrer">打开 Grafana</a>
+              </header>
+              <iframe class="catalog-grafana-frame" :src="frame.url" :title="frame.title" loading="lazy" @load="compactGrafanaEmbed" />
             </div>
-            <div v-if="!observability?.metricCards?.length" class="empty-state">暂无专属指标卡</div>
           </div>
+          <div v-else class="empty-state">暂无 Grafana 大盘实例</div>
         </article>
 
         <article class="section-panel">
           <div class="section-heading">
-            <h2>Grafana 大盘</h2>
+            <h2>模板关键指标</h2>
           </div>
-          <div class="observability-list">
-            <div v-for="item in observability?.instances || []" :key="item.instanceId" class="observability-item">
-              <div class="observability-main">
-                <strong>{{ item.serviceName }}</strong>
-                <span>{{ item.environmentName || item.namespace || '-' }}</span>
-              </div>
-              <div class="observability-actions">
-                <a v-if="item.dashboardUrl" class="rail-btn rail-btn--secondary" :href="item.dashboardUrl" target="_blank" rel="noopener noreferrer">打开大盘</a>
-                <span v-else class="muted-text">未配置大盘入口</span>
-              </div>
-            </div>
-            <div v-if="!observability?.instances?.length" class="empty-state">暂无监控实例</div>
+          <div v-if="observability?.metricCards?.length" class="table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>指标</th>
+                  <th>说明</th>
+                  <th>PromQL</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="metric in observability?.metricCards || []" :key="metric.key">
+                  <td>
+                    <strong>{{ metric.title }}</strong>
+                    <small>{{ metric.unit || metric.key }}</small>
+                  </td>
+                  <td>{{ metric.description || '-' }}</td>
+                  <td><code>{{ metric.promql }}</code></td>
+                </tr>
+              </tbody>
+            </table>
           </div>
+          <div v-else class="empty-state">模板未声明专属指标</div>
         </article>
       </section>
 
@@ -225,20 +240,20 @@
             <h2>日志</h2>
             <span class="muted-text">Loki 条件跳转</span>
           </div>
-          <div class="observability-list">
-            <div v-for="item in observability?.instances || []" :key="item.instanceId" class="observability-item">
-              <div class="observability-main">
-                <strong>{{ item.serviceName }}</strong>
-                <span>{{ item.environmentName || item.namespace || '-' }}</span>
-              </div>
-              <code>{{ item.logQuery || observability?.logQueryTemplate || '-' }}</code>
-              <div class="observability-actions">
-                <a v-if="item.errorLogsUrl" class="rail-btn rail-btn--secondary" :href="item.errorLogsUrl" target="_blank" rel="noopener noreferrer">错误日志</a>
-                <span v-else class="muted-text">未配置日志入口</span>
-              </div>
+          <div v-if="logFrames.length" class="catalog-grafana-grid">
+            <div v-for="frame in logFrames" :key="frame.key" class="catalog-frame-shell catalog-frame-shell--logs">
+              <header class="catalog-frame-head">
+                <div>
+                  <strong>{{ frame.title }}</strong>
+                  <span>{{ frame.subtitle }}</span>
+                </div>
+                <a class="rail-btn rail-btn--secondary" :href="frame.openUrl" target="_blank" rel="noopener noreferrer">打开 Loki</a>
+              </header>
+              <code class="catalog-log-query">{{ frame.query }}</code>
+              <iframe class="catalog-grafana-frame catalog-grafana-frame--logs" :src="frame.url" :title="frame.title" loading="lazy" @load="compactGrafanaEmbed" />
             </div>
-            <div v-if="!observability?.instances?.length" class="empty-state">暂无日志实例</div>
           </div>
+          <div v-else class="empty-state">暂无 Loki 日志入口</div>
         </article>
       </section>
     </template>
@@ -255,6 +270,8 @@ import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { api } from '../api/client'
 import { stripCatalogVersionPrefix } from '../utils/catalogVersions'
+import { compactGrafanaEmbed } from '../components/workspaces/grafanaEmbed'
+import { withEmbeddedProxyAuthToken } from './serviceWorkspace'
 
 interface CatalogFeature {
   key: string
@@ -402,14 +419,52 @@ const emptyFootprint: ResourceFootprint = {
 
 const product = computed(() => detail.value?.product || null)
 const resourceTotal = computed(() => resources.value?.total || emptyFootprint)
+const monitorFrames = computed(() =>
+  (observability.value?.instances || [])
+    .filter(item => String(item.dashboardUrl || '').trim())
+    .map(item => ({
+      key: `monitor:${item.instanceId}`,
+      title: item.serviceName || product.value?.name || '服务实例',
+      subtitle: item.environmentName || item.namespace || '-',
+      openUrl: item.dashboardUrl || '',
+      url: embeddedGrafanaURL(item.dashboardUrl || '', item),
+    }))
+    .filter(item => item.url)
+)
+const logFrames = computed(() =>
+  (observability.value?.instances || [])
+    .filter(item => String(item.errorLogsUrl || '').trim())
+    .map(item => ({
+      key: `logs:${item.instanceId}`,
+      title: item.serviceName || product.value?.name || '服务实例',
+      subtitle: item.environmentName || item.namespace || '-',
+      query: item.logQuery || observability.value?.logQueryTemplate || '',
+      openUrl: item.errorLogsUrl || '',
+      url: embeddedGrafanaURL(item.errorLogsUrl || '', item),
+    }))
+    .filter(item => item.url)
+)
+
+const embeddedGrafanaURL = (url: string, item?: InstanceObservability) => {
+  if (!url) return ''
+  try {
+    const parsed = new URL(url, window.location.origin)
+    parsed.searchParams.set('kiosk', '')
+    parsed.searchParams.set('embed', 'true')
+    parsed.searchParams.set('paap_embed', '1')
+    parsed.searchParams.set('theme', 'light')
+    parsed.searchParams.set('orgId', '1')
+    const namespace = String(item?.namespace || '').trim()
+    if (namespace) parsed.searchParams.set('var-namespace', namespace)
+    return withEmbeddedProxyAuthToken(parsed.pathname + parsed.search + parsed.hash)
+  } catch {
+    return url
+  }
+}
 
 const payloadData = (value: any) => value?.data ?? value
 
 const catalogFeatureItems = (raw: unknown): CatalogFeature[] => {
-  const fallback = [
-    { key: 'managed', label: '环境内创建', enabled: true },
-    { key: 'shared', label: '公共服务', enabled: true },
-  ]
   if (Array.isArray(raw)) {
     return raw
       .map((item: any) => ({
@@ -420,9 +475,9 @@ const catalogFeatureItems = (raw: unknown): CatalogFeature[] => {
       .filter(item => item.key && item.label)
   }
   if (typeof raw === 'string' && raw.trim()) {
-    try { return catalogFeatureItems(JSON.parse(raw)) } catch { return fallback }
+    try { return catalogFeatureItems(JSON.parse(raw)) } catch { return [] }
   }
-  return fallback
+  return []
 }
 
 const normalizeProduct = (raw: any): CatalogProduct => ({
@@ -1182,35 +1237,65 @@ watch(() => route.params.type, loadService, { immediate: true })
   stroke-dasharray: 4 3;
 }
 
-.metric-grid {
+.catalog-grafana-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 10px;
+  gap: var(--paap-space-3);
 }
 
-.metric-tile {
+.catalog-frame-shell {
   display: grid;
-  gap: 8px;
-  padding: 12px;
+  grid-template-rows: auto minmax(520px, calc(100vh - 300px));
+  min-height: 620px;
+  overflow: hidden;
   border: 1px solid var(--paap-border);
   border-radius: var(--paap-radius-xs);
   background: var(--paap-panel-subtle);
 }
 
-.metric-title {
+.catalog-frame-shell--logs {
+  grid-template-rows: auto auto minmax(520px, calc(100vh - 340px));
+}
+
+.catalog-frame-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--paap-border);
+  background: var(--paap-panel);
+}
+
+.catalog-frame-head div {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.catalog-frame-head strong {
   color: var(--paap-text);
-  font-weight: 700;
-}
-
-.metric-tile p {
-  margin: 0;
-  color: var(--paap-muted);
   font-size: var(--paap-fs-compact);
-  line-height: 1.5;
 }
 
-.metric-tile code,
-.observability-item code {
+.catalog-frame-head span {
+  color: var(--paap-muted);
+  font-size: var(--paap-fs-label);
+}
+
+.catalog-grafana-frame {
+  width: 100%;
+  height: 100%;
+  min-height: 520px;
+  border: 0;
+  background: var(--paap-panel);
+}
+
+.catalog-grafana-frame--logs {
+  min-height: 560px;
+}
+
+.catalog-log-query,
+.data-table code {
   overflow: auto;
   padding: 8px;
   border-radius: var(--paap-radius-xs);
@@ -1222,31 +1307,13 @@ watch(() => route.params.type, loadService, { immediate: true })
   word-break: break-word;
 }
 
-.observability-item {
-  display: grid;
-  gap: 10px;
-  padding: 12px;
-  border: 1px solid var(--paap-border);
-  border-radius: var(--paap-radius-xs);
-  background: var(--paap-panel-subtle);
+.catalog-log-query {
+  margin: 10px 12px 0;
 }
 
-.observability-main {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.observability-main span,
 .muted-text {
   color: var(--paap-muted);
   font-size: var(--paap-fs-compact);
-}
-
-.observability-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
 }
 
 @media (max-width: 920px) {

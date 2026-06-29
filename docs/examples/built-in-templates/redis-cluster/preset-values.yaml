@@ -12,3 +12,7 @@ cluster:
   replicas: 1
 usePassword: true
 usePasswordFiles: true
+metrics:
+  enabled: true
+  serviceMonitor:
+    enabled: true

@@ -64,10 +64,34 @@ permissions:
         resources: ["statefulsets", "replicasets"]
         verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 observability:
+  dashboard_uid: paap-example-redis-service
+  dashboard_title: Redis 示例模板专属大盘
   dashboard_path: "./dashboards/redis-overview.json"
+  log_query_template: '{namespace="$namespace"} |~ "(?i)($service|redis|oom|loading|fail|error|exception|timeout)"'
   metrics:
     port: 9121
     path: "/metrics"
+  metric_cards:
+    - key: connected_clients
+      title: 客户端连接数
+      unit: clients
+      description: Redis 当前客户端连接数量
+      promql: 'sum(redis_connected_clients{namespace="$namespace"})'
+    - key: command_rate
+      title: 命令处理速率
+      unit: ops/s
+      description: Redis 每秒处理的命令数量
+      promql: 'sum(rate(redis_commands_processed_total{namespace="$namespace"}[5m]))'
+    - key: memory_used
+      title: 内存使用量
+      unit: bytes
+      description: Redis 实际使用内存
+      promql: 'sum(redis_memory_used_bytes{namespace="$namespace"})'
+    - key: evicted_keys
+      title: Key 淘汰速率
+      unit: keys/s
+      description: 因 maxmemory 策略被淘汰的 key 速率
+      promql: 'sum(rate(redis_evicted_keys_total{namespace="$namespace"}[5m]))'
 
 variable_mapping:
   - platform_var: "generated_password"

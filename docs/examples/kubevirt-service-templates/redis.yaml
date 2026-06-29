@@ -35,6 +35,26 @@ catalog:
       4. 配置模板注入 `REDIS_HOST`、`REDIS_PORT` 和密码变量。
 
       如果连接失败，检查 VM 状态、Service selector、端口和应用配置模板反选的服务引用。
+observability:
+  dashboard_uid: paap-redis-service
+  dashboard_title: Redis KubeVirt 专属大盘
+  log_query_template: '{namespace="$namespace"} |~ "(?i)($service|redis|oom|evict|denied|loading|rdb|aof|error|exception|timeout)"'
+  metric_cards:
+    - key: hit_ratio
+      title: 缓存命中率
+      unit: "%"
+      description: keyspace hits / (hits + misses)
+      promql: 'sum(rate(redis_keyspace_hits_total{namespace="$namespace"}[5m])) / (sum(rate(redis_keyspace_hits_total{namespace="$namespace"}[5m])) + sum(rate(redis_keyspace_misses_total{namespace="$namespace"}[5m]))) * 100'
+    - key: memory_used
+      title: 内存使用
+      unit: bytes
+      description: Redis 已使用内存
+      promql: 'sum(redis_memory_used_bytes{namespace="$namespace"})'
+    - key: evicted_keys
+      title: 淘汰 Key
+      unit: keys/s
+      description: 内存压力导致的 key 淘汰速率
+      promql: 'sum(rate(redis_evicted_keys_total{namespace="$namespace"}[5m]))'
 runtimeSpec:
   image: docker.io/library/redis:7
   cpu: 500m

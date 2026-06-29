@@ -50,6 +50,31 @@ catalog:
       ```
 
       如果应用启动时报认证失败，优先检查 Secret 中密码、database/authSource 设置以及服务引用是否选到了正确实例。
+observability:
+  dashboard_uid: paap-mongodb-service
+  dashboard_title: MongoDB 专属大盘
+  log_query_template: '{namespace="$namespace"} |~ "(?i)($service|mongodb|mongo|replica|slow query|index|auth|error|exception|timeout)"'
+  metric_cards:
+    - key: connections
+      title: 连接数
+      unit: connections
+      description: MongoDB 当前连接数量
+      promql: 'sum(mongodb_connections{namespace="$namespace",state="current"})'
+    - key: opcounters
+      title: 操作吞吐
+      unit: ops/s
+      description: insert/query/update/delete/getmore/command 总操作速率
+      promql: 'sum(rate(mongodb_op_counters_total{namespace="$namespace"}[5m]))'
+    - key: replication_lag
+      title: 复制延迟
+      unit: s
+      description: Replica Set 成员复制延迟
+      promql: 'max(mongodb_mongod_replset_member_replication_lag{namespace="$namespace"})'
+    - key: page_faults
+      title: Page Fault
+      unit: faults/s
+      description: MongoDB 读盘 page fault 速率
+      promql: 'sum(rate(mongodb_extra_info_page_faults_total{namespace="$namespace"}[5m]))'
 permissions:
   toolNamespace:
     rules:

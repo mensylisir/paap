@@ -42,6 +42,31 @@ catalog:
       3. 平台生成部署 YAML 时写入外部可拉取地址。
 
       如果 Pod `ImagePullBackOff`，检查部署 YAML 中镜像地址是否与页面选择一致，并确认节点能解析或访问该地址。
+observability:
+  dashboard_uid: paap-registry-service
+  dashboard_title: Docker Registry 专属大盘
+  log_query_template: '{namespace="$namespace"} |~ "(?i)($service|registry|blob|manifest|pull|push|unauthorized|denied|error|exception|timeout)"'
+  metric_cards:
+    - key: http_errors
+      title: Registry HTTP 错误
+      unit: req/s
+      description: Registry 4xx/5xx 请求速率
+      promql: 'sum(rate(registry_http_requests_total{namespace="$namespace",code=~"4..|5.."}[5m]))'
+    - key: push_pull_requests
+      title: Push/Pull 请求
+      unit: req/s
+      description: 镜像 push 和 pull 相关请求速率
+      promql: 'sum(rate(registry_http_requests_total{namespace="$namespace",handler=~"blob|manifest"}[5m]))'
+    - key: storage_cache
+      title: 存储缓存对象
+      unit: objects
+      description: Registry 存储缓存中对象数量
+      promql: 'sum(registry_storage_cache_total{namespace="$namespace"})'
+    - key: upload_duration_p95
+      title: 上传耗时 P95
+      unit: s
+      description: Registry blob 上传耗时 P95
+      promql: 'histogram_quantile(0.95, sum(rate(registry_storage_action_seconds_bucket{namespace="$namespace",action="put"}[5m])) by (le))'
 permissions:
   toolNamespace:
     rules:

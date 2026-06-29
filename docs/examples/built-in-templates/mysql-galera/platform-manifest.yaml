@@ -41,6 +41,31 @@ catalog:
       ```
 
       部署组件时选择 MySQL Galera 服务引用，平台会注入 host、port、database、username、password。若应用对事务一致性要求高，应先确认 Galera 写入模式、连接池重试策略和故障切换行为。
+observability:
+  dashboard_uid: paap-mysql-galera-service
+  dashboard_title: MySQL Galera 集群专属大盘
+  log_query_template: '{namespace="$namespace"} |~ "(?i)($service|mysql|galera|wsrep|deadlock|slow|replication|sst|ist|error|exception|timeout)"'
+  metric_cards:
+    - key: cluster_size
+      title: 集群节点数
+      unit: nodes
+      description: Galera wsrep 集群当前在线节点数
+      promql: 'max(mysql_global_status_wsrep_cluster_size{namespace="$namespace"})'
+    - key: flow_control
+      title: 流控暂停比例
+      unit: ratio
+      description: Galera 因复制压力触发 flow control 的比例
+      promql: 'avg(mysql_global_status_wsrep_flow_control_paused{namespace="$namespace"})'
+    - key: slow_queries
+      title: 慢查询
+      unit: queries/s
+      description: MySQL 慢查询速率
+      promql: 'sum(rate(mysql_global_status_slow_queries{namespace="$namespace"}[5m]))'
+    - key: conflicts
+      title: 写冲突/回滚
+      unit: tx/s
+      description: Galera 本地认证失败或写冲突速率
+      promql: 'sum(rate(mysql_global_status_wsrep_local_cert_failures{namespace="$namespace"}[5m]))'
 permissions:
   toolNamespace:
     rules:

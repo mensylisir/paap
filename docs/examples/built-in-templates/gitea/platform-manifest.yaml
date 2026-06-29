@@ -47,6 +47,31 @@ catalog:
       从源码构建时，平台会先写入 Jenkinsfile，再触发 Jenkins 拉取源码、构建镜像；镜像推送完成后，平台继续生成部署文件并推送到 Gitea。
 
       如果页面提示仓库目录 Unauthorized，优先检查平台保存的 Gitea token、仓库权限以及 ArgoCD/Jenkins 使用的凭据是否与 Gitea 账号匹配。
+observability:
+  dashboard_uid: paap-gitea-service
+  dashboard_title: Gitea 代码仓库专属大盘
+  log_query_template: '{namespace="$namespace"} |~ "(?i)($service|gitea|git|ssh|hook|repository|unauthorized|forbidden|error|exception|timeout)"'
+  metric_cards:
+    - key: http_5xx
+      title: HTTP 5xx
+      unit: req/s
+      description: Gitea Web/API 端错误响应速率
+      promql: 'sum(rate(gitea_http_request_duration_seconds_count{namespace="$namespace",status=~"5.."}[5m]))'
+    - key: git_requests
+      title: Git 请求量
+      unit: req/s
+      description: clone、fetch、push 等 Git 操作请求速率
+      promql: 'sum(rate(gitea_git_request_duration_seconds_count{namespace="$namespace"}[5m]))'
+    - key: hook_failures
+      title: Webhook 失败
+      unit: events/s
+      description: 仓库 Webhook 投递失败速率
+      promql: 'sum(rate(gitea_webhook_deliveries_total{namespace="$namespace",status!="success"}[5m]))'
+    - key: db_latency
+      title: 数据库访问 P95
+      unit: s
+      description: Gitea 内部数据库访问 P95 延迟
+      promql: 'histogram_quantile(0.95, sum(rate(gitea_db_request_duration_seconds_bucket{namespace="$namespace"}[5m])) by (le))'
 permissions:
   toolNamespace:
     rules:

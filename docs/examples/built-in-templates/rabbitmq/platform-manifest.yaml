@@ -43,6 +43,31 @@ catalog:
       ```
 
       如果队列积压持续增长，检查消费者副本数、消费异常、死信队列、ack 设置和消息处理耗时。后续接入 KEDA 后，可基于队列长度触发组件自动扩容。
+observability:
+  dashboard_uid: paap-rabbitmq-service
+  dashboard_title: RabbitMQ 消息队列专属大盘
+  log_query_template: '{namespace="$namespace"} |~ "(?i)($service|rabbitmq|queue|exchange|consumer|channel|connection|alarm|error|exception|timeout)"'
+  metric_cards:
+    - key: ready_messages
+      title: Ready 消息
+      unit: messages
+      description: 队列中等待投递的消息数量
+      promql: 'sum(rabbitmq_queue_messages_ready{namespace="$namespace"})'
+    - key: unacked_messages
+      title: Unacked 消息
+      unit: messages
+      description: 已投递但尚未 ACK 的消息数量
+      promql: 'sum(rabbitmq_queue_messages_unacked{namespace="$namespace"})'
+    - key: publish_rate
+      title: 发布速率
+      unit: msg/s
+      description: 生产者向 RabbitMQ 发布消息的速率
+      promql: 'sum(rate(rabbitmq_global_messages_published_total{namespace="$namespace"}[5m]))'
+    - key: consumers
+      title: 消费者数量
+      unit: consumers
+      description: 当前队列消费者数量
+      promql: 'sum(rabbitmq_queue_consumers{namespace="$namespace"})'
 permissions:
   toolNamespace:
     rules:

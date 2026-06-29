@@ -43,6 +43,34 @@ catalog:
       ```
 
       如果构建成功但部署拉取失败，检查部署 YAML 中镜像地址是否为节点可解析地址，镜像项目是否公开或已配置 imagePullSecret。
+observability:
+  metrics:
+    port: 9090
+    path: /metrics
+  dashboard_uid: paap-harbor-service
+  dashboard_title: Harbor 镜像仓库专属大盘
+  log_query_template: '{namespace="$namespace"} |~ "(?i)($service|harbor|registry|jobservice|scanner|replication|unauthorized|denied|error|exception|timeout)"'
+  metric_cards:
+    - key: project_total
+      title: 项目数量
+      unit: projects
+      description: Harbor 当前托管项目数量
+      promql: 'sum(harbor_project_total{namespace="$namespace"})'
+    - key: artifacts_pushed
+      title: 镜像推送速率
+      unit: artifacts/s
+      description: 镜像 artifact 推送速率
+      promql: 'sum(rate(harbor_artifact_pushed_total{namespace="$namespace"}[5m]))'
+    - key: artifacts_pulled
+      title: 镜像拉取速率
+      unit: artifacts/s
+      description: 镜像 artifact 拉取速率
+      promql: 'sum(rate(harbor_artifact_pulled_total{namespace="$namespace"}[5m]))'
+    - key: job_queue
+      title: 后台任务积压
+      unit: jobs
+      description: 扫描、复制、GC 等 Harbor jobservice 队列积压
+      promql: 'sum(harbor_task_queue_size{namespace="$namespace"})'
 permissions:
   toolNamespace:
     rules:
@@ -52,10 +80,6 @@ permissions:
       - apiGroups: ["apps"]
         resources: ["deployments", "statefulsets", "replicasets"]
         verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-observability:
-  metrics:
-    port: 9090
-    path: /metrics
 variable_mapping:
   - platform_var: "tool_namespace"
     helm_var: "portal.serviceAccountName"

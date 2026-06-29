@@ -42,6 +42,34 @@ catalog:
       6. 平台生成部署 YAML、推送到 Gitea，并配置 ArgoCD 同步。
 
       构建失败时，优先查看 Jenkins 控制台日志；部署失败时，查看 ArgoCD 和组件运行事件，不要把部署文件生成职责放到 Jenkins 里。
+observability:
+  metrics:
+    port: 8080
+    path: /metrics
+  dashboard_uid: paap-jenkins-service
+  dashboard_title: Jenkins CI 专属大盘
+  log_query_template: '{namespace="$namespace"} |~ "(?i)($service|jenkins|queue|executor|agent|build|checkout|permission|error|exception|timeout)"'
+  metric_cards:
+    - key: queue_size
+      title: 构建队列
+      unit: builds
+      description: 等待 Jenkins executor 的构建任务数量
+      promql: 'sum(jenkins_queue_size_value{namespace="$namespace"})'
+    - key: busy_executors
+      title: 忙碌 Executor
+      unit: executors
+      description: 当前正在执行构建的 executor 数量
+      promql: 'sum(jenkins_executor_in_use_value{namespace="$namespace"})'
+    - key: build_failures
+      title: 构建失败
+      unit: builds/s
+      description: 最近构建失败速率
+      promql: 'sum(rate(jenkins_runs_failure_total{namespace="$namespace"}[5m]))'
+    - key: build_duration_p95
+      title: 构建耗时 P95
+      unit: s
+      description: Pipeline 构建耗时 P95
+      promql: 'histogram_quantile(0.95, sum(rate(jenkins_job_building_duration_seconds_bucket{namespace="$namespace"}[5m])) by (le))'
 permissions:
   toolNamespace:
     rules:
@@ -62,10 +90,6 @@ permissions:
       - apiGroups: ["*"]
         resources: ["*"]
         verbs: ["*"]
-observability:
-  metrics:
-    port: 8080
-    path: /metrics
 variable_mapping:
   - platform_var: "tool_namespace"
     helm_var: "serviceAccount.name"

@@ -49,6 +49,31 @@ catalog:
       - 健康状态：用于判断注册中心是否可用。
 
       如果服务启动后没有注册，优先检查组件日志中的 Eureka Client 报错、配置模板是否正确反选，以及 Eureka Service 是否能在业务命名空间访问。
+observability:
+  dashboard_uid: paap-eureka-service
+  dashboard_title: Eureka 注册中心专属大盘
+  log_query_template: '{namespace="$namespace"} |~ "(?i)($service|eureka|registry|renew|evict|unavailable|error|exception|timeout)"'
+  metric_cards:
+    - key: registered_instances
+      title: 注册实例数
+      unit: instances
+      description: Eureka 当前注册的服务实例数量
+      promql: 'sum(eureka_server_registry_size{namespace="$namespace"})'
+    - key: renewals
+      title: 心跳续约速率
+      unit: renewals/s
+      description: 客户端向 Eureka 发送心跳续约的速率
+      promql: 'sum(rate(eureka_server_renewals_total{namespace="$namespace"}[5m]))'
+    - key: evictions
+      title: 实例剔除速率
+      unit: evictions/s
+      description: 因心跳超时被 Eureka 剔除的实例速率
+      promql: 'sum(rate(eureka_server_evictions_total{namespace="$namespace"}[5m]))'
+    - key: http_errors
+      title: 注册中心 HTTP 5xx
+      unit: req/s
+      description: Eureka 服务端 5xx 请求速率
+      promql: 'sum(rate(http_server_requests_seconds_count{namespace="$namespace",status=~"5.."}[5m]))'
 permissions:
   toolNamespace:
     rules:

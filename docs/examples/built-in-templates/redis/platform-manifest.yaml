@@ -69,23 +69,28 @@ catalog:
 observability:
   dashboard_uid: paap-redis-service
   dashboard_title: Redis 专属大盘
-  log_query_template: '{namespace="$namespace"} |~ "(?i)(error|exception|panic|fail|oom|denied)"'
+  log_query_template: '{namespace="$namespace"} |~ "(?i)($service|redis|oom|evict|denied|loading|rdb|aof|error|exception|timeout)"'
   metric_cards:
     - key: hit_ratio
       title: 缓存命中率
       unit: "%"
       description: keyspace hits / (hits + misses)
       promql: 'sum(rate(redis_keyspace_hits_total{namespace="$namespace"}[5m])) / (sum(rate(redis_keyspace_hits_total{namespace="$namespace"}[5m])) + sum(rate(redis_keyspace_misses_total{namespace="$namespace"}[5m]))) * 100'
+    - key: memory_used
+      title: 内存使用
+      unit: bytes
+      description: Redis 已使用内存
+      promql: 'sum(redis_memory_used_bytes{namespace="$namespace"})'
     - key: evicted_keys
       title: 淘汰 Key
       unit: keys/s
       description: 内存压力导致的 key 淘汰速率
       promql: 'sum(rate(redis_evicted_keys_total{namespace="$namespace"}[5m]))'
-    - key: replication_lag
-      title: 主从延迟
-      unit: s
-      description: Replica 相对 Primary 的延迟
-      promql: 'max(redis_master_repl_offset{namespace="$namespace"} - redis_slave_repl_offset{namespace="$namespace"})'
+    - key: connected_clients
+      title: 客户端连接
+      unit: clients
+      description: Redis 当前客户端连接数量
+      promql: 'sum(redis_connected_clients{namespace="$namespace"})'
 permissions:
   toolNamespace:
     rules:

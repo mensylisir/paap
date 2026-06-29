@@ -669,18 +669,19 @@ func builtInServiceTemplateByType(serviceType string) (model.ServiceTemplate, bo
 }
 
 type kubeVirtServiceTemplateAsset struct {
-	Type         string                 `yaml:"type"`
-	Name         string                 `yaml:"name"`
-	Version      string                 `yaml:"version"`
-	Category     string                 `yaml:"category"`
-	Description  string                 `yaml:"description"`
-	Icon         string                 `yaml:"icon"`
-	Installer    string                 `yaml:"installer"`
-	S3Key        string                 `yaml:"s3Key"`
-	InstallOrder int                    `yaml:"installOrder"`
-	Enabled      *bool                  `yaml:"enabled"`
-	Catalog      *model.CatalogSpec     `yaml:"catalog"`
-	RuntimeSpec  map[string]interface{} `yaml:"runtimeSpec"`
+	Type          string                   `yaml:"type"`
+	Name          string                   `yaml:"name"`
+	Version       string                   `yaml:"version"`
+	Category      string                   `yaml:"category"`
+	Description   string                   `yaml:"description"`
+	Icon          string                   `yaml:"icon"`
+	Installer     string                   `yaml:"installer"`
+	S3Key         string                   `yaml:"s3Key"`
+	InstallOrder  int                      `yaml:"installOrder"`
+	Enabled       *bool                    `yaml:"enabled"`
+	Catalog       *model.CatalogSpec       `yaml:"catalog"`
+	Observability *model.ObservabilitySpec `yaml:"observability"`
+	RuntimeSpec   map[string]interface{}   `yaml:"runtimeSpec"`
 }
 
 func loadBuiltInKubeVirtServiceTemplates() ([]model.ServiceTemplate, error) {
@@ -767,10 +768,11 @@ func readKubeVirtServiceTemplateAsset(path string) (model.ServiceTemplate, error
 	}
 	if asset.Catalog != nil {
 		manifest := model.PlatformManifest{
-			Name:        tmpl.Type,
-			Version:     firstNonEmpty(asset.Version, "kubevirt"),
-			Description: tmpl.Description,
-			Catalog:     asset.Catalog,
+			Name:          tmpl.Type,
+			Version:       firstNonEmpty(asset.Version, "kubevirt"),
+			Description:   tmpl.Description,
+			Catalog:       asset.Catalog,
+			Observability: asset.Observability,
 		}
 		if err := manifest.ValidateCatalogDocs(); err != nil {
 			return model.ServiceTemplate{}, fmt.Errorf("%s catalog docs: %w", path, err)

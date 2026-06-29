@@ -69,22 +69,27 @@ catalog:
 observability:
   dashboard_uid: paap-postgresql-service
   dashboard_title: PostgreSQL 专属大盘
-  log_query_template: '{namespace="$namespace"} |~ "(?i)(error|exception|slow|deadlock|replication|timeout)"'
+  log_query_template: '{namespace="$namespace"} |~ "(?i)($service|postgres|slow|deadlock|replication|checkpoint|connection refused|error|exception|timeout)"'
   metric_cards:
     - key: connections
       title: 连接数
-      unit: count
-      description: 当前活跃连接数量
+      unit: connections
+      description: PostgreSQL 当前连接数量
       promql: 'sum(pg_stat_activity_count{namespace="$namespace"})'
-    - key: slow_queries
-      title: 慢查询
-      unit: qps
-      description: 慢查询或慢操作速率
-      promql: 'sum(rate(pg_stat_database_tup_returned{namespace="$namespace"}[5m]))'
+    - key: transactions
+      title: 事务吞吐
+      unit: tx/s
+      description: commit + rollback 事务速率
+      promql: 'sum(rate(pg_stat_database_xact_commit{namespace="$namespace"}[5m])) + sum(rate(pg_stat_database_xact_rollback{namespace="$namespace"}[5m]))'
+    - key: deadlocks
+      title: 死锁
+      unit: deadlocks/s
+      description: 数据库死锁发生速率
+      promql: 'sum(rate(pg_stat_database_deadlocks{namespace="$namespace"}[5m]))'
     - key: replication_lag
       title: 复制延迟
       unit: s
-      description: 主从复制延迟
+      description: Standby 相对 Primary 的复制延迟
       promql: 'max(pg_replication_lag{namespace="$namespace"})'
 permissions:
   toolNamespace:

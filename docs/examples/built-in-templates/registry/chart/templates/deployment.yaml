@@ -14,6 +14,12 @@ spec:
       app.kubernetes.io/instance: {{ .Release.Name }}
   template:
     metadata:
+{{- if .Values.metrics.enabled }}
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "metrics"
+        prometheus.io/path: "/metrics"
+{{- end }}
       labels:
         app.kubernetes.io/name: {{ include "registry.name" . }}
         app.kubernetes.io/instance: {{ .Release.Name }}
@@ -31,6 +37,12 @@ spec:
               value: /var/lib/registry
             - name: REGISTRY_STORAGE_DELETE_ENABLED
               value: {{ .Values.deleteEnabled | quote }}
+{{- if .Values.metrics.enabled }}
+            - name: REGISTRY_HTTP_DEBUG_ADDR
+              value: "0.0.0.0:{{ .Values.metrics.port }}"
+            - name: REGISTRY_HTTP_DEBUG_PROMETHEUS_ENABLED
+              value: "true"
+{{- end }}
 {{- if .Values.tls.enabled }}
             - name: REGISTRY_HTTP_TLS_CERTIFICATE
               value: /certs/tls.crt
@@ -40,6 +52,10 @@ spec:
           ports:
             - name: {{ ternary "https" "http" .Values.tls.enabled }}
               containerPort: {{ .Values.service.port }}
+{{- if .Values.metrics.enabled }}
+            - name: metrics
+              containerPort: {{ .Values.metrics.port }}
+{{- end }}
           volumeMounts:
             - name: data
               mountPath: /var/lib/registry

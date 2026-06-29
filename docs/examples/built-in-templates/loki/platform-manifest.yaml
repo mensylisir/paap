@@ -39,6 +39,34 @@ catalog:
       在服务目录中打开某个服务的日志 tab，平台会基于模板中的 `log_query_template` 替换 `$namespace` 和 `$service`。如果实例没有日志入口，先确认环境中是否安装或引用 Loki，再检查服务实例是否有监控/日志目标。
 
       如果日志为空，优先检查 Pod 是否真的输出到 stdout/stderr、Promtail 是否运行、namespace 是否在采集范围内。
+observability:
+  metrics:
+    port: 3100
+    path: /metrics
+  dashboard_uid: paap-loki-service
+  dashboard_title: Loki 日志系统专属大盘
+  log_query_template: '{namespace="$namespace"} |~ "(?i)($service|loki|promtail|distributor|ingester|querier|compactor|error|exception|timeout)"'
+  metric_cards:
+    - key: ingest_lines
+      title: 日志写入行数
+      unit: lines/s
+      description: Loki distributor 接收日志行速率
+      promql: 'sum(rate(loki_distributor_lines_received_total{namespace="$namespace"}[5m]))'
+    - key: ingest_bytes
+      title: 日志写入流量
+      unit: bytes/s
+      description: Loki 接收日志字节速率
+      promql: 'sum(rate(loki_distributor_bytes_received_total{namespace="$namespace"}[5m]))'
+    - key: active_streams
+      title: 活跃日志流
+      unit: streams
+      description: Ingester 当前活跃 stream 数量
+      promql: 'sum(loki_ingester_streams{namespace="$namespace"})'
+    - key: query_latency_p95
+      title: 查询延迟 P95
+      unit: s
+      description: LogQL 查询 P95 延迟
+      promql: 'histogram_quantile(0.95, sum(rate(loki_request_duration_seconds_bucket{namespace="$namespace"}[5m])) by (le))'
 permissions:
   toolNamespace:
     rules:
@@ -53,10 +81,6 @@ permissions:
       - apiGroups: ["*"]
         resources: ["*"]
         verbs: ["*"]
-observability:
-  metrics:
-    port: 3100
-    path: /metrics
 variable_mapping:
   - platform_var: "tool_namespace"
     helm_var: "serviceAccount.name"

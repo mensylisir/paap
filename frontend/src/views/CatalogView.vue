@@ -199,10 +199,6 @@ const hasCatalogItems = computed(() => catalogProducts.value.length > 0)
 const totalItems = computed(() => filteredTemplates.value.length)
 
 const catalogFeatureItems = (raw: unknown): CatalogFeature[] => {
-  const fallback = [
-    { key: 'managed', label: '环境内创建', enabled: true },
-    { key: 'shared', label: '公共服务', enabled: true },
-  ]
   if (Array.isArray(raw)) {
     return raw
       .map((item: any) => ({
@@ -216,10 +212,10 @@ const catalogFeatureItems = (raw: unknown): CatalogFeature[] => {
     try {
       return catalogFeatureItems(JSON.parse(raw))
     } catch {
-      return fallback
+      return []
     }
   }
-  return fallback
+  return []
 }
 
 const featureEnabled = (features: CatalogFeature[], key: string) =>

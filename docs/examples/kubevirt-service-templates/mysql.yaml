@@ -35,6 +35,26 @@ catalog:
       4. 平台注入 `MYSQL_HOST`、`MYSQL_PORT`、`MYSQL_USERNAME`、`MYSQL_PASSWORD`。
 
       如果应用无法连接，先检查 VM 状态、Service 端口、Secret 凭据和 MySQL 容器启动日志。
+observability:
+  dashboard_uid: paap-mysql-service
+  dashboard_title: MySQL KubeVirt 专属大盘
+  log_query_template: '{namespace="$namespace"} |~ "(?i)($service|mysql|slow query|deadlock|innodb|access denied|error|exception|timeout)"'
+  metric_cards:
+    - key: connections
+      title: 连接数
+      unit: connections
+      description: MySQL 当前客户端连接数量
+      promql: 'sum(mysql_global_status_threads_connected{namespace="$namespace"})'
+    - key: qps
+      title: 查询吞吐
+      unit: queries/s
+      description: MySQL Questions 速率
+      promql: 'sum(rate(mysql_global_status_questions{namespace="$namespace"}[5m]))'
+    - key: slow_queries
+      title: 慢查询
+      unit: queries/s
+      description: MySQL 慢查询速率
+      promql: 'sum(rate(mysql_global_status_slow_queries{namespace="$namespace"}[5m]))'
 runtimeSpec:
   image: docker.io/library/mysql:8
   cpu: "1"

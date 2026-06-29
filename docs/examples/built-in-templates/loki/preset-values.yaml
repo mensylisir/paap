@@ -2,12 +2,22 @@
 loki:
   service:
     type: NodePort
+    annotations:
+      prometheus.io/scrape: "true"
+      prometheus.io/port: "3100"
+      prometheus.io/path: "/metrics"
   serviceAccount:
     create: false
   rbac:
     create: false
   persistence:
     enabled: false
+  podAnnotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "3100"
+    prometheus.io/path: "/metrics"
+  serviceMonitor:
+    enabled: true
 
 promtail:
   initContainer:
@@ -27,6 +37,8 @@ promtail:
     create: false
   rbac:
     create: false
+  serviceMonitor:
+    enabled: true
   config:
     clients:
       - url: http://{{ .Release.Name }}:3100/loki/api/v1/push

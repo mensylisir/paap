@@ -45,6 +45,31 @@ catalog:
       ```
 
       部署组件时选择 Nacos 服务引用后，平台会注入 server address、namespace、group 和认证信息。服务未注册时，检查应用依赖、配置项和 Nacos 控制台命名空间是否一致。
+observability:
+  dashboard_uid: paap-nacos-service
+  dashboard_title: Nacos 注册配置中心专属大盘
+  log_query_template: '{namespace="$namespace"} |~ "(?i)($service|nacos|naming|config|raft|distro|notify|auth|error|exception|timeout)"'
+  metric_cards:
+    - key: service_count
+      title: 服务数量
+      unit: services
+      description: Nacos Naming 中注册的服务数量
+      promql: 'sum(nacos_monitor{name="serviceCount",namespace="$namespace"})'
+    - key: instance_count
+      title: 实例数量
+      unit: instances
+      description: Nacos Naming 中注册的实例数量
+      promql: 'sum(nacos_monitor{name="instanceCount",namespace="$namespace"})'
+    - key: config_count
+      title: 配置数量
+      unit: configs
+      description: Nacos Config 中托管的配置条目数量
+      promql: 'sum(nacos_monitor{name="configCount",namespace="$namespace"})'
+    - key: http_errors
+      title: Nacos HTTP 5xx
+      unit: req/s
+      description: Nacos API 5xx 响应速率
+      promql: 'sum(rate(http_server_requests_seconds_count{namespace="$namespace",status=~"5.."}[5m]))'
 permissions:
   toolNamespace:
     rules:

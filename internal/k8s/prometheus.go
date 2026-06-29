@@ -42,6 +42,16 @@ type PrometheusQuerySample struct {
 	Value  float64
 }
 
+type PrometheusQueryPoint struct {
+	Timestamp float64
+	Value     float64
+}
+
+type PrometheusQuerySeries struct {
+	Metric map[string]string
+	Values []PrometheusQueryPoint
+}
+
 func NewPrometheusClient(namespace string) *PrometheusClient {
 	fallback := fmt.Sprintf("http://prometheus-operated.%s.svc.cluster.local:9090", namespace)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -143,6 +153,67 @@ func (p *PrometheusClient) Query(ctx context.Context, query string) ([]Prometheu
 		out = append(out, PrometheusQuerySample{Metric: item.Metric, Value: value})
 	}
 	return out, nil
+}
+
+func (p *PrometheusClient) QueryRange(ctx context.Context, query string, start time.Time, end time.Time, step time.Duration) ([]PrometheusQuerySeries, error) {
+	if step <= 0 {
+		step = time.Minute
+	}
+	values := url.Values{}
+	values.Set("query", query)
+	values.Set("start", strconv.FormatInt(start.Unix(), 10))
+	values.Set("end", strconv.FormatInt(end.Unix(), 10))
+	values.Set("step", strconv.FormatInt(int64(step.Seconds()), 10))
+	var payload struct {
+		Status string `json:"status"`
+		Data   struct {
+			Result []struct {
+				Metric map[string]string `json:"metric"`
+				Values [][]interface{}   `json:"values"`
+			} `json:"result"`
+		} `json:"data"`
+	}
+	if err := p.getJSON(ctx, "/api/v1/query_range?"+values.Encode(), &payload); err != nil {
+		return nil, err
+	}
+	out := make([]PrometheusQuerySeries, 0, len(payload.Data.Result))
+	for _, item := range payload.Data.Result {
+		points := make([]PrometheusQueryPoint, 0, len(item.Values))
+		for _, pair := range item.Values {
+			if len(pair) < 2 {
+				continue
+			}
+			ts, ok := prometheusFloat(pair[0])
+			if !ok {
+				continue
+			}
+			valueText, ok := pair[1].(string)
+			if !ok {
+				continue
+			}
+			value, err := strconv.ParseFloat(valueText, 64)
+			if err != nil {
+				continue
+			}
+			points = append(points, PrometheusQueryPoint{Timestamp: ts, Value: value})
+		}
+		if len(points) > 0 {
+			out = append(out, PrometheusQuerySeries{Metric: item.Metric, Values: points})
+		}
+	}
+	return out, nil
+}
+
+func prometheusFloat(value interface{}) (float64, bool) {
+	switch typed := value.(type) {
+	case float64:
+		return typed, true
+	case string:
+		parsed, err := strconv.ParseFloat(typed, 64)
+		return parsed, err == nil
+	default:
+		return 0, false
+	}
 }
 
 func (a PrometheusAlert) Name() string {

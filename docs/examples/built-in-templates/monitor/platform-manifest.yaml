@@ -41,6 +41,34 @@ catalog:
       - 大盘空白：检查 ServiceMonitor 是否生成、目标是否 up。
       - 指标缺失：检查服务是否启用 exporter 或 metrics 端口。
       - 共享资源池监控不到业务环境：检查 RBAC 投射和 namespace selector。
+observability:
+  metrics:
+    port: 9090
+    path: /metrics
+  dashboard_uid: paap-monitor-service
+  dashboard_title: Prometheus/Grafana 监控中心专属大盘
+  log_query_template: '{namespace="$namespace"} |~ "(?i)($service|prometheus|grafana|alertmanager|scrape|rule|datasource|error|exception|timeout)"'
+  metric_cards:
+    - key: scrape_targets_down
+      title: 抓取失败目标
+      unit: targets
+      description: Prometheus 当前不可用的 scrape target 数量
+      promql: 'sum(up{namespace="$namespace"} == 0)'
+    - key: tsdb_series
+      title: TSDB 活跃序列
+      unit: series
+      description: Prometheus head block 中活跃时间序列数量
+      promql: 'sum(prometheus_tsdb_head_series{namespace="$namespace"})'
+    - key: rule_failures
+      title: 规则执行失败
+      unit: failures/s
+      description: Prometheus 录制规则/告警规则执行失败速率
+      promql: 'sum(rate(prometheus_rule_evaluation_failures_total{namespace="$namespace"}[5m]))'
+    - key: grafana_datasource_errors
+      title: Grafana 数据源错误
+      unit: errors/s
+      description: Grafana 查询数据源失败速率
+      promql: 'sum(rate(grafana_datasource_request_total{namespace="$namespace",status_code=~"5.."}[5m]))'
 permissions:
   clusterResources:
     rules:
@@ -87,10 +115,6 @@ permissions:
       - apiGroups: ["*"]
         resources: ["*"]
         verbs: ["*"]
-observability:
-  metrics:
-    port: 9090
-    path: /metrics
 variable_mapping:
   - platform_var: "tool_namespace"
     helm_var: "fullnameOverride"

@@ -118,6 +118,7 @@ describe('componentProfile', () => {
     expect(blueprint.mode).toBe('generic-runtime')
     expect(blueprint.tabs.map((item) => item.key)).toEqual([
       'deploy',
+      'autoscaling',
       'variables',
       'runtime',
       'logs',
@@ -214,7 +215,7 @@ describe('componentProfile', () => {
       '对象存储客户端',
       '配置文件/敏感配置',
     ]))
-    expect(componentDrawerBlueprint(profile).tabs.map((item) => item.key)).toEqual(['deploy', 'variables', 'runtime', 'logs', 'console'])
+    expect(componentDrawerBlueprint(profile).tabs.map((item) => item.key)).toEqual(['deploy', 'autoscaling', 'variables', 'runtime', 'logs', 'console'])
   })
 
   it('lets an explicit framework declaration override weak image hints', () => {
@@ -262,7 +263,7 @@ describe('componentProfile', () => {
     const blueprint = componentDrawerBlueprint(profile)
     expect(blueprint.mode).toBe('api-service')
     expect(blueprint.configStrategyLabel).toContain('运行依赖')
-    expect(blueprint.tabs.map((item) => item.key)).toEqual(['deploy', 'variables', 'runtime', 'logs', 'console'])
+    expect(blueprint.tabs.map((item) => item.key)).toEqual(['deploy', 'autoscaling', 'variables', 'runtime', 'logs', 'console'])
     expect(blueprint.tabs.map((item) => item.key)).not.toContain('api')
   })
 
@@ -282,10 +283,10 @@ describe('componentProfile', () => {
       },
     })
 
-    expect(componentDrawerBlueprint(frontend).tabs.map((item) => item.key)).toEqual(['deploy', 'variables', 'runtime', 'logs', 'console'])
+    expect(componentDrawerBlueprint(frontend).tabs.map((item) => item.key)).toEqual(['deploy', 'autoscaling', 'variables', 'runtime', 'logs', 'console'])
     expect(componentDrawerBlueprint(frontend).tabs.map((item) => item.key)).not.toContain('dependencies')
     expect(componentDrawerBlueprint(middleware).mode).toBe('middleware-workload')
-    expect(componentDrawerBlueprint(middleware).tabs.map((item) => item.key)).toEqual(['deploy', 'variables', 'runtime', 'logs', 'console'])
+    expect(componentDrawerBlueprint(middleware).tabs.map((item) => item.key)).toEqual(['deploy', 'autoscaling', 'variables', 'runtime', 'logs', 'console'])
   })
 
   it('offers a neutral Nginx proxy route preset for web entry components', () => {

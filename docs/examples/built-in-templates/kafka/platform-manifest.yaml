@@ -43,6 +43,31 @@ catalog:
       组件部署时选择 Kafka 服务引用后，平台配置模板可注入 bootstrap servers、用户名、密码和 topic。运行后在服务目录监控 tab 查看 broker 在线状态、请求速率、consumer lag 和错误日志入口。
 
       如果消费积压持续增加，优先检查 consumer group 实例数、分区数量、单条消息处理耗时和应用日志中的反序列化错误。
+observability:
+  dashboard_uid: paap-kafka-service
+  dashboard_title: Kafka 消息系统专属大盘
+  log_query_template: '{namespace="$namespace"} |~ "(?i)($service|kafka|broker|controller|partition|consumer|lag|rebalance|error|exception|timeout)"'
+  metric_cards:
+    - key: under_replicated_partitions
+      title: ISR 异常分区
+      unit: partitions
+      description: 副本不同步的分区数量
+      promql: 'sum(kafka_server_replicamanager_underreplicatedpartitions{namespace="$namespace"})'
+    - key: consumer_lag
+      title: 消费积压
+      unit: messages
+      description: Consumer Group 未消费消息总量
+      promql: 'sum(kafka_consumergroup_lag{namespace="$namespace"})'
+    - key: messages_in
+      title: 消息写入速率
+      unit: msg/s
+      description: Broker 接收消息速率
+      promql: 'sum(rate(kafka_server_brokertopicmetrics_messagesin_total{namespace="$namespace"}[5m]))'
+    - key: request_latency_p95
+      title: 请求延迟 P95
+      unit: ms
+      description: Kafka Broker 请求处理 P95 延迟
+      promql: 'histogram_quantile(0.95, sum(rate(kafka_network_requestmetrics_totaltimems_bucket{namespace="$namespace"}[5m])) by (le))'
 permissions:
   toolNamespace:
     rules:

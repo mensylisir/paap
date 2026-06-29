@@ -3,3 +3,7 @@ serviceAccount:
   create: false
 persistence:
   enabled: false
+metrics:
+  prometheusAuthType: public
+  serviceMonitor:
+    enabled: true

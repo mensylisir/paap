@@ -5826,10 +5826,10 @@ func TestBuildLiveMonitorWorkspaceAddsObjectLevelDashboards(t *testing.T) {
 	if !strings.Contains(urls["api"], "var-namespace=billing-prod") || !strings.Contains(urls["api"], "var-workload=api") {
 		t.Fatalf("component dashboard URL should carry Grafana variables, got %q", urls["api"])
 	}
-	if subjects["Gitea"]["dashboardUid"] != "paap-gitea" || !strings.Contains(urls["Gitea"], "/proxy/d/paap-gitea") {
+	if subjects["Gitea"]["dashboardUid"] != "paap-gitea-service" || !strings.Contains(urls["Gitea"], "/proxy/d/paap-gitea-service") {
 		t.Fatalf("gitea monitor subject annotations=%#v url=%q", subjects["Gitea"], urls["Gitea"])
 	}
-	if subjects["Redis"]["dashboardUid"] != "paap-redis" || subjects["Redis"]["subjectKind"] != "middleware" {
+	if subjects["Redis"]["dashboardUid"] != "paap-redis-service" || subjects["Redis"]["subjectKind"] != "middleware" {
 		t.Fatalf("redis monitor subject annotations = %#v", subjects["Redis"])
 	}
 	if subjects["api-7586d9fd4f-9x2mk"]["resourceKind"] != "pod" || subjects["api-7586d9fd4f-9x2mk"]["subjectKind"] != "component" {
@@ -5887,7 +5887,7 @@ func TestBuiltInGrafanaWorkloadDashboardsContainOperationalPanels(t *testing.T) 
 		"kubelet_volume_stats_used_bytes",
 		"kube_event_count",
 	})
-	assertDashboardPanels(t, byTitle["PAAP MySQL"], 16, []string{
+	assertDashboardPanels(t, byTitle["PAAP MySQL Service"], 38, []string{
 		"CPU Usage",
 		"Memory Working Set",
 		"Restarts",
@@ -5897,18 +5897,69 @@ func TestBuiltInGrafanaWorkloadDashboardsContainOperationalPanels(t *testing.T) 
 		"Slow Queries",
 		"Replication Lag",
 	})
-	assertDashboardExprs(t, byTitle["PAAP RabbitMQ"], []string{
+	assertDashboardExprs(t, byTitle["PAAP RabbitMQ Service"], []string{
 		"rabbitmq_queue_messages_ready",
 		"rabbitmq_connections",
 	})
-	assertDashboardExprs(t, byTitle["PAAP Kafka"], []string{
+	assertDashboardExprs(t, byTitle["PAAP Kafka Service"], []string{
 		"kafka_server_brokertopicmetrics_messagesin_total",
 		"kafka_consumergroup_lag",
 	})
-	assertDashboardExprs(t, byTitle["PAAP MinIO"], []string{
+	assertDashboardExprs(t, byTitle["PAAP MinIO Service"], []string{
 		"minio_cluster_capacity_usable_total_bytes",
 		"minio_s3_requests_total",
 	})
+	assertDashboardExprs(t, byTitle["PAAP Eureka Service"], []string{
+		"eureka_server_registry_size",
+		"eureka_server_evictions_total",
+	})
+	assertDashboardExprs(t, byTitle["PAAP Nacos Service"], []string{
+		"nacos_monitor",
+		"configCount",
+	})
+}
+
+func TestBuiltInGrafanaDashboardsCoverCatalogServiceUIDs(t *testing.T) {
+	dashboards := buildDefaultGrafanaDashboards(
+		model.Application{Identifier: "billing"},
+		model.Environment{Identifier: "prod"},
+		nil,
+	)
+	uids := map[string]bool{}
+	for _, dashboard := range dashboards {
+		var parsed struct {
+			UID string `json:"uid"`
+		}
+		if err := json.Unmarshal([]byte(dashboard.JSON), &parsed); err != nil {
+			t.Fatalf("unmarshal dashboard: %v", err)
+		}
+		uids[parsed.UID] = true
+	}
+	for _, want := range []string{
+		"paap-gitea-service",
+		"paap-argocd-service",
+		"paap-jenkins-service",
+		"paap-registry-service",
+		"paap-harbor-service",
+		"paap-loki-service",
+		"paap-monitor-service",
+		"paap-mysql-service",
+		"paap-mysql-galera-service",
+		"paap-postgresql-service",
+		"paap-postgresql-ha-service",
+		"paap-mongodb-service",
+		"paap-redis-service",
+		"paap-redis-cluster-service",
+		"paap-rabbitmq-service",
+		"paap-kafka-service",
+		"paap-minio-service",
+		"paap-eureka-service",
+		"paap-nacos-service",
+	} {
+		if !uids[want] {
+			t.Fatalf("built-in Grafana dashboards missing catalog UID %q; have %v", want, uids)
+		}
+	}
 }
 
 func TestBuiltInGrafanaEnvironmentOverviewContainsFleetPanels(t *testing.T) {
@@ -5949,7 +6000,7 @@ func TestBuiltInGrafanaEnvironmentOverviewContainsFleetPanels(t *testing.T) {
 	})
 }
 
-func TestBuiltInGrafanaDashboardsUseZeroFallbackForEveryPanel(t *testing.T) {
+func TestBuiltInGrafanaDashboardsDoNotSynthesizeZeroSeries(t *testing.T) {
 	dashboards := buildDefaultGrafanaDashboards(
 		model.Application{Identifier: "billing"},
 		model.Environment{Identifier: "prod"},
@@ -5966,8 +6017,8 @@ func TestBuiltInGrafanaDashboardsUseZeroFallbackForEveryPanel(t *testing.T) {
 
 	for _, dashboard := range dashboards {
 		for _, expr := range dashboardTargetExpressions(t, dashboard.JSON) {
-			if !strings.Contains(expr, "or vector(0)") {
-				t.Fatalf("dashboard %q has target without zero fallback: %s", dashboard.Title, expr)
+			if strings.Contains(expr, "or vector(0)") {
+				t.Fatalf("dashboard %q must not synthesize zero data for missing metrics: %s", dashboard.Title, expr)
 			}
 		}
 	}

@@ -23,6 +23,9 @@ service:
   ssh:
     port: 22
 
+metrics:
+  enabled: false
+
 persistence:
   enabled: true
   size: 2Gi

@@ -47,6 +47,31 @@ catalog:
       ```
 
       如果应用无法连接，先检查配置模板是否反选了正确 MySQL 服务，再检查 Secret、Service DNS 和数据库账号权限。
+observability:
+  dashboard_uid: paap-mysql-service
+  dashboard_title: MySQL 专属大盘
+  log_query_template: '{namespace="$namespace"} |~ "(?i)($service|mysql|slow query|deadlock|innodb|access denied|error|exception|timeout)"'
+  metric_cards:
+    - key: connections
+      title: 连接数
+      unit: connections
+      description: MySQL 当前客户端连接数量
+      promql: 'sum(mysql_global_status_threads_connected{namespace="$namespace"})'
+    - key: qps
+      title: 查询吞吐
+      unit: queries/s
+      description: MySQL Questions 速率
+      promql: 'sum(rate(mysql_global_status_questions{namespace="$namespace"}[5m]))'
+    - key: slow_queries
+      title: 慢查询
+      unit: queries/s
+      description: MySQL 慢查询速率
+      promql: 'sum(rate(mysql_global_status_slow_queries{namespace="$namespace"}[5m]))'
+    - key: buffer_pool_hit_ratio
+      title: Buffer Pool 命中率
+      unit: "%"
+      description: InnoDB Buffer Pool 读取命中率
+      promql: '(1 - sum(rate(mysql_global_status_innodb_buffer_pool_reads{namespace="$namespace"}[5m])) / sum(rate(mysql_global_status_innodb_buffer_pool_read_requests{namespace="$namespace"}[5m]))) * 100'
 permissions:
   toolNamespace:
     rules:

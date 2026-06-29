@@ -51,12 +51,27 @@ type RuntimeMetricsSummary struct {
 	Restarts    int32   `json:"restarts"`
 }
 
+type RuntimeMetricSeriesPoint struct {
+	Timestamp int64   `json:"timestamp"`
+	Value     float64 `json:"value"`
+}
+
+type RuntimeMetricSeries struct {
+	Key         string                     `json:"key"`
+	Label       string                     `json:"label"`
+	Unit        string                     `json:"unit"`
+	Description string                     `json:"description,omitempty"`
+	PromQL      string                     `json:"promql"`
+	Points      []RuntimeMetricSeriesPoint `json:"points"`
+}
+
 type RuntimeMetrics struct {
 	Target    RuntimeMetricsTarget  `json:"target"`
 	Available bool                  `json:"available"`
 	Error     string                `json:"error,omitempty"`
 	Summary   RuntimeMetricsSummary `json:"summary"`
 	Samples   []RuntimeMetricSample `json:"samples"`
+	Series    []RuntimeMetricSeries `json:"series,omitempty"`
 	UpdatedAt string                `json:"updatedAt"`
 }
 
@@ -230,6 +245,116 @@ func EnrichRuntimeMetricsFromPrometheus(ctx context.Context, metrics RuntimeMetr
 		metrics.Summary = summarizeRuntimeMetrics(metrics.Summary.Pods, metrics.Samples)
 	}
 	return metrics
+}
+
+func AttachRuntimeMetricSeriesFromPrometheus(ctx context.Context, metrics RuntimeMetrics, monitorNamespace string) RuntimeMetrics {
+	monitorNamespace = strings.TrimSpace(monitorNamespace)
+	if monitorNamespace == "" || metrics.Target.Namespace == "" || len(metrics.Samples) == 0 {
+		return metrics
+	}
+	podPattern := prometheusPodPattern(metrics.Samples)
+	if podPattern == "" {
+		return metrics
+	}
+	client := NewPrometheusClient(monitorNamespace)
+	namespace := metrics.Target.Namespace
+	end := time.Now()
+	start := end.Add(-30 * time.Minute)
+	step := time.Minute
+	queries := []struct {
+		key         string
+		label       string
+		unit        string
+		description string
+		promql      string
+	}{
+		{
+			key:         "cpu_usage",
+			label:       "CPU 使用",
+			unit:        "cores",
+			description: "Pod CPU 使用核数，来自 Prometheus container_cpu_usage_seconds_total",
+			promql:      fmt.Sprintf(`sum(rate(container_cpu_usage_seconds_total{namespace=%q,pod=~%q,container!="POD",container!=""}[5m])) by (pod)`, namespace, podPattern),
+		},
+		{
+			key:         "memory_working_set",
+			label:       "内存 Working Set",
+			unit:        "bytes",
+			description: "Pod 实际工作集内存，来自 container_memory_working_set_bytes",
+			promql:      fmt.Sprintf(`sum(container_memory_working_set_bytes{namespace=%q,pod=~%q,container!="POD",container!=""}) by (pod)`, namespace, podPattern),
+		},
+		{
+			key:         "restarts",
+			label:       "重启次数",
+			unit:        "count",
+			description: "最近 5 分钟容器重启增量",
+			promql:      fmt.Sprintf(`sum(increase(kube_pod_container_status_restarts_total{namespace=%q,pod=~%q}[5m])) by (pod)`, namespace, podPattern),
+		},
+		{
+			key:         "network_receive",
+			label:       "网络接收",
+			unit:        "bytes/s",
+			description: "Pod 网络接收速率",
+			promql:      fmt.Sprintf(`sum(rate(container_network_receive_bytes_total{namespace=%q,pod=~%q}[5m])) by (pod)`, namespace, podPattern),
+		},
+		{
+			key:         "network_transmit",
+			label:       "网络发送",
+			unit:        "bytes/s",
+			description: "Pod 网络发送速率",
+			promql:      fmt.Sprintf(`sum(rate(container_network_transmit_bytes_total{namespace=%q,pod=~%q}[5m])) by (pod)`, namespace, podPattern),
+		},
+		{
+			key:         "cpu_throttling",
+			label:       "CPU Throttling",
+			unit:        "seconds/s",
+			description: "CPU 被 CFS 限流的时间速率",
+			promql:      fmt.Sprintf(`sum(rate(container_cpu_cfs_throttled_seconds_total{namespace=%q,pod=~%q,container!="POD",container!=""}[5m])) by (pod)`, namespace, podPattern),
+		},
+	}
+	series := make([]RuntimeMetricSeries, 0, len(queries))
+	for _, query := range queries {
+		result, err := client.QueryRange(ctx, query.promql, start, end, step)
+		if err != nil {
+			continue
+		}
+		points := aggregatePrometheusSeries(result)
+		if len(points) == 0 {
+			continue
+		}
+		series = append(series, RuntimeMetricSeries{
+			Key:         query.key,
+			Label:       query.label,
+			Unit:        query.unit,
+			Description: query.description,
+			PromQL:      query.promql,
+			Points:      points,
+		})
+	}
+	metrics.Series = series
+	return metrics
+}
+
+func aggregatePrometheusSeries(series []PrometheusQuerySeries) []RuntimeMetricSeriesPoint {
+	if len(series) == 0 {
+		return nil
+	}
+	values := make(map[int64]float64)
+	for _, item := range series {
+		for _, point := range item.Values {
+			ts := int64(point.Timestamp)
+			values[ts] += point.Value
+		}
+	}
+	timestamps := make([]int64, 0, len(values))
+	for ts := range values {
+		timestamps = append(timestamps, ts)
+	}
+	sort.Slice(timestamps, func(i, j int) bool { return timestamps[i] < timestamps[j] })
+	out := make([]RuntimeMetricSeriesPoint, 0, len(timestamps))
+	for _, ts := range timestamps {
+		out = append(out, RuntimeMetricSeriesPoint{Timestamp: ts, Value: values[ts]})
+	}
+	return out
 }
 
 func prometheusPodPattern(samples []RuntimeMetricSample) string {

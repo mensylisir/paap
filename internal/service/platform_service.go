@@ -520,7 +520,8 @@ func buildPlatformServiceInstances(db *gorm.DB, serviceType string) ([]PlatformS
 	if err != nil {
 		return nil, err
 	}
-	observabilityProfile, err := catalogServiceObservabilityProfile(db, serviceType)
+	profileFor := catalogServiceObservabilityProfileLookup(db)
+	requestedProfile, err := profileFor(serviceType)
 	if err != nil {
 		return nil, err
 	}
@@ -531,6 +532,13 @@ func buildPlatformServiceInstances(db *gorm.DB, serviceType string) ([]PlatformS
 	refCounts := sharedReferenceCounts(capabilities)
 	out := make([]PlatformServiceInstance, 0, len(installations)+len(capabilities))
 	for _, inst := range installations {
+		observabilityProfile := requestedProfile
+		if serviceType == "" {
+			observabilityProfile, err = profileFor(inst.ServiceType)
+			if err != nil {
+				return nil, err
+			}
+		}
 		env := envs[inst.EnvironmentID]
 		app := apps[env.ApplicationID]
 		usageCount := 1 + refCounts[inst.ID] + componentCounts[managedServiceInstanceID(inst.ID)]
@@ -549,7 +557,7 @@ func buildPlatformServiceInstances(db *gorm.DB, serviceType string) ([]PlatformS
 			Namespace:             inst.Namespace,
 			MonitoringTarget:      monitoringTargetForNamespace(inst.Namespace),
 			MonitoringURL:         monitoringURLForInstallationWithProfile(monitoringServices, inst, observabilityProfile),
-			ErrorLogsURL:          errorLogsURLForInstallation(monitoringServices, inst),
+			ErrorLogsURL:          errorLogsURLForInstallationWithProfile(monitoringServices, inst, observabilityProfile),
 			UsageCount:            usageCount,
 		})
 	}
@@ -559,6 +567,14 @@ func buildPlatformServiceInstances(db *gorm.DB, serviceType string) ([]PlatformS
 		}
 		env := envs[capability.EnvironmentID]
 		app := apps[env.ApplicationID]
+		monitoringURL, err := monitoringURLForCapabilityWithProfileLookup(monitoringServices, capability, nil, profileFor)
+		if err != nil {
+			return nil, err
+		}
+		errorLogsURL, err := errorLogsURLForCapabilityWithProfileLookup(monitoringServices, capability, nil, profileFor)
+		if err != nil {
+			return nil, err
+		}
 		out = append(out, PlatformServiceInstance{
 			ID:                    capabilityServiceInstanceID(capability.ID),
 			ServiceType:           platformCapabilityServiceType(capability),
@@ -574,8 +590,8 @@ func buildPlatformServiceInstances(db *gorm.DB, serviceType string) ([]PlatformS
 			EnvironmentIdentifier: env.Identifier,
 			Endpoint:              capability.ExternalEndpoint,
 			MonitoringTarget:      monitoringTargetForCapability(capability),
-			MonitoringURL:         monitoringURLForCapability(monitoringServices, capability, nil),
-			ErrorLogsURL:          errorLogsURLForCapability(monitoringServices, capability, nil),
+			MonitoringURL:         monitoringURL,
+			ErrorLogsURL:          errorLogsURL,
 			UsageCount:            1 + componentCounts[capabilityServiceInstanceID(capability.ID)],
 		})
 	}
@@ -605,8 +621,13 @@ func buildPlatformServiceUsage(db *gorm.DB, serviceType string) ([]PlatformServi
 	if err != nil {
 		return nil, err
 	}
+	profileFor := catalogServiceObservabilityProfileLookup(db)
 	out := make([]PlatformServiceUsage, 0, len(installations)+len(capabilities))
 	for _, inst := range installations {
+		observabilityProfile, err := profileFor(inst.ServiceType)
+		if err != nil {
+			return nil, err
+		}
 		env := envs[inst.EnvironmentID]
 		app := apps[env.ApplicationID]
 		out = append(out, PlatformServiceUsage{
@@ -623,7 +644,7 @@ func buildPlatformServiceUsage(db *gorm.DB, serviceType string) ([]PlatformServi
 			EnvironmentIdentifier: env.Identifier,
 			ServiceInstanceID:     managedServiceInstanceID(inst.ID),
 			MonitoringTarget:      monitoringTargetForNamespace(inst.Namespace),
-			MonitoringURL:         monitoringURLForInstallation(monitoringServices, inst),
+			MonitoringURL:         monitoringURLForInstallationWithProfile(monitoringServices, inst, observabilityProfile),
 		})
 	}
 	for _, capability := range capabilities {
@@ -645,6 +666,10 @@ func buildPlatformServiceUsage(db *gorm.DB, serviceType string) ([]PlatformServi
 				provisionMode = NormalizeServiceProvisionMode(ref.ProvisionMode)
 			}
 		}
+		monitoringURL, err := monitoringURLForCapabilityWithProfileLookup(monitoringServices, capability, installationsByID, profileFor)
+		if err != nil {
+			return nil, err
+		}
 		out = append(out, PlatformServiceUsage{
 			ID:                    "capability:" + strconvFormatUint(capability.ID),
 			ServiceType:           platformCapabilityServiceType(capability),
@@ -663,7 +688,7 @@ func buildPlatformServiceUsage(db *gorm.DB, serviceType string) ([]PlatformServi
 			RefServiceID:          refServiceID,
 			Endpoint:              capability.ExternalEndpoint,
 			MonitoringTarget:      monitoringTargetForCapability(capability),
-			MonitoringURL:         monitoringURLForCapability(monitoringServices, capability, installationsByID),
+			MonitoringURL:         monitoringURL,
 		})
 	}
 	componentUsage, err := buildComponentBindingServiceUsage(db, serviceType, installations, capabilities, envs, apps, monitoringServices, installationsByID)
@@ -1048,6 +1073,7 @@ func buildComponentBindingServiceUsage(
 	if installationsByID == nil {
 		installationsByID = installationsByIDLocal
 	}
+	profileFor := catalogServiceObservabilityProfileLookup(db)
 
 	var components []model.Component
 	if err := db.Where("environment_id IN ?", envIDs).Find(&components).Error; err != nil {
@@ -1071,6 +1097,10 @@ func buildComponentBindingServiceUsage(
 				if serviceType != "" && inst.ServiceType != serviceType {
 					continue
 				}
+				observabilityProfile, err := profileFor(inst.ServiceType)
+				if err != nil {
+					return nil, err
+				}
 				rowID := fmt.Sprintf("component:%d:binding:%d:%s", comp.ID, idx, strings.ReplaceAll(key, ":", "-"))
 				if _, exists := seen[rowID]; exists {
 					continue
@@ -1093,7 +1123,7 @@ func buildComponentBindingServiceUsage(
 					ComponentType:         comp.Type,
 					ServiceInstanceID:     managedServiceInstanceID(inst.ID),
 					MonitoringTarget:      monitoringTargetForNamespace(inst.Namespace),
-					MonitoringURL:         monitoringURLForInstallation(monitoringServices, inst),
+					MonitoringURL:         monitoringURLForInstallationWithProfile(monitoringServices, inst, observabilityProfile),
 				})
 				continue
 			}
@@ -1116,6 +1146,10 @@ func buildComponentBindingServiceUsage(
 					serviceName = firstNonEmpty(ref.ServiceName, ref.ServiceType)
 					provisionMode = NormalizeServiceProvisionMode(ref.ProvisionMode)
 				}
+			}
+			monitoringURL, err := monitoringURLForCapabilityWithProfileLookup(monitoringServices, capability, installationsByID, profileFor)
+			if err != nil {
+				return nil, err
 			}
 			rowID := fmt.Sprintf("component:%d:binding:%d:%s", comp.ID, idx, strings.ReplaceAll(key, ":", "-"))
 			if _, exists := seen[rowID]; exists {
@@ -1143,7 +1177,7 @@ func buildComponentBindingServiceUsage(
 				RefServiceID:          refServiceID,
 				Endpoint:              capability.ExternalEndpoint,
 				MonitoringTarget:      monitoringTargetForCapability(capability),
-				MonitoringURL:         monitoringURLForCapability(monitoringServices, capability, installationsByID),
+				MonitoringURL:         monitoringURL,
 			})
 		}
 	}
@@ -1494,9 +1528,9 @@ func catalogServiceObservabilityProfile(db *gorm.DB, serviceType string) (servic
 	if ok && manifest.Observability != nil {
 		spec := manifest.Observability
 		profile := serviceObservabilityProfileData{
-			DashboardUID:     firstNonEmpty(spec.DashboardUID, "paap-middleware-workload"),
-			DashboardTitle:   firstNonEmpty(spec.DashboardTitle, "服务工作负载大盘"),
-			LogQueryTemplate: firstNonEmpty(spec.LogQueryTemplate, `{namespace="$namespace"} |~ "(?i)(error|exception|panic|fail)"`),
+			DashboardUID:     strings.TrimSpace(spec.DashboardUID),
+			DashboardTitle:   strings.TrimSpace(spec.DashboardTitle),
+			LogQueryTemplate: strings.TrimSpace(spec.LogQueryTemplate),
 		}
 		for _, item := range spec.MetricCards {
 			profile.MetricCards = append(profile.MetricCards, CatalogServiceMetricCard{
@@ -1507,57 +1541,77 @@ func catalogServiceObservabilityProfile(db *gorm.DB, serviceType string) (servic
 				PromQL:      item.PromQL,
 			})
 		}
-		if len(profile.MetricCards) > 0 {
-			return profile, nil
-		}
-		profile.MetricCards = genericServiceMetricCards()
 		return profile, nil
 	}
-	return genericServiceObservabilityProfile(), nil
+	return serviceObservabilityProfileData{}, nil
 }
 
-func genericServiceObservabilityProfile() serviceObservabilityProfileData {
-	return serviceObservabilityProfileData{
-		DashboardUID:     "paap-middleware-workload",
-		DashboardTitle:   "服务工作负载大盘",
-		LogQueryTemplate: `{namespace="$namespace"} |~ "(?i)(error|exception|panic|fail)"`,
-		MetricCards:      genericServiceMetricCards(),
-	}
-}
-
-func genericServiceMetricCards() []CatalogServiceMetricCard {
-	return []CatalogServiceMetricCard{
-		{Key: "availability", Title: "可用状态", Unit: "state", Description: "服务实例运行状态", PromQL: `up{namespace="$namespace"}`},
-		{Key: "error_logs", Title: "错误日志", Unit: "count", Description: "错误日志数量", PromQL: `sum(count_over_time({namespace="$namespace"} |~ "(?i)(error|exception|panic|fail)" [5m]))`},
+func catalogServiceObservabilityProfileLookup(db *gorm.DB) func(string) (serviceObservabilityProfileData, error) {
+	cache := map[string]serviceObservabilityProfileData{}
+	return func(serviceType string) (serviceObservabilityProfileData, error) {
+		serviceType = strings.TrimSpace(serviceType)
+		if serviceType == "" {
+			return serviceObservabilityProfileData{}, nil
+		}
+		if profile, ok := cache[serviceType]; ok {
+			return profile, nil
+		}
+		profile, err := catalogServiceObservabilityProfile(db, serviceType)
+		if err != nil {
+			return serviceObservabilityProfileData{}, err
+		}
+		cache[serviceType] = profile
+		return profile, nil
 	}
 }
 
 func serviceLogQuery(profile serviceObservabilityProfileData, namespace, serviceName string) string {
-	query := firstNonEmpty(profile.LogQueryTemplate, `{namespace="$namespace"} |~ "(?i)(error|exception|panic|fail)"`)
+	query := strings.TrimSpace(profile.LogQueryTemplate)
+	if query == "" {
+		return ""
+	}
 	query = strings.ReplaceAll(query, "$namespace", strings.TrimSpace(namespace))
 	query = strings.ReplaceAll(query, "$service", strings.TrimSpace(serviceName))
 	return query
 }
 
-func errorLogsURLForInstallation(monitors map[uint]model.ServiceInstallation, inst model.ServiceInstallation) string {
+func errorLogsURLForInstallationWithProfile(monitors map[uint]model.ServiceInstallation, inst model.ServiceInstallation, profile serviceObservabilityProfileData) string {
 	monitor := monitors[inst.EnvironmentID]
 	if monitor.ID == 0 {
 		return ""
 	}
-	return platformServiceProxyURL(monitor, platformServiceExplorePath(genericServiceObservabilityProfile(), inst.Namespace, inst.ServiceName))
+	explorePath := platformServiceExplorePath(profile, inst.Namespace, inst.ServiceName)
+	if explorePath == "" {
+		return ""
+	}
+	return platformServiceProxyURL(monitor, explorePath)
 }
 
-func errorLogsURLForCapability(monitors map[uint]model.ServiceInstallation, capability model.EnvironmentCapability, installationsByID map[uint]model.ServiceInstallation) string {
-	if capability.RefServiceID != nil && installationsByID != nil {
-		if ref, ok := installationsByID[*capability.RefServiceID]; ok {
-			return errorLogsURLForInstallation(monitors, ref)
-		}
+func errorLogsURLForCapabilityWithProfileLookup(
+	monitors map[uint]model.ServiceInstallation,
+	capability model.EnvironmentCapability,
+	installationsByID map[uint]model.ServiceInstallation,
+	profileFor func(string) (serviceObservabilityProfileData, error),
+) (string, error) {
+	if capability.RefServiceID == nil || installationsByID == nil {
+		return "", nil
 	}
-	return ""
+	ref, ok := installationsByID[*capability.RefServiceID]
+	if !ok {
+		return "", nil
+	}
+	profile, err := profileFor(ref.ServiceType)
+	if err != nil {
+		return "", err
+	}
+	return errorLogsURLForInstallationWithProfile(monitors, ref, profile), nil
 }
 
 func platformServiceExplorePath(profile serviceObservabilityProfileData, namespace, serviceName string) string {
 	query := serviceLogQuery(profile, namespace, serviceName)
+	if query == "" {
+		return ""
+	}
 	left := map[string]interface{}{
 		"datasource": "Loki",
 		"queries": []map[string]string{{
@@ -1644,10 +1698,6 @@ func monitoringServicesByEnvironment(db *gorm.DB, envIDs []uint) (map[uint]model
 	return out, nil
 }
 
-func monitoringURLForInstallation(monitors map[uint]model.ServiceInstallation, inst model.ServiceInstallation) string {
-	return monitoringURLForInstallationWithProfile(monitors, inst, genericServiceObservabilityProfile())
-}
-
 func monitoringURLForInstallationWithProfile(monitors map[uint]model.ServiceInstallation, inst model.ServiceInstallation, profile serviceObservabilityProfileData) string {
 	monitor := monitors[inst.EnvironmentID]
 	if monitor.ID == 0 {
@@ -1656,24 +1706,35 @@ func monitoringURLForInstallationWithProfile(monitors map[uint]model.ServiceInst
 	if strings.EqualFold(inst.ServiceType, "monitor") || strings.EqualFold(inst.ServiceType, "prometheus-grafana") {
 		return platformServiceProxyURL(monitor, "")
 	}
+	if strings.TrimSpace(profile.DashboardUID) == "" {
+		return ""
+	}
 	return platformServiceProxyURL(monitor, platformServiceDashboardPath(profile.DashboardUID, inst.Namespace))
 }
 
-func monitoringURLForCapability(monitors map[uint]model.ServiceInstallation, capability model.EnvironmentCapability, installationsByID map[uint]model.ServiceInstallation) string {
+func monitoringURLForCapabilityWithProfileLookup(
+	monitors map[uint]model.ServiceInstallation,
+	capability model.EnvironmentCapability,
+	installationsByID map[uint]model.ServiceInstallation,
+	profileFor func(string) (serviceObservabilityProfileData, error),
+) (string, error) {
 	if capability.RefServiceID != nil && installationsByID != nil {
 		if ref, ok := installationsByID[*capability.RefServiceID]; ok {
-			return monitoringURLForInstallation(monitors, ref)
+			profile, err := profileFor(ref.ServiceType)
+			if err != nil {
+				return "", err
+			}
+			return monitoringURLForInstallationWithProfile(monitors, ref, profile), nil
 		}
 	}
-	monitor := monitors[capability.EnvironmentID]
-	if monitor.ID == 0 {
-		return ""
-	}
-	return platformServiceProxyURL(monitor, "")
+	return "", nil
 }
 
 func monitoringURLWithProfile(existing string, profile serviceObservabilityProfileData, namespace string) string {
 	if strings.TrimSpace(existing) == "" {
+		return ""
+	}
+	if strings.TrimSpace(profile.DashboardUID) == "" {
 		return ""
 	}
 	idx := strings.Index(existing, "/proxy/")
@@ -1687,15 +1748,22 @@ func errorLogsURLWithProfile(existing string, profile serviceObservabilityProfil
 	if strings.TrimSpace(existing) == "" {
 		return ""
 	}
+	explorePath := platformServiceExplorePath(profile, namespace, serviceName)
+	if explorePath == "" {
+		return ""
+	}
 	idx := strings.Index(existing, "/proxy/")
 	if idx < 0 {
 		return existing
 	}
-	return existing[:idx] + "/proxy/" + strings.TrimLeft(platformServiceExplorePath(profile, namespace, serviceName), "/")
+	return existing[:idx] + "/proxy/" + strings.TrimLeft(explorePath, "/")
 }
 
 func platformServiceDashboardPath(uid, namespace string) string {
-	uid = firstNonEmpty(strings.TrimSpace(uid), "paap-middleware-workload")
+	uid = strings.TrimSpace(uid)
+	if uid == "" {
+		return ""
+	}
 	values := url.Values{}
 	values.Set("orgId", "1")
 	values.Set("theme", "light")

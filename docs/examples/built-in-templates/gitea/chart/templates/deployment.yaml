@@ -14,6 +14,12 @@ spec:
       app.kubernetes.io/instance: {{ .Release.Name }}
   template:
     metadata:
+{{- if .Values.metrics.enabled }}
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "3000"
+        prometheus.io/path: "/metrics"
+{{- end }}
       labels:
         app.kubernetes.io/name: {{ include "gitea.name" . }}
         app.kubernetes.io/instance: {{ .Release.Name }}
@@ -41,6 +47,10 @@ spec:
               value: "main"
             - name: GITEA__service__DISABLE_REGISTRATION
               value: "true"
+{{- if .Values.metrics.enabled }}
+            - name: GITEA__metrics__ENABLED
+              value: "true"
+{{- end }}
           ports:
             - name: http
               containerPort: 3000

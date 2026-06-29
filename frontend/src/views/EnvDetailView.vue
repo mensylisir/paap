@@ -1818,6 +1818,24 @@
                   <input v-model.trim="configForm.memory" class="bx--text-input" placeholder="128Mi" />
                 </label>
               </div>
+              <details class="config-advanced-details">
+                <summary>高级启动配置</summary>
+                <label class="config-stack-field">
+                  <span>Command</span>
+                  <textarea v-model="configForm.commandText" class="bx--text-input" rows="2" placeholder="每行一个 command 片段"></textarea>
+                </label>
+                <label class="config-stack-field">
+                  <span>Args</span>
+                  <textarea v-model="configForm.argsText" class="bx--text-input" rows="3" placeholder="每行一个参数"></textarea>
+                </label>
+              </details>
+            </section>
+
+            <section v-if="configDrawerTab === 'autoscaling' && configDrawer.kind === 'component'" class="config-section">
+              <div class="config-section-title">
+                <span>弹性伸缩</span>
+                <small>为当前组件生成 HPA 或 KEDA ScaledObject</small>
+              </div>
               <div class="component-autoscaling-panel">
                 <label class="component-autoscaling-toggle">
                   <input v-model="configForm.autoscaling.enabled" type="checkbox" />
@@ -1865,17 +1883,6 @@
                   </label>
                 </div>
               </div>
-              <details class="config-advanced-details">
-                <summary>高级启动配置</summary>
-                <label class="config-stack-field">
-                  <span>Command</span>
-                  <textarea v-model="configForm.commandText" class="bx--text-input" rows="2" placeholder="每行一个 command 片段"></textarea>
-                </label>
-                <label class="config-stack-field">
-                  <span>Args</span>
-                  <textarea v-model="configForm.argsText" class="bx--text-input" rows="3" placeholder="每行一个参数"></textarea>
-                </label>
-              </details>
             </section>
 
             <section v-if="configDrawerTab === 'variables' && configDrawer.kind === 'component'" class="config-section">
@@ -2052,7 +2059,7 @@
                   {{ runtimeMetricsLoading ? '刷新中...' : '刷新' }}
                 </button>
               </div>
-              <div v-if="runtimeMetricsLoading" class="workspace-loading">正在读取当前卡片的 CPU 和内存占用...</div>
+              <div v-if="runtimeMetricsLoading" class="workspace-loading">正在读取当前卡片的运行指标和 Prometheus 时序...</div>
               <div v-else-if="runtimeMetricsError" class="modal-error" role="alert">{{ runtimeMetricsError }}</div>
               <div v-else-if="runtimeMetrics" class="runtime-metrics-panel">
                 <div v-if="!runtimeMetrics.available" class="config-inline-note">
@@ -2065,7 +2072,7 @@
                     <small>{{ card.hint }}</small>
                   </div>
                 </div>
-                <div v-if="runtimeMetricSamples.length" class="runtime-metric-chart-grid">
+                <div v-if="runtimeMetricSeries.length" class="runtime-metric-chart-grid">
                   <div v-for="chart in runtimeMetricCharts" :key="chart.key" class="runtime-metric-chart">
                     <header>
                       <span>{{ chart.label }}</span>
@@ -2084,6 +2091,9 @@
                       <span>{{ chart.maxLabel }}</span>
                     </footer>
                   </div>
+                </div>
+                <div v-else-if="runtimeMetricSamples.length" class="config-inline-note">
+                  Prometheus 暂未返回当前卡片的时序数据。
                 </div>
                 <div v-if="runtimeMetricSamples.length" class="runtime-metric-list">
                   <div v-for="(sample, idx) in runtimeMetricSamples" :key="`${sample.pod}:${sample.container}`" class="runtime-metric-row">
@@ -2722,10 +2732,6 @@ const serviceModalHeading = computed(() => serviceModalMeta.value.heading)
 const serviceModalSummaryPill = computed(() => serviceModalMeta.value.pill)
 const serviceModalMaxWidth = computed(() => serviceModalMeta.value.maxWidth)
 const parseServiceFeatures = (raw: unknown) => {
-  const fallback = [
-    { key: 'managed', enabled: true },
-    { key: 'shared', enabled: true },
-  ]
   if (Array.isArray(raw)) {
     return raw
       .map((item:any) => ({ key: String(item?.key || '').trim(), enabled: item?.enabled !== false }))
@@ -2735,10 +2741,10 @@ const parseServiceFeatures = (raw: unknown) => {
     try {
       return parseServiceFeatures(JSON.parse(raw))
     } catch {
-      return fallback
+      return []
     }
   }
-  return fallback
+  return []
 }
 const serviceSupportsProvisionMode = (svc:any, mode: ServiceProvisionMode) => {
   if (mode === 'managed') return true
@@ -3020,7 +3026,7 @@ const runtimeConsoleView = ref<HTMLElement | null>(null)
 let runtimeConsoleTerm: import('@xterm/xterm').Terminal | null = null
 let runtimeConsoleFitAddon: import('@xterm/addon-fit').FitAddon | null = null
 let runtimeConsoleResizeObserver: ResizeObserver | null = null
-type ConfigDrawerTab = 'deploy' | 'workspace' | 'capabilities' | 'api' | 'dependencies' | 'database' | 'data' | 'queues' | 'buckets' | 'backups' | 'variables' | 'runtime' | 'logs' | 'console'
+type ConfigDrawerTab = 'deploy' | 'autoscaling' | 'workspace' | 'capabilities' | 'api' | 'dependencies' | 'database' | 'data' | 'queues' | 'buckets' | 'backups' | 'variables' | 'runtime' | 'logs' | 'console'
 const configDrawerTab = ref<ConfigDrawerTab>('deploy')
 const configDrawer = ref<{ visible: boolean; kind: 'component' | 'service' | 'capability'; component: any | null; service: any | null; capability: any | null; saving: boolean; error: string; message: string }>({
   visible: false,
@@ -6695,6 +6701,7 @@ const serviceDrawerBucketRows = computed(() => [
   { label: '存储', value: serviceConfigForm.value['persistence.enabled'] ? String(serviceConfigForm.value['persistence.size'] || '已启用') : '临时存储' },
 ])
 const runtimeMetricSamples = computed(() => Array.isArray(runtimeMetrics.value?.samples) ? runtimeMetrics.value.samples : [])
+const runtimeMetricSeries = computed(() => Array.isArray(runtimeMetrics.value?.series) ? runtimeMetrics.value.series : [])
 const runtimeLogSamples = computed(() => Array.isArray(runtimeLogs.value?.samples) ? runtimeLogs.value.samples : [])
 const runtimeMetricCards = computed(() => {
   const summary = runtimeMetrics.value?.summary || {}
@@ -6718,40 +6725,47 @@ const runtimeMetricFormatValue = (raw:number, kind:'cpu' | 'memory') => {
   if (raw < 1024 * 1024 * 1024) return `${Math.round(raw / 1024 / 1024)} MiB`
   return `${(raw / 1024 / 1024 / 1024).toFixed(2)} GiB`
 }
-const runtimeMetricChartFor = (kind:'cpu' | 'memory') => {
-  const samples = runtimeMetricSamples.value
-  const rawValues = samples.map((sample:any) => runtimeMetricNumericValue(sample, kind))
-  const fallback = kind === 'cpu' ? Number(runtimeMetrics.value?.summary?.cpuCores || 0) : Number(runtimeMetrics.value?.summary?.memoryBytes || 0)
-  const values: number[] = rawValues.length ? rawValues : [fallback]
-  const chartValues: number[] = values.length === 1 ? [0, values[0]] : values
-  const max = Math.max(...chartValues, kind === 'cpu' ? 0.001 : 1)
-  const min = Math.min(...chartValues, 0)
-  const span = Math.max(max - min, kind === 'cpu' ? 0.001 : 1)
-  const pointList: Array<{ key: string; x: number; y: number }> = chartValues.map((value: number, idx: number) => {
+const runtimeSeriesFormatValue = (raw:number, unit:string) => {
+  const normalized = String(unit || '').toLowerCase()
+  if (normalized === 'bytes') return runtimeMetricFormatValue(raw, 'memory')
+  if (normalized === 'bytes/s') return `${runtimeMetricFormatValue(raw, 'memory')}/s`
+  if (normalized === 'cores') return runtimeMetricFormatValue(raw, 'cpu')
+  if (normalized === 'count') return String(Math.round(raw))
+  if (normalized.includes('/s')) return raw < 1 ? raw.toFixed(3) : raw.toFixed(2)
+  return raw < 1 && raw > 0 ? raw.toFixed(4) : raw.toFixed(2)
+}
+const runtimeMetricChartForSeries = (series:any) => {
+  const sourcePoints = Array.isArray(series?.points) ? series.points : []
+  const chartValues = sourcePoints
+    .map((point:any) => ({ timestamp: Number(point.timestamp || 0), value: Number(point.value || 0) }))
+    .filter((point:{ timestamp: number; value: number }) => Number.isFinite(point.timestamp) && Number.isFinite(point.value))
+  const rawValues = chartValues.map((point:{ value: number }) => point.value)
+  const max = Math.max(...rawValues, 0.000001)
+  const min = Math.min(...rawValues, 0)
+  const span = Math.max(max - min, 0.000001)
+  const pointList: Array<{ key: string; x: number; y: number }> = chartValues.map((point: { timestamp: number; value: number }, idx: number) => {
     const x = chartValues.length === 1 ? 160 : 12 + (idx * 296) / Math.max(1, chartValues.length - 1)
-    const y = 104 - ((value - min) / span) * 80
-    return { key: `${kind}-${idx}`, x: Number(x.toFixed(2)), y: Number(y.toFixed(2)) }
+    const y = 104 - ((point.value - min) / span) * 80
+    return { key: `${series?.key || 'series'}-${point.timestamp || idx}`, x: Number(x.toFixed(2)), y: Number(y.toFixed(2)) }
   })
   const points = pointList.map((point: { x: number; y: number }) => `${point.x},${point.y}`).join(' ')
   const areaPath = pointList.length
     ? `M ${pointList[0].x} 104 L ${pointList.map((point: { x: number; y: number }) => `${point.x} ${point.y}`).join(' L ')} L ${pointList[pointList.length - 1].x} 104 Z`
     : ''
-  const summary = runtimeMetrics.value?.summary || {}
+  const lastValue = chartValues.length ? chartValues[chartValues.length - 1].value : 0
+  const unit = String(series?.unit || '')
   return {
-    key: kind,
-    label: kind === 'cpu' ? 'CPU 使用' : '内存使用',
-    value: kind === 'cpu' ? (summary.cpu || runtimeMetricFormatValue(max, kind)) : (summary.memory || runtimeMetricFormatValue(max, kind)),
+    key: String(series?.key || series?.label || 'series'),
+    label: String(series?.label || series?.key || '指标'),
+    value: runtimeSeriesFormatValue(lastValue, unit),
     points,
     pointList,
     areaPath,
-    minLabel: runtimeMetricFormatValue(min, kind),
-    maxLabel: runtimeMetricFormatValue(max, kind),
+    minLabel: `min ${runtimeSeriesFormatValue(min, unit)}`,
+    maxLabel: `max ${runtimeSeriesFormatValue(max, unit)}`,
   }
 }
-const runtimeMetricCharts = computed(() => [
-  runtimeMetricChartFor('cpu'),
-  runtimeMetricChartFor('memory'),
-])
+const runtimeMetricCharts = computed(() => runtimeMetricSeries.value.map((series:any) => runtimeMetricChartForSeries(series)).filter((chart:any) => chart.pointList.length))
 const runtimeMetricBarStyle = (sample:any, kind:'cpu' | 'memory') => {
   const raw = runtimeMetricNumericValue(sample, kind)
   const samples = runtimeMetricSamples.value

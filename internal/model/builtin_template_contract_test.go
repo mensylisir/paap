@@ -59,6 +59,96 @@ func TestDocsExamplesServiceTemplatesDeclareCatalogDocs(t *testing.T) {
 	}
 }
 
+func TestDocsExamplesServiceTemplatesDeclareSpecificObservability(t *testing.T) {
+	paths := findExamplePlatformManifests(t)
+	if len(paths) == 0 {
+		t.Fatal("expected docs/examples platform manifests")
+	}
+
+	for _, path := range paths {
+		t.Run(path, func(t *testing.T) {
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatalf("read platform manifest: %v", err)
+			}
+			var manifest PlatformManifest
+			if err := yaml.Unmarshal(data, &manifest); err != nil {
+				t.Fatalf("unmarshal platform manifest: %v", err)
+			}
+			assertSpecificObservability(t, path, manifest.Observability)
+		})
+	}
+}
+
+func TestDocsExamplesKubeVirtServiceTemplatesDeclareSpecificObservability(t *testing.T) {
+	root := "../../docs/examples/kubevirt-service-templates"
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		t.Fatalf("read %s: %v", root, err)
+	}
+	count := 0
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".yaml") {
+			continue
+		}
+		count++
+		path := filepath.Join(root, entry.Name())
+		t.Run(path, func(t *testing.T) {
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatalf("read kubevirt template: %v", err)
+			}
+			var asset struct {
+				Type          string             `yaml:"type"`
+				Observability *ObservabilitySpec `yaml:"observability"`
+			}
+			if err := yaml.Unmarshal(data, &asset); err != nil {
+				t.Fatalf("unmarshal kubevirt template: %v", err)
+			}
+			assertSpecificObservability(t, path, asset.Observability)
+		})
+	}
+	if count == 0 {
+		t.Fatal("expected kubevirt service template assets")
+	}
+}
+
+func assertSpecificObservability(t *testing.T, path string, observability *ObservabilitySpec) {
+	t.Helper()
+	if observability == nil {
+		t.Fatalf("%s must declare observability from template asset", path)
+	}
+	if strings.TrimSpace(observability.DashboardUID) == "" {
+		t.Fatalf("%s must declare observability.dashboard_uid", path)
+	}
+	if strings.TrimSpace(observability.LogQueryTemplate) == "" {
+		t.Fatalf("%s must declare observability.log_query_template", path)
+	}
+	if strings.Contains(observability.DashboardUID, "paap-middleware-workload") {
+		t.Fatalf("%s must not use the generic middleware workload dashboard uid", path)
+	}
+	if len(observability.MetricCards) < 3 {
+		t.Fatalf("%s must declare at least three service-specific metric cards, got %#v", path, observability.MetricCards)
+	}
+	specific := 0
+	for _, card := range observability.MetricCards {
+		if strings.TrimSpace(card.Title) == "" || strings.TrimSpace(card.PromQL) == "" {
+			t.Fatalf("%s metric cards must include title and promql, got %#v", path, card)
+		}
+		text := strings.ToLower(card.Key + " " + card.Title + " " + card.Description)
+		if !strings.Contains(text, "cpu") &&
+			!strings.Contains(text, "memory") &&
+			!strings.Contains(text, "内存") &&
+			!strings.Contains(text, "storage") &&
+			!strings.Contains(text, "存储") {
+			specific++
+		}
+	}
+	if specific == 0 {
+		t.Fatalf("%s metric cards must include service-specific metrics beyond resource usage", path)
+	}
+}
+
 func findExamplePlatformManifests(t *testing.T) []string {
 	t.Helper()
 	var paths []string

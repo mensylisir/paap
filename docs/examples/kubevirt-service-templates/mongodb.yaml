@@ -37,6 +37,26 @@ catalog:
       5. 配置模板注入 `MONGODB_HOST`、`MONGODB_PORT`、`MONGODB_USERNAME`、`MONGODB_PASSWORD` 和 `MONGODB_DATABASE`。
 
       如果应用无法连接，优先检查 VM 状态、Service selector、端口、Secret 凭据和组件右侧配置模板反选的服务引用。
+observability:
+  dashboard_uid: paap-mongodb-service
+  dashboard_title: MongoDB KubeVirt 专属大盘
+  log_query_template: '{namespace="$namespace"} |~ "(?i)($service|mongodb|mongo|replica|slow query|index|auth|error|exception|timeout)"'
+  metric_cards:
+    - key: connections
+      title: 连接数
+      unit: connections
+      description: MongoDB 当前连接数量
+      promql: 'sum(mongodb_connections{namespace="$namespace",state="current"})'
+    - key: opcounters
+      title: 操作吞吐
+      unit: ops/s
+      description: insert/query/update/delete/getmore/command 总操作速率
+      promql: 'sum(rate(mongodb_op_counters_total{namespace="$namespace"}[5m]))'
+    - key: page_faults
+      title: Page Fault
+      unit: faults/s
+      description: MongoDB 读盘 page fault 速率
+      promql: 'sum(rate(mongodb_extra_info_page_faults_total{namespace="$namespace"}[5m]))'
 runtimeSpec:
   image: docker.io/library/mongo:7
   cpu: "1"

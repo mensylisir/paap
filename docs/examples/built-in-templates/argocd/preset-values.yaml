@@ -4,6 +4,8 @@
 # Disable cluster-level roles at the top level
 createClusterRoles: false
 createAggregateRoles: false
+global:
+  addPrometheusAnnotations: true
 
 configs:
   cm:
@@ -56,6 +58,10 @@ controller:
   serviceAccount:
     create: false
     name: ""
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: true
 
 # Server
 server:
@@ -71,6 +77,10 @@ server:
   # Disable cluster-scoped resources
   clusterAdminAccess:
     enabled: false
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: true
 
 # Repo Server
 repoServer:
@@ -78,6 +88,10 @@ repoServer:
   serviceAccount:
     create: false
     name: ""
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: true
 
 # Dex (SSO)
 dex:
@@ -108,6 +122,10 @@ applicationSet:
   serviceAccount:
     create: false
     name: ""
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: true
 
 # Notifications
 notifications:

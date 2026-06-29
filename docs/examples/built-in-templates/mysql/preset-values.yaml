@@ -9,3 +9,7 @@ primary:
 secondary:
   persistence:
     enabled: false
+metrics:
+  enabled: true
+  serviceMonitor:
+    enabled: true
