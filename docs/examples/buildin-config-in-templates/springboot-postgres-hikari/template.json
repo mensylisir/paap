@@ -1,0 +1,22 @@
+{
+  "key": "springboot-postgres-hikari",
+  "name": "Spring Boot + PostgreSQL + Hikari",
+  "version": "v1",
+  "description": "Spring Data JPA 使用 PostgreSQL 和默认 Hikari 连接池。",
+  "framework": "springboot",
+  "componentTypes": ["backend"],
+  "sortOrder": 21,
+  "nativeConfigs": [
+    { "name": "application.yml", "path": "files/application.yml" }
+  ],
+  "files": [
+    { "name": "Spring Boot application.yml", "configMapName": "{{configMapName}}", "key": "application.yml", "recommendedMountPath": "/etc/paap/application.yml" }
+  ],
+  "env": [
+    { "name": "SPRING_CONFIG_ADDITIONAL_LOCATION", "source": "value", "value": "file:/etc/paap/application.yml" },
+    { "name": "POSTGRES_PASSWORD", "source": "secret", "refName": "{{secretName}}", "refKey": "POSTGRES_PASSWORD" }
+  ],
+  "secrets": [
+    { "name": "{{secretName}}", "data": { "POSTGRES_PASSWORD": "__TEMPLATE__POSTGRES_PASSWORD__PostgreSQL 密码__" } }
+  ]
+}

@@ -587,10 +587,12 @@ export function connectionBindingPreview(component: any, service: any): Connecti
   const port = defaultServicePort(serviceType)
   const prefix = connectionEnvPrefix(serviceType)
   const host = namespace ? `${serviceName}.${namespace}.svc.cluster.local` : serviceName
-  const bindings = [
-    { name: `${prefix}_HOST`, value: host, source: serviceName },
-    { name: `${prefix}_PORT`, value: String(port), source: serviceName },
-  ]
+  const bindings = serviceType === 'eureka'
+    ? [{ name: 'EUREKA_URL', value: `http://${host}:${port}/eureka/`, source: serviceName }]
+    : [
+        { name: `${prefix}_HOST`, value: host, source: serviceName },
+        { name: `${prefix}_PORT`, value: String(port), source: serviceName },
+      ]
   if (serviceType === 'redis' && redisClusterEnabled(service)) {
     bindings.push(
       { name: 'REDIS_CLUSTER_HOST', value: host, source: serviceName },
@@ -844,6 +846,7 @@ function defaultServicePort(serviceType: string): number {
     rabbitmq: 5672,
     kafka: 9092,
     minio: 9000,
+    eureka: 8761,
   }
   return ports[String(serviceType || '').toLowerCase()] || 80
 }

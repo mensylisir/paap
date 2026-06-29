@@ -1,0 +1,6 @@
+{
+  "fields": [
+    { "key": "SERVER_PORT", "label": "服务端口", "type": "number", "default": "8080" },
+    { "key": "APP_NAME", "label": "应用名称", "type": "text", "default": "base-service" }
+  ]
+}

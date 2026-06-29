@@ -80,8 +80,23 @@ cd paap
 KIND_CLUSTER=<your-cluster> bash deploy/k8s/deploy.sh
 
 # 3. 访问
-# PAAP Server: http://<node-ip>:30091
+# deploy/k8s/configure-auth-endpoints.sh 会自动发现当前集群的 NodePort 入口，
+# 并把 PAAP / Keycloak 的实际外部地址写入 Deployment 环境变量。
 # 前端开发: http://localhost:5173 (npm run dev)
+```
+
+如果已经有域名或 Ingress，部署时显式传完整外部 URL：
+
+```bash
+PAAP_PUBLIC_URL=https://paap.example.com \
+KEYCLOAK_PUBLIC_URL=https://auth.example.com \
+KIND_CLUSTER=<your-cluster> bash deploy/k8s/deploy.sh
+```
+
+如果没有域名但需要指定可访问节点地址，可以只传 host，NodePort 仍自动读取：
+
+```bash
+PUBLIC_ACCESS_HOST=192.168.1.20 KIND_CLUSTER=<your-cluster> bash deploy/k8s/deploy.sh
 ```
 
 ### 本地开发

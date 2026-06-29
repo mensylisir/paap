@@ -1,0 +1,10 @@
+{
+  "fields": [
+    { "key": "SERVER_PORT", "label": "服务端口", "type": "number", "default": "8080" },
+    { "key": "MYSQL_HOST", "label": "MySQL 地址", "type": "serviceRef", "target": "mysql", "format": "host", "required": true, "default": "mysql" },
+    { "key": "MYSQL_PORT", "label": "MySQL 端口", "type": "serviceRef", "target": "mysql", "format": "port", "required": true, "default": "3306" },
+    { "key": "MYSQL_DATABASE", "label": "MySQL 数据库", "type": "text", "default": "cos" },
+    { "key": "MYSQL_USERNAME", "label": "MySQL 用户", "type": "text", "default": "root" },
+    { "key": "MYSQL_PASSWORD", "label": "MySQL 密码", "type": "password", "output": "secret", "required": true }
+  ]
+}

@@ -30,10 +30,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	paapv1 "paap/api/v1"
+	"paap/internal/authz"
 	"paap/internal/database"
 	"paap/internal/k8s"
 	"paap/internal/middleware"
 	"paap/internal/model"
+	"paap/internal/permission"
 	svcservice "paap/internal/service"
 )
 
@@ -516,65 +518,6 @@ func TestBuildHelmInstallSpecKeepsTemplatePlatformManifest(t *testing.T) {
 	}
 }
 
-func TestGetWorkloadRoleDefaultsToNoProjectedPermissions(t *testing.T) {
-	previousDB := database.DB
-	t.Cleanup(func() { database.DB = previousDB })
-
-	db, err := openTestDB(t)
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
-	if err := db.AutoMigrate(&model.ServiceTemplate{}); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
-	database.DB = db
-
-	if got := getWorkloadRole("missing"); len(got.Rules) != 0 {
-		t.Fatalf("missing template should not get projected workload permissions: %#v", got.Rules)
-	}
-
-	if err := db.Create(&model.ServiceTemplate{Type: "redis", WorkloadRolePolicy: ""}).Error; err != nil {
-		t.Fatalf("create template: %v", err)
-	}
-	if got := getWorkloadRole("redis"); len(got.Rules) != 0 {
-		t.Fatalf("empty workload policy should not get projected workload permissions: %#v", got.Rules)
-	}
-}
-
-func TestGetEnvironmentRoleReadsCustomTemplatePolicy(t *testing.T) {
-	previousDB := database.DB
-	t.Cleanup(func() { database.DB = previousDB })
-
-	db, err := openTestDB(t)
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
-	if err := db.AutoMigrate(&model.ServiceTemplate{}); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
-	database.DB = db
-
-	policy := `[{"apiGroups":["*"],"resources":["*"],"verbs":["*"]}]`
-	if err := db.Create(&model.ServiceTemplate{
-		Type:                  "custom-monitor",
-		WorkloadRolePolicy:    "[]",
-		EnvironmentRolePolicy: policy,
-	}).Error; err != nil {
-		t.Fatalf("create template: %v", err)
-	}
-
-	if got := getWorkloadRole("custom-monitor"); len(got.Rules) != 0 {
-		t.Fatalf("custom monitor should not get workload permissions: %#v", got.Rules)
-	}
-	got := getEnvironmentRole("custom-monitor")
-	if got == nil || len(got.Rules) != 1 {
-		t.Fatalf("custom monitor should get environment permissions, got %#v", got)
-	}
-	if got.Rules[0].APIGroups[0] != "*" || got.Rules[0].Resources[0] != "*" || got.Rules[0].Verbs[0] != "*" {
-		t.Fatalf("unexpected environment policy: %#v", got.Rules[0])
-	}
-}
-
 func TestServiceToolNamespaceUsesTemplateToolIdentity(t *testing.T) {
 	app := model.Application{Identifier: "myapp"}
 	env := model.Environment{Identifier: "prod"}
@@ -906,6 +849,301 @@ func TestInstallServiceDeploysExistingDraft(t *testing.T) {
 	}
 	if svc.Spec.Type != "redis" {
 		t.Fatalf("service instance type = %q, want redis", svc.Spec.Type)
+	}
+}
+
+func TestInstallServiceDeploysKubeVirtResources(t *testing.T) {
+	previousDB := database.DB
+	previousClient := k8s.GetClient()
+	previousSync := syncClusterState
+	t.Cleanup(func() {
+		database.DB = previousDB
+		k8s.SetClient(previousClient)
+		syncClusterState = previousSync
+	})
+	syncClusterState = func(context.Context, *gorm.DB, ctrlclient.Client) error { return nil }
+
+	db, err := openTestDB(t)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("db handle: %v", err)
+	}
+	sqlDB.SetMaxOpenConns(1)
+	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.ServiceTemplate{}, &model.ServiceInstallation{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	database.DB = db
+
+	app := model.Application{Name: "Billing", Identifier: "billing", OwnerID: 1}
+	if err := db.Create(&app).Error; err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	env := model.Environment{ApplicationID: app.ID, Name: "Dev", Identifier: "dev", Namespace: "billing-dev", Status: "running"}
+	if err := db.Create(&env).Error; err != nil {
+		t.Fatalf("create env: %v", err)
+	}
+	if err := db.Create(&model.AppMember{ApplicationID: app.ID, UserID: 2, Role: "member"}).Error; err != nil {
+		t.Fatalf("create member: %v", err)
+	}
+	managedTmpl := model.ServiceTemplate{
+		Type:                 "postgresql",
+		Name:                 "PostgreSQL Helm",
+		Installer:            "helm",
+		Category:             "database",
+		ProvisionMode:        model.ServiceProvisionModeManaged,
+		PlatformManifestJSON: `{"name":"postgresql","version":"v1"}`,
+	}
+	if err := db.Create(&managedTmpl).Error; err != nil {
+		t.Fatalf("create managed template: %v", err)
+	}
+	tmpl := model.ServiceTemplate{
+		Type:          "postgresql",
+		Name:          "PostgreSQL VM",
+		Installer:     "raw-yaml",
+		Category:      "database",
+		ProvisionMode: model.ServiceProvisionModeKubeVirt,
+		RuntimeSpec:   `{"image":"postgres:16","diskSize":"10Gi","ports":[{"name":"postgresql","port":5432}],"credentials":{"username":"app","password":"secret"},"database":"appdb"}`,
+	}
+	if err := db.Create(&tmpl).Error; err != nil {
+		t.Fatalf("create template: %v", err)
+	}
+
+	testScheme := runtime.NewScheme()
+	if err := clientgoscheme.AddToScheme(testScheme); err != nil {
+		t.Fatalf("add core scheme: %v", err)
+	}
+	if err := paapv1.AddToScheme(testScheme); err != nil {
+		t.Fatalf("add paap scheme: %v", err)
+	}
+	k8s.SetClient(fake.NewClientBuilder().WithScheme(testScheme).Build())
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.POST("/api/v1/environments/:id/services", withTestAuthUser(2, InstallService))
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/environments/1/services", strings.NewReader(`{"serviceType":"postgresql","provisionMode":"kubevirt"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+
+	var inst model.ServiceInstallation
+	if err := db.Where("environment_id = ? AND service_type = ? AND provision_mode = ?", env.ID, "postgresql", model.ServiceProvisionModeKubeVirt).First(&inst).Error; err != nil {
+		t.Fatalf("service installation not saved: %v", err)
+	}
+	if inst.Status != "installing" || inst.Namespace != "billing-dev-postgresql" {
+		t.Fatalf("unexpected kubevirt install: %#v", inst)
+	}
+
+	var secret corev1.Secret
+	if err := k8s.GetClient().Get(t.Context(), ctrlclient.ObjectKey{Name: "postgresql-credentials", Namespace: "billing-dev-postgresql"}, &secret); err != nil {
+		t.Fatalf("kubevirt secret not created: %v", err)
+	}
+	if string(secret.Data["password"]) != "secret" {
+		t.Fatalf("kubevirt secret password = %q", string(secret.Data["password"]))
+	}
+	var svc corev1.Service
+	if err := k8s.GetClient().Get(t.Context(), ctrlclient.ObjectKey{Name: "postgresql", Namespace: "billing-dev-postgresql"}, &svc); err != nil {
+		t.Fatalf("kubevirt service not created: %v", err)
+	}
+	if svc.Spec.Selector["paap.io/provision-mode"] != "kubevirt" || svc.Spec.Ports[0].Port != 5432 {
+		t.Fatalf("unexpected kubevirt service: %#v", svc.Spec)
+	}
+	vm := &unstructured.Unstructured{}
+	vm.SetAPIVersion("kubevirt.io/v1")
+	vm.SetKind("VirtualMachine")
+	if err := k8s.GetClient().Get(t.Context(), ctrlclient.ObjectKey{Name: "postgresql", Namespace: "billing-dev-postgresql"}, vm); err != nil {
+		t.Fatalf("kubevirt virtual machine not created: %v", err)
+	}
+	var serviceInstance paapv1.ServiceInstance
+	err = k8s.GetClient().Get(t.Context(), ctrlclient.ObjectKey{Name: "dev-postgresql", Namespace: "paap-app-billing"}, &serviceInstance)
+	if !apierrors.IsNotFound(err) {
+		t.Fatalf("kubevirt install must not create ServiceInstance CR, got err=%v", err)
+	}
+}
+
+func TestInstallServiceRecreatesMissingServiceInstanceForRunningRecord(t *testing.T) {
+	previousDB := database.DB
+	previousClient := k8s.GetClient()
+	previousSync := syncClusterState
+	t.Cleanup(func() {
+		database.DB = previousDB
+		k8s.SetClient(previousClient)
+		syncClusterState = previousSync
+	})
+	syncClusterState = func(context.Context, *gorm.DB, ctrlclient.Client) error { return nil }
+
+	db, err := openTestDB(t)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("db handle: %v", err)
+	}
+	sqlDB.SetMaxOpenConns(1)
+	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.ServiceTemplate{}, &model.ServiceInstallation{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	database.DB = db
+
+	app := model.Application{Name: "Billing", Identifier: "billing", OwnerID: 1}
+	if err := db.Create(&app).Error; err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	env := model.Environment{ApplicationID: app.ID, Name: "Dev", Identifier: "dev", Namespace: "billing-dev", Status: "running"}
+	if err := db.Create(&env).Error; err != nil {
+		t.Fatalf("create env: %v", err)
+	}
+	if err := db.Create(&model.AppMember{ApplicationID: app.ID, UserID: 2, Role: "member"}).Error; err != nil {
+		t.Fatalf("create member: %v", err)
+	}
+	tmpl := model.ServiceTemplate{Type: "git", Name: "Gitea", Installer: "helm", Category: "tool", PlatformManifestJSON: `{"name":"gitea","version":"v1"}`}
+	if err := db.Create(&tmpl).Error; err != nil {
+		t.Fatalf("create template: %v", err)
+	}
+	if err := db.Create(&model.ServiceInstallation{
+		EnvironmentID: env.ID,
+		ServiceType:   "git",
+		ServiceName:   "dev-gitea",
+		Status:        "running",
+		Namespace:     "billing-dev-gitea",
+		ReleaseName:   "billing-dev-gitea",
+	}).Error; err != nil {
+		t.Fatalf("create stale running install: %v", err)
+	}
+
+	testScheme := runtime.NewScheme()
+	if err := clientgoscheme.AddToScheme(testScheme); err != nil {
+		t.Fatalf("add core scheme: %v", err)
+	}
+	if err := paapv1.AddToScheme(testScheme); err != nil {
+		t.Fatalf("add paap scheme: %v", err)
+	}
+	k8s.SetClient(fake.NewClientBuilder().WithScheme(testScheme).Build())
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.POST("/api/v1/environments/:id/services", withTestAuthUser(2, InstallService))
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/environments/1/services", strings.NewReader(`{"serviceType":"git"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+
+	var inst model.ServiceInstallation
+	if err := db.Where("environment_id = ? AND service_type = ?", env.ID, "git").First(&inst).Error; err != nil {
+		t.Fatalf("service installation not saved: %v", err)
+	}
+	if inst.Status != "installing" {
+		t.Fatalf("service status = %q, want installing so operator can reconcile missing runtime", inst.Status)
+	}
+
+	var svc paapv1.ServiceInstance
+	if err := k8s.GetClient().Get(t.Context(), ctrlclient.ObjectKey{Name: "dev-git", Namespace: "paap-app-billing"}, &svc); err != nil {
+		t.Fatalf("stale running record must recreate ServiceInstance CR: %v", err)
+	}
+	if svc.Spec.Type != "git" {
+		t.Fatalf("service instance type = %q, want git", svc.Spec.Type)
+	}
+}
+
+func TestInstallServiceDoesNotReviveSoftDeletedServiceInstallation(t *testing.T) {
+	previousDB := database.DB
+	previousClient := k8s.GetClient()
+	previousSync := syncClusterState
+	t.Cleanup(func() {
+		database.DB = previousDB
+		k8s.SetClient(previousClient)
+		syncClusterState = previousSync
+	})
+	syncClusterState = func(context.Context, *gorm.DB, ctrlclient.Client) error { return nil }
+
+	db, err := openTestDB(t)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.ServiceTemplate{}, &model.ServiceInstallation{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	database.DB = db
+
+	app := model.Application{Name: "Billing", Identifier: "billing", OwnerID: 1}
+	if err := db.Create(&app).Error; err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	env := model.Environment{ApplicationID: app.ID, Name: "Dev", Identifier: "dev", Namespace: "billing-dev", Status: "running"}
+	if err := db.Create(&env).Error; err != nil {
+		t.Fatalf("create env: %v", err)
+	}
+	if err := db.Create(&model.AppMember{ApplicationID: app.ID, UserID: 2, Role: "member"}).Error; err != nil {
+		t.Fatalf("create member: %v", err)
+	}
+	tmpl := model.ServiceTemplate{Type: "git", Name: "Gitea", Installer: "helm", Category: "tool", PlatformManifestJSON: `{"name":"gitea","version":"v1"}`}
+	if err := db.Create(&tmpl).Error; err != nil {
+		t.Fatalf("create template: %v", err)
+	}
+	stale := model.ServiceInstallation{
+		EnvironmentID: env.ID,
+		ServiceType:   "git",
+		ServiceName:   "old-git",
+		Status:        "running",
+		Namespace:     "old-git",
+		ReleaseName:   "old-git",
+	}
+	if err := db.Create(&stale).Error; err != nil {
+		t.Fatalf("create stale install: %v", err)
+	}
+	if err := db.Delete(&stale).Error; err != nil {
+		t.Fatalf("soft delete stale install: %v", err)
+	}
+
+	testScheme := runtime.NewScheme()
+	if err := clientgoscheme.AddToScheme(testScheme); err != nil {
+		t.Fatalf("add core scheme: %v", err)
+	}
+	if err := paapv1.AddToScheme(testScheme); err != nil {
+		t.Fatalf("add paap scheme: %v", err)
+	}
+	k8s.SetClient(fake.NewClientBuilder().WithScheme(testScheme).Build())
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.POST("/api/v1/environments/:id/services", withTestAuthUser(2, InstallService))
+
+	req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/environments/%d/services", env.ID), strings.NewReader(`{"serviceType":"git"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+
+	var oldCount int64
+	if err := db.Unscoped().Model(&model.ServiceInstallation{}).Where("id = ?", stale.ID).Count(&oldCount).Error; err != nil {
+		t.Fatalf("count stale install: %v", err)
+	}
+	if oldCount != 0 {
+		t.Fatalf("soft-deleted installation was revived or retained, count = %d", oldCount)
+	}
+
+	var inst model.ServiceInstallation
+	if err := db.Where("environment_id = ? AND service_type = ?", env.ID, "git").First(&inst).Error; err != nil {
+		t.Fatalf("service installation not saved: %v", err)
+	}
+	if inst.ID == stale.ID {
+		t.Fatalf("install reused stale soft-deleted id %d", stale.ID)
+	}
+	if inst.Status != "installing" {
+		t.Fatalf("service status = %q, want installing", inst.Status)
 	}
 }
 
@@ -1282,7 +1520,7 @@ func TestUpdateServiceRejectsNonMembersBeforeServiceLookup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.ServiceInstallation{}); err != nil {
+	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.ServiceInstallation{}, &model.Component{}, &model.InfraInstallation{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	database.DB = db
@@ -1511,7 +1749,7 @@ func TestUninstallServiceRejectsNonMembers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.ServiceInstallation{}); err != nil {
+	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.ServiceInstallation{}, &model.Component{}, &model.InfraInstallation{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	database.DB = db
@@ -1647,26 +1885,278 @@ func TestUninstallServiceScopesServiceToEnvironmentAfterMemberAccess(t *testing.
 	}
 }
 
+func TestUninstallServiceHardDeletesServiceInstallation(t *testing.T) {
+	previousDB := database.DB
+	previousClient := k8s.GetClient()
+	t.Cleanup(func() {
+		database.DB = previousDB
+		k8s.SetClient(previousClient)
+	})
+	t.Setenv("PATH", "/nonexistent")
+
+	db, err := openTestDB(t)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.ServiceInstallation{}, &model.Component{}, &model.InfraInstallation{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	database.DB = db
+
+	testScheme := runtime.NewScheme()
+	if err := clientgoscheme.AddToScheme(testScheme); err != nil {
+		t.Fatalf("add core scheme: %v", err)
+	}
+	if err := paapv1.AddToScheme(testScheme); err != nil {
+		t.Fatalf("add paap scheme: %v", err)
+	}
+	k8s.SetClient(fake.NewClientBuilder().WithScheme(testScheme).Build())
+
+	app := model.Application{Name: "测试应用", Identifier: "test", OwnerID: 1}
+	if err := db.Create(&app).Error; err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	if err := db.Create(&model.AppMember{ApplicationID: app.ID, UserID: 2, Role: "member"}).Error; err != nil {
+		t.Fatalf("create member: %v", err)
+	}
+	env := model.Environment{ApplicationID: app.ID, Name: "Dev", Identifier: "dev", Namespace: "test-dev", Status: "running"}
+	if err := db.Create(&env).Error; err != nil {
+		t.Fatalf("create env: %v", err)
+	}
+	inst := model.ServiceInstallation{EnvironmentID: env.ID, ServiceType: "git", ServiceName: "dev-git", Status: "running", Namespace: "test-dev-gitea"}
+	if err := db.Create(&inst).Error; err != nil {
+		t.Fatalf("create service installation: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodDelete, fmt.Sprintf("/api/v1/environments/%d/services/%d", env.ID, inst.ID), nil)
+	rec := httptest.NewRecorder()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.DELETE("/api/v1/environments/:id/services/:serviceId", withTestAuthUser(2, UninstallService))
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var visibleCount int64
+	if err := db.Model(&model.ServiceInstallation{}).Where("id = ?", inst.ID).Count(&visibleCount).Error; err != nil {
+		t.Fatalf("count visible service installation: %v", err)
+	}
+	if visibleCount != 0 {
+		t.Fatalf("visible service installation count = %d, want 0", visibleCount)
+	}
+	var totalCount int64
+	if err := db.Unscoped().Model(&model.ServiceInstallation{}).Where("id = ?", inst.ID).Count(&totalCount).Error; err != nil {
+		t.Fatalf("count unscoped service installation: %v", err)
+	}
+	if totalCount != 0 {
+		t.Fatalf("uninstall must hard-delete service installation, unscoped count = %d", totalCount)
+	}
+	var savedEnv model.Environment
+	if err := db.First(&savedEnv, env.ID).Error; err != nil {
+		t.Fatalf("load environment: %v", err)
+	}
+	if savedEnv.Status != "empty" {
+		t.Fatalf("environment status = %q, want empty after deleting last resource", savedEnv.Status)
+	}
+}
+
+func TestUninstallServiceDeletesKubeVirtRuntimeResources(t *testing.T) {
+	previousDB := database.DB
+	previousClient := k8s.GetClient()
+	t.Cleanup(func() {
+		database.DB = previousDB
+		k8s.SetClient(previousClient)
+	})
+	t.Setenv("PATH", "/nonexistent")
+
+	db, err := openTestDB(t)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.ServiceInstallation{}, &model.Component{}, &model.InfraInstallation{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	database.DB = db
+
+	testScheme := runtime.NewScheme()
+	if err := clientgoscheme.AddToScheme(testScheme); err != nil {
+		t.Fatalf("add core scheme: %v", err)
+	}
+	if err := paapv1.AddToScheme(testScheme); err != nil {
+		t.Fatalf("add paap scheme: %v", err)
+	}
+	k8s.SetClient(fake.NewClientBuilder().WithScheme(testScheme).Build())
+
+	app := model.Application{Name: "Billing", Identifier: "billing", OwnerID: 1}
+	if err := db.Create(&app).Error; err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	if err := db.Create(&model.AppMember{ApplicationID: app.ID, UserID: 2, Role: "member"}).Error; err != nil {
+		t.Fatalf("create member: %v", err)
+	}
+	env := model.Environment{ApplicationID: app.ID, Name: "Dev", Identifier: "dev", Namespace: "billing-dev", Status: "running"}
+	if err := db.Create(&env).Error; err != nil {
+		t.Fatalf("create env: %v", err)
+	}
+	inst := model.ServiceInstallation{
+		EnvironmentID: env.ID,
+		ServiceType:   "redis",
+		ServiceName:   "redis",
+		Status:        "running",
+		Namespace:     "billing-dev-redis",
+		ReleaseName:   "billing-dev-redis",
+		ProvisionMode: model.ServiceProvisionModeKubeVirt,
+		RuntimeSpec:   `{"image":"redis:7","diskSize":"5Gi","ports":[{"port":6379}],"credentials":{"password":"secret"}}`,
+	}
+	if err := db.Create(&inst).Error; err != nil {
+		t.Fatalf("create service installation: %v", err)
+	}
+	resources, err := k8s.BuildKubeVirtServiceResources(k8s.KubeVirtServiceResourceInput{
+		AppIdentifier: app.Identifier,
+		EnvIdentifier: env.Identifier,
+		ServiceType:   inst.ServiceType,
+		ServiceName:   inst.ServiceName,
+		Namespace:     inst.Namespace,
+		RuntimeSpec:   inst.RuntimeSpec,
+	})
+	if err != nil {
+		t.Fatalf("build kubevirt resources: %v", err)
+	}
+	if err := k8s.UpsertKubeVirtServiceResources(t.Context(), resources); err != nil {
+		t.Fatalf("seed kubevirt resources: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodDelete, fmt.Sprintf("/api/v1/environments/%d/services/%d", env.ID, inst.ID), nil)
+	rec := httptest.NewRecorder()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.DELETE("/api/v1/environments/:id/services/:serviceId", withTestAuthUser(2, UninstallService))
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var totalCount int64
+	if err := db.Unscoped().Model(&model.ServiceInstallation{}).Where("id = ?", inst.ID).Count(&totalCount).Error; err != nil {
+		t.Fatalf("count unscoped service installation: %v", err)
+	}
+	if totalCount != 0 {
+		t.Fatalf("uninstall must hard-delete kubevirt service installation, unscoped count = %d", totalCount)
+	}
+	vm := &unstructured.Unstructured{}
+	vm.SetAPIVersion("kubevirt.io/v1")
+	vm.SetKind("VirtualMachine")
+	if err := k8s.GetClient().Get(t.Context(), ctrlclient.ObjectKey{Name: "redis", Namespace: "billing-dev-redis"}, vm); err == nil {
+		t.Fatalf("kubevirt virtual machine should be deleted")
+	}
+	var namespace corev1.Namespace
+	if err := k8s.GetClient().Get(t.Context(), ctrlclient.ObjectKey{Name: "billing-dev-redis"}, &namespace); err == nil {
+		t.Fatalf("kubevirt namespace should be deleted")
+	}
+	var savedEnv model.Environment
+	if err := db.First(&savedEnv, env.ID).Error; err != nil {
+		t.Fatalf("load environment: %v", err)
+	}
+	if savedEnv.Status != "empty" {
+		t.Fatalf("environment status = %q, want empty after deleting last kubevirt resource", savedEnv.Status)
+	}
+}
+
+func TestUninstallServiceKeepsRuntimeInstallationWhenCRDeleteFails(t *testing.T) {
+	previousDB := database.DB
+	previousClient := k8s.GetClient()
+	t.Cleanup(func() {
+		database.DB = previousDB
+		k8s.SetClient(previousClient)
+	})
+	t.Setenv("PATH", "/nonexistent")
+
+	db, err := openTestDB(t)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.ServiceInstallation{}, &model.Component{}, &model.InfraInstallation{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	database.DB = db
+	k8s.SetClient(nil)
+
+	app := model.Application{Name: "测试应用", Identifier: "test", OwnerID: 1}
+	if err := db.Create(&app).Error; err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	if err := db.Create(&model.AppMember{ApplicationID: app.ID, UserID: 2, Role: "member"}).Error; err != nil {
+		t.Fatalf("create member: %v", err)
+	}
+	env := model.Environment{ApplicationID: app.ID, Name: "Dev", Identifier: "dev", Namespace: "test-dev", Status: "running"}
+	if err := db.Create(&env).Error; err != nil {
+		t.Fatalf("create env: %v", err)
+	}
+	inst := model.ServiceInstallation{EnvironmentID: env.ID, ServiceType: "git", ServiceName: "dev-git", Status: "running", Namespace: "test-dev-gitea"}
+	if err := db.Create(&inst).Error; err != nil {
+		t.Fatalf("create service installation: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodDelete, fmt.Sprintf("/api/v1/environments/%d/services/%d", env.ID, inst.ID), nil)
+	rec := httptest.NewRecorder()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.DELETE("/api/v1/environments/:id/services/:serviceId", withTestAuthUser(2, UninstallService))
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusInternalServerError, rec.Body.String())
+	}
+	var visibleCount int64
+	if err := db.Model(&model.ServiceInstallation{}).Where("id = ?", inst.ID).Count(&visibleCount).Error; err != nil {
+		t.Fatalf("count service installation: %v", err)
+	}
+	if visibleCount != 1 {
+		t.Fatalf("runtime service installation must remain when CR delete fails, count = %d", visibleCount)
+	}
+}
+
+func TestMarkEnvironmentEmptyWhenNoResourcesKeepsPopulatedEnvironmentRunning(t *testing.T) {
+	db, err := openTestDB(t)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := db.AutoMigrate(&model.Application{}, &model.Environment{}, &model.ServiceInstallation{}, &model.Component{}, &model.InfraInstallation{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	app := model.Application{Name: "测试应用", Identifier: "test", OwnerID: 1}
+	if err := db.Create(&app).Error; err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	env := model.Environment{ApplicationID: app.ID, Name: "Dev", Identifier: "dev", Status: "running"}
+	if err := db.Create(&env).Error; err != nil {
+		t.Fatalf("create env: %v", err)
+	}
+	if err := db.Create(&model.Component{EnvironmentID: env.ID, Name: "api", Type: "backend", Status: "draft"}).Error; err != nil {
+		t.Fatalf("create component: %v", err)
+	}
+
+	if err := markEnvironmentEmptyWhenNoResources(db, env.ID); err != nil {
+		t.Fatalf("mark environment empty: %v", err)
+	}
+	var savedEnv model.Environment
+	if err := db.First(&savedEnv, env.ID).Error; err != nil {
+		t.Fatalf("load environment: %v", err)
+	}
+	if savedEnv.Status != "running" {
+		t.Fatalf("environment status = %q, want running while component exists", savedEnv.Status)
+	}
+}
+
 func TestComponentDeleteIdentifierMatchesCreateIdentifier(t *testing.T) {
 	comp := model.Component{ID: 42, Name: "订单服务", Type: "backend"}
 
 	if got := componentDeleteIdentifier(model.Application{}, model.Environment{}, comp); got != "backend-42" {
 		t.Fatalf("expected delete identifier to match create identifier, got %q", got)
-	}
-}
-
-func TestImageReferenceHasTagDetectsOnlyLastPathSegment(t *testing.T) {
-	cases := map[string]bool{
-		"registry.local:5000/order":        false,
-		"registry.local:5000/order:v1.0.0": true,
-		"order:v1.0.0":                     true,
-		"order":                            false,
-	}
-
-	for image, want := range cases {
-		if got := imageReferenceHasTag(image); got != want {
-			t.Fatalf("imageReferenceHasTag(%q) = %v, want %v", image, got, want)
-		}
 	}
 }
 
@@ -1983,9 +2473,17 @@ func TestCreateApplicationGeneratesIdentifierForDuplicateNames(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}); err != nil {
+	if err := db.AutoMigrate(
+		&model.Application{},
+		&model.AppMember{},
+		&model.Permission{},
+		&model.Role{},
+		&model.RolePermission{},
+		&model.RoleBinding{},
+	); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
+	seedApplicationRBACForTest(t, db)
 	database.DB = db
 
 	if err := db.Create(&model.Application{Name: "App", Identifier: "app", OwnerID: 1}).Error; err != nil {
@@ -2440,9 +2938,19 @@ func TestSetComponentExternalAccessRejectsNonMembers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.Component{}); err != nil {
+	if err := db.AutoMigrate(
+		&model.Application{},
+		&model.AppMember{},
+		&model.Environment{},
+		&model.Component{},
+		&model.Permission{},
+		&model.Role{},
+		&model.RolePermission{},
+		&model.RoleBinding{},
+	); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
+	seedApplicationRBACForTest(t, db)
 	database.DB = db
 	k8s.SetClient(fake.NewClientBuilder().Build())
 
@@ -3796,7 +4304,12 @@ func TestGetComponentRuntimeLogsRejectsNonMembers(t *testing.T) {
 
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	router.GET("/api/v1/environments/:id/components/:componentId/runtime-logs", withTestAuthUser(2, GetComponentRuntimeLogs))
+	router.GET(
+		"/api/v1/environments/:id/components/:componentId/runtime-logs",
+		withTestAuthUserContext(2),
+		middleware.RequireEnvPermission(permission.ComponentRead),
+		GetComponentRuntimeLogs,
+	)
 	router.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusForbidden {
@@ -3817,9 +4330,19 @@ func TestGetComponentRuntimeLogsRejectsNonMembersBeforeComponentLookup(t *testin
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.Component{}); err != nil {
+	if err := db.AutoMigrate(
+		&model.Application{},
+		&model.AppMember{},
+		&model.Environment{},
+		&model.Component{},
+		&model.Permission{},
+		&model.Role{},
+		&model.RolePermission{},
+		&model.RoleBinding{},
+	); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
+	seedApplicationRBACForTest(t, db)
 	database.DB = db
 
 	app := model.Application{Name: "隐藏应用", Identifier: "hidden", OwnerID: 1}
@@ -3836,7 +4359,12 @@ func TestGetComponentRuntimeLogsRejectsNonMembersBeforeComponentLookup(t *testin
 
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	router.GET("/api/v1/environments/:id/components/:componentId/runtime-logs", withTestAuthUser(2, GetComponentRuntimeLogs))
+	router.GET(
+		"/api/v1/environments/:id/components/:componentId/runtime-logs",
+		withTestAuthUserContext(2),
+		middleware.RequireEnvPermission(permission.ComponentRead),
+		GetComponentRuntimeLogs,
+	)
 	router.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusForbidden {
@@ -3857,9 +4385,19 @@ func TestGetComponentRuntimeLogsChecksComponentAfterMemberAccess(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.Component{}); err != nil {
+	if err := db.AutoMigrate(
+		&model.Application{},
+		&model.AppMember{},
+		&model.Environment{},
+		&model.Component{},
+		&model.Permission{},
+		&model.Role{},
+		&model.RolePermission{},
+		&model.RoleBinding{},
+	); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
+	seedApplicationRBACForTest(t, db)
 	database.DB = db
 
 	app := model.Application{Name: "测试应用", Identifier: "test", OwnerID: 1}
@@ -3873,13 +4411,21 @@ func TestGetComponentRuntimeLogsChecksComponentAfterMemberAccess(t *testing.T) {
 	if err := db.Create(&model.AppMember{ApplicationID: app.ID, UserID: 2, Role: "member"}).Error; err != nil {
 		t.Fatalf("create member: %v", err)
 	}
+	if err := authz.BindRole(db, 2, model.AppRoleMember, authz.AppScope(app.ID), 0); err != nil {
+		t.Fatalf("bind member role: %v", err)
+	}
 
 	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/v1/environments/%d/components/999/runtime-logs", env.ID), nil)
 	rec := httptest.NewRecorder()
 
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	router.GET("/api/v1/environments/:id/components/:componentId/runtime-logs", withTestAuthUser(2, GetComponentRuntimeLogs))
+	router.GET(
+		"/api/v1/environments/:id/components/:componentId/runtime-logs",
+		withTestAuthUserContext(2),
+		middleware.RequireEnvPermission(permission.ComponentRead),
+		GetComponentRuntimeLogs,
+	)
 	router.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusNotFound {
@@ -6754,6 +7300,93 @@ func TestCreateComponentCreatesDraftWithoutDeploying(t *testing.T) {
 	}
 }
 
+func TestCreateComponentPersistsConfigTemplateSelection(t *testing.T) {
+	previousDB := database.DB
+	t.Cleanup(func() { database.DB = previousDB })
+
+	db, err := openTestDB(t)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}, &model.Environment{}, &model.Component{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	database.DB = db
+
+	app := model.Application{Name: "测试应用", Identifier: "test", OwnerID: 1}
+	if err := db.Create(&app).Error; err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	env := model.Environment{ApplicationID: app.ID, Name: "测试环境", Identifier: "staging", Status: "running", Namespace: "test-staging"}
+	if err := db.Create(&env).Error; err != nil {
+		t.Fatalf("create env: %v", err)
+	}
+	if err := db.Create(&model.AppMember{ApplicationID: app.ID, UserID: 2, Role: "member"}).Error; err != nil {
+		t.Fatalf("create member: %v", err)
+	}
+
+	body, _ := json.Marshal(CreateComponentRequest{
+		Name:         "账户服务",
+		Type:         "backend",
+		Image:        "registry.local:5000/account:v1.0.0",
+		DeliveryMode: "image",
+		Replicas:     1,
+		Config: &model.ComponentConfig{
+			Framework:          "node",
+			ConfigTemplateID:   3,
+			ConfigTemplateKey:  "custom-account-runtime",
+			ConfigTemplateName: "Account Runtime",
+			ConfigTemplate: &model.ComponentConfigTemplateRef{
+				ID:   3,
+				Key:  "custom-account-runtime",
+				Name: "Account Runtime",
+			},
+			ContainerPort: 3000,
+			ServicePort:   3000,
+			Env: []model.ComponentEnvVar{
+				{Name: "NODE_ENV", Value: "production"},
+			},
+		},
+	})
+	req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/environments/%d/components", env.ID), bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.POST("/api/v1/environments/:id/components", withTestAuthUser(2, CreateComponent))
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+	var response struct {
+		Data model.Component `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	cfg, err := model.ParseComponentConfig(response.Data.Config)
+	if err != nil {
+		t.Fatalf("parse response config: %v", err)
+	}
+	if cfg.ConfigTemplateID != 3 || cfg.ConfigTemplateKey != "custom-account-runtime" || cfg.ConfigTemplateName != "Account Runtime" {
+		t.Fatalf("unexpected response config template: %#v", cfg)
+	}
+
+	var stored model.Component
+	if err := db.First(&stored, response.Data.ID).Error; err != nil {
+		t.Fatalf("load component: %v", err)
+	}
+	storedCfg, err := model.ParseComponentConfig(stored.Config)
+	if err != nil {
+		t.Fatalf("parse stored config: %v", err)
+	}
+	if storedCfg.ConfigTemplate == nil || storedCfg.ConfigTemplate.Key != "custom-account-runtime" {
+		t.Fatalf("stored config template was not persisted: %#v", storedCfg)
+	}
+}
+
 func TestCreateComponentAllowsCanvasDraftWithoutImage(t *testing.T) {
 	previousDB := database.DB
 	t.Cleanup(func() { database.DB = previousDB })
@@ -6865,7 +7498,12 @@ func TestEnvironmentCanvasStatePersistsPositionsAndEdges(t *testing.T) {
 			{"fromKey":"component:1","toKey":"service:2"},
 			{"fromKey":"component:999","toKey":"service:2"},
 			{"fromKey":"component:1","toKey":"component:1"}
-		]
+		],
+		"names": {
+			"component:1": "API",
+			"capability:3": "共享仓库",
+			"capability:999": "幽灵能力"
+		}
 	}`)
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
@@ -6890,6 +7528,7 @@ func TestEnvironmentCanvasStatePersistsPositionsAndEdges(t *testing.T) {
 		Data struct {
 			Positions map[string]CanvasNodePosition `json:"positions"`
 			Edges     []CanvasManualEdge            `json:"edges"`
+			Names     map[string]string             `json:"names"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(getRec.Body.Bytes(), &response); err != nil {
@@ -6927,6 +7566,12 @@ func TestEnvironmentCanvasStatePersistsPositionsAndEdges(t *testing.T) {
 	}
 	if len(response.Data.Edges) != 1 || response.Data.Edges[0].FromKey != "component:1" || response.Data.Edges[0].ToKey != "service:2" {
 		t.Fatalf("edges not normalized and persisted: %#v", response.Data.Edges)
+	}
+	if response.Data.Names["component:1"] != "API" || response.Data.Names["capability:3"] != "共享仓库" {
+		t.Fatalf("names not persisted: %#v", response.Data.Names)
+	}
+	if _, ok := response.Data.Names["capability:999"]; ok {
+		t.Fatalf("orphan capability name should be filtered: %#v", response.Data.Names)
 	}
 }
 
@@ -7011,8 +7656,8 @@ func TestEnvironmentCanvasStatePersistsDisplayNames(t *testing.T) {
 	if _, ok := response.Data.Names[" "]; ok {
 		t.Fatalf("whitespace-only key should be filtered: %#v", response.Data.Names)
 	}
-	if _, ok := response.Data.Names["component:999"]; !ok {
-		t.Fatalf("display names are not cleaned by valid keys (unlike positions): %#v", response.Data.Names)
+	if _, ok := response.Data.Names["component:999"]; ok {
+		t.Fatalf("orphan display names should be filtered: %#v", response.Data.Names)
 	}
 }
 
@@ -7482,221 +8127,6 @@ func TestUpdateComponentKeepsExistingConfigWhenConfigOmitted(t *testing.T) {
 	}
 }
 
-func TestPlanComponentDeliveryBuildsSourceToGitOpsFlow(t *testing.T) {
-	app := model.Application{Identifier: "shop"}
-	env := model.Environment{Identifier: "dev"}
-	req := CreateComponentRequest{
-		Name:           "Orders API",
-		Type:           "backend",
-		Version:        "v1.2.3",
-		DeliveryMode:   "source",
-		SourceRepoURL:  "https://git.example.com/team/orders.git",
-		SourceBranch:   "",
-		BuildContext:   "",
-		DockerfilePath: "",
-	}
-	comp := model.Component{
-		ID:       42,
-		Name:     req.Name,
-		Type:     req.Type,
-		Version:  req.Version,
-		Replicas: 1,
-	}
-
-	planned, err := planComponentDelivery(app, env, req, comp, "shop-dev")
-	if err != nil {
-		t.Fatalf("plan delivery: %v", err)
-	}
-
-	if planned.DeliveryMode != "source" {
-		t.Fatalf("delivery mode = %q, want source", planned.DeliveryMode)
-	}
-	if planned.SourceRepoURL != req.SourceRepoURL {
-		t.Fatalf("source repo = %q, want %q", planned.SourceRepoURL, req.SourceRepoURL)
-	}
-	if planned.SourceMirrorRepoURL != "http://shop-dev-git.shop-dev-git.svc.cluster.local:3000/paap/shop-dev-orders-api-source.git" {
-		t.Fatalf("source mirror repo = %q", planned.SourceMirrorRepoURL)
-	}
-	if planned.SourceBranch != "main" {
-		t.Fatalf("source branch = %q, want main", planned.SourceBranch)
-	}
-	if planned.BuildContext != "." || planned.DockerfilePath != "" {
-		t.Fatalf("unexpected build inputs: context=%q dockerfile=%q", planned.BuildContext, planned.DockerfilePath)
-	}
-	if planned.JenkinsJob != "shop-dev-orders-api-build" {
-		t.Fatalf("jenkins job = %q, want shop-dev-orders-api-build", planned.JenkinsJob)
-	}
-	if planned.RegistryImage != "registry.shop-dev.paap.local/shop-dev/orders-api:v1.2.3" {
-		t.Fatalf("registry image = %q", planned.RegistryImage)
-	}
-	if planned.Image != planned.RegistryImage {
-		t.Fatalf("component image = %q, want registry image %q", planned.Image, planned.RegistryImage)
-	}
-	if planned.GitRepoURL != "http://shop-dev-git.shop-dev-git.svc.cluster.local:3000/paap/shop-dev-components.git" {
-		t.Fatalf("git repo URL = %q", planned.GitRepoURL)
-	}
-	if planned.GitPath != "components/orders-api" {
-		t.Fatalf("git path = %q, want components/orders-api", planned.GitPath)
-	}
-	if planned.ArgoCDApp != "shop-dev-orders-api" {
-		t.Fatalf("argocd app = %q, want shop-dev-orders-api", planned.ArgoCDApp)
-	}
-	if planned.PipelineStatus != "planned" {
-		t.Fatalf("pipeline status = %q, want planned", planned.PipelineStatus)
-	}
-}
-
-func TestSourceDeliveryAllowsOmittedVersionForJenkinsBuildNumber(t *testing.T) {
-	req := CreateComponentRequest{
-		Name:          "Orders API",
-		Type:          "backend",
-		DeliveryMode:  "source",
-		SourceRepoURL: "https://git.example.com/team/orders.git",
-	}
-	if err := validateComponentDeliveryRequest(req); err != nil {
-		t.Fatalf("source delivery should allow omitted version: %v", err)
-	}
-
-	planned, err := planComponentDelivery(
-		model.Application{Identifier: "shop"},
-		model.Environment{Identifier: "dev"},
-		req,
-		model.Component{ID: 42, Name: req.Name, Type: req.Type, Replicas: 1},
-		"shop-dev",
-	)
-	if err != nil {
-		t.Fatalf("plan delivery: %v", err)
-	}
-	if planned.Version != "manual" {
-		t.Fatalf("version = %q, want manual fallback for first Jenkins build", planned.Version)
-	}
-	if planned.RegistryImage != "registry.shop-dev.paap.local/shop-dev/orders-api:manual" {
-		t.Fatalf("registry image = %q", planned.RegistryImage)
-	}
-	if planned.PipelineStatus != "planned" {
-		t.Fatalf("pipeline status = %q, want planned", planned.PipelineStatus)
-	}
-}
-
-func TestPlanComponentDeliveryUsesSelectedHarborRegistry(t *testing.T) {
-	t.Setenv(svcservice.RegistryHostTemplateEnv, "{service}-{app}-{env}.corp.example.com:5443")
-	req := CreateComponentRequest{
-		Name:          "Orders API",
-		Type:          "backend",
-		DeliveryMode:  "source",
-		SourceRepoURL: "https://git.example.com/team/orders.git",
-		Version:       "v1.2.3",
-	}
-
-	planned, err := planComponentDelivery(
-		model.Application{Identifier: "shop"},
-		model.Environment{Identifier: "dev"},
-		req,
-		model.Component{ID: 42, Name: req.Name, Type: req.Type, Replicas: 1, Version: req.Version},
-		"shop-dev",
-		"harbor",
-	)
-	if err != nil {
-		t.Fatalf("plan delivery: %v", err)
-	}
-	if planned.RegistryImage != "harbor-shop-dev.corp.example.com:5443/shop-dev/orders-api:v1.2.3" {
-		t.Fatalf("registry image = %q", planned.RegistryImage)
-	}
-}
-
-func TestPreferredSourceRegistryServiceTypePrefersRunningHarbor(t *testing.T) {
-	services := []model.ServiceInstallation{
-		{ServiceType: "registry", Status: "running"},
-		{ServiceType: "harbor", Status: "running"},
-	}
-
-	if got := preferredSourceRegistryServiceType(services); got != "harbor" {
-		t.Fatalf("registry service type = %q, want harbor", got)
-	}
-}
-
-func TestEnsureSourceHarborProjectUsesSelectedHarborInstance(t *testing.T) {
-	previous := newHarborProjectEnsurer
-	t.Cleanup(func() { newHarborProjectEnsurer = previous })
-
-	var namespaces []string
-	var projects []string
-	newHarborProjectEnsurer = func(namespace string) harborProjectEnsurer {
-		namespaces = append(namespaces, namespace)
-		return fakeHarborProjectEnsurer{projects: &projects}
-	}
-
-	services := []model.ServiceInstallation{
-		{ServiceType: "registry", Status: "running", Namespace: "shop-dev-registry"},
-		{ServiceType: "harbor", Status: "running", Namespace: "shop-dev-harbor"},
-	}
-	comp := model.Component{DeliveryMode: "source"}
-
-	if err := ensureSourceHarborProject(t.Context(), comp, "shop-dev", services); err != nil {
-		t.Fatalf("ensure harbor project: %v", err)
-	}
-	if len(namespaces) != 1 || namespaces[0] != "shop-dev-harbor" {
-		t.Fatalf("harbor namespaces = %#v, want shop-dev-harbor", namespaces)
-	}
-	if len(projects) != 1 || projects[0] != "shop-dev" {
-		t.Fatalf("harbor projects = %#v, want shop-dev", projects)
-	}
-}
-
-func TestEnsureSourceHarborProjectSkipsImageAndRegistryOnlyFlows(t *testing.T) {
-	previous := newHarborProjectEnsurer
-	t.Cleanup(func() { newHarborProjectEnsurer = previous })
-
-	var calls int
-	newHarborProjectEnsurer = func(namespace string) harborProjectEnsurer {
-		calls++
-		return fakeHarborProjectEnsurer{projects: &[]string{}}
-	}
-
-	registryOnly := []model.ServiceInstallation{
-		{ServiceType: "registry", Status: "running", Namespace: "shop-dev-registry"},
-	}
-	if err := ensureSourceHarborProject(t.Context(), model.Component{DeliveryMode: "source"}, "shop-dev", registryOnly); err != nil {
-		t.Fatalf("registry-only flow should not fail: %v", err)
-	}
-	if err := ensureSourceHarborProject(t.Context(), model.Component{DeliveryMode: "image"}, "shop-dev", []model.ServiceInstallation{
-		{ServiceType: "harbor", Status: "running", Namespace: "shop-dev-harbor"},
-	}); err != nil {
-		t.Fatalf("image flow should not fail: %v", err)
-	}
-	if calls != 0 {
-		t.Fatalf("harbor ensurer calls = %d, want 0", calls)
-	}
-}
-
-func TestPlanComponentDeliveryKeepsImageFlow(t *testing.T) {
-	app := model.Application{Identifier: "shop"}
-	env := model.Environment{Identifier: "dev"}
-	req := CreateComponentRequest{
-		Name:         "Orders API",
-		Type:         "backend",
-		Image:        "registry.local/orders:v1.2.3",
-		Version:      "v1.2.3",
-		DeliveryMode: "",
-	}
-	comp := model.Component{ID: 42, Name: req.Name, Type: req.Type, Image: req.Image, Version: req.Version}
-
-	planned, err := planComponentDelivery(app, env, req, comp, "shop-dev")
-	if err != nil {
-		t.Fatalf("plan delivery: %v", err)
-	}
-
-	if planned.DeliveryMode != "image" {
-		t.Fatalf("delivery mode = %q, want image", planned.DeliveryMode)
-	}
-	if planned.Image != req.Image {
-		t.Fatalf("image = %q, want %q", planned.Image, req.Image)
-	}
-	if planned.JenkinsJob != "" || planned.PipelineStatus != "" {
-		t.Fatalf("image flow should not create pipeline metadata: job=%q status=%q", planned.JenkinsJob, planned.PipelineStatus)
-	}
-}
-
 func TestDeployComponentRejectsNonMembers(t *testing.T) {
 	previousDB := database.DB
 	t.Cleanup(func() { database.DB = previousDB })
@@ -7824,61 +8254,6 @@ func TestDeployComponentValidatesVersionAfterMemberAccess(t *testing.T) {
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusBadRequest, rec.Body.String())
-	}
-}
-
-func TestApplyComponentDeployVersionReplacesExistingImageTag(t *testing.T) {
-	comp := model.Component{
-		Image:         "registry.shop-dev.corp.example.com:5443/shop-dev/orders-api:v1.2.3",
-		Version:       "v1.2.3",
-		RegistryImage: "registry.shop-dev.corp.example.com:5443/shop-dev/orders-api:v1.2.3",
-	}
-
-	updated := applyComponentDeployVersion(comp, "17")
-
-	wantImage := "registry.shop-dev.corp.example.com:5443/shop-dev/orders-api:17"
-	if updated.Image != wantImage {
-		t.Fatalf("image = %q, want %q", updated.Image, wantImage)
-	}
-	if updated.Version != "17" {
-		t.Fatalf("version = %q, want 17", updated.Version)
-	}
-	if updated.RegistryImage != wantImage {
-		t.Fatalf("registry image = %q, want %q", updated.RegistryImage, wantImage)
-	}
-	if updated.PipelineStatus != "built" {
-		t.Fatalf("pipeline status = %q, want built", updated.PipelineStatus)
-	}
-}
-
-func TestApplyComponentDeployVersionRecomputesSourceRegistryHost(t *testing.T) {
-	t.Setenv(svcservice.RegistryHostTemplateEnv, "registry.paap.local:5000")
-	comp := model.Component{
-		Name:          "source-smoke",
-		DeliveryMode:  "source",
-		Image:         "registry.test-staging.paap.local:5000/test-staging/source-smoke:manual",
-		Version:       "manual",
-		RegistryImage: "registry.test-staging.paap.local:5000/test-staging/source-smoke:manual",
-	}
-
-	updated := applyComponentDeployVersionForRuntimeRegistry(
-		model.Application{Identifier: "test"},
-		model.Environment{Identifier: "staging"},
-		comp,
-		"source-smoke",
-		"manual",
-		"registry",
-	)
-
-	wantImage := "registry.paap.local:5000/test-staging/source-smoke:manual"
-	if updated.Image != wantImage {
-		t.Fatalf("image = %q, want %q", updated.Image, wantImage)
-	}
-	if updated.RegistryImage != wantImage {
-		t.Fatalf("registry image = %q, want %q", updated.RegistryImage, wantImage)
-	}
-	if updated.PipelineStatus != "built" {
-		t.Fatalf("pipeline status = %q, want built", updated.PipelineStatus)
 	}
 }
 

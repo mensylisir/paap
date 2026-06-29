@@ -46,11 +46,11 @@
       </div>
 
       <div v-else-if="environments.length === 0" class="rail-empty">
-        <svg width="48" height="48" viewBox="0 0 32 32" fill="none" style="margin-bottom:12px">
-          <rect x="4" y="8" width="24" height="16" rx="2" stroke="#d1d5db" stroke-width="1.5"/>
-          <line x1="4" y1="14" x2="28" y2="14" stroke="#d1d5db" stroke-width="1.5"/>
-          <rect x="8" y="18" width="6" height="3" rx="1" fill="#e6e8eb"/>
-          <rect x="18" y="18" width="8" height="3" rx="1" fill="#e6e8eb"/>
+        <svg class="env-empty-icon" width="48" height="48" viewBox="0 0 32 32" fill="none" style="margin-bottom:12px">
+          <rect x="4" y="8" width="24" height="16" rx="2" stroke="var(--paap-border-03)" stroke-width="1.5"/>
+          <line x1="4" y1="14" x2="28" y2="14" stroke="var(--paap-border-03)" stroke-width="1.5"/>
+          <rect x="8" y="18" width="6" height="3" rx="1" fill="var(--paap-border)"/>
+          <rect x="18" y="18" width="8" height="3" rx="1" fill="var(--paap-border)"/>
         </svg>
         <h3 class="rail-empty-title">暂无环境</h3>
         <p class="rail-empty-desc">创建第一个环境来部署服务。</p>
@@ -105,6 +105,9 @@
       :creating="creating"
       :error="modalError"
       :templates="templates"
+      :shared-resources="sharedResources"
+      :shared-resources-loading="sharedResourcesLoading"
+      :shared-resources-error="sharedResourcesError"
       :form="envForm"
       dialog-id-prefix="environments"
       @update:form="envForm = $event"
@@ -147,6 +150,7 @@ import { api } from '../api/client'
 import CreateEnvironmentModal from '../components/CreateEnvironmentModal.vue'
 import { toIdentifier } from '../utils/identifier'
 import { effectiveEnvironmentStatus, environmentResourceSummary, environmentStatusDotClass, environmentStatusLabel } from './appSummary'
+import { buildSharedCapabilityPayload, emptyEnvironmentForm, type SharedCapabilityResource } from './createEnvironmentSharedServices'
 
 const route = useRoute()
 const router = useRouter()
@@ -163,7 +167,10 @@ const creating = ref(false)
 const deletingEnvId = ref<number | null>(null)
 const modalError = ref('')
 const deleteError = ref('')
-const envForm = ref({ name: '', identifier: '', mode: 'empty' as string, templateId: '1', additionalNamespacesInput: '' })
+const sharedResources = ref<SharedCapabilityResource[]>([])
+const sharedResourcesLoading = ref(false)
+const sharedResourcesError = ref('')
+const envForm = ref(emptyEnvironmentForm())
 const pendingDeleteEnv = ref<any | null>(null)
 
 const runningCount = computed(() => environments.value.filter(e => environmentCardStatus(e) === 'running').length)
@@ -213,9 +220,10 @@ async function loadEnvs() {
 
 function openModal() {
   if (isSystemApp.value) return
-  envForm.value = { name: '', identifier: '', mode: 'empty', templateId: String(templates.value[0]?.id || 1), additionalNamespacesInput: '' }
+  envForm.value = emptyEnvironmentForm(templates.value[0]?.id || 1)
   modalError.value = ''
   showModal.value = true
+  loadSharedResourcesForEnvironmentCreate()
 }
 
 function autoOpenCreateEnvironment() {
@@ -244,6 +252,7 @@ const submitEnv = async () => {
       fromEmpty: envForm.value.mode === 'empty' || envForm.value.mode === 'blank',
       blank: envForm.value.mode === 'blank',
       additionalNamespaces: parseAdditionalNamespacesInput(envForm.value.additionalNamespacesInput),
+      capabilities: buildSharedCapabilityPayload(envForm.value.sharedResourceIds, sharedResources.value),
     })
     showModal.value = false
     const envId = res.data?.id
@@ -251,6 +260,20 @@ const submitEnv = async () => {
     else await loadEnvs()
   } catch (e: any) { modalError.value = '创建失败：' + (e?.message || '未知错误') }
   finally { creating.value = false }
+}
+
+async function loadSharedResourcesForEnvironmentCreate() {
+  sharedResourcesLoading.value = true
+  sharedResourcesError.value = ''
+  try {
+    const res = await api.listSharedCapabilityResources()
+    sharedResources.value = Array.isArray(res.data) ? res.data : []
+  } catch (e: any) {
+    sharedResources.value = []
+    sharedResourcesError.value = '公共服务读取失败，创建后可在环境画布中添加。'
+  } finally {
+    sharedResourcesLoading.value = false
+  }
 }
 
 function parseAdditionalNamespacesInput(value: string) {
@@ -304,7 +327,7 @@ const performDeleteEnvironment = async () => {
 
 <style scoped>
 .rail-page {
-  padding: 20px 20px 36px;
+  padding: var(--paap-space-5) var(--paap-space-5) var(--paap-space-10);
   max-width: none;
 }
 
@@ -314,8 +337,8 @@ const performDeleteEnvironment = async () => {
   margin-bottom: 20px;
 }
 .header-text { display: flex; flex-direction: column; gap: 2px; }
-.page-title { font-size: 24px; font-weight: 600; color: #11181c; letter-spacing: 0; line-height: 1.2; }
-.page-desc { font-size: 14px; color: #687076; line-height: 1.4; }
+.page-title { font-size: 24px; font-weight: 600; color: var(--paap-text); letter-spacing: 0; line-height: 1.2; }
+.page-desc { font-size: var(--paap-fs-body); color: var(--paap-muted); line-height: 1.4; }
 
 /* KPI */
 .kpi-section {
@@ -323,54 +346,53 @@ const performDeleteEnvironment = async () => {
   gap: 12px; margin-bottom: 32px;
 }
 .kpi-card {
-  background: #ffffff; border: 1px solid #e6e8eb; border-radius: 8px;
+  background: var(--paap-panel-subtle); border: 1px solid var(--paap-border); border-radius: var(--paap-radius);
   padding: 16px 18px; display: flex; flex-direction: column; gap: 8px;
 }
 .kpi-number {
-  font-size: 28px; font-weight: 600; color: #11181c;
+  font-size: var(--paap-fs-heading-2xl); font-weight: 600; color: var(--paap-text);
   letter-spacing: 0; line-height: 1.2;
 }
-.kpi-number.text-green { color: #22c55e; }
-.kpi-label { font-size: 12px; color: #687076; }
+.kpi-number.text-green { color: var(--paap-success); }
+.kpi-label { font-size: var(--paap-fs-label); color: var(--paap-muted); }
 
 /* Section */
-.section-card { background: #ffffff; border: 1px solid #e6e8eb; border-radius: 8px; padding: 24px; }
+.section-card { background: var(--paap-panel-subtle); border: 1px solid var(--paap-border); border-radius: var(--paap-radius); padding: 24px; }
 .section-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; }
 
 /* Loading */
 .loading-mask { display: flex; align-items: center; justify-content: center; padding: 64px; }
-.loading-spinner { width: 24px; height: 24px; border: 2px solid #e6e8eb; border-top-color: #11181c; border-radius: 50%; animation: spin 0.8s linear infinite; }
-@keyframes spin { to { transform: rotate(360deg); } }
+.loading-spinner { width: 24px; height: 24px; border: 2px solid var(--paap-border); border-top-color: var(--paap-text); border-radius: 50%; animation: spin 0.8s linear infinite; }
 
 /* Env cards */
 .env-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
 .env-card {
-  background: #ffffff; border: 1px solid #e6e8eb; border-radius: 8px;
-  padding: 18px 20px; cursor: pointer; transition: all 0.15s ease;
+  background: var(--paap-panel-subtle); border: 1px solid var(--paap-border); border-radius: var(--paap-radius);
+  padding: 18px 20px; cursor: pointer; transition: all var(--paap-transition-fast);
   display: flex; flex-direction: column; gap: 12px;
 }
-.env-card:hover { border-color: #d1d5db; box-shadow: 0 4px 12px rgba(0,0,0,0.04); }
+.env-card:hover { border-color: var(--paap-border-strong); box-shadow: var(--paap-shadow-lg); }
 .env-card-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
 .env-name-group { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.env-name { font-size: 16px; font-weight: 600; color: #11181c; margin: 0; line-height: 1.3; }
-.env-id { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #9ba1a6; letter-spacing: 0.3px; }
+.env-name { font-size: var(--paap-fs-heading-lg); font-weight: 600; color: var(--paap-text); margin: 0; line-height: 1.3; }
+.env-id { font-family: var(--paap-mono); font-size: var(--paap-fs-small); color: var(--paap-muted); letter-spacing: 0.3px; }
 .env-card-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 .env-delete-btn { white-space: nowrap; }
 .env-list-error { margin-top: 16px; }
 .status-badge {
   display: inline-flex; align-items: center; gap: 5px;
-  font-size: 11px; font-weight: 500; padding: 3px 8px; border-radius: 4px;
-  background: #f1f3f5; color: #687076; white-space: nowrap; flex-shrink: 0;
+  font-size: var(--paap-fs-small); font-weight: 500; padding: 3px 8px; border-radius: var(--paap-radius-xs);
+  background: var(--paap-panel-subtle); color: var(--paap-muted); white-space: nowrap; flex-shrink: 0;
 }
-.status-badge.running { background: #f0fdf4; color: #16a34a; }
-.status-badge.error { background: #fef2f2; color: #dc2626; }
-.status-badge.creating { background: #eff6ff; color: #2563eb; }
-.status-badge.empty { background: #f1f3f5; color: #687076; }
+.status-badge.running { background: var(--paap-success-soft); color: var(--paap-success); }
+.status-badge.error { background: var(--paap-danger-soft); color: var(--paap-danger); }
+.status-badge.creating { background: var(--paap-accent-soft); color: var(--paap-accent); }
+.status-badge.empty { background: var(--paap-panel-subtle); color: var(--paap-muted); }
 .env-meta { display: flex; flex-wrap: wrap; gap: 6px; }
 
 /* Responsive */
 @media (max-width: 672px) {
-  .rail-page { padding: 20px 20px 32px; }
+  .rail-page { padding: var(--paap-space-6) var(--paap-space-4) var(--paap-space-10); }
   .page-header { flex-direction: column; align-items: flex-start; gap: 12px; }
   .kpi-section { grid-template-columns: 1fr 1fr; }
   .env-grid { grid-template-columns: 1fr; }
@@ -378,25 +400,24 @@ const performDeleteEnvironment = async () => {
 </style>
 
 <style>
-.modal-overlay { position: fixed; inset: 0; z-index: 9000; background: rgba(17,19,24,0.46); backdrop-filter: blur(10px); display: flex; align-items: center; justify-content: center; padding: var(--paap-space-6); }
-.modal-container { background: var(--cds-layer-01, var(--paap-panel)); width: min(520px, 100%); max-height: 90vh; overflow-y: auto; border: 1px solid var(--cds-border-subtle-01, var(--paap-border)); border-radius: 0; box-shadow: none; }
-.modal-header { display: flex; justify-content: space-between; align-items: flex-start; padding: var(--paap-space-5) var(--paap-space-6); border-bottom: 1px solid var(--cds-border-subtle-01, var(--paap-border)); }
-.modal-label { font-size: var(--cds-label-01-font-size, 12px); color: var(--cds-text-secondary, var(--paap-muted)); margin-bottom: var(--paap-space-2); text-transform: uppercase; letter-spacing: var(--cds-label-01-letter-spacing, 0.32px); font-weight: var(--cds-font-weight-semibold, 600); }
-.modal-heading { font-size: var(--cds-heading-03-font-size, 20px); font-weight: var(--cds-heading-03-font-weight, 400); color: var(--cds-text-primary, var(--paap-text)); margin: 0; line-height: var(--cds-heading-03-line-height, 1.4); }
-.modal-close { background: var(--cds-layer-01, var(--paap-panel)); border: 1px solid var(--cds-border-subtle-01, var(--paap-border)); color: var(--cds-text-secondary, var(--paap-muted)); cursor: pointer; padding: 4px; display: flex; align-items: center; justify-content: center; border-radius: 0; transition: background 110ms, color 110ms, border-color 110ms; width: 32px; height: 32px; }
-.modal-close:hover { background: var(--cds-layer-hover-01, var(--paap-panel-subtle)); color: var(--cds-text-primary, var(--paap-text)); }
+.modal-container { background: var(--paap-panel); width: min(520px, 100%); max-height: 90vh; overflow-y: auto; border: 1px solid var(--paap-border); border-radius: var(--paap-radius); box-shadow: var(--paap-shadow-lg); }
+.modal-header { display: flex; justify-content: space-between; align-items: flex-start; padding: var(--paap-space-5) var(--paap-space-6); border-bottom: 1px solid var(--paap-border); }
+.modal-label { font-size: var(--paap-fs-label); color: var(--paap-muted); margin-bottom: var(--paap-space-2); text-transform: uppercase; letter-spacing: 0.32px; font-weight: 600; }
+.modal-heading { font-size: 20px; font-weight: 400; color: var(--paap-text); margin: 0; line-height: 1.4; }
+.modal-close { background: var(--paap-panel); border: 1px solid var(--paap-border); color: var(--paap-muted); cursor: pointer; padding: 4px; display: flex; align-items: center; justify-content: center; border-radius: var(--paap-radius-sm); transition: background 110ms, color 110ms, border-color 110ms; width: 28px; height: 28px; }
+.modal-close:hover { background: var(--paap-panel-subtle); color: var(--paap-text); }
 .modal-body { padding: var(--paap-space-6); }
-.modal-footer { display: flex; justify-content: flex-end; gap: var(--paap-space-2); padding: var(--paap-space-4) var(--paap-space-6); border-top: 1px solid var(--cds-border-subtle-01, var(--paap-border)); }
+.modal-footer { display: flex; justify-content: flex-end; gap: var(--paap-space-2); padding: var(--paap-space-4) var(--paap-space-6); border-top: 1px solid var(--paap-border); }
 
-.confirm-text { color: var(--cds-text-primary, var(--paap-text)); font-size: var(--cds-body-compact-01-font-size, 14px); line-height: 1.6; margin: 0; }
+.confirm-text { color: var(--paap-text); font-size: var(--paap-fs-body); line-height: 1.6; margin: 0; }
 .confirm-text + .form-error { margin-top: 16px; }
 .form-error {
-  border: 1px solid var(--cds-border-error, var(--cds-red-60, var(--paap-danger)));
-  background: var(--cds-layer-01, var(--paap-panel));
-  color: var(--cds-text-error, var(--paap-danger));
-  border-radius: 0;
+  border: 1px solid var(--paap-danger);
+  background: var(--paap-danger-soft);
+  color: var(--paap-danger);
+  border-radius: var(--paap-radius-sm);
   padding: 10px 12px;
-  font-size: 13px;
+  font-size: var(--paap-fs-compact);
   line-height: 1.4;
 }
 </style>

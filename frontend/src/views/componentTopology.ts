@@ -374,9 +374,16 @@ const inferredConfigDependencies = (
     const uniqueTargets = targets.filter((target) => String(target.topologyId || target.id) !== String(comp.topologyId || comp.id))
     if (uniqueTargets.length !== 1) continue
     const target = uniqueTargets[0]
+    if (isPlatformToolServiceNode(target)) continue
     matched.set(String(target.topologyId || target.id), target)
   }
   return Array.from(matched.values())
+}
+
+const isPlatformToolServiceNode = (node: ComponentTopologyComponent): boolean => {
+  if (node?.topologyKind !== 'service') return false
+  const type = String(node?.type || node?.serviceType || '').trim().toLowerCase()
+  return toolServiceTypes.has(type)
 }
 
 const componentConfigSearchText = (comp: ComponentTopologyComponent): string => {

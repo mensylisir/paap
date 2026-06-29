@@ -1,0 +1,17 @@
+server:
+  port: __TEMPLATE__SERVER_PORT__服务端口__DEFAULT__8080__
+  shutdown: graceful
+
+spring:
+  application:
+    name: __TEMPLATE__APP_NAME__应用名称__DEFAULT__base-service__
+  jackson:
+    date-format: yyyy-MM-dd HH:mm:ss
+    time-zone: GMT+8
+    default-property-inclusion: non_null
+
+logging:
+  level:
+    root: __TEMPLATE__LOG_LEVEL__日志级别__DEFAULT__INFO__
+  file:
+    name: logs/${spring.application.name}.log

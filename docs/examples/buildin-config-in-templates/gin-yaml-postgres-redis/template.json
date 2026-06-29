@@ -1,0 +1,19 @@
+{
+  "key": "gin-yaml-postgres-redis",
+  "name": "Gin + YAML + PostgreSQL + Redis",
+  "version": "v1",
+  "description": "Gin 服务使用 YAML 文件读取 PostgreSQL 和 Redis 配置。",
+  "framework": "go",
+  "componentTypes": ["backend"],
+  "sortOrder": 100,
+  "nativeConfigs": [{ "name": "config.yaml", "path": "files/config.yaml" }],
+  "files": [{ "name": "Gin config.yaml", "configMapName": "{{configMapName}}", "key": "config.yaml", "recommendedMountPath": "/etc/paap/config.yaml" }],
+  "env": [
+    { "name": "APP_CONFIG", "source": "value", "value": "/etc/paap/config.yaml" },
+    { "name": "DATABASE_PASSWORD", "source": "secret", "refName": "{{secretName}}", "refKey": "DATABASE_PASSWORD" },
+    { "name": "REDIS_PASSWORD", "source": "secret", "refName": "{{secretName}}", "refKey": "REDIS_PASSWORD" }
+  ],
+  "secrets": [
+    { "name": "{{secretName}}", "data": { "DATABASE_PASSWORD": "__TEMPLATE__DATABASE_PASSWORD__数据库密码__", "REDIS_PASSWORD": "__TEMPLATE__REDIS_PASSWORD__Redis 密码__" } }
+  ]
+}

@@ -78,7 +78,8 @@ func clusterSyncOwnerID(db *gorm.DB) (uint, error) {
 	}
 
 	if err := db.
-		Joins("JOIN user_roles ON user_roles.user_id = users.id AND user_roles.role = ? AND user_roles.deleted_at IS NULL", model.RolePlatformAdmin).
+		Joins("JOIN role_bindings ON role_bindings.user_id = users.id AND role_bindings.scope_type = ? AND role_bindings.scope_id = ? AND role_bindings.deleted_at IS NULL", model.ScopeSystem, 0).
+		Joins("JOIN roles ON roles.id = role_bindings.role_id AND roles.code = ? AND roles.scope_type = ? AND roles.deleted_at IS NULL AND roles.enabled = TRUE", model.RolePlatformAdmin, model.ScopeSystem).
 		Where("users.deleted_at IS NULL").
 		Order("users.id").
 		First(&user).Error; err == nil {
@@ -456,10 +457,15 @@ func upsertEnvironment(db *gorm.DB, env *model.Environment) error {
 }
 
 func upsertServiceInstallation(db *gorm.DB, install *model.ServiceInstallation) error {
+	if err := db.Unscoped().
+		Where("environment_id = ? AND service_type = ? AND deleted_at IS NOT NULL", install.EnvironmentID, install.ServiceType).
+		Delete(&model.ServiceInstallation{}).Error; err != nil {
+		return fmt.Errorf("delete stale service installation %d/%s: %w", install.EnvironmentID, install.ServiceType, err)
+	}
+
 	var existing model.ServiceInstallation
-	err := db.Unscoped().
+	err := db.
 		Where("environment_id = ? AND service_type = ?", install.EnvironmentID, install.ServiceType).
-		Order("CASE WHEN deleted_at IS NULL THEN 0 ELSE 1 END, id").
 		First(&existing).Error
 	if err == gorm.ErrRecordNotFound {
 		return db.Create(install).Error
@@ -473,8 +479,7 @@ func upsertServiceInstallation(db *gorm.DB, install *model.ServiceInstallation) 
 	existing.ErrorMessage = install.ErrorMessage
 	existing.Values = install.Values
 	existing.Namespace = install.Namespace
-	existing.DeletedAt = gorm.DeletedAt{}
-	if err := db.Unscoped().Save(&existing).Error; err != nil {
+	if err := db.Save(&existing).Error; err != nil {
 		return fmt.Errorf("update service installation %d/%s: %w", install.EnvironmentID, install.ServiceType, err)
 	}
 	if err := db.Unscoped().
@@ -499,20 +504,21 @@ func upsertComponent(db *gorm.DB, comp *model.Component) error {
 		return fmt.Errorf("find component %d/%s: %w", comp.EnvironmentID, comp.Name, err)
 	}
 	existing.Type = comp.Type
-	if syncShouldAdoptRuntimeImage(existing) {
+	if strings.TrimSpace(existing.Image) == "" {
 		existing.Image = comp.Image
-		existing.RegistryImage = comp.Image
+	}
+	if strings.TrimSpace(existing.RegistryImage) == "" {
+		existing.RegistryImage = comp.RegistryImage
+	}
+	if strings.TrimSpace(existing.Version) == "" {
 		existing.Version = comp.Version
-	} else {
-		if strings.TrimSpace(existing.Image) == "" {
-			existing.Image = comp.Image
-		}
-		if strings.TrimSpace(existing.Version) == "" {
-			existing.Version = comp.Version
-		}
 	}
 	existing.Replicas = comp.Replicas
-	existing.Status = comp.Status
+	if strings.EqualFold(strings.TrimSpace(existing.PipelineStatus), "failed") {
+		existing.Status = "error"
+	} else {
+		existing.Status = comp.Status
+	}
 	existing.Config = mergeComponentRuntimeConfig(existing.Config, comp.Config)
 	existing.GitPath = firstNonEmpty(existing.GitPath, comp.GitPath)
 	existing.ArgoCDApp = firstNonEmpty(existing.ArgoCDApp, comp.ArgoCDApp)
@@ -527,10 +533,6 @@ func upsertComponent(db *gorm.DB, comp *model.Component) error {
 	}
 	*comp = existing
 	return nil
-}
-
-func syncShouldAdoptRuntimeImage(existing model.Component) bool {
-	return strings.EqualFold(strings.TrimSpace(existing.DeliveryMode), "source") || strings.TrimSpace(existing.JenkinsJob) != ""
 }
 
 func mergeComponentRuntimeConfig(existingRaw, runtimeRaw string) string {
@@ -637,7 +639,7 @@ func pruneMissingClusterState(db *gorm.DB, appsByIdentifier map[string]model.App
 		return fmt.Errorf("list components for prune: %w", err)
 	}
 	for _, comp := range components {
-		if strings.EqualFold(strings.TrimSpace(comp.Status), "draft") {
+		if componentCanExistWithoutCR(comp) {
 			continue
 		}
 		if _, ok := componentKeys[componentKey(comp.EnvironmentID, componentIdentifierFromModel(comp))]; ok {
@@ -714,6 +716,18 @@ func serviceInstallationCanExistWithoutCR(status string) bool {
 	default:
 		return false
 	}
+}
+
+func componentCanExistWithoutCR(comp model.Component) bool {
+	switch strings.ToLower(strings.TrimSpace(comp.Status)) {
+	case "draft", "building", "pending", "failed", "error":
+		return true
+	}
+	if strings.EqualFold(strings.TrimSpace(comp.DeliveryMode), "source") &&
+		!strings.EqualFold(strings.TrimSpace(comp.PipelineStatus), "built") {
+		return true
+	}
+	return false
 }
 
 func normalizePhase(phase, fallback string) string {

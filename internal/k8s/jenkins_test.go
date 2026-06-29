@@ -59,12 +59,14 @@ func TestJenkinsClientDiscoversNamespaceNamedHelmService(t *testing.T) {
 
 func TestJenkinsClientBuildsJob(t *testing.T) {
 	var requestedPath string
+	var requestedToken string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/crumbIssuer/api/json" {
 			_, _ = w.Write([]byte(`{"crumbRequestField":"Jenkins-Crumb","crumb":"abc123"}`))
 			return
 		}
 		requestedPath = r.URL.EscapedPath()
+		requestedToken = r.URL.Query().Get("token")
 		if r.Method != http.MethodPost {
 			t.Fatalf("unexpected method %s", r.Method)
 		}
@@ -81,8 +83,11 @@ func TestJenkinsClientBuildsJob(t *testing.T) {
 	if err := client.BuildJob(t.Context(), "folder/api build"); err != nil {
 		t.Fatalf("build job: %v", err)
 	}
-	if requestedPath != "/job/folder/job/api%20build/build" {
+	if requestedPath != "/job/folder/job/api%20build/buildWithParameters" {
 		t.Fatalf("unexpected build path %s", requestedPath)
+	}
+	if requestedToken != "paap-source-build" {
+		t.Fatalf("unexpected build token %q", requestedToken)
 	}
 }
 

@@ -3,25 +3,12 @@
     <!-- Page header -->
     <header class="page-header">
       <div class="header-text">
-        <h1 class="page-title">模板管理</h1>
-        <p class="page-desc">管理工具模板、中间件模板、环境模板和组件运行配置模板</p>
+        <h1 class="page-title">配置模板</h1>
+        <p class="page-desc">管理组件运行配置模板，服务与环境模板统一在服务目录查看。</p>
       </div>
       <div class="header-actions">
-        <button v-if="isServiceTemplateTab" class="rail-btn rail-btn--ghost" :disabled="syncing" @click="syncBuiltinTemplates">
-          {{ syncing ? '同步中...' : '同步内置模板' }}
-        </button>
-        <button v-else-if="activeTemplateTab === 'config'" class="rail-btn rail-btn--ghost" :disabled="syncing" @click="syncBuiltinConfigTemplates">
-          {{ syncing ? '同步中...' : '同步内置配置模板' }}
-        </button>
-        <button v-if="activeTemplateTab === 'config'" class="rail-btn rail-btn--primary" @click="openConfigTemplateImportModal">
+        <button v-has-perm="'system.template.manage'" class="rail-btn rail-btn--primary" @click="openConfigTemplateImportModal">
           导入配置模板
-        </button>
-        <button v-if="activeTemplateTab === 'environment'" class="rail-btn rail-btn--primary" @click="openEnvironmentTemplateModal()">
-          新建环境模板
-        </button>
-        <button v-if="isServiceTemplateTab" class="rail-btn rail-btn--primary" @click="openUploadModal">
-          <svg width="16" height="16" viewBox="0 0 32 32" fill="currentColor"><path d="M11 18l-7 7 7 7v-5h12v-4H11v-5zM21 14V9H9v4h12v5l7-7-7-7v5z"/></svg>
-          上传模板
         </button>
       </div>
     </header>
@@ -43,22 +30,6 @@
 
     <!-- KPI -->
     <div class="kpi-section">
-      <div class="kpi-card">
-        <div class="kpi-number">{{ templates.length }}</div>
-        <div class="kpi-label">部署模板总数</div>
-      </div>
-      <div class="kpi-card">
-        <div class="kpi-number">{{ toolTemplates.length }}</div>
-        <div class="kpi-label">工具模板</div>
-      </div>
-      <div class="kpi-card">
-        <div class="kpi-number">{{ middlewareTemplates.length }}</div>
-        <div class="kpi-label">中间件模板</div>
-      </div>
-      <div class="kpi-card">
-        <div class="kpi-number">{{ environmentTemplates.length }}</div>
-        <div class="kpi-label">环境模板</div>
-      </div>
       <div class="kpi-card">
         <div class="kpi-number">{{ configTemplates.length }}</div>
         <div class="kpi-label">配置模板</div>
@@ -82,69 +53,8 @@
         <div class="loading-spinner" />
       </div>
 
-      <div v-else-if="isServiceTemplateTab && activeServiceTemplates.length === 0" class="rail-empty">
-        <p class="rail-empty-desc">暂无{{ activeTemplateTitle }}，点击「同步内置模板」初始化。</p>
-      </div>
-
-      <div v-else-if="isServiceTemplateTab" class="template-list">
-        <div v-for="tmpl in activeServiceTemplates" :key="tmpl.id || tmpl.type" class="template-row">
-          <div class="template-body">
-            <div class="template-header">
-              <div class="template-name-group">
-                <span class="template-name">{{ tmpl.name }}</span>
-                <span :class="['tag', tmpl.isCustom ? 'custom' : 'builtin']">{{ tmpl.isCustom ? '自定义' : '内置' }}</span>
-                <span v-if="isHeavyTemplate(tmpl)" class="tag heavy">重型</span>
-              </div>
-              <span class="policy">{{ permissionSummary(tmpl) }}</span>
-            </div>
-            <div class="template-meta">
-              <span>{{ tmpl.type }}</span>
-              <span>{{ categoryLabel(tmpl.category) }}</span>
-              <span :class="{ uploaded: tmpl.s3Key || tmpl.chartArchivePath }">{{ (tmpl.s3Key || tmpl.chartArchivePath) ? '已上传' : '未上传' }}</span>
-            </div>
-            <p class="template-desc">{{ tmpl.description || '无描述' }}</p>
-          </div>
-        </div>
-      </div>
-
-      <div v-else-if="activeTemplateTab === 'environment' && environmentTemplates.length === 0" class="rail-empty">
-        <p class="rail-empty-desc">暂无环境模板。点击「新建环境模板」添加默认服务和资源配额。</p>
-      </div>
-
-      <div v-else-if="activeTemplateTab === 'environment'" class="template-list environment-template-list">
-        <div v-for="tmpl in environmentTemplates" :key="tmpl.id || tmpl.name" class="template-row environment-template-row">
-          <div class="template-body">
-            <div class="template-header">
-              <div class="template-name-group">
-                <span class="template-name">{{ tmpl.name }}</span>
-                <span class="tag config">环境</span>
-              </div>
-              <span class="policy">{{ environmentTemplateResourceSummary(tmpl) }}</span>
-            </div>
-            <div class="template-meta">
-              <span>{{ environmentTemplateListSummary(tmpl.services, '服务') }}</span>
-              <span>{{ environmentTemplateListSummary(tmpl.infra, '基础设施') }}</span>
-            </div>
-            <p class="template-desc">{{ tmpl.description || '无描述' }}</p>
-            <div class="config-template-plain-summary environment-template-summary">
-              <span>CPU {{ tmpl.resourceCpu || '未设置' }}</span>
-              <span>内存 {{ tmpl.resourceMem || '未设置' }}</span>
-              <span>存储 {{ tmpl.resourceDisk || '未设置' }}</span>
-            </div>
-            <div class="template-row-actions">
-              <button type="button" class="rail-btn rail-btn--ghost rail-btn--sm" @click="openEnvironmentTemplateModal(tmpl)">
-                编辑
-              </button>
-              <button type="button" class="rail-btn rail-btn--ghost rail-btn--sm danger" @click="pendingEnvironmentTemplateDelete = tmpl">
-                删除
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-
       <div v-else-if="configTemplates.length === 0" class="rail-empty">
-        <p class="rail-empty-desc">暂无配置模板。点击「同步内置配置模板」初始化常用框架配置。</p>
+        <p class="rail-empty-desc">暂无配置模板。点击「导入配置模板」上传普通配置文件或高级模板包。</p>
       </div>
 
       <div v-else class="template-list config-template-list">
@@ -153,7 +63,6 @@
             <div class="template-header">
               <div class="template-name-group">
                 <span class="template-name">{{ tmpl.name }}</span>
-                <span :class="['tag', tmpl.isBuiltin ? 'builtin' : 'custom']">{{ tmpl.isBuiltin ? '内置' : '自定义' }}</span>
                 <span class="tag config">{{ configTemplateFrameworkLabel(tmpl.framework) }}</span>
               </div>
               <span class="policy">{{ configTemplateBindingLabel(tmpl.bindingMode) }}</span>
@@ -168,7 +77,7 @@
               <button type="button" class="rail-btn rail-btn--ghost rail-btn--sm" @click="openConfigTemplateDetail(tmpl)">
                 查看模板
               </button>
-              <button v-if="!tmpl.isBuiltin" type="button" class="rail-btn rail-btn--ghost rail-btn--sm danger" @click="deleteConfigTemplate(tmpl.id)">
+              <button type="button" class="rail-btn rail-btn--ghost rail-btn--sm danger" @click="deleteConfigTemplate(tmpl.id)">
                 删除
               </button>
             </div>
@@ -177,121 +86,13 @@
       </div>
     </section>
 
-    <!-- Upload Modal -->
-    <Teleport to="body">
-      <div v-if="showUploadModal" class="modal-overlay" role="dialog" aria-modal="true" @click.self="showUploadModal = false">
-        <div class="modal-container">
-          <div class="modal-header">
-            <div>
-              <p class="modal-label">上传自定义模板</p>
-              <p class="modal-heading">上传包含 Helm Chart 的 .tar.gz 包</p>
-            </div>
-            <button class="modal-close" @click="showUploadModal = false">
-              <svg width="20" height="20" viewBox="0 0 32 32" fill="currentColor"><path d="M24 9.4L22.6 8 16 14.6 9.4 8 8 9.4l6.6 6.6L8 22.6 9.4 24l6.6-6.6 6.6 6.6 1.4-1.4-6.6-6.6L24 9.4z"/></svg>
-            </button>
-          </div>
-          <div class="modal-body">
-            <div class="form-item">
-              <label class="form-label">模板类型</label>
-              <input v-model.trim="uploadForm.type" class="rail-input" placeholder="例如：custom-prometheus" />
-            </div>
-            <div class="form-item">
-              <label class="form-label">显示名称</label>
-              <input v-model.trim="uploadForm.name" class="rail-input" placeholder="例如：自定义 Prometheus" />
-            </div>
-            <div class="form-item">
-              <label class="form-label">分类</label>
-              <select v-model="uploadForm.category" class="rail-select">
-                <option value="tool">工具</option>
-                <option value="infra">基础设施</option>
-                <option value="middleware">中间件</option>
-              </select>
-            </div>
-            <div class="form-item">
-              <label class="form-label">描述</label>
-              <textarea v-model.trim="uploadForm.description" class="rail-textarea" rows="4" placeholder="说明模板用途"></textarea>
-            </div>
-            <div class="form-item">
-              <label class="form-label">模板包</label>
-              <input class="rail-input" type="file" accept=".tar.gz,.tgz" @change="onFileChange" />
-              <div class="form-helper">上传包含 chart/、platform-manifest.yaml、preset-values.yaml 的 .tar.gz 或 .tgz 包。</div>
-            </div>
-            <div v-if="uploadError" class="form-error" role="alert">{{ uploadError }}</div>
-          </div>
-          <div class="modal-footer">
-            <button class="rail-btn rail-btn--ghost" @click="showUploadModal = false">取消</button>
-            <button class="rail-btn rail-btn--primary" :disabled="uploading" @click="submitUpload">
-              {{ uploading ? '上传中...' : '上传模板' }}
-            </button>
-          </div>
-        </div>
-      </div>
-    </Teleport>
-
-    <Teleport to="body">
-      <div v-if="showEnvironmentTemplateModal" class="modal-overlay" role="dialog" aria-modal="true" @click.self="closeEnvironmentTemplateModal">
-        <div class="modal-container modal-container--wide">
-          <div class="modal-header">
-            <div>
-              <p class="modal-label">环境模板</p>
-              <p class="modal-heading">{{ environmentTemplateModalTitle }}</p>
-            </div>
-            <button class="modal-close" @click="closeEnvironmentTemplateModal">
-              <svg width="20" height="20" viewBox="0 0 32 32" fill="currentColor"><path d="M24 9.4L22.6 8 16 14.6 9.4 8 8 9.4l6.6 6.6L8 22.6 9.4 24l6.6-6.6 6.6 6.6 1.4-1.4-6.6-6.6L24 9.4z"/></svg>
-            </button>
-          </div>
-          <div class="modal-body environment-template-form">
-            <div class="environment-template-form-grid">
-              <div class="form-item form-item--full">
-                <label class="form-label" for="environment-template-name">模板名称</label>
-                <input id="environment-template-name" v-model.trim="environmentTemplateForm.name" class="rail-input" placeholder="例如：开发环境标准" />
-              </div>
-              <div class="form-item">
-                <label class="form-label" for="environment-template-cpu">CPU 配额</label>
-                <input id="environment-template-cpu" v-model.trim="environmentTemplateForm.resourceCpu" class="rail-input" placeholder="例如：4核" />
-              </div>
-              <div class="form-item">
-                <label class="form-label" for="environment-template-mem">内存配额</label>
-                <input id="environment-template-mem" v-model.trim="environmentTemplateForm.resourceMem" class="rail-input" placeholder="例如：8GB" />
-              </div>
-              <div class="form-item">
-                <label class="form-label" for="environment-template-disk">存储配额</label>
-                <input id="environment-template-disk" v-model.trim="environmentTemplateForm.resourceDisk" class="rail-input" placeholder="例如：50GB" />
-              </div>
-              <div class="form-item form-item--full">
-                <label class="form-label" for="environment-template-desc">描述</label>
-                <textarea id="environment-template-desc" v-model.trim="environmentTemplateForm.description" class="rail-textarea" rows="3" placeholder="说明模板适用场景"></textarea>
-              </div>
-              <div class="form-item">
-                <label class="form-label" for="environment-template-services">默认服务</label>
-                <textarea id="environment-template-services" v-model.trim="environmentTemplateForm.services" class="rail-textarea" rows="5" placeholder="gitlab, harbor, deploy"></textarea>
-                <div class="form-helper">每行一个或使用逗号分隔，值对应服务模板 type。</div>
-              </div>
-              <div class="form-item">
-                <label class="form-label" for="environment-template-infra">基础设施</label>
-                <textarea id="environment-template-infra" v-model.trim="environmentTemplateForm.infra" class="rail-textarea" rows="5" placeholder="postgresql, redis"></textarea>
-                <div class="form-helper">每行一个或使用逗号分隔，值对应服务模板 type。</div>
-              </div>
-            </div>
-            <div v-if="environmentTemplateError" class="form-error" role="alert">{{ environmentTemplateError }}</div>
-          </div>
-          <div class="modal-footer">
-            <button class="rail-btn rail-btn--ghost" @click="closeEnvironmentTemplateModal">取消</button>
-            <button class="rail-btn rail-btn--primary" :disabled="environmentTemplateSaving" @click="submitEnvironmentTemplate">
-              {{ environmentTemplateSaving ? '保存中...' : '保存模板' }}
-            </button>
-          </div>
-        </div>
-      </div>
-    </Teleport>
-
     <Teleport to="body">
       <div v-if="showConfigTemplateImportModal" class="modal-overlay" role="dialog" aria-modal="true" @click.self="showConfigTemplateImportModal = false">
         <div class="modal-container modal-container--wide">
           <div class="modal-header">
             <div>
               <p class="modal-label">导入配置模板</p>
-              <p class="modal-heading">{{ configImportMode === 'native' ? '从原生配置创建模板' : '导入高级模板 JSON' }}</p>
+              <p class="modal-heading">{{ configImportMode === 'native' ? '上传普通配置文件' : '导入高级模板包' }}</p>
             </div>
             <button class="modal-close" @click="showConfigTemplateImportModal = false">
               <svg width="20" height="20" viewBox="0 0 32 32" fill="currentColor"><path d="M24 9.4L22.6 8 16 14.6 9.4 8 8 9.4l6.6 6.6L8 22.6 9.4 24l6.6-6.6 6.6 6.6 1.4-1.4-6.6-6.6L24 9.4z"/></svg>
@@ -304,11 +105,11 @@
                 <div class="template-mode-switch" role="group" aria-label="导入模式">
                   <button type="button" class="config-import-mode-card" :class="{ active: configImportMode === 'native' }" @click="configImportMode = 'native'">
                     <span>普通配置</span>
-                    <small>普通配置适合从现有配置文件快速生成模板</small>
+                    <small>上传自己的配置文件，只把可变字段换成模板语法</small>
                   </button>
                   <button type="button" class="config-import-mode-card" :class="{ active: configImportMode === 'advanced' }" @click="configImportMode = 'advanced'">
-                    <span>高级模板 JSON</span>
-                    <small>平台工程师可导入完整 schema/template JSON</small>
+                    <span>高级模板包</span>
+                    <small>高级用户导入 template.json/schema.json</small>
                   </button>
                 </div>
               </div>
@@ -345,17 +146,17 @@
               <textarea v-model.trim="configImportForm.description" class="rail-textarea" rows="2" placeholder="说明模板会生成哪些环境变量、配置文件和敏感配置"></textarea>
             </div>
             <div class="form-item">
-              <label class="form-label">{{ configImportMode === 'native' ? '原生配置文件' : '高级模板 JSON 文件' }}</label>
-              <input class="rail-input" type="file" :accept="configImportMode === 'native' ? '.yml,.yaml,.json,.toml,.conf,.ini,.properties,.env,.txt,application/json,text/*' : '.json,application/json'" @change="onConfigTemplateFileChange" />
-              <div class="form-helper">{{ configImportMode === 'native' ? '普通模式直接使用 __TEMPLATE__KEY__显示名__ 标记变量；挂载路径作为推荐值，具体组件可在右侧栏调整。' : '高级模式可上传完整 PAAP template.json，或包含 template/schema 的 JSON。' }}</div>
+              <label class="form-label">{{ configImportMode === 'native' ? '普通配置文件' : '高级模板包' }}</label>
+              <input class="rail-input" type="file" :multiple="configImportMode === 'native'" :accept="configImportMode === 'native' ? '.yml,.yaml,.json,.toml,.conf,.ini,.properties,.env,.txt,application/json,text/*' : '.json,.tar.gz,application/json,application/gzip'" @change="onConfigTemplateFileChange" />
+              <div class="form-helper">{{ configImportMode === 'native' ? '普通模式直接上传用户自己的配置文件，可一次选择多个文件；文件里用 __TEMPLATE__KEY__显示名__ 标记需要填写的字段。' : '高级模式仅面向高级用户，可上传完整 PAAP template.json，或包含 template.json/schema.json 的 tar.gz 包。' }}</div>
             </div>
             <div class="form-item">
               <div class="form-label-row">
-                <label class="form-label">{{ configImportMode === 'native' ? '原生配置内容' : '高级模板 JSON' }}</label>
+                <label class="form-label">{{ configImportMode === 'native' ? '普通配置内容' : '高级模板 JSON' }}</label>
                 <button type="button" class="text-btn" @click="fillConfigTemplateSample">{{ configImportMode === 'native' ? '填入示例' : '填入高级示例' }}</button>
               </div>
               <textarea v-model.trim="configTemplateImportText" class="rail-textarea code-textarea" rows="14" spellcheck="false" :placeholder="configTemplateImportPlaceholder"></textarea>
-              <div class="form-helper">{{ configImportMode === 'native' ? '普通用户只需要在原生配置中写 __TEMPLATE__KEY__显示名__；FOR/IF 会自动解析成字段。' : '高级 JSON / schema 模式适合平台工程师，可直接定义字段、环境变量、普通配置、敏感配置和文件。' }}</div>
+              <div class="form-helper">{{ configImportMode === 'native' ? '普通用户只需要在自己的配置文件中写 __TEMPLATE__KEY__显示名__；FOR/IF 会自动解析成字段。' : '高级 JSON / schema 模式适合高级用户，可直接定义字段、环境变量、普通配置、敏感配置和文件。' }}</div>
             </div>
             <div v-if="configUploadError" class="form-error" role="alert">{{ configUploadError }}</div>
           </div>
@@ -386,7 +187,6 @@
             <div class="template-preview-meta">
               <span>{{ configTemplateFrameworkLabel(selectedConfigTemplate.framework) }}</span>
               <span>{{ configTemplateBindingLabel(selectedConfigTemplate.bindingMode) }}</span>
-              <span>{{ selectedConfigTemplate.isBuiltin ? '内置模板' : '自定义模板' }}</span>
             </div>
             <div class="template-preview-summary" aria-label="配置模板影响摘要">
               <div v-for="item in configTemplatePreviewSummary(selectedConfigTemplate)" :key="item.label" class="template-preview-summary-item">
@@ -477,30 +277,6 @@
     </Teleport>
 
     <Teleport to="body">
-      <div v-if="pendingEnvironmentTemplateDelete" class="modal-overlay" role="dialog" aria-modal="true" @click.self="pendingEnvironmentTemplateDelete = null">
-        <div class="modal-container">
-          <div class="modal-header">
-            <div>
-              <p class="modal-label">删除环境模板</p>
-              <p class="modal-heading">{{ pendingEnvironmentTemplateDelete.name }}</p>
-            </div>
-            <button class="modal-close" @click="pendingEnvironmentTemplateDelete = null">
-              <svg width="20" height="20" viewBox="0 0 32 32" fill="currentColor"><path d="M24 9.4L22.6 8 16 14.6 9.4 8 8 9.4l6.6 6.6L8 22.6 9.4 24l6.6-6.6 6.6 6.6 1.4-1.4-6.6-6.6L24 9.4z"/></svg>
-            </button>
-          </div>
-          <div class="modal-body">
-            <p class="confirm-text">删除后，这个环境模板不会再出现在模板列表和创建环境候选项中。</p>
-            <div v-if="environmentTemplateError" class="form-error" role="alert">{{ environmentTemplateError }}</div>
-          </div>
-          <div class="modal-footer">
-            <button class="rail-btn rail-btn--ghost" @click="pendingEnvironmentTemplateDelete = null">取消</button>
-            <button class="rail-btn rail-btn--primary danger" @click="confirmDeleteEnvironmentTemplate">删除</button>
-          </div>
-        </div>
-      </div>
-    </Teleport>
-
-    <Teleport to="body">
       <div v-if="pendingConfigTemplateDelete" class="modal-overlay" role="dialog" aria-modal="true" @click.self="pendingConfigTemplateDelete = null">
         <div class="modal-container">
           <div class="modal-header">
@@ -532,45 +308,17 @@ import { api } from '../api/client'
 import { nativeConfigTemplateSyntax, parseNativeConfigTemplate } from './configTemplateSyntax'
 import { normalizeComponentTemplateFiles } from './componentConfigTemplateFiles'
 
-const templates = ref<any[]>([])
-const environmentTemplates = ref<any[]>([])
 const configTemplates = ref<any[]>([])
 const loading = ref(false)
-const uploading = ref(false)
-const environmentTemplateSaving = ref(false)
 const configUploading = ref(false)
-const syncing = ref(false)
-const showUploadModal = ref(false)
-const showEnvironmentTemplateModal = ref(false)
 const showConfigTemplateImportModal = ref(false)
-const uploadFile = ref<File | null>(null)
 const pageError = ref('')
-const uploadError = ref('')
-const environmentTemplateError = ref('')
 const configUploadError = ref('')
 const selectedConfigTemplate = ref<any | null>(null)
 const configTemplatePreviewTab = ref<'native' | 'advanced'>('native')
 const configImportMode = ref<'native' | 'advanced'>('native')
-const environmentTemplateMode = ref<'create' | 'edit'>('create')
-const editingEnvironmentTemplateId = ref<number | string | null>(null)
-const pendingEnvironmentTemplateDelete = ref<any | null>(null)
 const pendingConfigTemplateDelete = ref<any | null>(null)
-const activeTemplateTab = ref<'tool' | 'middleware' | 'environment' | 'config'>('tool')
-const uploadForm = ref({
-  type: '',
-  name: '',
-  category: 'tool',
-  description: '',
-})
-const environmentTemplateForm = ref({
-  name: '',
-  description: '',
-  services: '',
-  infra: '',
-  resourceCpu: '4核',
-  resourceMem: '8GB',
-  resourceDisk: '50GB',
-})
+const activeTemplateTab = ref<'config'>('config')
 const configImportForm = ref({
   key: '',
   name: '',
@@ -579,6 +327,7 @@ const configImportForm = ref({
   bindingMode: 'recommended',
   componentTypes: 'backend',
 })
+const selectedConfigTemplateUploadFiles = ref<File[]>([])
 const configTemplateImportText = ref('')
 const configTemplateComponentTypeOptions = [
   { value: 'all', label: '所有组件' },
@@ -593,65 +342,15 @@ const configTemplateImportPlaceholder = computed(() => configImportMode.value ==
   : '{\n  "template": { "name": "...", "fields": [] },\n  "schema": { "fields": [] }\n}'
 )
 
-const middlewareTemplateTypes = new Set([
-  'mysql',
-  'mysql-galera',
-  'postgresql',
-  'postgresql-ha',
-  'mongodb',
-  'redis',
-  'redis-cluster',
-  'rabbitmq',
-  'kafka',
-  'minio',
-])
-const sortedTemplates = computed(() =>
-  [...templates.value].sort((a, b) => {
-    const aOrder = Number(a.installOrder ?? 999)
-    const bOrder = Number(b.installOrder ?? 999)
-    if (aOrder !== bOrder) return aOrder - bOrder
-    return String(a.name || a.type).localeCompare(String(b.name || b.type), 'zh-Hans-CN')
-  })
-)
-const middlewareTemplates = computed(() => sortedTemplates.value.filter(isMiddlewareTemplate))
-const toolTemplates = computed(() => sortedTemplates.value.filter((tmpl) => !isMiddlewareTemplate(tmpl)))
-const isServiceTemplateTab = computed(() => activeTemplateTab.value === 'tool' || activeTemplateTab.value === 'middleware')
-const activeServiceTemplates = computed(() => {
-  if (activeTemplateTab.value === 'middleware') return middlewareTemplates.value
-  if (activeTemplateTab.value === 'tool') return toolTemplates.value
-  return []
-})
 const templateTabs = computed(() => [
-  { key: 'tool' as const, label: '工具模板', count: toolTemplates.value.length },
-  { key: 'middleware' as const, label: '中间件模板', count: middlewareTemplates.value.length },
-  { key: 'environment' as const, label: '环境模板', count: environmentTemplates.value.length },
   { key: 'config' as const, label: '配置模板', count: configTemplates.value.length },
 ])
 const activeTemplateTitle = computed(() => templateTabs.value.find((tab) => tab.key === activeTemplateTab.value)?.label || '模板列表')
-const activeTemplateDescription = computed(() => {
-  if (activeTemplateTab.value === 'config') return '组件运行配置模板，包含环境变量、普通配置、敏感配置、配置文件和启动参数。'
-  if (activeTemplateTab.value === 'environment') return '环境模板定义默认服务、基础设施和资源配额，供创建环境时复用。'
-  if (activeTemplateTab.value === 'middleware') return '数据库、缓存、消息队列和对象存储等中间件的 Helm 部署模板。'
-  return '代码仓库、镜像仓库、部署、监控、日志和 CI 等平台工具模板。'
-})
-const environmentTemplateModalTitle = computed(() => environmentTemplateMode.value === 'edit' ? '编辑环境模板' : '新建环境模板')
+const activeTemplateDescription = computed(() => '组件运行配置模板，包含环境变量、普通配置、敏感配置、配置文件和启动参数。')
 
 onMounted(async () => {
-  await Promise.all([loadTemplates(), loadEnvironmentTemplates(), loadConfigTemplates()])
+  await loadConfigTemplates()
 })
-
-async function loadTemplates() {
-  loading.value = true
-  pageError.value = ''
-  try {
-    const res = await api.listServiceTemplates()
-    templates.value = res.data || []
-  } catch (e: any) {
-    pageError.value = '加载模板失败：' + (e?.message || '未知错误')
-  } finally {
-    loading.value = false
-  }
-}
 
 async function loadConfigTemplates() {
   pageError.value = ''
@@ -665,174 +364,8 @@ async function loadConfigTemplates() {
   }
 }
 
-async function loadEnvironmentTemplates() {
-  pageError.value = ''
-  try {
-    const res = await api.templates()
-    const parsed = res.data || []
-    environmentTemplates.value = Array.isArray(parsed) ? parsed.map(normalizeEnvironmentTemplate).filter(Boolean) : []
-  } catch (e: any) {
-    environmentTemplates.value = []
-    pageError.value = '加载环境模板失败：' + (e?.message || '未知错误')
-  }
-}
-
 async function refreshActiveTemplates() {
-  if (activeTemplateTab.value === 'config') {
-    await loadConfigTemplates()
-    return
-  }
-  if (activeTemplateTab.value === 'environment') {
-    loading.value = true
-    try {
-      await loadEnvironmentTemplates()
-    } finally {
-      loading.value = false
-    }
-    return
-  }
-  void loadTemplates()
-}
-
-function normalizeEnvironmentTemplate(raw: any) {
-  const name = String(raw?.name || '').trim()
-  if (!name) return null
-  return {
-    id: raw?.id,
-    name,
-    description: String(raw?.description || '').trim(),
-    services: normalizeTemplateArray(raw?.services),
-    infra: normalizeTemplateArray(raw?.infra),
-    resourceCpu: String(raw?.resourceCpu || '').trim(),
-    resourceMem: String(raw?.resourceMem || '').trim(),
-    resourceDisk: String(raw?.resourceDisk || '').trim(),
-  }
-}
-
-function normalizeTemplateArray(value: any) {
-  if (Array.isArray(value)) return value.map((item) => String(item).trim()).filter(Boolean)
-  const text = String(value || '').trim()
-  if (!text || text === 'null') return []
-  try {
-    const parsed = JSON.parse(text)
-    if (Array.isArray(parsed)) return parsed.map((item) => String(item).trim()).filter(Boolean)
-  } catch {
-    // Older rows may contain comma-separated text instead of JSON.
-  }
-  return parseTemplateListInput(text)
-}
-
-function parseTemplateListInput(value: string) {
-  return String(value || '')
-    .split(/[\n,，]+/)
-    .map((item) => item.trim())
-    .filter(Boolean)
-}
-
-function templateListInput(value: any) {
-  return normalizeTemplateArray(value).join('\n')
-}
-
-function environmentTemplateListSummary(value: any, label: string) {
-  const items = normalizeTemplateArray(value)
-  if (!items.length) return `${label}未配置`
-  const suffix = items.length > 3 ? ` 等 ${items.length} 项` : ''
-  return `${label} ${items.slice(0, 3).join(' / ')}${suffix}`
-}
-
-function environmentTemplateResourceSummary(tmpl: any) {
-  return [
-    tmpl?.resourceCpu || 'CPU 未设置',
-    tmpl?.resourceMem || '内存未设置',
-    tmpl?.resourceDisk || '存储未设置',
-  ].join(' / ')
-}
-
-function resetEnvironmentTemplateForm() {
-  environmentTemplateForm.value = {
-    name: '',
-    description: '',
-    services: '',
-    infra: '',
-    resourceCpu: '4核',
-    resourceMem: '8GB',
-    resourceDisk: '50GB',
-  }
-}
-
-function openEnvironmentTemplateModal(tmpl?: any) {
-  environmentTemplateError.value = ''
-  if (tmpl) {
-    environmentTemplateMode.value = 'edit'
-    editingEnvironmentTemplateId.value = tmpl.id
-    environmentTemplateForm.value = {
-      name: String(tmpl.name || '').trim(),
-      description: String(tmpl.description || '').trim(),
-      services: templateListInput(tmpl.services),
-      infra: templateListInput(tmpl.infra),
-      resourceCpu: String(tmpl.resourceCpu || '').trim(),
-      resourceMem: String(tmpl.resourceMem || '').trim(),
-      resourceDisk: String(tmpl.resourceDisk || '').trim(),
-    }
-  } else {
-    environmentTemplateMode.value = 'create'
-    editingEnvironmentTemplateId.value = null
-    resetEnvironmentTemplateForm()
-  }
-  showEnvironmentTemplateModal.value = true
-}
-
-function closeEnvironmentTemplateModal() {
-  showEnvironmentTemplateModal.value = false
-  environmentTemplateError.value = ''
-}
-
-function environmentTemplatePayload() {
-  return {
-    name: environmentTemplateForm.value.name.trim(),
-    description: environmentTemplateForm.value.description.trim(),
-    services: parseTemplateListInput(environmentTemplateForm.value.services),
-    infra: parseTemplateListInput(environmentTemplateForm.value.infra),
-    resourceCpu: environmentTemplateForm.value.resourceCpu.trim(),
-    resourceMem: environmentTemplateForm.value.resourceMem.trim(),
-    resourceDisk: environmentTemplateForm.value.resourceDisk.trim(),
-  }
-}
-
-async function submitEnvironmentTemplate() {
-  environmentTemplateError.value = ''
-  const payload = environmentTemplatePayload()
-  if (!payload.name) {
-    environmentTemplateError.value = '请填写模板名称'
-    return
-  }
-  environmentTemplateSaving.value = true
-  try {
-    if (environmentTemplateMode.value === 'edit' && editingEnvironmentTemplateId.value !== null) {
-      await api.updateTemplate(editingEnvironmentTemplateId.value, payload)
-    } else {
-      await api.createTemplate(payload)
-    }
-    closeEnvironmentTemplateModal()
-    await loadEnvironmentTemplates()
-  } catch (e: any) {
-    environmentTemplateError.value = '保存环境模板失败：' + (e?.message || '未知错误')
-  } finally {
-    environmentTemplateSaving.value = false
-  }
-}
-
-async function confirmDeleteEnvironmentTemplate() {
-  const tmpl = pendingEnvironmentTemplateDelete.value
-  if (!tmpl) return
-  environmentTemplateError.value = ''
-  try {
-    await api.deleteTemplate(tmpl.id)
-    environmentTemplates.value = environmentTemplates.value.filter((item) => String(item.id) !== String(tmpl.id))
-    pendingEnvironmentTemplateDelete.value = null
-  } catch (e: any) {
-    environmentTemplateError.value = '删除环境模板失败：' + (e?.message || '未知错误')
-  }
+  await loadConfigTemplates()
 }
 
 function normalizeConfigTemplate(raw: any) {
@@ -848,7 +381,6 @@ function normalizeConfigTemplate(raw: any) {
     fields: Array.isArray(raw?.fields) ? raw.fields : [],
     nativeConfigs: normalizeConfigTemplateNativeConfigs(raw?.nativeConfigs),
     syntax: String(raw?.syntax || ''),
-    isBuiltin: Boolean(raw?.isBuiltin),
     env: Array.isArray(raw?.env) ? raw.env.map(normalizeConfigTemplateEnv).filter((item: any) => item.name) : [],
     configMaps: normalizeConfigTemplateObjects(raw?.configMaps),
     secrets: normalizeConfigTemplateObjects(raw?.secrets),
@@ -893,56 +425,27 @@ function openConfigTemplateDetail(tmpl: any) {
   configTemplatePreviewTab.value = 'native'
 }
 
-function openUploadModal() {
-  uploadError.value = ''
-  showUploadModal.value = true
-}
-
 function openConfigTemplateImportModal() {
   configUploadError.value = ''
   showConfigTemplateImportModal.value = true
 }
 
-function onFileChange(event: Event) {
-  const input = event.target as HTMLInputElement
-  uploadFile.value = input.files?.[0] || null
-  uploadError.value = ''
-}
-
-async function submitUpload() {
-  uploadError.value = ''
-  if (!uploadForm.value.type || !uploadForm.value.name || !uploadFile.value) {
-    uploadError.value = '请填写模板类型、显示名称并选择模板包'
-    return
-  }
-  const formData = new FormData()
-  formData.append('type', uploadForm.value.type)
-  formData.append('name', uploadForm.value.name)
-  formData.append('category', uploadForm.value.category)
-  formData.append('description', uploadForm.value.description)
-  formData.append('file', uploadFile.value)
-
-  uploading.value = true
-  try {
-    await api.uploadServiceTemplate(formData)
-    uploadForm.value = { type: '', name: '', category: 'tool', description: '' }
-    uploadFile.value = null
-    showUploadModal.value = false
-    await loadTemplates()
-  } catch (e: any) {
-    uploadError.value = '上传模板失败：' + (e?.message || '未知错误')
-  } finally {
-    uploading.value = false
-  }
-}
-
 async function onConfigTemplateFileChange(event: Event) {
   const input = event.target as HTMLInputElement
-  const file = input.files?.[0]
+  const files = Array.from(input.files || [])
+  selectedConfigTemplateUploadFiles.value = files
   configUploadError.value = ''
-  if (!file) return
+  if (!files.length) return
   try {
-    configTemplateImportText.value = await file.text()
+    if (files.length === 1) {
+      configTemplateImportText.value = await files[0].text()
+      return
+    }
+    const blocks = await Promise.all(files.map(async (file) => {
+      const text = await file.text()
+      return `# ${file.name}\n${text}`
+    }))
+    configTemplateImportText.value = blocks.join('\n\n')
   } catch (e: any) {
     configUploadError.value = '读取模板文件失败：' + (e?.message || '未知错误')
   }
@@ -996,9 +499,11 @@ function fillConfigTemplateSample() {
 
 async function submitConfigTemplateImport() {
   configUploadError.value = ''
+  const formData = new FormData()
   let raw: any = {}
   const text = configTemplateImportText.value.trim()
-  if (text) {
+  let uploadFiles = selectedConfigTemplateUploadFiles.value
+  if (!uploadFiles.length && text) {
     if (configImportMode.value === 'advanced') {
       try {
         raw = normalizeAdvancedConfigTemplateImport(JSON.parse(text))
@@ -1006,20 +511,40 @@ async function submitConfigTemplateImport() {
         configUploadError.value = '高级模板 JSON 解析失败：' + (e?.message || 'JSON 格式错误')
         return
       }
+      uploadFiles = [new File([text], 'template.json', { type: 'application/json' })]
     } else {
       raw = parseNativeConfigTemplate(text, {
         framework: configImportForm.value.framework,
       })
+      uploadFiles = [new File([text], defaultConfigTemplateUploadFileName(configImportForm.value.framework), { type: 'text/plain' })]
     }
   }
   const payload = configTemplatePayloadFromImport(raw)
-  if (!payload.name) {
+  if (!uploadFiles.length) {
+    configUploadError.value = '请选择配置文件或高级模板包。'
+    return
+  }
+  if (!selectedConfigTemplateUploadFiles.value.length && !payload.name) {
     configUploadError.value = '请填写模板名称，或在 JSON 中提供 name。'
     return
   }
+  uploadFiles.forEach((file) => {
+    if (uploadFiles.length === 1) {
+      formData.set('file', file)
+    } else {
+      formData.append('files', file)
+    }
+  })
+  formData.set('mode', configImportMode.value)
+  formData.set('key', configImportForm.value.key || payload.key || '')
+  formData.set('name', configImportForm.value.name || payload.name || '')
+  formData.set('description', configImportForm.value.description || payload.description || '')
+  formData.set('framework', payload.framework || configImportForm.value.framework || 'auto')
+  formData.set('bindingMode', payload.bindingMode || configImportForm.value.bindingMode || 'recommended')
+  formData.set('componentTypes', (payload.componentTypes || selectedConfigImportComponentTypes()).join(','))
   configUploading.value = true
   try {
-    await api.createComponentConfigTemplate(payload)
+    await api.uploadComponentConfigTemplate(formData)
     showConfigTemplateImportModal.value = false
     resetConfigTemplateImportForm()
     await loadConfigTemplates()
@@ -1040,7 +565,16 @@ function resetConfigTemplateImportForm() {
     componentTypes: 'backend',
   }
   configImportMode.value = 'native'
+  selectedConfigTemplateUploadFiles.value = []
   configTemplateImportText.value = ''
+}
+
+function defaultConfigTemplateUploadFileName(framework: string) {
+  const normalized = String(framework || '').toLowerCase()
+  if (normalized === 'nginx') return 'default.conf'
+  if (normalized === 'springboot' || normalized === 'spring') return 'application.yml'
+  if (normalized === 'node') return '.env'
+  return 'config.txt'
 }
 
 function selectedConfigImportComponentTypes() {
@@ -1068,13 +602,15 @@ function normalizeAdvancedConfigTemplateImport(input: any) {
 function configTemplatePayloadFromImport(raw: any) {
   const componentTypes = selectedConfigImportComponentTypes()
   const rawComponentTypes = Array.isArray(raw?.componentTypes) ? raw.componentTypes.map((item: any) => String(item).trim()).filter(Boolean) : []
+  const rawFramework = String(raw?.framework || '').trim()
+  const rawBindingMode = String(raw?.bindingMode || '').trim()
   return {
     key: configImportForm.value.key || String(raw?.key || '').trim(),
     name: configImportForm.value.name || String(raw?.name || '').trim(),
     description: configImportForm.value.description || String(raw?.description || '').trim(),
-    framework: configImportForm.value.framework || String(raw?.framework || 'auto'),
-    bindingMode: configImportForm.value.bindingMode || String(raw?.bindingMode || 'recommended'),
-    componentTypes: componentTypes.length ? componentTypes : rawComponentTypes,
+    framework: rawFramework || configImportForm.value.framework || 'auto',
+    bindingMode: rawBindingMode || configImportForm.value.bindingMode || 'recommended',
+    componentTypes: rawComponentTypes.length ? rawComponentTypes : componentTypes,
     syntax: String(raw?.syntax || nativeConfigTemplateSyntax),
     nativeConfigs: normalizeConfigTemplateNativeConfigs(raw?.nativeConfigs),
     fields: Array.isArray(raw?.fields) ? raw.fields : [],
@@ -1090,13 +626,13 @@ function configTemplatePayloadFromImport(raw: any) {
 
 async function deleteConfigTemplate(id: number | string) {
   const tmpl = configTemplates.value.find((item) => String(item.id) === String(id))
-  if (!tmpl || tmpl.isBuiltin) return
+  if (!tmpl) return
   pendingConfigTemplateDelete.value = tmpl
 }
 
 async function confirmDeleteConfigTemplate() {
   const tmpl = pendingConfigTemplateDelete.value
-  if (!tmpl || tmpl.isBuiltin) return
+  if (!tmpl) return
   pageError.value = ''
   try {
     await api.deleteComponentConfigTemplate(tmpl.id)
@@ -1105,45 +641,6 @@ async function confirmDeleteConfigTemplate() {
   } catch (e: any) {
     pageError.value = '删除配置模板失败：' + (e?.message || '未知错误')
   }
-}
-
-async function syncBuiltinTemplates() {
-  syncing.value = true
-  pageError.value = ''
-  try {
-    await api.syncBuiltinServiceTemplates()
-    await loadTemplates()
-  } catch (e: any) {
-    pageError.value = '同步失败：' + (e?.message || '未知错误')
-  } finally {
-    syncing.value = false
-  }
-}
-
-async function syncBuiltinConfigTemplates() {
-  syncing.value = true
-  pageError.value = ''
-  try {
-    await api.syncBuiltinComponentConfigTemplates()
-    await loadConfigTemplates()
-  } catch (e: any) {
-    pageError.value = '同步配置模板失败：' + (e?.message || '未知错误')
-  } finally {
-    syncing.value = false
-  }
-}
-
-function categoryLabel(category: string) {
-  const labels: Record<string, string> = {
-    tool: '工具',
-    infra: '基础设施',
-    middleware: '中间件',
-  }
-  return labels[category] || category || '未分类'
-}
-
-function isMiddlewareTemplate(tmpl: any) {
-  return String(tmpl?.category || '') === 'middleware' || middlewareTemplateTypes.has(String(tmpl?.type || ''))
 }
 
 function configTemplateFrameworkLabel(value: string) {
@@ -1473,24 +970,11 @@ function configTemplateDisplayText(value: string) {
     .replace(/Kubernetes/g, '平台底层')
 }
 
-function permissionSummary(tmpl: any) {
-  try {
-    const manifest = JSON.parse(tmpl.platformManifestJSON || '{}')
-    const scope = manifest.permissions?.workloadNamespaces?.scope
-    return scope === 'environment-wide' ? '环境命名空间权限' : '仅工具命名空间'
-  } catch {
-    return '未解析权限'
-  }
-}
-
-function isHeavyTemplate(tmpl: any) {
-  return tmpl.type === 'registry' || tmpl.type === 'harbor'
-}
 </script>
 
 <style scoped>
 .rail-page {
-  padding: 20px 20px 36px;
+  padding: var(--paap-space-5) var(--paap-space-5) var(--paap-space-10);
   max-width: none;
 }
 
@@ -1510,22 +994,22 @@ function isHeavyTemplate(tmpl: any) {
 .page-title {
   font-size: 24px;
   font-weight: 600;
-  color: var(--cds-text-primary, #161616);
+  color: var(--paap-text);
   letter-spacing: 0;
   line-height: 1.2;
 }
 .page-desc {
-  font-size: 14px;
-  color: var(--cds-text-secondary, #525252);
+  font-size: var(--paap-fs-body);
+  color: var(--paap-muted);
   line-height: 1.4;
 }
 .page-error {
-  border: 1px solid var(--cds-red-60, #da1e28);
-  background: var(--cds-layer-01, #ffffff);
-  color: var(--cds-red-60, #da1e28);
-  border-radius: 0;
+  border: 1px solid var(--paap-danger);
+  background: var(--paap-danger-soft);
+  color: var(--paap-danger);
+  border-radius: var(--paap-radius-sm);
   padding: 10px 12px;
-  font-size: 13px;
+  font-size: var(--paap-fs-compact);
   line-height: 1.4;
   margin-bottom: 16px;
 }
@@ -1539,7 +1023,7 @@ function isHeavyTemplate(tmpl: any) {
   display: flex;
   gap: 0;
   margin-bottom: 16px;
-  border-bottom: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  border-bottom: 1px solid var(--paap-border);
 }
 .template-tabs button {
   display: inline-flex;
@@ -1550,23 +1034,23 @@ function isHeavyTemplate(tmpl: any) {
   border: 0;
   border-bottom: 2px solid transparent;
   background: transparent;
-  color: var(--cds-text-secondary, #525252);
-  font-size: 13px;
+  color: var(--paap-muted);
+  font-size: var(--paap-fs-compact);
   cursor: pointer;
 }
 .template-tabs button.active {
-  border-bottom-color: var(--cds-blue-60, #0f62fe);
-  color: var(--cds-text-primary, #161616);
+  border-bottom-color: var(--paap-accent);
+  color: var(--paap-text);
 }
 .template-tabs strong {
   min-width: 20px;
   height: 20px;
   padding: 0 6px;
-  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
-  border-radius: var(--cds-border-radius-md, 2px);
-  background: var(--cds-layer-01, #ffffff);
-  color: var(--cds-text-secondary, #525252);
-  font-size: 11px;
+  border: 1px solid var(--paap-border);
+  border-radius: var(--paap-radius-xs);
+  background: var(--paap-panel);
+  color: var(--paap-muted);
+  font-size: var(--paap-fs-small);
   line-height: 20px;
   text-align: center;
 }
@@ -1579,31 +1063,31 @@ function isHeavyTemplate(tmpl: any) {
   margin-bottom: 32px;
 }
 .kpi-card {
-  background: var(--cds-layer-01, #ffffff);
-  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
-  border-radius: 0;
+  background: var(--paap-panel);
+  border: 1px solid var(--paap-border);
+  border-radius: var(--paap-radius);
   padding: 16px 18px;
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 .kpi-number {
-  font-size: 28px;
+  font-size: var(--paap-fs-heading-2xl);
   font-weight: 600;
-  color: var(--cds-text-primary, #161616);
+  color: var(--paap-text);
   letter-spacing: 0;
   line-height: 1.2;
 }
 .kpi-label {
-  font-size: 12px;
-  color: var(--cds-text-secondary, #525252);
+  font-size: var(--paap-fs-label);
+  color: var(--paap-muted);
 }
 
 /* ===== Section ===== */
 .section-card {
-  background: var(--cds-layer-01, #ffffff);
-  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
-  border-radius: 0;
+  background: var(--paap-panel);
+  border: 1px solid var(--paap-border);
+  border-radius: var(--paap-radius);
   padding: 24px;
 }
 .section-header {
@@ -1623,24 +1107,19 @@ function isHeavyTemplate(tmpl: any) {
 .loading-spinner {
   width: 24px;
   height: 24px;
-  border: 2px solid var(--cds-border-subtle-01, #e0e0e0);
-  border-top-color: var(--cds-text-primary, #161616);
+  border: 2px solid var(--paap-border);
+  border-top-color: var(--paap-text);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
-}
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
 }
 
 /* ===== Template list ===== */
 .template-list {
-  border-top: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  border-top: 1px solid var(--paap-border);
 }
 .template-row {
   display: flex;
-  border-bottom: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  border-bottom: 1px solid var(--paap-border);
   transition: background-color 110ms;
   overflow: hidden;
   cursor: default;
@@ -1649,7 +1128,7 @@ function isHeavyTemplate(tmpl: any) {
   border-bottom: none;
 }
 .template-row:hover {
-  background: var(--cds-background-hover, rgba(141, 141, 141, 0.12));
+  background: var(--paap-accent-fill);
 }
 .template-body {
   padding: 16px 20px;
@@ -1672,23 +1151,23 @@ function isHeavyTemplate(tmpl: any) {
   font-weight: 600;
   font-size: 15px;
   line-height: 1.4;
-  color: var(--cds-text-primary, #161616);
+  color: var(--paap-text);
 }
 .template-meta {
   display: flex;
   gap: 12px;
   flex-wrap: wrap;
-  color: var(--cds-text-secondary, #525252);
+  color: var(--paap-muted);
   margin-bottom: 6px;
-  font-size: 13px;
+  font-size: var(--paap-fs-compact);
 }
 .template-meta .uploaded {
-  color: var(--cds-green-60, #198038);
+  color: var(--paap-success);
 }
 .template-desc {
-  color: var(--cds-text-secondary, #525252);
+  color: var(--paap-muted);
   line-height: 1.4;
-  font-size: 13px;
+  font-size: var(--paap-fs-compact);
 }
 .config-template-plain-summary,
 .environment-template-summary {
@@ -1703,11 +1182,11 @@ function isHeavyTemplate(tmpl: any) {
   align-items: center;
   min-height: 24px;
   padding: 0 8px;
-  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
-  border-radius: 0;
-  background: var(--cds-layer-01, #ffffff);
-  color: var(--cds-text-secondary, #525252);
-  font-size: 12px;
+  border: 1px solid var(--paap-border);
+  border-radius: var(--paap-radius-xs);
+  background: var(--paap-panel);
+  color: var(--paap-muted);
+  font-size: var(--paap-fs-label);
   line-height: 1.3;
 }
 .config-template-details {
@@ -1721,19 +1200,19 @@ function isHeavyTemplate(tmpl: any) {
   gap: 4px;
   min-width: 0;
   padding: 10px;
-  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
-  border-radius: 0;
-  background: var(--cds-layer-01, #ffffff);
+  border: 1px solid var(--paap-border);
+  border-radius: var(--paap-radius-sm);
+  background: var(--paap-panel);
 }
 .config-template-details span {
-  color: var(--cds-text-secondary, #525252);
-  font-size: 11px;
+  color: var(--paap-muted);
+  font-size: var(--paap-fs-small);
 }
 .config-template-details code {
   min-width: 0;
-  color: var(--cds-text-primary, #161616);
-  font-family: var(--cds-font-family-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
-  font-size: 12px;
+  color: var(--paap-text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: var(--paap-fs-label);
   white-space: normal;
   overflow-wrap: anywhere;
 }
@@ -1751,69 +1230,362 @@ function isHeavyTemplate(tmpl: any) {
   align-items: center;
   height: 20px;
   padding: 0 8px;
-  font-size: 11px;
+  font-size: var(--paap-fs-small);
   font-weight: 500;
   letter-spacing: 0.2px;
-  border-radius: var(--cds-border-radius-md, 2px);
+  border-radius: var(--paap-radius-xs);
 }
 .tag.builtin {
-  background: var(--cds-layer-01, #ffffff);
-  color: var(--cds-text-secondary, #525252);
+  background: var(--paap-panel);
+  color: var(--paap-muted);
 }
 .tag.custom {
-  background: var(--cds-blue-10, #edf5ff);
-  color: var(--cds-blue-70, #0043ce);
+  background: var(--paap-accent-soft);
+  color: var(--paap-accent);
 }
 .tag.heavy {
-  background: var(--cds-red-10, #fff1f1);
-  color: var(--cds-red-60, #da1e28);
+  background: var(--paap-danger-soft);
+  color: var(--paap-danger);
 }
 .tag.config {
-  background: var(--cds-green-10, #defbe6);
-  color: var(--cds-green-60, #198038);
+  background: var(--paap-success-soft);
+  color: var(--paap-success);
 }
 
 /* Meta info: uploaded state */
 .template-meta .uploaded {
-  color: var(--cds-green-60, #198038);
+  color: var(--paap-success);
 }
 
 .policy {
-  color: var(--cds-text-placeholder, rgba(22, 22, 22, 0.4));
+  color: var(--paap-muted);
   white-space: nowrap;
-  font-size: 12px;
+  font-size: var(--paap-fs-label);
   letter-spacing: 0.2px;
 }
 .rail-btn.danger {
-  color: var(--cds-red-60, #da1e28);
+  color: var(--paap-danger);
 }
 .text-btn {
   border: 0;
   background: transparent;
-  color: var(--cds-blue-60, #0f62fe);
+  color: var(--paap-accent);
   cursor: pointer;
   padding: 0;
-  font-size: 12px;
+  font-size: var(--paap-fs-label);
 }
 .text-btn:hover {
   text-decoration: underline;
 }
-.environment-template-form-grid {
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--paap-z-modal);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--paap-overlay);
+}
+.modal-container {
+  width: 480px;
+  max-height: 90vh;
+  overflow-y: auto;
+  border: 1px solid var(--paap-border);
+  border-radius: 0;
+  background: var(--paap-panel);
+  box-shadow: var(--paap-shadow-lg);
+}
+.modal-container--wide {
+  width: min(760px, 96vw);
+}
+.modal-container--template {
+  width: min(980px, 96vw);
+}
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--paap-border);
+}
+.modal-label {
+  margin: 0 0 4px;
+  color: var(--paap-muted);
+  font-size: var(--paap-fs-small);
+  font-weight: 600;
+  line-height: 1.3;
+}
+.modal-heading {
+  margin: 0;
+  color: var(--paap-text);
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.modal-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  background: transparent;
+  color: var(--paap-text);
+  cursor: pointer;
+}
+.modal-body {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  padding: 20px 24px;
+}
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 16px 24px 20px;
+  border-top: 1px solid var(--paap-border);
+}
+.rail-input,
+.rail-select,
+.rail-textarea {
+  width: 100%;
+  border: 1px solid transparent;
+  border-bottom-color: var(--paap-border-strong);
+  border-radius: 0;
+  background: var(--paap-panel-subtle);
+  color: var(--paap-text);
+  font-family: inherit;
+  font-size: var(--paap-fs-body);
+  outline: none;
+}
+.rail-input,
+.rail-select {
+  min-height: 40px;
+  padding: 0 12px;
+}
+.rail-input {
+  background: var(--paap-panel-subtle);
+  border-radius: 0;
+}
+.rail-textarea {
+  min-height: 96px;
+  padding: 10px 12px;
+  resize: vertical;
+}
+.rail-input:focus,
+.rail-select:focus,
+.rail-textarea:focus {
+  border-color: var(--paap-accent);
+  box-shadow: inset 0 0 0 1px var(--paap-accent);
+}
+.rail-input:focus {
+  border-color: var(--paap-accent);
+  box-shadow: inset 0 0 0 1px var(--paap-accent);
+}
+.form-item {
+  display: grid;
+  gap: 6px;
+}
+.form-label,
+.form-label-row {
+  color: var(--paap-text);
+  font-size: var(--paap-fs-compact);
+  font-weight: 600;
+}
+.form-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.form-helper {
+  color: var(--paap-muted);
+  font-size: var(--paap-fs-small);
+  line-height: 1.4;
+}
+.form-error {
+  color: var(--paap-danger);
+  font-size: var(--paap-fs-compact);
+  line-height: 1.4;
+}
+.config-import-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
 }
-.environment-template-form-grid .form-item {
-  margin-bottom: 0;
-}
-.environment-template-form-grid .form-item--full {
+.config-import-mode {
   grid-column: 1 / -1;
+}
+.template-mode-switch {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.config-import-mode-card {
+  min-height: 76px;
+  padding: 12px;
+  border: 1px solid var(--paap-border);
+  border-radius: var(--paap-radius);
+  background: var(--paap-panel);
+  color: var(--paap-text);
+  text-align: left;
+  cursor: pointer;
+}
+.config-import-mode-card.active {
+  border-color: var(--paap-accent);
+  box-shadow: inset 0 0 0 1px var(--paap-accent);
+}
+.config-import-mode-card span,
+.config-import-mode-card small {
+  display: block;
+}
+.config-import-mode-card small {
+  margin-top: 6px;
+  color: var(--paap-muted);
+  line-height: 1.4;
+}
+.config-import-shell--carbon {
+  background: var(--paap-panel);
+}
+.code-textarea {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: var(--paap-fs-code);
+  line-height: 1.5;
+}
+.template-preview {
+  gap: 18px;
+}
+.template-preview-meta,
+.template-preview-summary {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.template-preview-meta span,
+.template-preview-summary-item {
+  border: 1px solid var(--paap-border);
+  border-radius: var(--paap-radius-sm);
+  background: var(--paap-panel);
+  padding: 8px 10px;
+  color: var(--paap-muted);
+  font-size: var(--paap-fs-small);
+}
+.template-preview-summary-item {
+  display: grid;
+  gap: 4px;
+}
+.template-preview-summary-item strong {
+  color: var(--paap-text);
+}
+.template-preview-section {
+  display: grid;
+  gap: 12px;
+}
+.template-preview-tabs {
+  display: flex;
+  align-items: flex-end;
+  gap: 0;
+  min-height: 44px;
+  border-bottom: 1px solid var(--paap-border);
+  background: var(--paap-panel);
+}
+.template-preview-tabs button {
+  min-height: 44px;
+  padding: 0 18px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: var(--paap-panel);
+  color: var(--paap-muted);
+  font-family: inherit;
+  cursor: pointer;
+}
+.template-preview-tabs button.active {
+  border-bottom-color: var(--paap-accent);
+  color: var(--paap-text);
+}
+.preview-table {
+  border: 1px solid var(--paap-border);
+}
+.preview-row {
+  display: grid;
+  grid-template-columns: 1.4fr 0.8fr 1.2fr 1.2fr;
+  gap: 10px;
+  padding: 10px 12px;
+  border-top: 1px solid var(--paap-border);
+  font-size: var(--paap-fs-label);
+}
+.preview-row:first-child {
+  border-top: 0;
+}
+.preview-row--head {
+  background: var(--paap-panel-subtle);
+  color: var(--paap-muted);
+  font-weight: 600;
+}
+.preview-row--files {
+  grid-template-columns: 1.3fr 1fr 1.4fr 0.8fr;
+}
+.preview-row strong,
+.preview-row small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.preview-row small {
+  margin-top: 2px;
+  color: var(--paap-muted);
+}
+.preview-block-list {
+  display: grid;
+  gap: 12px;
+}
+.preview-block {
+  border: 1px solid var(--paap-border);
+  border-radius: 0;
+  overflow: hidden;
+  background: var(--paap-panel);
+}
+.preview-block-title {
+  min-height: 40px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--paap-border);
+  background: var(--paap-panel);
+  color: var(--paap-text);
+  font-weight: 600;
+}
+.preview-block pre {
+  margin: 0;
+  padding: 12px 14px;
+  max-height: 360px;
+  overflow: auto;
+  background: var(--paap-panel-subtle);
+  color: var(--paap-text);
+  line-height: 1.55;
+}
+.preview-block code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+.preview-empty {
+  color: var(--paap-muted);
+  font-size: var(--paap-fs-compact);
+}
+.preview-validation-list {
+  display: grid;
+  gap: 8px;
+}
+.preview-validation-item {
+  display: grid;
+  gap: 4px;
+  border: 1px solid var(--paap-border);
+  border-radius: var(--paap-radius-sm);
+  padding: 10px 12px;
 }
 
 /* ===== Responsive ===== */
 @media (max-width: 672px) {
   .rail-page {
-    padding: 20px 20px 32px;
+    padding: var(--paap-space-6) var(--paap-space-4) var(--paap-space-10);
   }
   .page-header {
     flex-direction: column;
@@ -1833,498 +1605,15 @@ function isHeavyTemplate(tmpl: any) {
   .config-template-details {
     grid-template-columns: 1fr;
   }
-  .environment-template-form-grid {
+  .config-import-grid,
+  .template-mode-switch {
     grid-template-columns: 1fr;
   }
 }
 </style>
 
 <style>
-/* ===== Modal styles ===== */
-.modal-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 9000;
-  background: rgba(22, 22, 22, 0.48);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-}
-.modal-container {
-  background: var(--cds-layer-01, #ffffff);
-  width: 480px;
-  max-height: 90vh;
-  overflow-y: auto;
-  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
-  border-radius: 0;
-  box-shadow: none;
-}
-.modal-container--wide {
-  width: min(760px, 96vw);
-}
-.modal-container--template {
-  width: min(980px, 96vw);
-}
-.modal-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  padding: 20px 24px;
-  border-bottom: 1px solid var(--cds-border-subtle-01, #e0e0e0);
-}
-.modal-label {
-  font-size: 11px;
-  color: var(--cds-text-secondary, #525252);
-  margin-bottom: 4px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  font-weight: 600;
-}
-.modal-heading {
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--cds-text-primary, #161616);
-  margin: 0;
-  line-height: 1.3;
-}
-.modal-close {
-  background: none;
-  border: none;
-  color: var(--cds-text-secondary, #525252);
-  cursor: pointer;
-  padding: 4px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 0;
-  transition: background 110ms, color 110ms;
-}
-.modal-close:hover {
-  background: var(--cds-background-hover, rgba(141, 141, 141, 0.12));
-  color: var(--cds-text-primary, #161616);
-}
-.modal-body {
-  padding: 24px;
-}
-.modal-footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  padding: 16px 24px;
-  border-top: 1px solid var(--cds-border-subtle-01, #e0e0e0);
-}
-
-/* ===== Form elements ===== */
-.form-item {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-bottom: 20px;
-}
-.form-item:last-child {
-  margin-bottom: 0;
-}
-.form-label {
-  font-size: 12px;
-  color: var(--cds-text-secondary, #525252);
-  font-weight: 500;
-}
-.form-label-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-.form-helper {
-  font-size: 12px;
-  color: var(--cds-text-helper, #6f6f6f);
-  margin-top: 2px;
-  line-height: 1.4;
-}
-.form-error {
-  border: 1px solid var(--cds-red-60, #da1e28);
-  background: var(--cds-layer-01, #ffffff);
-  color: var(--cds-red-60, #da1e28);
-  border-radius: 0;
-  padding: 10px 12px;
-  font-size: 13px;
-  line-height: 1.4;
-}
-
-.rail-input {
-  width: 100%;
-  padding: 9px 12px;
-  font-size: 14px;
-  border: 1px solid var(--cds-border-strong-01, #8d8d8d);
-  border-radius: 0;
-  background: var(--cds-field-01, #f4f4f4);
-  color: var(--cds-text-primary, #161616);
-  outline: none;
-  font-family: inherit;
-  transition: border-color 110ms, box-shadow 110ms;
-}
-.rail-input:focus {
-  border-color: var(--cds-border-interactive, #0f62fe);
-  box-shadow: inset 0 0 0 1px var(--cds-border-interactive, #0f62fe);
-}
-.rail-input::placeholder {
-  color: var(--cds-text-placeholder, rgba(22, 22, 22, 0.4));
-}
-
-.rail-select {
-  width: 100%;
-  padding: 9px 36px 9px 12px;
-  font-size: 14px;
-  border: 1px solid var(--cds-border-strong-01, #8d8d8d);
-  border-radius: 0;
-  background: var(--cds-field-01, #f4f4f4);
-  color: var(--cds-text-primary, #161616);
-  outline: none;
-  appearance: none;
-  cursor: pointer;
-  font-family: inherit;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M6 8L1 3h10z' fill='%23525252'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 12px center;
-  transition: border-color 110ms, box-shadow 110ms;
-}
-.rail-select:focus {
-  border-color: var(--cds-border-interactive, #0f62fe);
-  box-shadow: inset 0 0 0 1px var(--cds-border-interactive, #0f62fe);
-}
-
-.rail-textarea {
-  width: 100%;
-  resize: vertical;
-  padding: 10px 12px;
-  font-size: 14px;
-  border: 1px solid var(--cds-border-strong-01, #8d8d8d);
-  border-radius: 0;
-  background: var(--cds-layer-01, #ffffff);
-  color: var(--cds-text-primary, #161616);
-  outline: none;
-  font-family: inherit;
-  line-height: 1.5;
-  transition: border-color 110ms, box-shadow 110ms;
-}
-.rail-input,
-.rail-select {
-  background: var(--cds-layer-01, #ffffff);
-}
-.config-import-shell--carbon {
-  background: var(--cds-layer-01, #ffffff);
-}
-.template-mode-switch {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
-  background: var(--cds-layer-01, #ffffff);
-}
-.template-mode-switch button {
-  min-height: 72px;
-  border: 0;
-  border-right: 1px solid var(--cds-border-subtle-01, #e0e0e0);
-  background: var(--cds-layer-01, #ffffff);
-  color: var(--cds-text-secondary, #525252);
-  font: inherit;
-  font-size: 13px;
-  cursor: pointer;
-  text-align: left;
-  padding: 12px 14px;
-  transition: background-color 110ms, box-shadow 110ms, color 110ms;
-}
-.template-mode-switch button:last-child {
-  border-right: 0;
-}
-.template-mode-switch button:hover {
-  background: var(--cds-background-hover, rgba(141, 141, 141, 0.12));
-  color: var(--cds-text-primary, #161616);
-}
-.template-mode-switch button.active {
-  background: var(--cds-layer-01, #ffffff);
-  color: var(--cds-text-primary, #161616);
-  box-shadow: inset 0 -3px 0 var(--cds-border-interactive, #0f62fe);
-}
-.config-import-mode-card {
-  display: grid;
-  align-content: center;
-  gap: 4px;
-}
-.config-import-mode-card span {
-  font-size: var(--cds-heading-01-font-size, 14px);
-  font-weight: var(--cds-heading-01-font-weight, 600);
-  line-height: var(--cds-heading-01-line-height, 1.42857);
-  letter-spacing: var(--cds-heading-01-letter-spacing, 0.16px);
-}
-.config-import-mode-card small {
-  color: var(--cds-text-helper, #6f6f6f);
-  font-size: var(--cds-helper-text-01-font-size, 12px);
-  line-height: var(--cds-helper-text-01-line-height, 1.33333);
-  letter-spacing: var(--cds-helper-text-01-letter-spacing, 0.32px);
-}
-.config-import-mode {
-  grid-column: 1 / -1;
-}
-.rail-textarea:focus {
-  border-color: var(--cds-border-interactive, #0f62fe);
-  box-shadow: inset 0 0 0 1px var(--cds-border-interactive, #0f62fe);
-}
-.code-textarea {
-  font-family: var(--cds-font-family-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
-  font-size: 12px;
-  line-height: 1.45;
-}
-.config-import-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
-}
-.template-preview {
-  display: grid;
-  gap: 16px;
-}
-.template-preview-desc {
-  margin: 0;
-  color: var(--cds-text-secondary, #525252);
-  line-height: 1.5;
-  font-size: 13px;
-}
-.template-preview-meta {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-.template-preview-meta span,
-.preview-chip {
-  display: inline-flex;
-  align-items: center;
-  min-height: 22px;
-  padding: 0 8px;
-  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
-  border-radius: var(--cds-border-radius-md, 2px);
-  background: var(--cds-layer-01, #ffffff);
-  color: var(--cds-text-secondary, #525252);
-  font-size: 12px;
-}
-.template-preview-summary {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
-  background: var(--cds-layer-01, #ffffff);
-}
-.template-preview-summary-item {
-  display: grid;
-  gap: 4px;
-  min-height: 64px;
-  padding: 10px 12px;
-  border-right: 1px solid var(--cds-border-subtle-01, #e0e0e0);
-  align-content: center;
-  min-width: 0;
-}
-.template-preview-summary-item:last-child {
-  border-right: 0;
-}
-.template-preview-summary-item span {
-  color: var(--cds-text-secondary, #525252);
-  font-size: var(--cds-label-01-font-size, 12px);
-  line-height: var(--cds-label-01-line-height, 1.33333);
-  letter-spacing: var(--cds-label-01-letter-spacing, 0.32px);
-}
-.template-preview-summary-item strong {
-  color: var(--cds-text-primary, #161616);
-  font-size: var(--cds-body-01-font-size, 14px);
-  font-weight: var(--cds-heading-01-font-weight, 600);
-  line-height: var(--cds-body-01-line-height, 1.42857);
-  letter-spacing: var(--cds-body-01-letter-spacing, 0.16px);
-  overflow-wrap: anywhere;
-}
-.template-preview-section {
-  display: grid;
-  gap: 12px;
-}
-.template-preview-fields h3,
-.template-preview-files h3,
-.template-preview-validation h3 {
-  margin: 0;
-  color: var(--cds-text-primary, #161616);
-  font-size: var(--cds-heading-01-font-size, 14px);
-  font-weight: var(--cds-heading-01-font-weight, 600);
-  line-height: var(--cds-heading-01-line-height, 1.42857);
-  letter-spacing: var(--cds-heading-01-letter-spacing, 0.16px);
-}
-.template-preview-fields .preview-row strong,
-.template-preview-files .preview-row strong {
-  display: block;
-  color: var(--cds-text-primary, #161616);
-  font-weight: var(--cds-heading-01-font-weight, 600);
-  overflow-wrap: anywhere;
-}
-.template-preview-tabs {
-  display: flex;
-  align-items: flex-end;
-  gap: 0;
-  min-height: 44px;
-  border-bottom: 1px solid var(--cds-border-subtle-01, #e0e0e0);
-  background: var(--cds-layer-01, #ffffff);
-}
-.template-preview-tabs button {
-  position: relative;
-  min-height: 44px;
-  padding: 0 18px;
-  border: 0;
-  border-bottom: 2px solid transparent;
-  background: var(--cds-layer-01, #ffffff);
-  color: var(--cds-text-secondary, #525252);
-  font-family: inherit;
-  font-size: var(--cds-body-01-font-size, 14px);
-  font-weight: var(--cds-body-01-font-weight, 400);
-  line-height: 44px;
-  cursor: pointer;
-}
-.template-preview-tabs button:hover {
-  color: var(--cds-text-primary, #161616);
-  background: var(--cds-field-01, #f4f4f4);
-}
-.template-preview-tabs button.active {
-  border-bottom-color: var(--cds-blue-60, #0f62fe);
-  color: var(--cds-text-primary, #161616);
-  background: var(--cds-layer-01, #ffffff);
-  font-weight: var(--cds-heading-01-font-weight, 600);
-}
-.template-preview-section h3 {
-  margin: 0;
-  font-size: 14px;
-  line-height: 1.3;
-  color: var(--cds-text-primary, #161616);
-}
-.preview-table {
-  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
-  border-radius: 0;
-  overflow: hidden;
-}
-.preview-row {
-  display: grid;
-  grid-template-columns: 1.4fr 0.8fr 1.2fr 1.2fr;
-  gap: 10px;
-  align-items: start;
-  padding: 10px 12px;
-  border-top: 1px solid var(--cds-border-subtle-01, #e0e0e0);
-  font-size: 12px;
-  color: var(--cds-text-primary, #161616);
-}
-.preview-row:first-child {
-  border-top: 0;
-}
-.preview-row--head {
-  background: var(--cds-field-01, #f4f4f4);
-  color: var(--cds-text-secondary, #525252);
-  font-weight: 600;
-}
-.preview-row--files {
-  grid-template-columns: 1.3fr 1fr 1.4fr 0.8fr;
-}
-.preview-row small {
-  display: block;
-  margin-top: 2px;
-  color: var(--cds-text-helper, #6f6f6f);
-  overflow-wrap: anywhere;
-}
-.preview-block-list {
-  display: grid;
-  gap: 12px;
-}
-.preview-block {
-  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
-  border-radius: 0;
-  overflow: hidden;
-  background: var(--cds-layer-01, #ffffff);
-}
-.preview-block-title {
-  display: flex;
-  align-items: center;
-  min-height: 40px;
-  padding: 0 14px;
-  background: var(--cds-layer-01, #ffffff);
-  color: var(--cds-text-primary, #161616);
-  font-size: var(--cds-heading-01-font-size, 14px);
-  font-weight: var(--cds-heading-01-font-weight, 600);
-  border-bottom: 1px solid var(--cds-border-subtle-01, #e0e0e0);
-}
-.template-preview pre,
-.preview-block pre {
-  margin: 0;
-  padding: 14px 16px;
-  background: var(--cds-field-01, #f4f4f4);
-  color: var(--cds-text-primary, #161616);
-  overflow: auto;
-  max-height: 360px;
-  font-size: 12px;
-  line-height: 1.55;
-  tab-size: 2;
-}
-.preview-block pre + pre {
-  border-top: 1px solid var(--cds-border-subtle-01, #e0e0e0);
-}
-.template-preview code,
-.preview-block code {
-  font-family: var(--cds-font-family-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
-}
-.preview-chip-list {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-.preview-empty {
-  padding: 10px 12px;
-  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
-  border-radius: 0;
-  color: var(--cds-text-helper, #6f6f6f);
-  font-size: 12px;
-}
-.preview-validation-list {
-  display: grid;
-  gap: 8px;
-}
-.preview-validation-item {
-  display: grid;
-  grid-template-columns: 56px minmax(0, 1fr);
-  gap: 8px;
-  align-items: start;
-  padding: 10px 12px;
-  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
-  background: var(--cds-layer-01, #ffffff);
-  color: var(--cds-text-secondary, #525252);
-  font-size: 12px;
-  line-height: 1.45;
-}
-.preview-validation-item strong {
-  color: var(--cds-text-primary, #161616);
-  font-weight: 600;
-}
-.preview-validation-item.warning {
-  border-left: 3px solid var(--cds-yellow-30, #f1c21b);
-}
-.preview-validation-item.danger {
-  border-left: 3px solid var(--cds-red-60, #da1e28);
-}
-.preview-validation-item.info {
-  border-left: 3px solid var(--cds-blue-60, #0f62fe);
-}
-
-@media (max-width: 672px) {
-  .config-import-grid,
-  .template-preview-summary,
-  .preview-row,
-  .preview-validation-item {
-    grid-template-columns: 1fr;
-  }
-  .template-preview-summary-item {
-    border-right: 0;
-    border-bottom: 1px solid var(--cds-border-subtle-01, #e0e0e0);
-  }
-  .template-preview-summary-item:last-child {
-    border-bottom: 0;
-  }
-}
+/* Global shared styles have been moved to src/style.scss (Shared UI Patterns section).
+   This empty global block must remain to prevent Vue from removing it —
+   the styles are available project-wide via style.scss. */
 </style>

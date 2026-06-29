@@ -1,0 +1,30 @@
+server:
+  port: __TEMPLATE__SERVER_PORT__服务端口__DEFAULT__8080__
+
+spring:
+  application:
+    name: __TEMPLATE__APP_NAME__应用名称__DEFAULT__springboot-postgres-redis-cluster__
+
+  datasource:
+    url: jdbc:postgresql://__TEMPLATE__POSTGRES_HOST__PostgreSQL 地址__DEFAULT__postgresql__:__TEMPLATE__POSTGRES_PORT__PostgreSQL 端口__DEFAULT__5432__/__TEMPLATE__POSTGRES_DATABASE__数据库名__DEFAULT__mydb__
+    username: __TEMPLATE__POSTGRES_USERNAME__数据库用户__DEFAULT__postgres__
+    password: ${POSTGRES_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+
+  redis:
+    cluster:
+      nodes: __TEMPLATE__REDIS_CLUSTER_NODES__Redis Cluster 节点__DEFAULT__redis-cluster-0:6379,redis-cluster-1:6379,redis-cluster-2:6379__
+      max-redirects: __TEMPLATE__REDIS_MAX_REDIRECTS__Redis 重定向次数__DEFAULT__3__
+    password: ${REDIS_PASSWORD}
+    lettuce:
+      cluster:
+        refresh:
+          adaptive: true
+          period: __TEMPLATE__REDIS_REFRESH_PERIOD__Redis 拓扑刷新周期__DEFAULT__60s__
+      pool:
+        max-active: __TEMPLATE__REDIS_POOL_MAX_ACTIVE__Redis 最大连接数__DEFAULT__100__
+        max-idle: 20
+
+logging:
+  level:
+    root: __TEMPLATE__LOG_LEVEL__日志级别__DEFAULT__INFO__

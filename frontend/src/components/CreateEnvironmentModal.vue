@@ -87,6 +87,33 @@
             <div class="form-helper">每行一个后缀，可写成 suffix:purpose；默认保留 app 工作负载空间。</div>
           </div>
           <div class="form-item">
+            <div class="form-label-row">
+              <label class="form-label">平台公共服务</label>
+              <span v-if="sharedResourcesLoading" class="form-helper-inline">读取中...</span>
+            </div>
+            <div v-if="sharedResources.length" class="shared-service-grid">
+              <label
+                v-for="resource in sharedResources"
+                :key="resource.id"
+                class="shared-service-option"
+                :class="{ active: form.sharedResourceIds.includes(String(resource.id)) }"
+              >
+                <input
+                  type="checkbox"
+                  :value="String(resource.id)"
+                  :checked="form.sharedResourceIds.includes(String(resource.id))"
+                  @change="toggleSharedResource(String(resource.id), ($event.target as HTMLInputElement).checked)"
+                />
+                <span>
+                  <strong>{{ resource.serviceName || resource.serviceType }}</strong>
+                  <small>{{ [resource.serviceType, resource.provider, resource.status].filter(Boolean).join(' · ') }}</small>
+                </span>
+              </label>
+            </div>
+            <div v-else class="form-helper">{{ sharedResourcesLoading ? '正在读取共享资源池。' : '共享资源池暂无可引用服务，环境创建后仍可在画布中添加。' }}</div>
+            <div v-if="sharedResourcesError" class="form-helper form-helper--warning">{{ sharedResourcesError }}</div>
+          </div>
+          <div class="form-item">
             <label class="form-label" :for="`${dialogIdPrefix}-environment-ip-pool`">网络地址池</label>
             <input
               :id="`${dialogIdPrefix}-environment-ip-pool`"
@@ -121,6 +148,16 @@ type EnvironmentForm = {
   mode: string
   templateId: string
   additionalNamespacesInput: string
+  sharedResourceIds: string[]
+}
+
+type SharedResource = {
+  id: number | string
+  capability?: string
+  provider?: string
+  serviceType?: string
+  serviceName?: string
+  status?: string
 }
 
 const props = defineProps<{
@@ -128,6 +165,9 @@ const props = defineProps<{
   creating: boolean
   error: string
   templates: Array<{ id: number | string; name: string }>
+  sharedResources: SharedResource[]
+  sharedResourcesLoading: boolean
+  sharedResourcesError: string
   form: EnvironmentForm
   dialogIdPrefix: string
 }>()
@@ -143,29 +183,24 @@ const identifierPreview = computed(() => toIdentifier(props.form.identifier || p
 const updateField = (key: keyof EnvironmentForm, value: string) => {
   emit('update:form', { ...props.form, [key]: value })
 }
+
+const toggleSharedResource = (id: string, checked: boolean) => {
+  const current = new Set(props.form.sharedResourceIds.map(String))
+  if (checked) current.add(id)
+  else current.delete(id)
+  emit('update:form', { ...props.form, sharedResourceIds: Array.from(current) })
+}
 </script>
 
 <style scoped>
-.modal-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 9000;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: var(--paap-space-6);
-  background: rgba(17, 19, 24, 0.46);
-  backdrop-filter: blur(10px);
-}
-
 .modal-container {
   width: min(520px, 100%);
   max-height: 90vh;
   overflow-y: auto;
-  background: var(--cds-layer-01, var(--paap-panel));
-  border: 1px solid var(--cds-border-subtle-01, var(--paap-border));
-  border-radius: 0;
-  box-shadow: none;
+  background: var(--paap-panel);
+  border: 1px solid var(--paap-border);
+  border-radius: var(--paap-radius);
+  box-shadow: var(--paap-shadow-lg);
 }
 
 .modal-header {
@@ -174,25 +209,25 @@ const updateField = (key: keyof EnvironmentForm, value: string) => {
   justify-content: space-between;
   gap: var(--paap-space-4);
   padding: var(--paap-space-5) var(--paap-space-6);
-  border-bottom: 1px solid var(--cds-border-subtle-01, var(--paap-border));
+  border-bottom: 1px solid var(--paap-border);
 }
 
 .modal-label {
   margin: 0 0 var(--paap-space-2);
-  color: var(--cds-text-secondary, var(--paap-muted));
-  font-size: var(--cds-label-01-font-size, 12px);
-  font-weight: var(--cds-font-weight-semibold, 600);
-  line-height: var(--cds-label-01-line-height, 1.333);
-  letter-spacing: var(--cds-label-01-letter-spacing, 0.32px);
+  color: var(--paap-muted);
+  font-size: var(--paap-fs-label);
+  font-weight: 600;
+  line-height: 1.333;
+  letter-spacing: 0.32px;
   text-transform: uppercase;
 }
 
 .modal-heading {
   margin: 0;
-  color: var(--cds-text-primary, var(--paap-text));
-  font-size: var(--cds-heading-03-font-size, 20px);
-  font-weight: var(--cds-heading-03-font-weight, 400);
-  line-height: var(--cds-heading-03-line-height, 1.4);
+  color: var(--paap-text);
+  font-size: 20px;
+  font-weight: 400;
+  line-height: 1.4;
 }
 
 .modal-close {
@@ -201,16 +236,16 @@ const updateField = (key: keyof EnvironmentForm, value: string) => {
   justify-content: center;
   width: 32px;
   height: 32px;
-  border: 1px solid var(--cds-border-subtle-01, var(--paap-border));
+  border: 1px solid var(--paap-border);
   border-radius: 0;
-  background: var(--cds-layer-01, var(--paap-panel));
-  color: var(--cds-text-secondary, var(--paap-muted));
+  background: var(--paap-panel);
+  color: var(--paap-muted);
   cursor: pointer;
 }
 
 .modal-close:hover {
-  background: var(--cds-layer-hover-01, var(--paap-panel-subtle));
-  color: var(--cds-text-primary, var(--paap-text));
+  background: var(--paap-panel-subtle);
+  color: var(--paap-text);
 }
 
 .modal-close:disabled {
@@ -227,7 +262,7 @@ const updateField = (key: keyof EnvironmentForm, value: string) => {
   justify-content: flex-end;
   gap: var(--paap-space-2);
   padding: var(--paap-space-4) var(--paap-space-6);
-  border-top: 1px solid var(--cds-border-subtle-01, var(--paap-border));
+  border-top: 1px solid var(--paap-border);
 }
 
 .form-item {
@@ -241,32 +276,101 @@ const updateField = (key: keyof EnvironmentForm, value: string) => {
 }
 
 .form-label {
-  color: var(--cds-text-secondary, var(--paap-muted));
-  font-size: var(--cds-label-01-font-size, 12px);
-  font-weight: var(--cds-font-weight-regular, 400);
-  line-height: var(--cds-label-01-line-height, 1.333);
-  letter-spacing: var(--cds-label-01-letter-spacing, 0.32px);
+  color: var(--paap-muted);
+  font-size: var(--paap-fs-label);
+  font-weight: 400;
+  line-height: 1.333;
+  letter-spacing: 0.32px;
+}
+
+.form-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--paap-space-3);
+}
+
+.form-helper-inline {
+  color: var(--paap-muted);
+  font-size: var(--paap-fs-label);
+  line-height: 1.333;
 }
 
 .required,
 .form-error {
-  color: var(--cds-text-error, var(--paap-danger));
+  color: var(--paap-danger);
 }
 
 .form-helper {
-  color: var(--cds-text-helper, var(--paap-muted-2));
-  font-size: var(--cds-helper-text-01-font-size, 12px);
-  line-height: var(--cds-helper-text-01-line-height, 1.333);
-  letter-spacing: var(--cds-helper-text-01-letter-spacing, 0.32px);
+  color: var(--paap-muted);
+  font-size: var(--paap-fs-label);
+  line-height: 1.333;
+  letter-spacing: 0.32px;
+}
+
+.form-helper--warning {
+  color: var(--paap-warning);
+}
+
+.shared-service-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--paap-space-2);
+}
+
+.shared-service-option {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--paap-space-2);
+  min-height: 58px;
+  padding: 9px 10px;
+  border: 1px solid var(--paap-border);
+  background: var(--paap-panel);
+  color: var(--paap-muted);
+  cursor: pointer;
+}
+
+.shared-service-option.active {
+  border-color: var(--paap-accent);
+  box-shadow: inset 0 0 0 1px var(--paap-accent);
+  color: var(--paap-text);
+}
+
+.shared-service-option input {
+  margin: 2px 0 0;
+}
+
+.shared-service-option span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.shared-service-option strong,
+.shared-service-option small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shared-service-option strong {
+  color: var(--paap-text);
+  font-size: var(--paap-fs-body);
+  font-weight: 600;
+}
+
+.shared-service-option small {
+  color: var(--paap-muted);
+  font-size: var(--paap-fs-label);
 }
 
 .form-error {
   padding: 10px 12px;
-  border: 1px solid var(--cds-border-error, var(--cds-red-60, var(--paap-danger)));
+  border: 1px solid var(--paap-danger);
   border-radius: 0;
-  background: var(--cds-layer-01, var(--paap-panel));
-  font-size: var(--cds-body-compact-01-font-size, 14px);
-  line-height: var(--cds-body-compact-01-line-height, 1.285);
+  background: var(--paap-panel);
+  font-size: var(--paap-fs-body);
+  line-height: 1.285;
 }
 
 .radio-group {
@@ -281,17 +385,17 @@ const updateField = (key: keyof EnvironmentForm, value: string) => {
   gap: var(--paap-space-2);
   min-height: 40px;
   padding: 8px 10px;
-  border: 1px solid var(--cds-border-subtle-01, var(--paap-border));
+  border: 1px solid var(--paap-border);
   border-radius: 0;
-  background: var(--cds-layer-01, var(--paap-panel));
-  color: var(--cds-text-secondary, var(--paap-muted));
+  background: var(--paap-panel);
+  color: var(--paap-muted);
   cursor: pointer;
 }
 
 .radio-item.active {
-  border-color: var(--cds-border-interactive, var(--paap-accent));
-  box-shadow: inset 0 0 0 1px var(--cds-border-interactive, var(--paap-accent));
-  color: var(--cds-text-primary, var(--paap-text));
+  border-color: var(--paap-accent);
+  box-shadow: inset 0 0 0 1px var(--paap-accent);
+  color: var(--paap-text);
 }
 
 .radio-item input {
@@ -299,12 +403,11 @@ const updateField = (key: keyof EnvironmentForm, value: string) => {
 }
 
 @media (max-width: 672px) {
-  .modal-overlay {
-    align-items: stretch;
-    padding: var(--paap-space-4);
+  .radio-group {
+    grid-template-columns: 1fr;
   }
 
-  .radio-group {
+  .shared-service-grid {
     grid-template-columns: 1fr;
   }
 }

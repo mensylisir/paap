@@ -15,6 +15,8 @@
     "@carbon/icons-vue": "^10.130.0",
     "@carbon/styles": "^1.107.0",
     "@carbon/vue": "^3.0.30",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
     "axios": "^1.16.1",
     "framer-motion": "^12.40.0",
     "motion": "^12.40.0",

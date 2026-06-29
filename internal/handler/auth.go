@@ -1,15 +1,15 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"golang.org/x/crypto/bcrypt"
 
 	"paap/config"
 	"paap/internal/database"
 	"paap/internal/middleware"
-	"paap/internal/model"
+	"paap/internal/service"
 )
 
 type LoginRequest struct {
@@ -24,13 +24,11 @@ type RegisterRequest struct {
 }
 
 func hashPassword(password string) (string, error) {
-	bytes, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-	return string(bytes), err
+	return service.HashPassword(password)
 }
 
 func checkPasswordHash(password, hash string) bool {
-	err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(password))
-	return err == nil
+	return service.CheckPasswordHash(password, hash)
 }
 
 // Register creates a new user
@@ -41,23 +39,11 @@ func Register(c *gin.Context) {
 		return
 	}
 
-	hash, err := hashPassword(req.Password)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	user := model.User{
+	user, err := service.RegisterUser(database.DB, service.RegisterUserInput{
 		Username: req.Username,
-		Password: hash,
+		Password: req.Password,
 		Email:    req.Email,
-	}
-
-	if err := database.DB.Create(&user).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	roles, err := model.ReplaceUserRoles(database.DB, user.ID, []string{model.RoleUser})
+	})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -68,7 +54,7 @@ func Register(c *gin.Context) {
 			"id":       user.ID,
 			"username": user.Username,
 			"email":    user.Email,
-			"roles":    roles,
+			"roles":    user.Roles,
 		},
 	})
 }
@@ -81,34 +67,22 @@ func Login(c *gin.Context) {
 		return
 	}
 
-	var user model.User
-	if err := database.DB.Where("username = ?", req.Username).First(&user).Error; err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid credentials"})
-		return
-	}
-
-	if !checkPasswordHash(req.Password, user.Password) {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid credentials"})
-		return
-	}
-	roles, err := model.UserRoleValues(database.DB, user.ID)
+	result, err := service.LoginUser(database.DB, req.Username, req.Password)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	token, err := middleware.GenerateToken(user.ID)
-	if err != nil {
+		if errors.Is(err, service.ErrInvalidCredentials) {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid credentials"})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"data": gin.H{
-			"token":    token,
-			"id":       user.ID,
-			"username": user.Username,
-			"roles":    roles,
+			"token":    result.Token,
+			"id":       result.ID,
+			"username": result.Username,
+			"roles":    result.Roles,
 		},
 	})
 }
@@ -127,14 +101,9 @@ func GetCurrentUser(c *gin.Context) {
 		return
 	}
 
-	var user model.User
-	if err := database.DB.First(&user, userID).Error; err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "user not found"})
-		return
-	}
-	roles, err := model.UserRoleValues(database.DB, user.ID)
+	user, err := service.CurrentUser(database.DB, userID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "user not found"})
 		return
 	}
 
@@ -143,7 +112,7 @@ func GetCurrentUser(c *gin.Context) {
 			"id":       user.ID,
 			"username": user.Username,
 			"email":    user.Email,
-			"roles":    roles,
+			"roles":    user.Roles,
 		},
 	})
 }

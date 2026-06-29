@@ -1,0 +1,10 @@
+{
+  "fields": [
+    { "key": "SERVER_PORT", "label": "服务端口", "type": "number", "default": "8080" },
+    { "key": "APP_NAME", "label": "应用名称", "type": "text", "default": "springboot-postgres-cluster-druid" },
+    { "key": "POSTGRES_CLUSTER_HOSTS", "label": "PostgreSQL 集群地址", "type": "serviceRef", "target": "postgresql", "format": "hosts", "required": true, "default": "postgresql-primary:5432,postgresql-read:5432" },
+    { "key": "POSTGRES_DATABASE", "label": "数据库名", "type": "text", "default": "mydb" },
+    { "key": "POSTGRES_USERNAME", "label": "数据库用户", "type": "text", "default": "postgres" },
+    { "key": "POSTGRES_PASSWORD", "label": "数据库密码", "type": "password", "output": "secret", "required": true }
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "key": "springboot-postgres-rabbitmq",
+  "name": "Spring Boot + PostgreSQL + RabbitMQ",
+  "version": "v1",
+  "description": "需要异步消息处理的 Spring Boot 后端配置。",
+  "framework": "springboot",
+  "componentTypes": ["backend", "worker"],
+  "sortOrder": 24,
+  "nativeConfigs": [{ "name": "application.yml", "path": "files/application.yml" }],
+  "files": [{ "name": "Spring Boot application.yml", "configMapName": "{{configMapName}}", "key": "application.yml", "recommendedMountPath": "/etc/paap/application.yml" }],
+  "env": [
+    { "name": "SPRING_CONFIG_ADDITIONAL_LOCATION", "source": "value", "value": "file:/etc/paap/application.yml" },
+    { "name": "POSTGRES_PASSWORD", "source": "secret", "refName": "{{secretName}}", "refKey": "POSTGRES_PASSWORD" },
+    { "name": "RABBITMQ_PASSWORD", "source": "secret", "refName": "{{secretName}}", "refKey": "RABBITMQ_PASSWORD" }
+  ],
+  "secrets": [
+    { "name": "{{secretName}}", "data": { "POSTGRES_PASSWORD": "__TEMPLATE__POSTGRES_PASSWORD__PostgreSQL 密码__", "RABBITMQ_PASSWORD": "__TEMPLATE__RABBITMQ_PASSWORD__RabbitMQ 密码__" } }
+  ]
+}

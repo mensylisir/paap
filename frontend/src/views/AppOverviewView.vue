@@ -33,11 +33,11 @@
       </div>
 
       <div v-if="environments.length === 0" class="rail-empty minimal">
-        <svg width="48" height="48" viewBox="0 0 32 32" fill="none" style="margin-bottom:12px">
-          <rect x="4" y="8" width="24" height="16" rx="2" stroke="#d1d5db" stroke-width="1.5"/>
-          <line x1="4" y1="14" x2="28" y2="14" stroke="#d1d5db" stroke-width="1.5"/>
-          <rect x="8" y="18" width="6" height="3" rx="1" fill="#e6e8eb"/>
-          <rect x="18" y="18" width="8" height="3" rx="1" fill="#e6e8eb"/>
+        <svg class="env-empty-icon" width="48" height="48" viewBox="0 0 32 32" fill="none" style="margin-bottom:12px">
+          <rect x="4" y="8" width="24" height="16" rx="2" stroke="var(--paap-border-03)" stroke-width="1.5"/>
+          <line x1="4" y1="14" x2="28" y2="14" stroke="var(--paap-border-03)" stroke-width="1.5"/>
+          <rect x="8" y="18" width="6" height="3" rx="1" fill="var(--paap-border)"/>
+          <rect x="18" y="18" width="8" height="3" rx="1" fill="var(--paap-border)"/>
         </svg>
         <p class="rail-empty-desc" style="max-width:360px">暂无环境。创建第一个环境来开始部署服务。</p>
         <button v-if="!isSystemApp" class="rail-btn rail-btn--primary" style="margin-top:12px" @click="openCreateEnvironmentModal">
@@ -103,6 +103,9 @@
       :creating="creatingEnv"
       :error="modalError"
       :templates="templates"
+      :shared-resources="sharedResources"
+      :shared-resources-loading="sharedResourcesLoading"
+      :shared-resources-error="sharedResourcesError"
       :form="envForm"
       dialog-id-prefix="overview"
       @update:form="envForm = $event"
@@ -145,6 +148,7 @@ import { api } from '../api/client'
 import CreateEnvironmentModal from '../components/CreateEnvironmentModal.vue'
 import { toIdentifier } from '../utils/identifier'
 import { buildRecentEvents, countServiceIssues, effectiveEnvironmentStatus, environmentResourceSummary, environmentStatusDotClass, environmentStatusLabel, sumApplicationResources } from './appSummary'
+import { buildSharedCapabilityPayload, emptyEnvironmentForm, type SharedCapabilityResource } from './createEnvironmentSharedServices'
 
 const route = useRoute()
 const router = useRouter()
@@ -158,7 +162,10 @@ const creatingEnv = ref(false)
 const deletingEnvId = ref<number | null>(null)
 const modalError = ref('')
 const deleteError = ref('')
-const envForm = ref({ name: '', identifier: '', mode: 'empty' as string, templateId: '1', additionalNamespacesInput: '' })
+const sharedResources = ref<SharedCapabilityResource[]>([])
+const sharedResourcesLoading = ref(false)
+const sharedResourcesError = ref('')
+const envForm = ref(emptyEnvironmentForm())
 const pendingDeleteEnv = ref<any | null>(null)
 
 const runningCount = computed(() => environments.value.filter(e => effectiveEnvironmentStatus(e) === 'running').length)
@@ -214,9 +221,10 @@ onMounted(async () => {
 const goToEnv = (envId: number) => router.push(`/apps/${appId}/environments/${envId}`)
 const openCreateEnvironmentModal = () => {
   if (isSystemApp.value) return
-  envForm.value = { name: '', identifier: '', mode: 'empty', templateId: String(templates.value[0]?.id || 1), additionalNamespacesInput: '' }
+  envForm.value = emptyEnvironmentForm(templates.value[0]?.id || 1)
   modalError.value = ''
   showCreateEnvModal.value = true
+  loadSharedResourcesForEnvironmentCreate()
 }
 const closeCreateEnvironmentModal = () => {
   if (creatingEnv.value) return
@@ -234,6 +242,7 @@ const submitEnvironment = async () => {
       fromEmpty: envForm.value.mode === 'empty' || envForm.value.mode === 'blank',
       blank: envForm.value.mode === 'blank',
       additionalNamespaces: parseAdditionalNamespacesInput(envForm.value.additionalNamespacesInput),
+      capabilities: buildSharedCapabilityPayload(envForm.value.sharedResourceIds, sharedResources.value),
     })
     showCreateEnvModal.value = false
     const envId = res.data?.id || res.data?.environment?.id
@@ -243,6 +252,20 @@ const submitEnvironment = async () => {
     modalError.value = '创建失败：' + (e?.message || '未知错误')
   } finally {
     creatingEnv.value = false
+  }
+}
+
+async function loadSharedResourcesForEnvironmentCreate() {
+  sharedResourcesLoading.value = true
+  sharedResourcesError.value = ''
+  try {
+    const res = await api.listSharedCapabilityResources()
+    sharedResources.value = Array.isArray(res.data) ? res.data : []
+  } catch (e: any) {
+    sharedResources.value = []
+    sharedResourcesError.value = '公共服务读取失败，创建后可在环境画布中添加。'
+  } finally {
+    sharedResourcesLoading.value = false
   }
 }
 
@@ -298,17 +321,6 @@ const performDeleteEnvironment = async () => {
   padding: var(--paap-space-5) var(--paap-space-5) var(--paap-space-10);
   max-width: none;
 }
-.modal-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 9000;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: var(--paap-space-6);
-  background: rgba(17,19,24,0.46);
-  backdrop-filter: blur(10px);
-}
 .modal-container {
   width: min(520px, 100%);
   max-height: 90vh;
@@ -316,6 +328,7 @@ const performDeleteEnvironment = async () => {
   background: var(--paap-panel);
   border: 1px solid var(--paap-border);
   border-radius: var(--paap-radius);
+  box-shadow: var(--paap-shadow-lg);
 }
 .modal-header {
   display: flex;
@@ -328,7 +341,7 @@ const performDeleteEnvironment = async () => {
 .modal-label {
   margin: 0 0 4px;
   color: var(--paap-muted);
-  font-size: 11px;
+  font-size: var(--paap-fs-small);
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -367,21 +380,21 @@ const performDeleteEnvironment = async () => {
 .form-item:last-child { margin-bottom: 0; }
 .form-label {
   color: var(--paap-muted);
-  font-size: 12px;
+  font-size: var(--paap-fs-label);
   font-weight: 500;
 }
 .required,
 .form-error { color: var(--paap-danger); }
 .form-helper {
-  color: var(--paap-muted-2);
-  font-size: 12px;
+  color: var(--paap-muted);
+  font-size: var(--paap-fs-label);
 }
 .form-error {
   padding: 10px 12px;
-  border: 1px solid #fecaca;
+  border: 1px solid var(--paap-danger);
   border-radius: var(--paap-radius-sm);
   background: var(--paap-danger-soft);
-  font-size: 13px;
+  font-size: var(--paap-fs-compact);
 }
 .radio-group {
   display: grid;
@@ -418,14 +431,14 @@ const performDeleteEnvironment = async () => {
   gap: 2px;
 }
 .page-title {
-  font-size: 28px;
+  font-size: 24px;
   font-weight: 600;
   color: var(--paap-text);
   letter-spacing: -0.02em;
   line-height: 1.2;
 }
 .page-desc {
-  font-size: 14px;
+  font-size: var(--paap-fs-body);
   color: var(--paap-muted);
   line-height: 1.4;
   margin-top: var(--paap-space-1);
@@ -452,7 +465,7 @@ const performDeleteEnvironment = async () => {
   line-height: 1.2;
 }
 .kpi-label-row {
-  font-size: 13px;
+  font-size: var(--paap-fs-compact);
   color: var(--paap-muted);
   display: flex;
   align-items: center;
@@ -487,13 +500,14 @@ const performDeleteEnvironment = async () => {
   border-radius: var(--paap-radius);
   padding: var(--paap-space-5);
   cursor: pointer;
-  transition: border-color 0.15s;
+  transition: border-color 0.15s, box-shadow 0.15s;
   display: flex;
   flex-direction: column;
   gap: var(--paap-space-3);
 }
 .env-card:hover {
   border-color: var(--paap-border-strong);
+  box-shadow: var(--paap-shadow-lg);
 }
 .env-card-top {
   display: flex;
@@ -522,28 +536,28 @@ const performDeleteEnvironment = async () => {
 }
 .env-id {
   font-family: var(--paap-mono);
-  font-size: 11px;
-  color: var(--paap-muted-2);
+  font-size: var(--paap-fs-small);
+  color: var(--paap-muted);
   letter-spacing: 0.02em;
 }
 .status-badge {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  font-size: 11px;
+  font-size: var(--paap-fs-small);
   font-weight: 500;
   padding: 2px 10px;
   border-radius: var(--paap-radius-full);
   white-space: nowrap;
   flex-shrink: 0;
-  background: var(--cds-tag-background-gray, var(--cds-gray-20, #e0e0e0));
+  background: var(--paap-panel-subtle);
   color: var(--paap-muted);
 }
-.status-badge.running { background: var(--cds-tag-background-green, var(--paap-success-soft)); color: var(--cds-tag-color-green, var(--paap-success)); }
-.status-badge.error { background: var(--cds-tag-background-red, var(--paap-danger-soft)); color: var(--cds-tag-color-red, var(--paap-danger)); }
+.status-badge.running { background: var(--paap-success-soft); color: var(--paap-success); }
+.status-badge.error { background: var(--paap-danger-soft); color: var(--paap-danger); }
 .status-badge.creating { background: var(--paap-accent-soft); color: var(--paap-accent); }
-.status-badge.stopped { background: var(--cds-tag-background-teal, var(--cds-teal-20, #9ef0f0)); color: var(--cds-tag-color-teal, var(--cds-teal-70, #005d5d)); }
-.status-badge.empty { background: var(--cds-tag-background-gray, var(--cds-gray-20, #e0e0e0)); color: var(--cds-tag-color-gray, var(--paap-text)); }
+.status-badge.stopped { background: var(--paap-panel-subtle); color: var(--paap-muted); }
+.status-badge.empty { background: var(--paap-panel-subtle); color: var(--paap-text); }
 
 .env-meta {
   display: flex;
@@ -561,7 +575,7 @@ const performDeleteEnvironment = async () => {
   align-items: flex-start;
   gap: var(--paap-space-3);
   padding: 10px 0;
-  border-bottom: 1px solid var(--cds-border-subtle-02, var(--paap-border));
+  border-bottom: 1px solid var(--paap-border);
 }
 .event-item:last-child { border-bottom: none; }
 .event-item.first { padding-top: 0; }
@@ -575,7 +589,7 @@ const performDeleteEnvironment = async () => {
 }
 .event-dot.active { background: var(--paap-accent); }
 .event-text {
-  font-size: 14px;
+  font-size: var(--paap-fs-body);
   color: var(--paap-text);
   line-height: 1.5;
 }
@@ -589,7 +603,7 @@ const performDeleteEnvironment = async () => {
   .env-card-top { flex-direction: column; }
   .env-card-actions { width: 100%; justify-content: space-between; }
 }
-@media (max-width: 640px) {
+@media (max-width: 672px) {
   .rail-page { padding: var(--paap-space-6) var(--paap-space-4) var(--paap-space-10); }
   .page-header { flex-direction: column; align-items: flex-start; gap: var(--paap-space-4); }
   .section-header { flex-direction: column; gap: var(--paap-space-3); }

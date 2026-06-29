@@ -271,15 +271,15 @@ watch([subjects, () => props.initialSubjectKey], ([items, targetKey]) => {
   border-bottom: 1px solid var(--paap-border);
   background: var(--paap-panel-subtle);
 }
-.rail-title { font-size: 14px; font-weight: 600; color: var(--paap-text); }
-.rail-sub { font-size: 12px; color: var(--paap-muted); margin-top: 2px; }
+.rail-title { font-size: var(--paap-fs-body); font-weight: 600; color: var(--paap-text); }
+.rail-sub { font-size: var(--paap-fs-label); color: var(--paap-muted); margin-top: 2px; }
 .subject-row {
   width: 100%;
   display: grid;
   gap: 4px;
   padding: 12px var(--paap-space-4);
   border: none;
-  border-bottom: 1px solid #f3f4f6;
+  border-bottom: 1px solid var(--paap-panel-subtle);
   background: transparent;
   text-align: left;
   cursor: pointer;
@@ -298,8 +298,8 @@ watch([subjects, () => props.initialSubjectKey], ([items, targetKey]) => {
   border-radius: var(--paap-radius-full);
   padding: 1px 8px;
 }
-.subject-row strong { color: var(--paap-text); font-size: 13px; word-break: break-word; }
-.subject-row small { color: var(--paap-muted); font-size: 12px; line-height: 1.4; }
+.subject-row strong { color: var(--paap-text); font-size: var(--paap-fs-compact); word-break: break-word; }
+.subject-row small { color: var(--paap-muted); font-size: var(--paap-fs-label); line-height: 1.4; }
 .dashboard-stage { display: grid; gap: var(--paap-space-4); min-width: 0; }
 .stage-head {
   display: flex;
@@ -311,8 +311,8 @@ watch([subjects, () => props.initialSubjectKey], ([items, targetKey]) => {
   border-radius: var(--paap-radius);
   padding: var(--paap-space-5);
 }
-.stage-title { color: var(--paap-text); font-size: 20px; font-weight: 600; word-break: break-word; }
-.stage-sub { color: var(--paap-muted); font-size: 13px; margin-top: var(--paap-space-1); }
+.stage-title { color: var(--paap-text); font-size: var(--paap-fs-heading-xl); font-weight: 600; word-break: break-word; }
+.stage-sub { color: var(--paap-muted); font-size: var(--paap-fs-compact); margin-top: var(--paap-space-1); }
 .grafana-grid { display: grid; gap: var(--paap-space-3); }
 .dashboard-frame-shell {
   height: calc(100vh - 220px);
@@ -320,14 +320,14 @@ watch([subjects, () => props.initialSubjectKey], ([items, targetKey]) => {
   overflow: hidden;
   border: 1px solid var(--paap-border);
   border-radius: var(--paap-radius);
-  background: #fff;
+  background: var(--paap-panel);
 }
 .grafana-frame {
   width: 100%;
   height: 100%;
   border: 0;
   display: block;
-  background: #fff;
+  background: var(--paap-panel);
 }
 @media (max-width: 900px) {
   .monitor-shell { grid-template-columns: 1fr; }

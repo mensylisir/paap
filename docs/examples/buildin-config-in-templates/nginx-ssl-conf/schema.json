@@ -1,0 +1,23 @@
+{
+  "fields": [
+    { "key": "SERVER_NAME", "label": "访问域名", "type": "text", "required": true, "default": "example.com" },
+    { "key": "SSL_CERTIFICATE", "label": "证书路径", "type": "text", "default": "/etc/nginx/certs/fullchain.pem" },
+    { "key": "SSL_CERTIFICATE_KEY", "label": "证书私钥路径", "type": "text", "default": "/etc/nginx/certs/privkey.pem" },
+    {
+      "key": "LOCATION_LIST",
+      "label": "Location 规则",
+      "type": "list",
+      "required": true,
+      "itemFields": [
+        { "key": "MATCH", "label": "匹配规则", "type": "text", "required": true, "default": "/" },
+        {
+          "key": "DIRECTIVES",
+          "label": "指令块",
+          "type": "textarea",
+          "required": true,
+          "default": "proxy_pass http://backend:8080;\nproxy_set_header Host $host;\nproxy_set_header X-Real-IP $remote_addr;\nproxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\nproxy_set_header X-Forwarded-Proto $scheme;"
+        }
+      ]
+    }
+  ]
+}

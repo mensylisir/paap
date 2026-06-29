@@ -1,0 +1,36 @@
+{
+  "key": "springboot-mysql-druid-redis",
+  "name": "Spring Boot + MySQL + Druid + Redis",
+  "version": "v1",
+  "description": "适用于使用 Druid 数据源、MySQL 和 Redis 的 Spring Boot 业务后端，例如音乐站、管理后台等。",
+  "framework": "springboot",
+  "componentTypes": ["backend"],
+  "sortOrder": 31,
+  "nativeConfigs": [
+    { "name": "application.yml", "path": "files/application.yml" }
+  ],
+  "files": [
+    {
+      "name": "Spring Boot application.yml",
+      "configMapName": "{{configMapName}}",
+      "key": "application.yml",
+      "recommendedMountPath": "/etc/paap/application.yml"
+    }
+  ],
+  "env": [
+    { "name": "SPRING_CONFIG_ADDITIONAL_LOCATION", "source": "value", "value": "file:/etc/paap/application.yml" },
+    { "name": "MYSQL_PASSWORD", "source": "secret", "refName": "{{secretName}}", "refKey": "MYSQL_PASSWORD" },
+    { "name": "REDIS_PASSWORD", "source": "secret", "refName": "{{secretName}}", "refKey": "REDIS_PASSWORD" },
+    { "name": "TOKEN_SECRET", "source": "secret", "refName": "{{secretName}}", "refKey": "TOKEN_SECRET" }
+  ],
+  "secrets": [
+    {
+      "name": "{{secretName}}",
+      "data": {
+        "MYSQL_PASSWORD": "__TEMPLATE__MYSQL_PASSWORD__MySQL 密码__",
+        "REDIS_PASSWORD": "__TEMPLATE__REDIS_PASSWORD__Redis 密码__",
+        "TOKEN_SECRET": "__TEMPLATE__TOKEN_SECRET__Token 密钥__"
+      }
+    }
+  ]
+}

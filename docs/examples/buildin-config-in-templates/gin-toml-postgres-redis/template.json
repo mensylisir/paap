@@ -1,0 +1,19 @@
+{
+  "key": "gin-toml-postgres-redis",
+  "name": "Gin + TOML + PostgreSQL + Redis",
+  "version": "v1",
+  "description": "Gin 服务使用 TOML 文件读取 PostgreSQL 和 Redis 配置。",
+  "framework": "go",
+  "componentTypes": ["backend"],
+  "sortOrder": 101,
+  "nativeConfigs": [{ "name": "config.toml", "path": "files/config.toml" }],
+  "files": [{ "name": "Gin config.toml", "configMapName": "{{configMapName}}", "key": "config.toml", "recommendedMountPath": "/etc/paap/config.toml" }],
+  "env": [
+    { "name": "APP_CONFIG", "source": "value", "value": "/etc/paap/config.toml" },
+    { "name": "DATABASE_PASSWORD", "source": "secret", "refName": "{{secretName}}", "refKey": "DATABASE_PASSWORD" },
+    { "name": "REDIS_PASSWORD", "source": "secret", "refName": "{{secretName}}", "refKey": "REDIS_PASSWORD" }
+  ],
+  "secrets": [
+    { "name": "{{secretName}}", "data": { "DATABASE_PASSWORD": "__TEMPLATE__DATABASE_PASSWORD__数据库密码__", "REDIS_PASSWORD": "__TEMPLATE__REDIS_PASSWORD__Redis 密码__" } }
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "key": "nginx-upstream-conf",
+  "name": "Nginx + Backend Upstream",
+  "version": "v1",
+  "description": "前端或网关组件代理后端服务的 Nginx 配置。",
+  "framework": "nginx",
+  "componentTypes": ["frontend", "backend"],
+  "sortOrder": 11,
+  "nativeConfigs": [
+    { "name": "default.conf", "path": "files/default.conf" }
+  ],
+  "files": [
+    {
+      "name": "Nginx proxy default.conf",
+      "configMapName": "{{configMapName}}",
+      "key": "default.conf",
+      "recommendedMountPath": "/etc/nginx/conf.d/default.conf"
+    }
+  ]
+}

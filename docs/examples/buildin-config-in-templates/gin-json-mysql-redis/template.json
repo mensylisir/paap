@@ -1,0 +1,36 @@
+{
+  "key": "gin-json-mysql-redis",
+  "name": "Gin + JSON + MySQL + Redis",
+  "version": "v1",
+  "description": "适用于通过 JSON 文件读取配置的 Gin/GORM 业务 API。",
+  "framework": "go",
+  "componentTypes": ["backend"],
+  "sortOrder": 101,
+  "nativeConfigs": [
+    { "name": "app.json", "path": "files/app.json" }
+  ],
+  "files": [
+    {
+      "name": "Gin app.json",
+      "configMapName": "{{configMapName}}",
+      "key": "app.json",
+      "recommendedMountPath": "/data/app/config/app.json"
+    }
+  ],
+  "env": [
+    { "name": "GIN_MODE", "source": "value", "value": "release" },
+    { "name": "MYSQL_PASSWORD", "source": "secret", "refName": "{{secretName}}", "refKey": "MYSQL_PASSWORD" },
+    { "name": "REDIS_PASSWORD", "source": "secret", "refName": "{{secretName}}", "refKey": "REDIS_PASSWORD" },
+    { "name": "JWT_KEY", "source": "secret", "refName": "{{secretName}}", "refKey": "JWT_KEY" }
+  ],
+  "secrets": [
+    {
+      "name": "{{secretName}}",
+      "data": {
+        "MYSQL_PASSWORD": "__TEMPLATE__MYSQL_PASSWORD__MySQL 密码__",
+        "REDIS_PASSWORD": "__TEMPLATE__REDIS_PASSWORD__Redis 密码__",
+        "JWT_KEY": "__TEMPLATE__JWT_KEY__JWT 密钥__"
+      }
+    }
+  ]
+}

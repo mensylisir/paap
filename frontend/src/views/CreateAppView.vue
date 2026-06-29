@@ -85,7 +85,7 @@ const submit = async () => {
   align-items: center;
   gap: var(--paap-space-2);
   margin-bottom: var(--paap-space-6);
-  font-size: 14px;
+  font-size: var(--paap-fs-body);
 }
 .breadcrumb-link {
   color: var(--paap-muted);
@@ -108,7 +108,7 @@ const submit = async () => {
   margin-bottom: var(--paap-space-8);
 }
 .page-title {
-  font-size: 28px;
+  font-size: 24px;
   font-weight: 600;
   color: var(--paap-text);
   letter-spacing: -0.02em;
@@ -116,7 +116,7 @@ const submit = async () => {
   margin: 0;
 }
 .page-subtitle {
-  font-size: 14px;
+  font-size: var(--paap-fs-body);
   color: var(--paap-muted);
   margin-top: var(--paap-space-1);
 }
@@ -138,7 +138,7 @@ const submit = async () => {
 }
 .form-label {
   display: block;
-  font-size: 13px;
+  font-size: var(--paap-fs-compact);
   font-weight: 500;
   color: var(--paap-text);
   margin-bottom: var(--paap-space-2);
@@ -149,7 +149,7 @@ const submit = async () => {
 .form-input {
   width: 100%;
   padding: 10px 12px;
-  font-size: 14px;
+  font-size: var(--paap-fs-body);
   border: 1px solid var(--paap-border);
   border-radius: var(--paap-radius-sm);
   background: var(--paap-panel);
@@ -160,16 +160,16 @@ const submit = async () => {
 }
 .form-input:focus {
   border-color: var(--paap-accent);
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+  box-shadow: var(--paap-focus-ring);
 }
 .form-input::placeholder {
-  color: var(--paap-muted-2);
+  color: var(--paap-muted);
 }
 .form-textarea {
   width: 100%;
   resize: vertical;
   padding: 10px 12px;
-  font-size: 14px;
+  font-size: var(--paap-fs-body);
   border: 1px solid var(--paap-border);
   border-radius: var(--paap-radius-sm);
   background: var(--paap-panel);
@@ -181,20 +181,20 @@ const submit = async () => {
 }
 .form-textarea:focus {
   border-color: var(--paap-accent);
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+  box-shadow: var(--paap-focus-ring);
 }
 .form-textarea::placeholder {
-  color: var(--paap-muted-2);
+  color: var(--paap-muted);
 }
 .form-hint {
-  font-size: 12px;
+  font-size: var(--paap-fs-label);
   color: var(--paap-muted);
   margin-top: var(--paap-space-1);
   line-height: 1.5;
 }
 .form-hint code {
   font-family: var(--paap-mono);
-  font-size: 11px;
+  font-size: var(--paap-fs-small);
   background: var(--paap-panel-subtle);
   padding: 1px 4px;
   border-radius: var(--paap-radius-xs);
@@ -202,12 +202,12 @@ const submit = async () => {
 
 /* Error */
 .form-error {
-  border: 1px solid #fecaca;
+  border: 1px solid var(--paap-danger);
   background: var(--paap-danger-soft);
-  color: #991b1b;
+  color: var(--paap-danger);
   border-radius: var(--paap-radius);
   padding: 10px 12px;
-  font-size: 13px;
+  font-size: var(--paap-fs-compact);
   line-height: 1.4;
   margin-bottom: var(--paap-space-6);
 }
@@ -227,7 +227,7 @@ const submit = async () => {
   align-items: center;
   justify-content: center;
   font-family: inherit;
-  font-size: 14px;
+  font-size: var(--paap-fs-body);
   font-weight: 500;
   cursor: pointer;
   outline: none;
@@ -243,15 +243,15 @@ const submit = async () => {
   cursor: not-allowed;
 }
 .btn--primary {
-  background: var(--cds-button-primary, var(--paap-accent));
+  background: var(--paap-accent);
   color: #ffffff;
 }
 .btn--primary:hover:not(:disabled) {
-  background: var(--cds-button-primary-hover, var(--paap-accent-hover));
+  background: var(--paap-accent-hover);
 }
 .btn--ghost {
   background: var(--paap-panel);
-  color: var(--paap-text-soft);
+  color: var(--paap-muted);
   border-color: var(--paap-border);
 }
 .btn--ghost:hover:not(:disabled) {
@@ -260,7 +260,7 @@ const submit = async () => {
   border-color: var(--paap-border-strong);
 }
 
-@media (max-width: 640px) {
+@media (max-width: 672px) {
   .rail-page {
     padding: var(--paap-space-6) var(--paap-space-4) var(--paap-space-10);
     max-width: none;

@@ -22,18 +22,27 @@
         >
           <template v-for="itemField in componentTemplateListItemFields(field)" :key="componentTemplateFieldKey(itemField)">
             <template v-if="fieldUsesTargetSelect(itemField)">
-              <input
-                :value="listFieldDisplayValue(itemField, row)"
-                class="bx--text-input"
-                :list="componentTemplateFieldDatalistId(itemField)"
+              <select
+                :value="row[componentTemplateFieldKey(itemField)]"
+                class="bx--select-input"
                 :aria-label="componentTemplateFieldLabel(itemField)"
-                :placeholder="fieldPlaceholder(itemField)"
-                @input="updateComponentTemplateListCellFromDisplay(field, rowIndex, itemField, eventValue($event))"
-              />
-              <datalist :id="componentTemplateFieldDatalistId(itemField)">
-                <option v-for="option in fieldOptions(itemField)" :key="option.value" :value="option.label" />
-              </datalist>
+                @change="updateComponentTemplateListCell(field, rowIndex, itemField, eventValue($event))"
+              >
+                <option value="">{{ fieldPlaceholder(itemField) }}</option>
+                <option v-for="option in fieldOptions(itemField)" :key="option.value" :value="option.value">
+                  {{ option.label }}
+                </option>
+              </select>
             </template>
+            <textarea
+              v-else-if="componentTemplateFieldType(itemField) === 'textarea'"
+              :value="row[componentTemplateFieldKey(itemField)]"
+              class="bx--text-input component-template-textarea component-template-list-textarea"
+              :aria-label="componentTemplateFieldLabel(itemField)"
+              :placeholder="componentTemplateFieldDefaultValue(itemField) || componentTemplateFieldLabel(itemField)"
+              rows="5"
+              @input="updateComponentTemplateListCell(field, rowIndex, itemField, eventValue($event))"
+            ></textarea>
             <input
               v-else
               :value="row[componentTemplateFieldKey(itemField)]"
@@ -67,16 +76,16 @@
         </label>
 
         <template v-else-if="fieldUsesTargetSelect(field)">
-          <input
-            :value="fieldDisplayValue(field)"
-            class="bx--text-input"
-            :list="componentTemplateFieldDatalistId(field)"
-            :placeholder="fieldPlaceholder(field)"
-            @input="updateComponentTemplateFieldFromDisplay(field, eventValue($event))"
-          />
-          <datalist :id="componentTemplateFieldDatalistId(field)">
-            <option v-for="option in fieldOptions(field)" :key="option.value" :value="option.label" />
-          </datalist>
+          <select
+            :value="fieldValues[componentTemplateFieldKey(field)]"
+            class="bx--select-input"
+            @change="updateComponentTemplateField(field, eventValue($event))"
+          >
+            <option value="">{{ fieldPlaceholder(field) }}</option>
+            <option v-for="option in fieldOptions(field)" :key="option.value" :value="option.value">
+              {{ option.label }}
+            </option>
+          </select>
         </template>
 
         <span v-else-if="componentTemplateFieldType(field) === 'password'" class="password-field-wrap">
@@ -104,6 +113,15 @@
             </svg>
           </button>
         </span>
+
+        <textarea
+          v-else-if="componentTemplateFieldType(field) === 'textarea'"
+          :value="fieldValues[componentTemplateFieldKey(field)]"
+          class="bx--text-input component-template-textarea"
+          :placeholder="fieldPlaceholder(field)"
+          rows="6"
+          @input="updateComponentTemplateField(field, eventValue($event))"
+        ></textarea>
 
         <input
           v-else
@@ -155,26 +173,13 @@ const emit = defineEmits<{
 const eventValue = (event: Event) => String((event.target as HTMLInputElement | HTMLSelectElement | null)?.value ?? '')
 const eventChecked = (event: Event) => Boolean((event.target as HTMLInputElement | null)?.checked)
 const componentTemplateListRows = (field: TemplateField) => runtimeTemplateListRows(field, props.fieldValues)
-const componentTemplateFieldDatalistId = (field: TemplateField) => `component-template-${componentTemplateFieldKey(field).replace(/[^a-zA-Z0-9_-]+/g, '-')}`
 const visiblePasswordKeys = ref<Set<string>>(new Set())
-const fieldDisplayValue = (field: TemplateField) => {
-  const value = String(props.fieldValues[componentTemplateFieldKey(field)] ?? '')
-  return props.fieldOptions(field).find((option) => option.value === value)?.label || value
-}
-const listFieldDisplayValue = (field: TemplateField, row: Record<string, any>) => {
-  const value = String(row?.[componentTemplateFieldKey(field)] ?? '')
-  return props.fieldOptions(field).find((option) => option.value === value)?.label || value
-}
 
 const updateComponentTemplateField = (field: TemplateField, value: any) => {
   emit('update:fieldValues', {
     ...props.fieldValues,
     [componentTemplateFieldKey(field)]: value,
   })
-}
-const updateComponentTemplateFieldFromDisplay = (field: TemplateField, value: string) => {
-  const match = props.fieldOptions(field).find((option) => option.label === value || option.value === value)
-  updateComponentTemplateField(field, match?.value || value)
 }
 const componentTemplatePasswordVisible = (field: TemplateField) => visiblePasswordKeys.value.has(componentTemplateFieldKey(field))
 const toggleComponentTemplatePassword = (field: TemplateField) => {
@@ -184,11 +189,6 @@ const toggleComponentTemplatePassword = (field: TemplateField) => {
   else next.add(key)
   visiblePasswordKeys.value = next
 }
-const displayValueToFieldValue = (field: TemplateField, value: string) => {
-  const match = props.fieldOptions(field).find((option) => option.label === value || option.value === value)
-  return match?.value || value
-}
-
 const updateComponentTemplateListRows = (field: TemplateField, rows: any[]) => {
   updateComponentTemplateField(field, rows)
 }
@@ -196,7 +196,7 @@ const defaultComponentTemplateListRowWithOptions = (field: TemplateField) => {
   const row = defaultComponentTemplateListRow(field)
   for (const itemField of componentTemplateListItemFields(field)) {
     const options = props.fieldOptions(itemField)
-    if (props.fieldUsesTargetSelect(itemField) && options.length === 1) {
+    if (props.fieldUsesTargetSelect(itemField) && options.length > 0) {
       row[componentTemplateFieldKey(itemField)] = options[0].value
     }
   }
@@ -225,14 +225,6 @@ const updateComponentTemplateListCell = (
     idx === rowIndex ? { ...row, [itemKey]: value } : row
   )))
 }
-const updateComponentTemplateListCellFromDisplay = (
-  field: TemplateField,
-  rowIndex: number,
-  itemField: TemplateField,
-  value: string,
-) => {
-  updateComponentTemplateListCell(field, rowIndex, itemField, displayValueToFieldValue(itemField, value))
-}
 </script>
 
 <style scoped>
@@ -243,7 +235,7 @@ const updateComponentTemplateListCellFromDisplay = (
   padding: 0;
   border: 0;
   border-radius: 0;
-  background: var(--cds-layer-01, #ffffff);
+  background: var(--paap-panel);
 }
 .component-template-field {
   display: grid;
@@ -254,7 +246,7 @@ const updateComponentTemplateListCellFromDisplay = (
   padding: 12px 0;
 }
 .component-template-field + .component-template-field {
-  border-top: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  border-top: 1px solid var(--paap-border);
 }
 .component-template-field-label {
   display: grid;
@@ -270,17 +262,17 @@ const updateComponentTemplateListCellFromDisplay = (
 }
 .component-template-field em {
   padding: 1px 5px;
-  border: 1px solid var(--cds-red-60, #da1e28);
-  border-radius: var(--cds-border-radius-md, 2px);
-  background: var(--cds-layer-01, #ffffff);
-  color: var(--cds-red-60, #da1e28);
-  font-size: 11px;
+  border: 1px solid var(--paap-danger);
+  border-radius: var(--paap-radius-sm);
+  background: var(--paap-panel);
+  color: var(--paap-danger);
+  font-size: var(--paap-fs-small);
   font-weight: 700;
   font-style: normal;
 }
 .component-template-field-label small {
-  color: var(--paap-muted-2);
-  font-size: 11px;
+  color: var(--paap-muted);
+  font-size: var(--paap-fs-small);
   font-weight: 500;
   line-height: 1.35;
 }
@@ -292,13 +284,13 @@ const updateComponentTemplateListCellFromDisplay = (
   width: 100%;
   min-width: 0;
   height: 40px;
-  padding: 0 var(--cds-spacing-04, 12px);
-  border: 1px solid var(--cds-border-strong-01, #8d8d8d);
+  padding: 0 12px;
+  border: 1px solid var(--paap-border-strong);
   border-radius: 0;
-  background: var(--cds-layer-01, #ffffff);
-  color: var(--cds-text-primary, #161616);
+  background: var(--paap-panel);
+  color: var(--paap-text);
   font-family: inherit;
-  font-size: var(--cds-body-01-font-size, 14px);
+  font-size: var(--paap-fs-body);
   outline: none;
   transition: border-color 110ms, box-shadow 110ms;
 }
@@ -306,23 +298,32 @@ const updateComponentTemplateListCellFromDisplay = (
   width: 100%;
   min-width: 0;
   height: 40px;
-  padding: 0 var(--cds-spacing-08, 40px) 0 var(--cds-spacing-04, 12px);
-  border: 1px solid var(--cds-border-strong-01, #8d8d8d);
+  padding: 0 40px 0 12px;
+  border: 1px solid var(--paap-border-strong);
   border-radius: 0;
-  background: var(--cds-layer-01, #ffffff);
-  color: var(--cds-text-primary, #161616);
+  background: var(--paap-panel);
+  color: var(--paap-text);
   font-family: inherit;
-  font-size: var(--cds-body-01-font-size, 14px);
+  font-size: var(--paap-fs-body);
   outline: none;
   transition: border-color 110ms, box-shadow 110ms;
 }
 .component-template-control .bx--text-input:focus {
-  border-color: var(--cds-border-interactive, #0f62fe);
-  box-shadow: inset 0 0 0 1px var(--cds-border-interactive, #0f62fe);
+  border-color: var(--paap-accent);
+  box-shadow: inset 0 0 0 1px var(--paap-accent);
+}
+.component-template-control .component-template-textarea {
+  min-height: 120px;
+  height: auto;
+  padding-top: 10px;
+  padding-bottom: 10px;
+  resize: vertical;
+  font-family: var(--paap-mono);
+  line-height: 1.5;
 }
 .component-template-control .bx--select-input:focus {
-  border-color: var(--cds-border-interactive, #0f62fe);
-  box-shadow: inset 0 0 0 1px var(--cds-border-interactive, #0f62fe);
+  border-color: var(--paap-accent);
+  box-shadow: inset 0 0 0 1px var(--paap-accent);
 }
 .password-field-wrap {
   display: grid;
@@ -338,20 +339,20 @@ const updateComponentTemplateListCellFromDisplay = (
   justify-content: center;
   width: 40px;
   height: 40px;
-  border: 1px solid var(--cds-border-strong-01, #8d8d8d);
+  border: 1px solid var(--paap-border-strong);
   border-radius: 0;
-  background: var(--cds-layer-01, #ffffff);
-  color: var(--cds-icon-secondary, #525252);
+  background: var(--paap-panel);
+  color: var(--paap-muted);
   cursor: pointer;
   transition: border-color 110ms, color 110ms, box-shadow 110ms;
 }
 .password-visible-toggle:hover {
-  color: var(--cds-blue-60, #0f62fe);
+  color: var(--paap-accent);
 }
 .password-field-wrap:focus-within .password-field-input,
 .password-field-wrap:focus-within .password-visible-toggle {
-  border-color: var(--cds-border-interactive, #0f62fe);
-  box-shadow: inset 0 0 0 1px var(--cds-border-interactive, #0f62fe);
+  border-color: var(--paap-accent);
+  box-shadow: inset 0 0 0 1px var(--paap-accent);
 }
 .component-template-list-control {
   display: grid;
@@ -359,13 +360,16 @@ const updateComponentTemplateListCellFromDisplay = (
 }
 .component-template-list-row {
   display: grid;
-  grid-template-columns: repeat(2, minmax(96px, 1fr)) auto;
-  align-items: center;
+  grid-template-columns: minmax(96px, 0.35fr) minmax(0, 0.65fr) auto;
+  align-items: start;
   gap: 8px;
   min-width: 0;
   padding: 8px 0;
   border: 0;
-  background: var(--cds-layer-01, #ffffff);
+  background: var(--paap-panel);
+}
+.component-template-list-textarea {
+  min-height: 132px;
 }
 .component-template-list-actions {
   display: inline-grid;
@@ -378,21 +382,21 @@ const updateComponentTemplateListCellFromDisplay = (
   justify-content: center;
   width: 28px;
   height: 28px;
-  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  border: 1px solid var(--paap-border);
   border-radius: 0;
-  background: var(--cds-layer-01, #ffffff);
-  color: var(--cds-text-primary, #161616);
+  background: var(--paap-panel);
+  color: var(--paap-text);
   font: inherit;
   font-size: 15px;
-  font-weight: 720;
+  font-weight: 700;
   line-height: 1;
   cursor: pointer;
   transition: border-color 110ms, background 110ms, color 110ms;
 }
 .component-template-list-actions button:hover:not(:disabled) {
-  border-color: var(--cds-border-interactive, #0f62fe);
-  background: var(--cds-layer-01, #ffffff);
-  color: var(--cds-blue-60, #0f62fe);
+  border-color: var(--paap-accent);
+  background: var(--paap-panel);
+  color: var(--paap-accent);
 }
 .component-template-list-actions button:disabled {
   cursor: not-allowed;
@@ -404,7 +408,7 @@ const updateComponentTemplateListCellFromDisplay = (
   gap: var(--paap-space-2);
   min-height: 32px;
   color: var(--paap-text);
-  font-size: 12px;
+  font-size: var(--paap-fs-label);
 }
 .component-template-checkbox input {
   margin: 0;

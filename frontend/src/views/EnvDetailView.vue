@@ -696,7 +696,7 @@
                     <td class="component-target-cell">{{ componentDeliveryTarget(comp) }}</td>
                     <td>
                       <div class="component-row-actions">
-                        <button type="button" class="text-btn" @click.stop="openComponentConfigDrawer(comp)">配置</button>
+                        <button type="button" class="text-btn" @click.stop="openComponentConfigDrawer(comp, 'variables')">配置</button>
                         <button type="button" class="text-btn" @click.stop="deployComponent(comp)">部署</button>
                       </div>
                     </td>
@@ -773,6 +773,10 @@
                 <div class="bx--form-item">
                   <label class="bx--label">构建上下文</label>
                   <input v-model="compForm.buildContext" class="bx--text-input" placeholder="." />
+                </div>
+                <div class="bx--form-item">
+                  <label class="bx--label">构建模块</label>
+                  <input v-model="compForm.buildModule" class="bx--text-input" placeholder="多模块项目填写模块目录" />
                 </div>
               </div>
             </template>
@@ -1526,19 +1530,8 @@
                   <span>{{ runtimeConsoleStatusText }}</span>
                   <small>{{ drawerConsoleTargetLabel }}</small>
                 </div>
-                <pre ref="runtimeConsoleView" class="runtime-console-output">{{ runtimeConsoleBuffer || '打开连接后会进入当前卡片的运行实例；如果应用镜像缺少命令工具，PAAP 会自动准备调试环境。' }}</pre>
-                <form class="runtime-console-input-row" @submit.prevent="sendDrawerConsoleInput">
-                  <input
-                    v-model="runtimeConsoleInput"
-                    class="bx--text-input"
-                    :disabled="!runtimeConsoleConnected"
-                    autocomplete="off"
-                    spellcheck="false"
-                    placeholder="输入命令"
-                    @keydown.enter.prevent="sendDrawerConsoleInput"
-                  />
-                  <button type="button" class="bx--btn bx--btn--primary bx--btn--sm" :disabled="!runtimeConsoleConnected || !runtimeConsoleInput.trim()" @click="sendDrawerConsoleInput">发送</button>
-                </form>
+                <div ref="runtimeConsoleView" class="runtime-console-output"></div>
+                <p v-if="!runtimeConsoleConnected && !runtimeConsoleConnecting" class="runtime-console-hint">点击“连接”进入当前卡片的运行实例；如果应用镜像缺少命令工具，PAAP 会自动准备调试环境。</p>
                 <p v-if="runtimeConsoleError" class="modal-error" role="alert">{{ runtimeConsoleError }}</p>
               </div>
             </section>
@@ -1585,7 +1578,7 @@
                 <select v-model="configForm.bindingTargetKey" class="bx--select-input">
                   <option value="">选择数据库、缓存、消息队列或对象存储</option>
                   <option v-for="target in componentDrawerDependencyTargets" :key="target.key" :value="target.key">
-                    {{ target.name }} · {{ targetTypeLabel(target) }}
+                    {{ targetOptionLabel(target) }}
                   </option>
                 </select>
                 <button type="button" class="bx--btn bx--btn--primary bx--btn--sm" :disabled="configDrawer.saving || !selectedConnectionTarget" @click="applySelectedConfigBinding">
@@ -1609,7 +1602,7 @@
             <section v-if="configDrawerTab === 'deploy' && configDrawer.kind === 'component'" class="config-section">
               <div class="config-section-title">
                 <span>交付方式</span>
-                <button v-if="!componentDrawerUsesSourceDelivery" type="button" class="text-btn" :disabled="registryWorkspaceLoading" @click="ensureRegistryWorkspaces">
+                <button type="button" class="text-btn" :disabled="registryWorkspaceLoading" @click="ensureRegistryWorkspaces">
                   {{ registryWorkspaceLoading ? '刷新中...' : '刷新' }}
                 </button>
               </div>
@@ -1628,14 +1621,28 @@
               </p>
               <div v-if="!componentDrawerUsesSourceDelivery" class="cds-image-fields">
                 <div class="cds-image-field">
+                  <label class="cds-label" for="drawer-registry-target">镜像仓库</label>
+                  <select
+                    id="drawer-registry-target"
+                    v-model="configForm.registryTargetKey"
+                    class="cds-text-input"
+                    @change="syncRegistryTargetSelection"
+                  >
+                    <option value="">请选择环境镜像仓库</option>
+                    <option v-for="target in registryTargetOptions" :key="target.key" :value="target.key">
+                      {{ target.label }}
+                    </option>
+                  </select>
+                </div>
+                <div class="cds-image-field">
                   <label class="cds-label" for="drawer-repo">仓库地址</label>
                   <input
                     id="drawer-repo"
                     v-model.trim="configForm.repository"
                     class="cds-text-input"
-                    readonly
-                    :title="configForm.repository || '等待环境镜像仓库地址'"
-                    placeholder="等待环境镜像仓库地址"
+                    :readonly="selectedRegistryTarget?.source !== 'external'"
+                    :title="configForm.repository || '等待镜像仓库地址'"
+                    placeholder="等待镜像仓库地址"
                   />
                 </div>
                 <div class="cds-image-field">
@@ -1654,6 +1661,31 @@
                 </div>
               </div>
               <div v-else class="cds-image-fields">
+                <div class="cds-image-field">
+                  <label class="cds-label" for="drawer-source-registry-target">镜像仓库</label>
+                  <select
+                    id="drawer-source-registry-target"
+                    v-model="configForm.registryTargetKey"
+                    class="cds-text-input"
+                    @change="syncRegistryTargetSelection"
+                  >
+                    <option value="">请选择构建镜像仓库</option>
+                    <option v-for="target in registryTargetOptions" :key="target.key" :value="target.key">
+                      {{ target.label }}
+                    </option>
+                  </select>
+                </div>
+                <div class="cds-image-field">
+                  <label class="cds-label" for="drawer-source-repo-host">目标仓库地址</label>
+                  <input
+                    id="drawer-source-repo-host"
+                    v-model.trim="configForm.repository"
+                    class="cds-text-input"
+                    :readonly="selectedRegistryTarget?.source !== 'external'"
+                    :title="configForm.repository || '等待镜像仓库地址'"
+                    placeholder="等待镜像仓库地址"
+                  />
+                </div>
                 <div class="cds-image-field cds-image-field--full">
                   <label class="cds-label" for="drawer-source-repo">源码仓库</label>
                   <input
@@ -1681,13 +1713,37 @@
                     placeholder="."
                   />
                 </div>
+                <div class="cds-image-field">
+                  <label class="cds-label" for="drawer-build-module">构建模块</label>
+                  <input
+                    id="drawer-build-module"
+                    v-model.trim="configForm.buildModule"
+                    class="cds-text-input"
+                    placeholder="例如 gateway"
+                  />
+                </div>
+                <div class="cds-image-field">
+                  <label class="cds-label" for="drawer-source-version">版本标签</label>
+                  <input
+                    id="drawer-source-version"
+                    v-model.trim="configForm.version"
+                    class="cds-text-input"
+                    placeholder="v1.0.0"
+                  />
+                </div>
               </div>
               <div class="cds-image-preview" v-if="!componentDrawerUsesSourceDelivery && registryImageFromConfig">
                 <svg class="cds-image-preview__icon" width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1zm0 12.5a5.5 5.5 0 1 1 0-11 5.5 5.5 0 0 1 0 11zM8 4a.75.75 0 0 1 .75.75v2.5h2.5a.75.75 0 0 1 0 1.5h-2.5v2.5a.75.75 0 0 1-1.5 0v-2.5h-2.5a.75.75 0 0 1 0-1.5h2.5v-2.5A.75.75 0 0 1 8 4z"/></svg>
                 <span class="cds-image-preview__label">完整镜像</span>
                 <code class="cds-image-preview__text">{{ registryImageFromConfig }}</code>
               </div>
+              <div class="cds-image-preview" v-if="componentDrawerUsesSourceDelivery && sourceDeliveryImagePreview">
+                <svg class="cds-image-preview__icon" width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1zm0 12.5a5.5 5.5 0 1 1 0-11 5.5 5.5 0 0 1 0 11zM8 4a.75.75 0 0 1 .75.75v2.5h2.5a.75.75 0 0 1 0 1.5h-2.5v2.5a.75.75 0 0 1-1.5 0v-2.5h-2.5a.75.75 0 0 1 0-1.5h2.5v-2.5A.75.75 0 0 1 8 4z"/></svg>
+                <span class="cds-image-preview__label">构建镜像</span>
+                <code class="cds-image-preview__text">{{ sourceDeliveryImagePreview }}</code>
+              </div>
               <p v-if="!componentDrawerUsesSourceDelivery" class="cds-helper-text">仓库地址来自当前环境镜像仓库；镜像:Tag 填写镜像名和明确 Tag。</p>
+              <p v-else class="cds-helper-text">源码构建完成后会推送到所选镜像仓库；本环境或共享资源使用集群内地址完成构建推送。</p>
               <p v-if="registryWorkspaceError" class="modal-error" role="alert">{{ registryWorkspaceError }}</p>
             </section>
 
@@ -1745,7 +1801,7 @@
                     {{ componentTemplateInlineHelp(selectedComponentConfigTemplate) }}
                   </p>
                   <p v-else class="component-template-helper">
-                    选择模板后，下方只显示这个模板需要填写的业务配置。
+                    未选择模板时，直接编辑当前组件已有的环境变量、配置文件和手工覆盖项。
                   </p>
                 </div>
 
@@ -1766,7 +1822,28 @@
                 </p>
                 <p v-else-if="selectedComponentConfigTemplate" class="component-config-warning">请先补全必填项。</p>
 
-                <details v-if="configForm.files.length || configForm.env.length || componentNginxRouteEditorVisible" class="component-template-custom-config component-template-advanced-config">
+                <div v-if="componentCurrentConfigRows.length" class="component-current-config-panel">
+                  <div class="component-current-config-head">
+                    <span>当前配置</span>
+                    <small>{{ componentCurrentConfigRows.length }} 项</small>
+                  </div>
+                  <div class="component-current-config-list">
+                    <div v-for="row in componentCurrentConfigRows" :key="row.key" class="component-current-config-row">
+                      <span>
+                        <strong>{{ row.name }}</strong>
+                        <small>{{ row.source }}</small>
+                      </span>
+                      <code>{{ row.value }}</code>
+                    </div>
+                  </div>
+                </div>
+                <div v-else-if="!selectedComponentConfigTemplate" class="config-empty">当前组件没有业务配置，可直接保存部署参数。</div>
+
+                <details
+                  v-if="!selectedComponentConfigTemplate || configForm.files.length || configForm.env.length || componentNginxRouteEditorVisible"
+                  class="component-template-custom-config component-template-advanced-config"
+                  :open="componentAdvancedConfigOpenByDefault"
+                >
                   <summary>
                     <span>高级配置</span>
                     <small>配置文件挂载、代理路由和手工覆盖项</small>
@@ -1935,15 +2012,6 @@
                 </div>
                 <div v-else class="config-empty">当前没有可展示的运行指标。</div>
               </div>
-              <details class="runtime-details">
-                <summary>运行详情</summary>
-                <div class="config-kv-grid">
-                  <div v-for="row in serviceDrawerRuntimeRows" :key="row.label">
-                    <span>{{ row.label }}</span>
-                    <strong>{{ row.value }}</strong>
-                  </div>
-                </div>
-              </details>
             </section>
 
             <p v-if="configDrawer.message" class="workspace-message" role="status">{{ configDrawer.message }}</p>
@@ -1963,6 +2031,9 @@
             </button>
             <button v-if="configDrawer.kind === 'service' && serviceDrawerProfile.showDeploymentConfig" type="button" class="bx--btn bx--btn--secondary" :disabled="configDrawer.saving || !serviceDrawerConfigurable" @click="saveServiceConfigDrawer">
               {{ configDrawer.saving ? '保存中...' : '保存部署配置' }}
+            </button>
+            <button v-if="configDrawer.kind === 'capability' && drawerCapability?.source === 'external'" type="button" class="bx--btn bx--btn--secondary" :disabled="configDrawer.saving || capabilityValidationLoading" @click="validateCapabilityConfigDrawer">
+              {{ capabilityValidationLoading ? '验证中...' : '验证连接' }}
             </button>
             <button v-if="configDrawer.kind === 'capability' && drawerCapability?.source === 'external'" type="button" class="bx--btn bx--btn--secondary" :disabled="configDrawer.saving" @click="saveCapabilityConfigDrawer">
               {{ configDrawer.saving ? '保存中...' : '保存外部配置' }}
@@ -1984,72 +2055,88 @@
         @click.stop
       >
         <button v-if="componentContextMenu.kind === 'canvas' && !isSystemSharedEnvironment" type="button" @mouseenter="openComponentSubmenu" @click="openComponentSubmenu">
+          <MenuIconComponent class="menu-icon" />
           <span>创建组件</span>
           <small>前端、后端、自定义组件</small>
           <svg class="submenu-arrow" width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M6 4l4 4-4 4V4z"/></svg>
         </button>
         <button v-if="componentContextMenu.kind === 'canvas'" type="button" @mouseenter="openToolSubmenu" @click="openToolSubmenu">
+          <MenuIconTool class="menu-icon" />
           <span>添加工具</span>
           <small>Git、镜像仓库、部署、监控、日志工具</small>
           <svg class="submenu-arrow" width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M6 4l4 4-4 4V4z"/></svg>
         </button>
         <button v-if="componentContextMenu.kind === 'canvas'" type="button" @mouseenter="openInfraSubmenu" @click="openInfraSubmenu">
+          <MenuIconMiddleware class="menu-icon" />
           <span>添加中间件</span>
           <small>数据库、缓存、消息队列</small>
           <svg class="submenu-arrow" width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M6 4l4 4-4 4V4z"/></svg>
         </button>
         <button v-if="componentContextMenu.kind === 'canvas' && !isSystemSharedEnvironment" type="button" @mouseenter="openSharedCapabilitySubmenu" @click="openSharedCapabilitySubmenu">
+          <MenuIconShared class="menu-icon" />
           <span>添加共享资源</span>
           <small>引用平台共享资源池中的工具或中间件</small>
           <svg class="submenu-arrow" width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M6 4l4 4-4 4V4z"/></svg>
         </button>
         <button v-if="componentContextMenu.kind === 'canvas' && !isSystemSharedEnvironment" type="button" @mouseenter="openExternalCapabilitySubmenu" @click="openExternalCapabilitySubmenu">
+          <MenuIconExternal class="menu-icon" />
           <span>添加外部资源</span>
           <small>接入外部代码、镜像、数据库、中间件或观测资源</small>
           <svg class="submenu-arrow" width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M6 4l4 4-4 4V4z"/></svg>
         </button>
         <div v-if="componentContextMenu.kind === 'canvas' && !isSystemSharedEnvironment" class="context-menu-divider"></div>
         <button v-if="componentContextMenu.kind === 'canvas' && !isSystemSharedEnvironment" type="button" @click="adoptCanvasResource">
+          <MenuIconAdopt class="menu-icon" />
           <span>纳管已有资源</span>
           <small>接入集群现有资源</small>
         </button>
         <button v-if="componentContextMenu.kind === 'edge'" type="button" @click="deleteContextEdge">
+          <MenuIconDelete class="menu-icon" />
           <span>删除连线</span>
           <small>只删除这条手动画布连线</small>
         </button>
         <button v-if="componentContextMenu.kind === 'component' || componentContextMenu.kind === 'service' || componentContextMenu.kind === 'capability'" type="button" @click="configureContextNode">
+          <MenuIconConfigure class="menu-icon" />
           <span>配置</span>
           <small>{{ componentContextMenu.kind === 'capability' ? '在右侧查看或配置能力来源' : (componentContextMenu.kind === 'service' ? '在右侧查看工具或中间件配置' : '在右侧配置环境变量、副本和启动参数') }}</small>
         </button>
         <button v-if="componentContextMenu.kind === 'component' || componentContextMenu.kind === 'service' || componentContextMenu.kind === 'capability'" type="button" @click="renameContextNode">
+          <MenuIconRename class="menu-icon" />
           <span>重命名</span>
           <small>修改画布上显示的卡片名称</small>
         </button>
         <button v-if="componentContextMenu.kind === 'component'" type="button" @click="deployContextComponent">
+          <MenuIconDeploy class="menu-icon" />
           <span>部署</span>
           <small>提交 GitOps 并同步</small>
         </button>
         <button v-if="componentContextMenu.kind === 'service'" type="button" @click="deployContextService">
+          <MenuIconDeploy class="menu-icon" />
           <span>部署</span>
           <small>部署或应用当前服务配置</small>
         </button>
         <button v-if="componentContextMenu.kind === 'component'" type="button" @click="deleteContextComponent">
+          <MenuIconDelete class="menu-icon" />
           <span>删除</span>
           <small>删除组件草稿和运行态 CR</small>
         </button>
         <button v-if="componentContextMenu.kind === 'service'" type="button" @click="deleteContextService">
+          <MenuIconDelete class="menu-icon" />
           <span>删除</span>
           <small>卸载工具、中间件或数据库并清理卡片</small>
         </button>
         <button v-if="componentContextMenu.kind === 'capability'" type="button" @click="deleteContextCapability">
+          <MenuIconDelete class="menu-icon" />
           <span>删除</span>
           <small>移除共享或外部资源卡片</small>
         </button>
         <button v-if="componentContextMenu.kind === 'component' || componentContextMenu.kind === 'service'" type="button" @click="openContextNodeMonitoring">
+          <MenuIconMonitor class="menu-icon" />
           <span>监控</span>
           <small>打开监控中心</small>
         </button>
         <button v-if="componentContextMenu.kind === 'component' || componentContextMenu.kind === 'service'" type="button" @click="openContextNodeLogs">
+          <MenuIconLogs class="menu-icon" />
           <span>日志</span>
           <small>打开日志中心</small>
         </button>
@@ -2065,6 +2152,7 @@
         @click.stop
       >
         <button v-for="tmpl in contextSubmenu.templates" :key="tmpl.type" type="button" :class="{ disabled: tmpl.disabled }" @click="selectSubmenuTemplate(tmpl)">
+          <component :is="submenuTemplateIcon(tmpl)" class="menu-icon" />
           <span>{{ tmpl.label }}</span>
           <small>{{ tmpl.disabled ? (tmpl.statusText || '已添加') : (tmpl.description || tmpl.type) }}</small>
         </button>
@@ -2163,10 +2251,28 @@
             <p v-else-if="serviceModalNotice" class="bx--type-body-short-01 no-data">{{ serviceModalNotice }}</p>
             <div v-else class="service-picker-summary">
               <span class="summary-pill">{{ serviceModalMode === 'infra' ? '中间件' : '工具' }}</span>
-              <span class="summary-text">可添加 {{ selectableServiceCount }} 个，已添加、已安装或正在安装的模板会显示为不可选状态。</span>
+              <span class="summary-text">先选择使用方式，再选择服务产品；不可用路径不会进入安装表单。</span>
+            </div>
+            <div v-if="!serviceModalLoading && !serviceModalError" class="service-provision-mode-grid" aria-label="服务使用方式">
+              <button
+                v-for="mode in serviceProvisionModeOptions"
+                :key="mode.key"
+                type="button"
+                class="service-provision-mode-card"
+                :class="{ selected: serviceProvisionMode === mode.key, disabled: !mode.enabled }"
+                :disabled="!mode.enabled"
+                @click="selectServiceProvisionMode(mode.key)"
+              >
+                <strong>{{ mode.label }}</strong>
+                <small>{{ mode.description }}</small>
+              </button>
+            </div>
+            <div v-if="!serviceModalLoading && !serviceModalError" class="service-picker-summary">
+              <span class="summary-pill">{{ serviceProvisionModeLabel }}</span>
+              <span class="summary-text">可选 {{ selectableServiceCount }} 个，已添加、已安装或正在安装的模板会显示为不可选状态。</span>
             </div>
             <div class="service-select-grid">
-              <div v-for="svc in availableServices" :key="svc.type"
+              <div v-for="svc in visibleServiceOptions" :key="svc.type"
                    :class="['service-select-card', {selected: serviceForm.serviceType===svc.type, disabled: svc.disabled}]"
                    @click="selectServiceTemplate(svc)">
                 <div class="select-radio" :class="{selected: serviceForm.serviceType===svc.type, disabled: svc.disabled}">
@@ -2183,10 +2289,34 @@
                 </div>
               </div>
             </div>
+            <div v-if="serviceProvisionMode === 'shared' && serviceForm.serviceType" class="shared-service-choice">
+              <div class="config-section-title">
+                <span>选择平台公共服务</span>
+                <small>只引用共享资源池实例，不修改共享服务本体。</small>
+              </div>
+              <div v-if="matchingSharedResources.length" class="service-select-grid service-select-grid--compact">
+                <div
+                  v-for="resource in matchingSharedResources"
+                  :key="resource.id || resource.capabilityKey || resource.serviceName"
+                  :class="['service-select-card', { selected: selectedSharedResourceId === String(resource.id) }]"
+                  @click="selectedSharedResourceId = String(resource.id)"
+                >
+                  <div class="select-radio" :class="{ selected: selectedSharedResourceId === String(resource.id) }"></div>
+                  <div>
+                    <div class="service-name-row">
+                      <h4 class="bx--type-productive-heading-02 service-name">{{ resource.serviceName || resource.serviceType }}</h4>
+                      <span class="bx--tag bx--tag--sm bx--tag--blue">{{ resource.status || 'shared' }}</span>
+                    </div>
+                    <p class="bx--type-body-short-01 service-desc">{{ [resource.namespace, resource.provider].filter(Boolean).join(' · ') || '平台共享资源' }}</p>
+                  </div>
+                </div>
+              </div>
+              <p v-else class="bx--type-body-short-01 no-data">共享资源池中没有匹配的 {{ svcLabel(serviceForm.serviceType) }} 实例。</p>
+            </div>
           </div>
           <div class="modal-footer">
             <button type="button" class="bx--btn bx--btn--secondary" @click="closeServiceInstallModal">取消</button>
-            <button type="button" class="bx--btn bx--btn--primary" :disabled="serviceModalLoading || serviceSubmitting || !serviceForm.serviceType" @click="submitService">{{ serviceSubmitting ? '安装中...' : '安装' }}</button>
+            <button type="button" class="bx--btn bx--btn--primary" :disabled="serviceSubmitDisabled" @click="submitService">{{ serviceSubmitting ? '处理中...' : serviceSubmitLabel }}</button>
           </div>
         </div>
       </div>
@@ -2258,6 +2388,9 @@ import { validateWorkspaceActionParams, type ServiceWorkspace, type WorkspaceAct
 import { renderPaapTemplateValue, templatePlaceholderDefault } from './configTemplateRenderer'
 import {
   componentConfigTemplateMatchesComponent,
+  componentConfigTemplateRecommendationScore,
+  componentConfigTemplateMatchesSelection,
+  componentConfigTemplateSelectValue,
   componentTemplateFieldDefaultValue,
   componentTemplateCredentialPasswordKeys,
   componentTemplateCredentialUsernameKeys,
@@ -2274,6 +2407,10 @@ import {
   componentTemplateRenderTargetValue,
   componentTemplateRequiredFieldsComplete as templateRequiredFieldsComplete,
   componentTemplateServicePasswordFieldKeys,
+  componentTemplateServiceTypeMatchesTargets,
+  componentTemplateServiceUsernameFieldKeys,
+  componentTemplateSplitEndpoint,
+  resolveComponentConfigTemplateSelection,
 } from './componentConfigTemplateRuntime'
 import {
   connectionBindingPreview,
@@ -2285,17 +2422,17 @@ import {
   serviceTopologyFromWorkspace,
   serviceConfigValues,
   serviceConfigValuesFromForm,
-  serviceRuntimeDetailRows,
   type ServiceConfigField,
   type ServiceConfigForm,
 } from './serviceAssetConfig'
 import { numericRouteParam, routeEnvironmentKey } from './envDetailRouteState'
 import { shouldPollTemplateInstallations, TEMPLATE_INSTALL_POLL_INTERVAL_MS, TEMPLATE_INSTALL_POLL_MAX_ATTEMPTS } from './envInstallPolling'
 import { runtimeConsoleWebSocketProtocols } from './runtimeConsoleAuth'
-import { buildPickerTemplates, createPickerSessionState, isServiceActive, pickerNotice } from './envDetailServicePicker'
+import { buildPickerTemplates, createPickerSessionState, pickerNotice } from './envDetailServicePicker'
 import { buildEnvironmentCapabilityTabs, capabilityServiceInstanceLabel, knownCapabilityTabByKey, knownCapabilityTabKeys, requiredEnvironmentCapabilities, serviceCapability as resolveServiceCapability, serviceCategory as resolveServiceCategory, type CapabilityCategory, type CapabilityTab } from './envCapabilities'
 import { effectiveEnvironmentStatus, environmentStatusLabel } from './appSummary'
 import {
+  hasExplicitNonLatestImageTag,
   imageRefFromRegistryFields,
   imageTagForImageField,
   imageTagVersion,
@@ -2362,6 +2499,29 @@ import RabbitWorkspace from '../components/workspaces/RabbitWorkspace.vue'
 import KafkaWorkspace from '../components/workspaces/KafkaWorkspace.vue'
 import MinioWorkspace from '../components/workspaces/MinioWorkspace.vue'
 import RegistryWorkspace from '../components/workspaces/RegistryWorkspace.vue'
+import MenuIconComponent from '@carbon/icons-vue/es/cube/16'
+import MenuIconTool from '@carbon/icons-vue/es/tool-box/16'
+import MenuIconMiddleware from '@carbon/icons-vue/es/datastore/16'
+import MenuIconShared from '@carbon/icons-vue/es/share/16'
+import MenuIconExternal from '@carbon/icons-vue/es/plug/16'
+import MenuIconAdopt from '@carbon/icons-vue/es/connect/16'
+import MenuIconConfigure from '@carbon/icons-vue/es/settings/16'
+import MenuIconRename from '@carbon/icons-vue/es/edit/16'
+import MenuIconDeploy from '@carbon/icons-vue/es/rocket/16'
+import MenuIconDelete from '@carbon/icons-vue/es/trash-can/16'
+import MenuIconMonitor from '@carbon/icons-vue/es/chart--line/16'
+import MenuIconLogs from '@carbon/icons-vue/es/list/16'
+import SubmenuIconFrontend from '@carbon/icons-vue/es/application/16'
+import SubmenuIconBackend from '@carbon/icons-vue/es/api/16'
+import SubmenuIconGit from '@carbon/icons-vue/es/branch/16'
+import SubmenuIconRegistry from '@carbon/icons-vue/es/container-registry/16'
+import SubmenuIconCI from '@carbon/icons-vue/es/continuous-integration/16'
+import SubmenuIconCD from '@carbon/icons-vue/es/continuous-deployment/16'
+import SubmenuIconObjectStorage from '@carbon/icons-vue/es/object-storage/16'
+import SubmenuIconMQ from '@carbon/icons-vue/es/message-queue/16'
+import SubmenuIconCache from '@carbon/icons-vue/es/flash/16'
+import SubmenuIconStatus from '@carbon/icons-vue/es/circle-dash/16'
+import SubmenuIconFallback from '@carbon/icons-vue/es/information/16'
 
 const route = useRoute()
 const appId = computed(() => numericRouteParam(route.params.id))
@@ -2399,6 +2559,7 @@ const defaultComponentForm = () => ({
   sourceRepoUrl: '',
   sourceBranch: 'main',
   buildContext: '.',
+  buildModule: '',
   dockerfilePath: '',
 })
 const compForm = ref(defaultComponentForm())
@@ -2408,6 +2569,9 @@ const pendingUninstallService = ref<any>(null)
 const uninstallError = ref('')
 const uninstallSubmitting = ref(false)
 const serviceForm = ref({ serviceType:'deploy' })
+type ServiceProvisionMode = 'managed' | 'shared' | 'external' | 'kubevirt'
+const serviceProvisionMode = ref<ServiceProvisionMode>('managed')
+const selectedSharedResourceId = ref('')
 const externalCapabilityOptions = [
   { capability: 'git', label: '代码仓库', serviceType: 'git', provider: 'gitlab', externalPlaceholder: 'https://gitlab.example.com' },
   { capability: 'registry', label: '镜像仓库', serviceType: 'registry', provider: 'harbor', externalPlaceholder: 'https://harbor.example.com' },
@@ -2421,6 +2585,63 @@ const externalCapabilityOptions = [
   { capability: 'logging', label: '日志', serviceType: 'log', provider: 'loki', externalPlaceholder: 'https://loki.example.com' },
   { capability: 'custom', label: '自定义外部资源', serviceType: 'custom', provider: 'custom', externalPlaceholder: 'https://service.example.com' },
 ]
+const serviceProvisionModes: Array<{ key: ServiceProvisionMode; label: string; description: string }> = [
+  { key: 'managed', label: '环境内创建', description: '使用服务模板在当前环境安装一份独立实例。' },
+  { key: 'shared', label: '使用平台公共服务', description: '引用共享资源池中的实例，不修改共享服务本体。' },
+  { key: 'external', label: '接入外部连接', description: '保存外部 endpoint 和凭据引用，PAAP 不拥有外部系统。' },
+  { key: 'kubevirt', label: 'KubeVirt 模板交付', description: '通过虚拟机模板交付具体数据库或缓存服务。' },
+]
+const parseServiceFeatures = (raw: unknown) => {
+  const fallback = [
+    { key: 'managed', enabled: true },
+    { key: 'shared', enabled: true },
+  ]
+  if (Array.isArray(raw)) {
+    return raw
+      .map((item:any) => ({ key: String(item?.key || '').trim(), enabled: item?.enabled !== false }))
+      .filter(item => item.key)
+  }
+  if (typeof raw === 'string' && raw.trim()) {
+    try {
+      return parseServiceFeatures(JSON.parse(raw))
+    } catch {
+      return fallback
+    }
+  }
+  return fallback
+}
+const serviceSupportsProvisionMode = (svc:any, mode: ServiceProvisionMode) => {
+  if (mode === 'managed') return true
+  const features = parseServiceFeatures(svc?.features)
+  return features.some(item => item.key === mode && item.enabled)
+}
+const externalCapabilityForService = (svc:any) => {
+  const type = String(svc?.type || svc?.serviceType || '').toLowerCase()
+  const mapping: Record<string, { capability: string; provider: string; serviceType: string }> = {
+    git: { capability: 'git', provider: 'gitlab', serviceType: 'git' },
+    gitea: { capability: 'git', provider: 'gitea', serviceType: 'git' },
+    registry: { capability: 'registry', provider: 'registry', serviceType: 'registry' },
+    harbor: { capability: 'registry', provider: 'harbor', serviceType: 'harbor' },
+    ci: { capability: 'ci', provider: 'jenkins', serviceType: 'ci' },
+    jenkins: { capability: 'ci', provider: 'jenkins', serviceType: 'ci' },
+    deploy: { capability: 'cd', provider: 'argocd', serviceType: 'deploy' },
+    argocd: { capability: 'cd', provider: 'argocd', serviceType: 'deploy' },
+    postgresql: { capability: 'database', provider: 'postgresql', serviceType: 'postgresql' },
+    mysql: { capability: 'database', provider: 'mysql', serviceType: 'mysql' },
+    mongodb: { capability: 'database', provider: 'mongodb', serviceType: 'mongodb' },
+    redis: { capability: 'cache', provider: 'redis', serviceType: 'redis' },
+    rabbitmq: { capability: 'mq', provider: 'rabbitmq', serviceType: 'rabbitmq' },
+    kafka: { capability: 'mq', provider: 'kafka', serviceType: 'kafka' },
+    minio: { capability: 'objectStorage', provider: 'minio', serviceType: 'minio' },
+    monitor: { capability: 'monitor', provider: 'prometheus', serviceType: 'monitor' },
+    log: { capability: 'logging', provider: 'loki', serviceType: 'log' },
+    loki: { capability: 'logging', provider: 'loki', serviceType: 'log' },
+  }
+  const mapped = mapping[type]
+  if (!mapped) return null
+  const base = externalCapabilityOptions.find(item => item.capability === mapped.capability) || externalCapabilityOptions[externalCapabilityOptions.length - 1]
+  return { ...base, ...mapped, label: base.label }
+}
 const defaultCapabilityForm = () => ({
   externalEndpoint: '',
   authType: 'none',
@@ -2434,6 +2655,7 @@ const capabilityForm = ref(defaultCapabilityForm())
 const capabilitySecretVisibleKeys = ref<Set<string>>(new Set())
 const capabilityCredentialLoading = ref(false)
 const capabilityCredentialError = ref('')
+const capabilityValidationLoading = ref(false)
 const sharedCapabilitySecretVisibleKeys = ref<Set<string>>(new Set())
 const sharedCapabilityCredentialLoading = ref(false)
 const sharedCapabilityCredentialError = ref('')
@@ -2567,11 +2789,13 @@ const defaultConfigForm = () => ({
   framework: 'auto',
   deliveryMode: 'image' as 'image' | 'source',
   image: '',
+  registryTargetKey: '',
   repository: '',
   imageTag: '',
   sourceRepoUrl: '',
   sourceBranch: 'main',
   buildContext: '.',
+  buildModule: '',
   dockerfilePath: '',
   version: '',
   replicas: 1,
@@ -2661,9 +2885,10 @@ const runtimeConsoleSocket = ref<WebSocket | null>(null)
 const runtimeConsoleConnected = ref(false)
 const runtimeConsoleConnecting = ref(false)
 const runtimeConsoleError = ref('')
-const runtimeConsoleBuffer = ref('')
-const runtimeConsoleInput = ref('')
 const runtimeConsoleView = ref<HTMLElement | null>(null)
+let runtimeConsoleTerm: import('@xterm/xterm').Terminal | null = null
+let runtimeConsoleFitAddon: import('@xterm/addon-fit').FitAddon | null = null
+let runtimeConsoleResizeObserver: ResizeObserver | null = null
 type ConfigDrawerTab = 'deploy' | 'workspace' | 'capabilities' | 'api' | 'dependencies' | 'database' | 'data' | 'queues' | 'buckets' | 'backups' | 'variables' | 'runtime' | 'logs' | 'console'
 const configDrawerTab = ref<ConfigDrawerTab>('deploy')
 const configDrawer = ref<{ visible: boolean; kind: 'component' | 'service' | 'capability'; component: any | null; service: any | null; capability: any | null; saving: boolean; error: string; message: string }>({
@@ -2737,6 +2962,7 @@ const configDrawerTabs = computed<Array<{ key: ConfigDrawerTab; label: string }>
 const registryWorkspaceLoading = ref(false)
 const registryWorkspaceError = ref('')
 type RegistryRepositoryOption = { repository: string; tags: string[]; resource: WorkspaceResource }
+type RegistryTargetOption = { key: string; label: string; source: 'managed' | 'shared' | 'external'; host: string; service?: any; capability?: any; workspace?: ServiceWorkspace | null }
 type PendingDeleteDialog = {
   kind: 'component' | 'capability'
   label: string
@@ -2974,6 +3200,7 @@ onBeforeUnmount(() => {
   stopTemplateInstallPolling()
   stopComponentStatusPolling()
   disconnectDrawerConsole()
+  destroyRuntimeConsoleTerm()
   document.removeEventListener('pointerdown', handleDocumentPointerDown)
   document.removeEventListener('keydown', handleDocumentKeyDown)
 })
@@ -3063,10 +3290,11 @@ const capabilityDisplayName = (cap:any) => {
   if (cap?.source === 'external' && cap?.externalEndpoint) return `${capabilityLabel(cap.capability)} · 外部`
   return `${capabilityLabel(cap?.capability || '')} · ${capabilitySourceLabel(cap?.source || '')}`
 }
+const capabilityRequestKey = (cap:any) => String(cap?.capabilityKey || cap?.capability || '').trim()
 const capabilityNodeStatus = (cap:any) => {
-  if (cap?.source === 'shared') return 'linked'
-  if (cap?.source === 'external' && cap?.externalEndpoint) return 'pending'
-  return cap?.validationStatus || 'draft'
+	if (cap?.source === 'shared') return 'linked'
+	if (cap?.source === 'external') return cap?.validationStatus || (cap?.externalEndpoint ? 'pending' : 'draft')
+	return cap?.validationStatus || 'draft'
 }
 const compTypeText = (type?:string) => ({ frontend:'前端服务', backend:'后端服务', database:'数据库', middleware:'中间件', custom:'自定义' }[type || ''] || type || 'custom')
 const componentIsSourceDelivery = (comp:any) => comp?.deliveryMode === 'source' || Boolean(comp?.sourceRepoUrl || comp?.sourceMirrorRepoUrl || comp?.jenkinsJob)
@@ -3208,13 +3436,14 @@ const layoutTopologyGraph = (nodes:any[], edges:any[]) => {
     .filter(key => (incoming.get(key) || 0) === 0)
   if (!queue.length && nodes[0]) queue.push(String(nodes[0].topologyId || nodes[0].id))
   for (const key of queue) depth.set(key, 0)
+  const maxAutoDepth = Math.max(1, nodes.length + 2)
   for (let i = 0; i < queue.length; i++) {
     const key = queue[i]
-    const nextDepth = (depth.get(key) || 0) + 1
+    const nextDepth = Math.min((depth.get(key) || 0) + 1, maxAutoDepth)
     for (const next of outgoing.get(key) || []) {
       if ((depth.get(next) ?? -1) < nextDepth) {
         depth.set(next, nextDepth)
-        queue.push(next)
+        if (nextDepth < maxAutoDepth) queue.push(next)
       }
     }
   }
@@ -3563,6 +3792,7 @@ const parseRuntimeConfig = (raw:any) => {
     configTemplateKey: '',
     configTemplateName: '',
     configTemplate: null as any,
+    registryTarget: null as any,
     env: [] as any[],
     configMaps: [] as any[],
     secrets: [] as any[],
@@ -3579,6 +3809,7 @@ const parseRuntimeConfig = (raw:any) => {
     configTemplateKey: String(raw.configTemplateKey || raw.configTemplate?.key || ''),
     configTemplateName: String(raw.configTemplateName || raw.configTemplate?.name || ''),
     configTemplate: raw.configTemplate || null,
+    registryTarget: raw.registryTarget || null,
     env: Array.isArray(raw.env) ? raw.env : [],
     configMaps: Array.isArray(raw.configMaps) ? raw.configMaps : [],
     secrets: Array.isArray(raw.secrets) ? raw.secrets : [],
@@ -3596,6 +3827,7 @@ const parseRuntimeConfig = (raw:any) => {
       configTemplateKey: String(parsed?.configTemplateKey || parsed?.configTemplate?.key || ''),
       configTemplateName: String(parsed?.configTemplateName || parsed?.configTemplate?.name || ''),
       configTemplate: parsed?.configTemplate || null,
+      registryTarget: parsed?.registryTarget || null,
       env: Array.isArray(parsed?.env) ? parsed.env : [],
       configMaps: Array.isArray(parsed?.configMaps) ? parsed.configMaps : [],
       secrets: Array.isArray(parsed?.secrets) ? parsed.secrets : [],
@@ -3655,7 +3887,7 @@ const selectTopologyNode = (node:any) => {
     return
   }
   selectComponent(node.id)
-  openComponentConfigDrawer(node)
+  openComponentConfigDrawer(node, 'variables')
 }
 const handleTopologyNodeClick = (event: MouseEvent, node:any) => {
   if (renamingNodeKey.value) return
@@ -3851,6 +4083,24 @@ const openExternalCapabilitySubmenu = () => {
       description: externalCapabilityMenuDescription(item),
     })),
   }
+}
+const submenuTemplateIcon = (tmpl: any) => {
+  const raw = String(tmpl?.type || tmpl?.serviceType || tmpl?.capability || '').toLowerCase()
+  if (raw === 'loading' || raw === 'error' || raw === 'none') return SubmenuIconStatus
+  const has = (...keys: string[]) => keys.some((k) => raw.includes(k))
+  if (has('frontend', 'web', 'application')) return SubmenuIconFrontend
+  if (has('backend', 'api', 'custom', 'service')) return SubmenuIconBackend
+  if (has('git', 'code', 'repository')) return SubmenuIconGit
+  if (has('registry', 'harbor', 'image')) return SubmenuIconRegistry
+  if (has('ci', 'continuous-integration', 'jenkins', 'build')) return SubmenuIconCI
+  if (has('cd', 'continuous-deployment', 'deploy', 'argocd')) return SubmenuIconCD
+  if (has('monitor', 'prometheus', 'metric')) return MenuIconMonitor
+  if (has('log', 'loki')) return MenuIconLogs
+  if (has('cache', 'redis')) return SubmenuIconCache
+  if (has('mq', 'message', 'queue', 'kafka', 'rabbit')) return SubmenuIconMQ
+  if (has('object', 'storage', 'minio', 's3')) return SubmenuIconObjectStorage
+  if (has('database', 'databases', 'postgres', 'mysql', 'mongo', 'galera')) return MenuIconMiddleware
+  return SubmenuIconFallback
 }
 const selectSubmenuTemplate = async (tmpl: any) => {
   if (tmpl.disabled) return
@@ -4582,12 +4832,93 @@ const registryServices = computed(() => services.value.filter((svc:any) => {
   const key = serviceProductKey(svc) || serviceLogicalType(svc)
   return ['registry', 'docker-registry', 'harbor'].includes(key)
 }))
+const registryCapabilityTargets = computed(() => environmentCapabilities.value.filter((cap:any) => {
+  const capability = String(cap?.capability || '').toLowerCase()
+  const serviceType = String(cap?.serviceType || cap?.refService?.serviceType || '').toLowerCase()
+  return capability === 'registry' || ['registry', 'docker-registry', 'harbor'].includes(serviceType)
+}))
+const registryWorkspaceServiceTargets = computed(() => {
+  const targets = [...registryServices.value]
+  for (const cap of registryCapabilityTargets.value) {
+    const svc = cap?.refService
+    if (!svc?.id) continue
+    if (!targets.some((item:any) => Number(item.id) === Number(svc.id))) targets.push(svc)
+  }
+  return targets
+})
 const registryWorkspaces = computed(() =>
-  registryServices.value
+  registryWorkspaceServiceTargets.value
     .map((svc:any) => capabilityWorkspaceCache.value[svc.id])
     .filter(Boolean) as ServiceWorkspace[]
 )
+const registryHostFromWorkspace = (workspace?: ServiceWorkspace | null) => {
+  if (!workspace) return ''
+  const trust = workspace.resources.find((x: WorkspaceResource) => x.type === 'Runtime Trust')
+  const host = String(trust?.annotations?.registryHost || '').trim()
+  if (host) return host
+  const configured = (workspace.config || []).find(item => item.label === '外部访问地址')?.value || ''
+  return String(configured).replace(/^https?:\/\//, '').replace(/\/$/, '')
+}
+const externalEndpointHost = (endpoint:any) => String(endpoint || '').trim().replace(/^https?:\/\//, '').replace(/\/$/, '')
+const registryTargetOptions = computed<RegistryTargetOption[]>(() => {
+  const options: RegistryTargetOption[] = []
+  for (const svc of registryServices.value) {
+    const workspace = capabilityWorkspaceCache.value[svc.id] || null
+    const host = registryHostFromWorkspace(workspace)
+    options.push({
+      key: `service:${svc.id}`,
+      label: `本环境 · ${svc.serviceName || svc.serviceType || '镜像仓库'}${host ? ` · ${host}` : ''}`,
+      source: 'managed',
+      host,
+      service: svc,
+      workspace,
+    })
+  }
+  for (const cap of registryCapabilityTargets.value) {
+    if (cap.source === 'shared' && cap.refService?.id) {
+      const svc = cap.refService
+      const workspace = capabilityWorkspaceCache.value[svc.id] || null
+      const host = registryHostFromWorkspace(workspace)
+      options.push({
+        key: `capability:${cap.id}`,
+        label: `共享资源 · ${svc.serviceName || svc.serviceType || '镜像仓库'}${host ? ` · ${host}` : ''}`,
+        source: 'shared',
+        host,
+        service: svc,
+        capability: cap,
+        workspace,
+      })
+    } else if (cap.source === 'external') {
+      const host = externalEndpointHost(cap.externalEndpoint)
+      options.push({
+        key: `capability:${cap.id}`,
+        label: `外部资源 · ${cap.provider || cap.serviceType || '镜像仓库'}${host ? ` · ${host}` : ''}`,
+        source: 'external',
+        host,
+        capability: cap,
+      })
+    }
+  }
+  return options
+})
+const selectedRegistryTarget = computed(() =>
+  registryTargetOptions.value.find(item => item.key === configForm.value.registryTargetKey) || registryTargetOptions.value[0] || null
+)
+const registryTargetSelectionPayload = () => {
+  const target = selectedRegistryTarget.value
+  if (!target) return null
+  return {
+    key: target.key,
+    source: target.source,
+    host: target.host,
+    serviceId: Number(target.service?.id || 0),
+    capabilityId: Number(target.capability?.id || 0),
+    serviceType: String(target.service?.serviceType || target.capability?.serviceType || target.capability?.provider || ''),
+    name: String(target.service?.serviceName || target.capability?.provider || ''),
+  }
+}
 const registryHostForDrawer = computed(() => {
+  if (selectedRegistryTarget.value?.host) return selectedRegistryTarget.value.host
   for (const workspace of registryWorkspaces.value) {
     const trust = workspace.resources.find((x: WorkspaceResource) => x.type === 'Runtime Trust')
     const host = String(trust?.annotations?.registryHost || '').trim()
@@ -4596,8 +4927,22 @@ const registryHostForDrawer = computed(() => {
   const configured = registryWorkspaces.value.flatMap(workspace => workspace.config || []).find(item => item.label === '外部访问地址')?.value || ''
   return String(configured).replace(/^https?:\/\//, '').replace(/\/$/, '')
 })
+const registryTargetKeyForHost = (host:string) => {
+  const normalized = externalEndpointHost(host)
+  if (!normalized) return registryTargetOptions.value[0]?.key || ''
+  return registryTargetOptions.value.find(item =>
+    externalEndpointHost(item.host) === normalized ||
+    (item.host && normalized.startsWith(`${externalEndpointHost(item.host)}/`))
+  )?.key || registryTargetOptions.value[0]?.key || ''
+}
+const registryTargetKeyFromConfig = (cfg:any, host:string) => {
+  const savedKey = String(cfg?.registryTarget?.key || '').trim()
+  if (savedKey) return savedKey
+  return registryTargetKeyForHost(host)
+}
 const registryImageRepositories = computed<RegistryRepositoryOption[]>(() => {
-  const resources = registryWorkspaces.value.flatMap(workspace => workspace.resources || [])
+  const targetWorkspace = selectedRegistryTarget.value?.workspace
+  const resources = (targetWorkspace ? [targetWorkspace] : registryWorkspaces.value).flatMap(workspace => workspace.resources || [])
   return resources
     .filter((x: WorkspaceResource) => x.type === 'Image Repository' || x.type === 'Harbor Repository' || x.type === 'Repository')
     .map((resource: WorkspaceResource) => {
@@ -4625,11 +4970,62 @@ const registryImageTagOptions = computed(() =>
     return item.tags.map((tag) => `${item.repository}:${tag}`)
   })
 )
+const registryImageSelectionValid = computed(() => {
+  const imageTag = String(configForm.value.imageTag || '').trim()
+  return hasExplicitNonLatestImageTag(imageTag)
+})
 const registryImageFromConfig = computed(() => {
   return imageRefFromRegistryFields(String(configForm.value.repository || ''), String(configForm.value.imageTag || ''))
 })
+const sourceDeliveryImagePreview = computed(() => {
+  const host = String(configForm.value.repository || registryHostForDrawer.value || '').trim().replace(/\/+$/, '')
+  const version = String(configForm.value.version || '').trim()
+  const current = configDrawer.value.component || {}
+  const appIdentifier = String(app.value?.identifier || 'app').trim()
+  const envIdentifier = String(env.value?.identifier || 'env').trim()
+  const identifier = String(current.identifier || current.name || 'component').trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+  if (!host || !version || !identifier) return ''
+  return `${host}/${appIdentifier}-${envIdentifier}/${identifier}:${version}`
+})
+const validateComponentDeliveryForm = () => {
+  const deliveryMode = configForm.value.deliveryMode === 'source' ? 'source' : 'image'
+  const version = deliveryMode === 'source'
+    ? String(configForm.value.version || '').trim()
+    : imageTagVersion(configForm.value.imageTag) || String(configForm.value.version || '').trim()
+  const image = registryImageFromConfig.value || String(configForm.value.image || '').trim()
+  const sourceRepoUrl = String(configForm.value.sourceRepoUrl || '').trim()
+  if (deliveryMode === 'image' && (!version || version.toLowerCase() === 'latest')) {
+    configDrawer.value.error = '请填写明确镜像 Tag，不能使用 latest。'
+    return false
+  }
+  if (deliveryMode === 'source' && version && version.toLowerCase() === 'latest') {
+    configDrawer.value.error = '镜像 Tag 不能使用 latest。'
+    return false
+  }
+  if (deliveryMode === 'image' && !image) {
+    configDrawer.value.error = '请填写镜像地址。'
+    return false
+  }
+  if (deliveryMode === 'image' && !registryImageSelectionValid.value) {
+    configDrawer.value.error = '请选择镜像仓库中的镜像，或填写明确的镜像:Tag。'
+    return false
+  }
+  if (deliveryMode === 'source' && !sourceRepoUrl) {
+    configDrawer.value.error = '请填写源码仓库地址。'
+    return false
+  }
+  const containerPort = Number(configForm.value.containerPort || 0)
+  if (!Number.isInteger(containerPort) || containerPort < 1 || containerPort > 65535) {
+    configDrawer.value.error = '请填写 1-65535 范围内的容器端口。'
+    return false
+  }
+  return true
+}
 const ensureRegistryWorkspaces = async () => {
-  const targets = registryServices.value.filter((svc:any) => svc?.id)
+  const targets = registryWorkspaceServiceTargets.value.filter((svc:any) => svc?.id)
   if (!targets.length || registryWorkspaceLoading.value) return
   registryWorkspaceLoading.value = true
   registryWorkspaceError.value = ''
@@ -4644,9 +5040,23 @@ const ensureRegistryWorkspaces = async () => {
     registryWorkspaceLoading.value = false
   }
 }
+const syncRegistryTargetSelection = () => {
+  const target = selectedRegistryTarget.value
+  if (!target) return
+  if (target.host) configForm.value.repository = target.host
+}
 watch(registryHostForDrawer, (host) => {
   if (!host || !configDrawer.value.visible || configDrawer.value.kind !== 'component') return
-  if (!String(configForm.value.repository || '').trim()) configForm.value.repository = host
+  const current = String(configForm.value.repository || '').trim()
+  if (!current || current !== host) configForm.value.repository = host
+})
+watch(registryTargetOptions, (options) => {
+  if (!configDrawer.value.visible || configDrawer.value.kind !== 'component') return
+  const current = String(configForm.value.registryTargetKey || '').trim()
+  if (!current || !options.some(item => item.key === current)) {
+    configForm.value.registryTargetKey = options[0]?.key || ''
+    syncRegistryTargetSelection()
+  }
 })
 const syncConfigVersionFromImageTag = () => {
   const currentTag = imageTagVersion(configForm.value.imageTag)
@@ -4987,9 +5397,73 @@ const deliverySteps = computed(() => [
     targetTab: tabForServiceTypes(['log']),
   },
 ])
-const selectableServiceCount = computed(() => availableServices.value.filter((svc:any) => !svc.disabled).length)
-const isActiveServiceInstalled = (serviceType:string) =>
-  isServiceActive(services.value, serviceType)
+const serviceProvisionModeOptions = computed(() => serviceProvisionModes.map((mode) => {
+  const hasSupportedService = availableServices.value.some((svc:any) => serviceSupportsProvisionMode(svc, mode.key))
+  const enabled = mode.key === 'kubevirt'
+    ? false
+    : mode.key === 'managed'
+      ? hasSupportedService
+      : !isSystemSharedEnvironment.value && hasSupportedService
+  const description = mode.description
+  return { ...mode, enabled, description }
+}))
+const serviceStatusForProvisionMode = (serviceType:string, mode: ServiceProvisionMode) => {
+  const normalizedType = String(serviceType || '').toLowerCase()
+  const normalizedMode = mode === 'kubevirt' ? 'kubevirt' : 'managed'
+  return services.value.find((svc:any) => {
+    if (String(svc.serviceType || '').toLowerCase() !== normalizedType) return false
+    const provisionMode = String(svc.provisionMode || 'managed').toLowerCase()
+    if (normalizedMode === 'kubevirt') return provisionMode === 'kubevirt'
+    return provisionMode !== 'kubevirt'
+  }) || null
+}
+const visibleServiceOptions = computed(() =>
+  availableServices.value
+    .filter((svc:any) => serviceSupportsProvisionMode(svc, serviceProvisionMode.value))
+    .map((svc:any) => {
+      if (serviceProvisionMode.value === 'shared' || serviceProvisionMode.value === 'external') return svc
+      const active = serviceStatusForProvisionMode(svc.type, serviceProvisionMode.value)
+      return {
+        ...svc,
+        disabled: Boolean(active),
+        statusText: active ? (active.status === 'installing' ? '安装中' : active.status === 'draft' || active.status === 'pending' ? '已添加' : active.status === 'failed' || active.status === 'error' ? '安装失败' : '已安装') : '可添加',
+      }
+    })
+)
+const selectedServiceTemplate = computed(() =>
+  visibleServiceOptions.value.find((svc:any) => svc.type === serviceForm.value.serviceType) || null
+)
+const matchingSharedResources = computed(() => {
+  const selectedType = String(serviceForm.value.serviceType || '').toLowerCase()
+  if (!selectedType) return []
+  const targetCapability = serviceCapability({ serviceType: selectedType }).key
+  return sharedCapabilityResources.value.filter((resource:any) => {
+    const serviceType = String(resource.serviceType || '').toLowerCase()
+    const capability = String(resource.capability || '').toLowerCase()
+    return serviceType === selectedType || capability === targetCapability
+  })
+})
+const selectedSharedResource = computed(() =>
+  matchingSharedResources.value.find((resource:any) => String(resource.id) === selectedSharedResourceId.value) || null
+)
+const serviceProvisionModeLabel = computed(() =>
+  serviceProvisionModes.find(mode => mode.key === serviceProvisionMode.value)?.label || '使用方式'
+)
+const serviceSubmitLabel = computed(() => ({
+  managed: '安装',
+  shared: '引用公共服务',
+  external: '创建外部连接',
+  kubevirt: '创建 KubeVirt 服务',
+} as Record<ServiceProvisionMode, string>)[serviceProvisionMode.value])
+const serviceSubmitDisabled = computed(() => {
+  if (serviceModalLoading.value || serviceSubmitting.value || !serviceForm.value.serviceType) return true
+  if (serviceProvisionMode.value === 'shared') return !selectedSharedResource.value
+  if (serviceProvisionMode.value === 'external') return !externalCapabilityForService(selectedServiceTemplate.value)
+  return false
+})
+const selectableServiceCount = computed(() => visibleServiceOptions.value.filter((svc:any) => !svc.disabled).length)
+const isActiveServiceInstalled = (serviceType:string, mode: ServiceProvisionMode = 'managed') =>
+  Boolean(serviceStatusForProvisionMode(serviceType, mode === 'kubevirt' ? 'kubevirt' : 'managed'))
 
 const activeCapabilityInstallLabel = computed(() => {
   const tab = activeCapabilityTab.value
@@ -5072,6 +5546,21 @@ const preferredServiceTypeFromPicker = (items:any[], preferredType = '') => {
   if (preferred) return preferred.type
   return items.find((svc:any) => !svc.disabled)?.type || ''
 }
+const preferredServiceTypeForProvisionMode = (preferredType = '') =>
+  preferredServiceTypeFromPicker(visibleServiceOptions.value, preferredType)
+const selectServiceProvisionMode = (mode: ServiceProvisionMode) => {
+  const option = serviceProvisionModeOptions.value.find(item => item.key === mode)
+  if (!option?.enabled) return
+  serviceProvisionMode.value = mode
+  serviceModalError.value = ''
+  serviceForm.value.serviceType = preferredServiceTypeForProvisionMode(serviceForm.value.serviceType)
+  selectedSharedResourceId.value = ''
+  if (mode === 'shared') {
+    void loadSharedCapabilityResources().then(() => {
+      selectedSharedResourceId.value = matchingSharedResources.value[0]?.id ? String(matchingSharedResources.value[0].id) : ''
+    })
+  }
+}
 
 const serviceTemplatesFromResponse = (res:any) => {
   if (Array.isArray(res?.data)) return res.data
@@ -5130,11 +5619,13 @@ const loadSharedCapabilityResources = async () => {
 
 const prepareServicePicker = async (mode:'tool'|'infra', preferredType = '') => {
   serviceModalMode.value = mode
+  serviceProvisionMode.value = 'managed'
+  selectedSharedResourceId.value = ''
   showServiceModal.value = true
   serviceModalError.value = ''
   const session = createPickerSessionState(templates.value, services.value, mode)
   availableServices.value = session.availableServices
-  serviceForm.value.serviceType = preferredServiceTypeFromPicker(session.availableServices, preferredType) || session.selectedType
+  serviceForm.value.serviceType = preferredServiceTypeForProvisionMode(preferredType) || session.selectedType
   serviceModalLoading.value = session.loading
   serviceModalNotice.value = session.notice
   serviceModalError.value = session.error
@@ -5142,7 +5633,9 @@ const prepareServicePicker = async (mode:'tool'|'infra', preferredType = '') => 
     await refreshServices()
     if (templates.value.length === 0) await loadServiceTemplates()
     availableServices.value = filterTemplates(mode)
-    serviceForm.value.serviceType = preferredServiceTypeFromPicker(availableServices.value, preferredType)
+    const firstEnabledMode = serviceProvisionModeOptions.value.find(item => item.enabled)
+    serviceProvisionMode.value = firstEnabledMode?.key || 'managed'
+    serviceForm.value.serviceType = preferredServiceTypeForProvisionMode(preferredType)
     serviceModalNotice.value = pickerNotice(mode, availableServices.value.length, serviceForm.value.serviceType)
   } catch (e:any) {
     serviceModalError.value = '模板加载失败：' + (e?.message || '未知错误')
@@ -5270,9 +5763,10 @@ const componentDrawerBackendTargets = computed(() =>
 const componentDrawerDependencyTargets = computed(() =>
   componentConnectionTargets.value.filter((target:any) => {
     const type = String(target.type || '').toLowerCase()
-    return target.kind === 'service'
-      ? ['postgresql', 'mysql', 'mongodb', 'redis', 'rabbitmq', 'kafka', 'minio', 'log'].includes(type)
-      : componentTargetCanAcceptDependency(target.component)
+    if (['service', 'capability'].includes(String(target.kind || ''))) {
+      return ['postgresql', 'mysql', 'mongodb', 'redis', 'rabbitmq', 'kafka', 'minio', 'log'].includes(type)
+    }
+    return componentTargetCanAcceptDependency(target.component)
   })
 )
 const componentTargetLooksLikeApi = (comp:any) => {
@@ -5406,13 +5900,14 @@ const capabilityCredentialValue = (credentials:any[], keys:string[]) => {
 const loadSharedCapabilityCredentials = async () => {
   const cap = drawerCapability.value
   if (!envId.value || !cap?.capability || sharedCapabilityCredentialLoading.value) return
-  if (sharedCapabilityCredentialCapability.value === cap.capability && sharedCapabilityCredentials.value.length) return
+  const requestKey = capabilityRequestKey(cap)
+  if (sharedCapabilityCredentialCapability.value === requestKey && sharedCapabilityCredentials.value.length) return
   sharedCapabilityCredentialLoading.value = true
   sharedCapabilityCredentialError.value = ''
   try {
-    const res = await api.getEnvironmentCapabilityCredentials(envId.value, cap.capability)
+    const res = await api.getEnvironmentCapabilityCredentials(envId.value, requestKey)
     sharedCapabilityCredentials.value = Array.isArray(res?.data?.credentials) ? res.data.credentials : []
-    sharedCapabilityCredentialCapability.value = cap.capability
+    sharedCapabilityCredentialCapability.value = requestKey
   } catch (e:any) {
     sharedCapabilityCredentials.value = []
     sharedCapabilityCredentialError.value = '读取共享资源凭据失败：' + (e?.message || '未知错误')
@@ -5437,7 +5932,7 @@ const loadCapabilityCredentials = async () => {
   capabilityCredentialLoading.value = true
   capabilityCredentialError.value = ''
   try {
-    const res = await api.getEnvironmentCapabilityCredentials(envId.value, cap.capability)
+    const res = await api.getEnvironmentCapabilityCredentials(envId.value, capabilityRequestKey(cap))
     const credentials = Array.isArray(res?.data?.credentials) ? res.data.credentials : []
     const endpoint = capabilityCredentialValue(credentials, ['endpoint'])
     const username = capabilityCredentialValue(credentials, ['username', 'user'])
@@ -5631,9 +6126,6 @@ const serviceDrawerPreviewService = computed(() => {
     values: serviceDrawerPreviewValues.value,
   }
 })
-const serviceDrawerRuntimeRows = computed(() => drawerService.value || configDrawer.value.component
-  ? serviceRuntimeDetailRows(drawerService.value || configDrawer.value.component)
-  : [])
 const serviceDrawerConnectionPreview = computed(() => connectionBindingPreview({ env: [] }, serviceDrawerPreviewService.value || drawerService.value || {}))
 const serviceDrawerTopology = computed(() => serviceTopologyFromWorkspace(drawerService.value || {}, serviceDrawerWorkspace.value?.resources || []))
 const serviceDrawerConfigurable = computed(() => serviceDrawerProfile.value.showDeploymentConfig && serviceDrawerConfigFields.value.length > 0)
@@ -6117,26 +6609,62 @@ const runtimeConsoleStatusText = computed(() => {
   return '未连接'
 })
 const runtimeConsoleDecoder = new TextDecoder()
-const normalizeRuntimeConsoleOutput = (chunk: string) =>
-  String(chunk || '')
-    .replace(/\x1b\][^\x07]*(?:\x07|\x1b\\)/g, '')
-    .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '')
-    .replace(/\x1b[@-Z\\-_]/g, '')
-    .replace(/\r\n/g, '\n')
-    .replace(/\r/g, '\n')
-const appendRuntimeConsoleOutput = (chunk: string) => {
-  const output = normalizeRuntimeConsoleOutput(chunk)
-  if (!output) return
-  const next = runtimeConsoleBuffer.value + output
-  runtimeConsoleBuffer.value = next.length > 60000 ? next.slice(next.length - 60000) : next
-  void nextTick(() => {
-    if (runtimeConsoleView.value) runtimeConsoleView.value.scrollTop = runtimeConsoleView.value.scrollHeight
+const runtimeConsoleEncoder = new TextEncoder()
+const writeToRuntimeConsole = (chunk: string) => {
+  if (!chunk || !runtimeConsoleTerm) return
+  runtimeConsoleTerm.write(chunk)
+}
+const ensureRuntimeConsoleTerm = async () => {
+  if (runtimeConsoleTerm || !runtimeConsoleView.value) return
+  const [{ Terminal }, { FitAddon }] = await Promise.all([
+    import('@xterm/xterm'),
+    import('@xterm/addon-fit'),
+  ])
+  await import('@xterm/xterm/css/xterm.css')
+  const term = new Terminal({
+    cursorBlink: true,
+    convertEol: false,
+    fontSize: 12,
+    fontFamily: "var(--paap-mono, 'IBM Plex Mono', monospace)",
+    theme: {
+      background: '#161616',
+      foreground: '#e0e0e0',
+      cursor: '#e0e0e0',
+      selectionBackground: 'rgba(141,141,141,0.35)',
+    },
+    scrollback: 5000,
   })
+  const fit = new FitAddon()
+  term.loadAddon(fit)
+  term.open(runtimeConsoleView.value)
+  fit.fit()
+  term.onData((data) => {
+    const socket = runtimeConsoleSocket.value
+    if (socket && socket.readyState === WebSocket.OPEN) {
+      socket.send(runtimeConsoleEncoder.encode(data))
+    }
+  })
+  runtimeConsoleResizeObserver = new ResizeObserver(() => {
+    try { fit.fit() } catch { /* ignore */ }
+  })
+  runtimeConsoleResizeObserver.observe(runtimeConsoleView.value)
+  runtimeConsoleTerm = term
+  runtimeConsoleFitAddon = fit
+}
+const destroyRuntimeConsoleTerm = () => {
+  if (runtimeConsoleResizeObserver) {
+    runtimeConsoleResizeObserver.disconnect()
+    runtimeConsoleResizeObserver = null
+  }
+  if (runtimeConsoleTerm) {
+    runtimeConsoleTerm.dispose()
+    runtimeConsoleTerm = null
+  }
+  runtimeConsoleFitAddon = null
 }
 const resetRuntimeConsole = () => {
   runtimeConsoleError.value = ''
-  runtimeConsoleBuffer.value = ''
-  runtimeConsoleInput.value = ''
+  destroyRuntimeConsoleTerm()
 }
 const disconnectDrawerConsole = () => {
   const socket = runtimeConsoleSocket.value
@@ -6147,11 +6675,20 @@ const disconnectDrawerConsole = () => {
     socket.close()
   }
 }
-const connectDrawerConsole = () => {
+const connectDrawerConsole = async () => {
   if (!drawerConsoleUrl.value || runtimeConsoleConnecting.value || runtimeConsoleConnected.value) return
   disconnectDrawerConsole()
   runtimeConsoleError.value = ''
   runtimeConsoleConnecting.value = true
+  await nextTick()
+  try {
+    await ensureRuntimeConsoleTerm()
+  } catch (e: any) {
+    runtimeConsoleConnecting.value = false
+    runtimeConsoleError.value = '终端初始化失败：' + (e?.message || '未知错误')
+    return
+  }
+  if (runtimeConsoleTerm) runtimeConsoleTerm.clear()
   const socket = new WebSocket(drawerConsoleUrl.value, runtimeConsoleWebSocketProtocols())
   socket.binaryType = 'arraybuffer'
   runtimeConsoleSocket.value = socket
@@ -6159,15 +6696,19 @@ const connectDrawerConsole = () => {
     if (runtimeConsoleSocket.value !== socket) return
     runtimeConsoleConnecting.value = false
     runtimeConsoleConnected.value = true
+    if (runtimeConsoleFitAddon) {
+      try { runtimeConsoleFitAddon.fit() } catch { /* ignore */ }
+    }
+    runtimeConsoleTerm?.focus()
   }
   socket.onmessage = async (event) => {
     if (runtimeConsoleSocket.value !== socket) return
     if (typeof event.data === 'string') {
-      appendRuntimeConsoleOutput(event.data)
+      writeToRuntimeConsole(event.data)
     } else if (event.data instanceof ArrayBuffer) {
-      appendRuntimeConsoleOutput(runtimeConsoleDecoder.decode(event.data))
+      writeToRuntimeConsole(runtimeConsoleDecoder.decode(event.data))
     } else if (event.data instanceof Blob) {
-      appendRuntimeConsoleOutput(await event.data.text())
+      writeToRuntimeConsole(runtimeConsoleDecoder.decode(await event.data.arrayBuffer()))
     }
   }
   socket.onerror = () => {
@@ -6180,17 +6721,6 @@ const connectDrawerConsole = () => {
     runtimeConsoleConnected.value = false
     runtimeConsoleConnecting.value = false
   }
-}
-const sendDrawerConsoleInput = () => {
-  const socket = runtimeConsoleSocket.value
-  const input = runtimeConsoleInput.value
-  if (!socket || socket.readyState !== WebSocket.OPEN) {
-    runtimeConsoleError.value = '控制台尚未连接。'
-    return
-  }
-  if (!input.trim()) return
-  socket.send(input.endsWith('\n') ? input : `${input}\n`)
-  runtimeConsoleInput.value = ''
 }
 const showServiceRawVariables = () => {
   configDrawer.value.error = ''
@@ -6265,14 +6795,15 @@ watch([() => configDrawerTab.value, drawerConsoleKey], ([tab, key], [, oldKey]) 
     connectDrawerConsole()
   } else {
     disconnectDrawerConsole()
+    destroyRuntimeConsoleTerm()
   }
 })
-const openComponentConfigDrawer = (comp:any) => {
+const openComponentConfigDrawer = (comp:any, initialTab: ConfigDrawerTab = 'deploy') => {
   enterDrawerContext()
   const actual = components.value.find((item:any) => Number(item.id) === Number(comp?.id)) || comp
   if (!actual) return
   selectComponent(actual.id)
-  configDrawerTab.value = 'deploy'
+  configDrawerTab.value = initialTab
   configDrawer.value = { visible: true, kind: 'component', component: actual, service: null, capability: null, saving: false, error: '', message: '' }
   runtimeMetrics.value = null
   runtimeMetricsError.value = ''
@@ -6379,6 +6910,8 @@ const loadComponentConfigForm = (comp:any) => {
   const envSource = cfg.env?.length ? cfg.env : runtimeEnv
   const image = String(comp?.image || comp?.registryImage || '')
   const imageParts = splitImageRepositoryAndTag(image)
+  const configuredRegistryHost = String(cfg.registryTarget?.host || '').trim()
+  const registryHost = configuredRegistryHost || registryHostForImageField(image, registryHostForDrawer.value)
   const bindings = normalizeConfigBindings(cfg.bindings)
   const deliveryMode = componentIsSourceDelivery(comp) ? 'source' : 'image'
   componentDrawerRole.value = String(comp?.type || 'custom').toLowerCase()
@@ -6386,11 +6919,13 @@ const loadComponentConfigForm = (comp:any) => {
     framework: cfg.framework || 'auto',
     deliveryMode,
     image,
-    repository: registryHostForImageField(image, registryHostForDrawer.value),
-    imageTag: imageTagForImageField(image, registryHostForDrawer.value),
+    registryTargetKey: registryTargetKeyFromConfig(cfg, registryHost),
+    repository: registryHost,
+    imageTag: imageTagForImageField(image, registryHost),
     sourceRepoUrl: String(comp?.sourceRepoUrl || comp?.sourceMirrorRepoUrl || ''),
     sourceBranch: String(comp?.sourceBranch || 'main'),
     buildContext: String(comp?.buildContext || '.'),
+    buildModule: String(comp?.buildModule || ''),
     dockerfilePath: String(comp?.dockerfilePath || ''),
     version: String(comp?.version || imageParts.tag || componentDeployVersion(comp) || ''),
     replicas: Number(runtime.replicas ?? comp?.replicas ?? 1),
@@ -6440,6 +6975,7 @@ const managedConnectionEnvNames = (binding:any) => {
   if (type === 'redis') add(['REDIS_HOST', 'REDIS_PORT', 'REDIS_PASSWORD', 'REDIS_SENTINEL_HOST', 'REDIS_SENTINEL_PORT', 'REDIS_SENTINEL_MASTER_NAME'])
   if (type === 'mongodb') add(['MONGODB_HOST', 'MONGODB_PORT', 'MONGODB_USERNAME', 'MONGODB_DATABASE', 'MONGODB_PASSWORD', 'MONGODB_URL'])
   if (type === 'rabbitmq') add(['RABBITMQ_HOST', 'RABBITMQ_PORT', 'RABBITMQ_USERNAME', 'RABBITMQ_PASSWORD', 'RABBITMQ_URL'])
+  if (type === 'eureka') add(['EUREKA_URL'])
   if (type === 'kafka') add(['KAFKA_BROKERS', 'KAFKA_BOOTSTRAP_SERVERS', 'KAFKA_SECURITY_PROTOCOL'])
   if (type === 'minio') add(['MINIO_ENDPOINT', 'MINIO_ACCESS_KEY', 'MINIO_SECRET_KEY', 'S3_ENDPOINT', 'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY'])
   return names
@@ -6549,12 +7085,15 @@ const componentTemplateInlineHelp = (template:UserComponentConfigTemplate) =>
     .replace(/ConfigMap/g, '普通配置')
     .replace(/Secret keys/gi, '敏感配置项')
     .replace(/Secret/g, '敏感配置')
-const componentTemplateOptionValue = (template:UserComponentConfigTemplate) => String(template?.key || template?.id || '')
+const componentTemplateOptionValue = (template:UserComponentConfigTemplate) => componentConfigTemplateSelectValue(template)
 const componentConfigTemplateSelectionFromConfig = (cfg:any) => {
+  const id = Number(cfg?.configTemplateId || cfg?.configTemplate?.id || 0)
+  if (id > 0) return String(id)
   const key = String(cfg?.configTemplateKey || cfg?.configTemplate?.key || '').trim()
   if (key) return key
-  const id = Number(cfg?.configTemplateId || cfg?.configTemplate?.id || 0)
-  return id > 0 ? String(id) : ''
+  const name = String(cfg?.configTemplateName || cfg?.configTemplate?.name || '').trim()
+  if (name) return name
+  return ''
 }
 const componentConfigTemplateSelectionPayload = () => {
   const template = selectedComponentConfigTemplate.value
@@ -6565,7 +7104,7 @@ const componentConfigTemplateSelectionPayload = () => {
     configTemplate: null,
   }
   const id = Number(template.id || 0)
-  const key = componentTemplateOptionValue(template)
+  const key = String(template.key || '').trim()
   return {
     configTemplateId: id,
     configTemplateKey: key,
@@ -6581,13 +7120,17 @@ const componentTemplateMatchesCurrentComponent = (template:UserComponentConfigTe
   return componentConfigTemplateMatchesComponent(template, {
     componentType: componentDrawerType.value,
     framework: configForm.value.framework,
+    componentName: String(configDrawer.value.component?.name || ''),
   })
 }
 const componentSelectableConfigTemplates = computed(() =>
   componentUserConfigTemplates.value.filter((template) => componentTemplateMatchesCurrentComponent(template))
 )
 const selectedComponentConfigTemplate = computed(() =>
-  componentSelectableConfigTemplates.value.find((template) => componentTemplateOptionValue(template) === selectedComponentConfigTemplateId.value) || null
+  componentSelectableConfigTemplates.value.find((template) => {
+    const selected = String(selectedComponentConfigTemplateId.value || '').trim()
+    return componentConfigTemplateMatchesSelection(template, selected)
+  }) || null
 )
 const componentTemplateFields = computed(() =>
   Array.isArray(selectedComponentConfigTemplate.value?.fields)
@@ -6604,7 +7147,7 @@ const componentTemplateSelectedServiceTargetForGroup = (field:any) => {
   )
   if (!serviceRefField) return null
   const target = componentTemplateTargetForValue(componentTemplateFieldValues.value[componentTemplateFieldKey(serviceRefField)])
-  return target?.kind === 'service' ? target : null
+  return ['service', 'capability'].includes(String(target?.kind || '')) ? target : null
 }
 const componentTemplateFieldAutofillsFromService = (field:any) =>
   componentTemplateFieldType(field) === 'password' && Boolean(componentTemplateSelectedServiceTargetForGroup(field))
@@ -6619,11 +7162,11 @@ const componentTemplateFieldOptions = (field:any) => {
     : componentConnectionTargets.value.filter((target:any) => {
       if (!['service', 'capability'].includes(String(target.kind || ''))) return false
       if (!targets.length) return true
-      return targets.includes(String(target.type || '').toLowerCase())
+      return componentTemplateServiceTypeMatchesTargets(String(target.type || ''), targets)
     })
   return candidates.map((target:any) => ({
     value: target.key,
-    label: `${target.name} · ${targetTypeLabel(target) || '服务'}`,
+    label: targetOptionLabel(target),
     target,
   }))
 }
@@ -6665,7 +7208,7 @@ const componentTemplateDefaultListRow = (field:any) => {
   for (const itemField of componentTemplateListItemFields(field)) {
     const key = componentTemplateFieldKey(itemField)
     const options = componentTemplateFieldOptions(itemField)
-    row[key] = componentTemplateFieldType(itemField) === 'serviceref' && options.length === 1
+    row[key] = componentTemplateFieldType(itemField) === 'serviceref' && options.length > 0
       ? options[0].value
       : componentTemplateFieldDefaultValue(itemField)
   }
@@ -6681,7 +7224,7 @@ const componentTemplateInitialFieldValue = (field:any) => {
   if (componentTemplateFieldType(field) === 'list') return [componentTemplateDefaultListRow(field)]
   return templateInitialFieldValue(field, {
     existingTargetKey: componentTemplateExistingTargetKey(field),
-    firstOptionValue: componentTemplateFieldOptions(field).length === 1 ? componentTemplateFieldOptions(field)[0]?.value || '' : '',
+    firstOptionValue: componentTemplateFieldOptions(field)[0]?.value || '',
   })
 }
 const componentTemplateNginxRouteField = () =>
@@ -6719,13 +7262,29 @@ const initializeComponentTemplateFieldValues = (force = false) => {
   syncNginxTemplateFieldValuesFromRouteRows()
 }
 const selectRecommendedComponentConfigTemplate = () => {
-  const current = componentSelectableConfigTemplates.value.find((template) => componentTemplateOptionValue(template) === selectedComponentConfigTemplateId.value)
+  const current = componentSelectableConfigTemplates.value.find((template) => componentConfigTemplateMatchesSelection(template, selectedComponentConfigTemplateId.value))
   if (current) {
     selectedComponentConfigTemplateId.value = componentTemplateOptionValue(current)
     initializeComponentTemplateFieldValues(false)
     return
   }
   if (selectedComponentConfigTemplateId.value && (componentConfigTemplatesLoading.value || componentSelectableConfigTemplates.value.length === 0)) return
+  const recommended = [...componentSelectableConfigTemplates.value]
+    .map((template) => ({
+      template,
+      score: componentConfigTemplateRecommendationScore(template, {
+        componentType: componentDrawerType.value,
+        framework: configForm.value.framework,
+        componentName: String(configDrawer.value.component?.name || ''),
+      }),
+    }))
+    .filter((item) => item.score >= 0)
+    .sort((a, b) => b.score - a.score || String(a.template.name || '').localeCompare(String(b.template.name || '')))[0]?.template
+  if (recommended && !selectedComponentConfigTemplateId.value) {
+    selectedComponentConfigTemplateId.value = componentTemplateOptionValue(recommended)
+    initializeComponentTemplateFieldValues(false)
+    return
+  }
   selectedComponentConfigTemplateId.value = ''
   componentTemplateFieldValues.value = {}
 }
@@ -6734,6 +7293,74 @@ const componentTemplateRequiredFieldsComplete = computed(() =>
     isRequiredForUser: componentTemplateFieldRequiredForUser,
   })
 )
+const componentAdvancedConfigOpenByDefault = computed(() =>
+  !selectedComponentConfigTemplate.value
+  && Boolean(configForm.value.files.length || configForm.value.env.length || componentNginxRouteEditorVisible.value)
+)
+const componentCurrentConfigRows = computed(() => {
+  const rows: Array<{ key: string; name: string; source: string; value: string }> = []
+  configForm.value.env.forEach((item:any, idx:number) => {
+    const name = String(item?.name || '').trim()
+    if (!name) return
+    rows.push({
+      key: `env:${name}:${idx}`,
+      name,
+      source: configEnvSourceLabel(item),
+      value: configEnvDisplayValue(item),
+    })
+  })
+  configForm.value.files.forEach((item:any, idx:number) => {
+    const name = String(item?.key || item?.name || '').trim()
+    if (!name) return
+    rows.push({
+      key: `file:${name}:${idx}`,
+      name,
+      source: '配置文件',
+      value: `${item.configMapName || 'ConfigMap'} -> ${item.mountPath || '未设置挂载路径'}`,
+    })
+  })
+  configForm.value.configMaps.forEach((item:any, idx:number) => {
+    const keys = Object.keys(item?.data || {}).filter(Boolean)
+    if (!String(item?.name || '').trim() || !keys.length) return
+    rows.push({
+      key: `configmap:${item.name}:${idx}`,
+      name: String(item.name),
+      source: '应用配置',
+      value: keys.join(', '),
+    })
+  })
+  configForm.value.secrets.forEach((item:any, idx:number) => {
+    const keys = Object.keys(item?.data || {}).filter(Boolean)
+    if (!String(item?.name || '').trim() || !keys.length) return
+    rows.push({
+      key: `secret:${item.name}:${idx}`,
+      name: String(item.name),
+      source: '敏感配置',
+      value: keys.join(', '),
+    })
+  })
+  return rows
+})
+const configEnvSourceLabel = (item:any) => {
+  if (item?.source === 'secret') return '敏感项'
+  if (item?.source === 'configMap') return '应用配置'
+  return '环境变量'
+}
+const configEnvDisplayValue = (item:any) => {
+  const name = String(item?.name || '').trim()
+  if (item?.source === 'secret') {
+    const refName = String(item?.refName || componentGeneratedSecretName()).trim()
+    const refKey = String(item?.refKey || name).trim()
+    return `${refName}/${refKey}`
+  }
+  if (item?.source === 'configMap') {
+    const refName = String(item?.refName || componentGeneratedConfigMapName()).trim()
+    const refKey = String(item?.refKey || name).trim()
+    return `${refName}/${refKey}`
+  }
+  const value = String(item?.value || '').trim()
+  return value || '空值'
+}
 const componentTemplateServiceRefSignature = computed(() =>
   componentTemplateFields.value
     .filter((field:any) => componentTemplateFieldType(field) === 'serviceref')
@@ -6748,7 +7375,7 @@ const autofillComponentTemplateServicePasswords = async () => {
   for (const field of componentTemplateFields.value) {
     if (componentTemplateFieldType(field) !== 'serviceref') continue
     const target = componentTemplateTargetForValue(next[componentTemplateFieldKey(field)])
-    if (!target || target.kind !== 'service') continue
+    if (!target || !['service', 'capability'].includes(String(target.kind || ''))) continue
     const serviceType = String(target.type || '').toLowerCase()
     const passwordKeys = componentTemplateServicePasswordFieldKeys(componentTemplateFields.value, serviceType)
     if (!passwordKeys.some((key) => !String(next[key] || '').trim())) continue
@@ -6773,6 +7400,7 @@ watch(() => selectedComponentConfigTemplate.value ? componentTemplateOptionValue
 })
 watch([componentSelectableConfigTemplates, () => configDrawer.value.visible, () => configDrawer.value.kind], () => {
   if (configDrawer.value.visible && configDrawer.value.kind === 'component') {
+    selectedComponentConfigTemplateId.value = resolveComponentConfigTemplateSelection(componentSelectableConfigTemplates.value, selectedComponentConfigTemplateId.value)
     selectRecommendedComponentConfigTemplate()
     void autofillComponentTemplateServicePasswords()
   }
@@ -6780,6 +7408,13 @@ watch([componentSelectableConfigTemplates, () => configDrawer.value.visible, () 
 watch(componentTemplateServiceRefSignature, () => {
   void autofillComponentTemplateServicePasswords()
 })
+const componentConnectionTargetPriority = (target:any) => {
+  if (target?.kind === 'service') return 10
+  const source = String(target?.source || target?.capability?.source || '').toLowerCase()
+  if (source === 'shared') return 20
+  if (source === 'external') return 30
+  return 40
+}
 const componentConnectionTargets = computed(() => {
   const currentId = Number(configDrawer.value.component?.id)
   const componentTargets = components.value
@@ -6793,10 +7428,10 @@ const componentConnectionTargets = computed(() => {
       component: comp,
     }))
   const serviceTargets = services.value
-    .filter((svc:any) => serviceCategory(svc) === 'infra' || ['log'].includes(String(svc.serviceType || '').toLowerCase()))
     .map((svc:any) => ({
       key: `service:${svc.id}`,
       kind: 'service',
+      source: 'managed',
       name: svc.serviceName || svc.name || svc.serviceType,
       type: serviceProductKey(svc) || svc.serviceType || svc.type || 'service',
       namespace: svc.namespace || '',
@@ -6810,6 +7445,7 @@ const componentConnectionTargets = computed(() => {
       return [{
         key: `capability:${cap.id}`,
         kind: 'capability',
+        source: String(cap.source || '').toLowerCase(),
         name: refService.serviceName || cap.provider || capabilityLabel(cap.capability || '') || type,
         type,
         namespace: refService.namespace || '',
@@ -6817,6 +7453,7 @@ const componentConnectionTargets = computed(() => {
         capability: cap,
       }]
     })
+    .sort((a:any, b:any) => componentConnectionTargetPriority(a) - componentConnectionTargetPriority(b))
   return [...componentTargets, ...serviceTargets, ...capabilityTargets]
 })
 const selectedConnectionTarget = computed(() =>
@@ -6842,6 +7479,28 @@ const runComponentDrawerSuggestion = (key: string) => {
 }
 const configFrameworkOptions = componentFrameworkOptions
 const targetTypeLabel = (target:any) => target?.kind === 'component' ? compTypeText(target.type) : typeLabel(target?.type || '')
+const targetSourceLabel = (target:any) => {
+  if (target?.kind === 'component') return '应用组件'
+  const source = String(target?.source || target?.capability?.source || '').toLowerCase()
+  if (target?.kind === 'service' || source === 'managed') return '本环境'
+  if (source === 'shared') return '共享资源'
+  if (source === 'external') return '外部资源'
+  return '服务'
+}
+const targetOptionMeta = (target:any) => {
+  if (target?.kind === 'component') return target.serviceName || ''
+  const cap = target?.capability || {}
+  if (String(target?.source || cap.source || '').toLowerCase() === 'external') {
+    return externalEndpointHost(cap.externalEndpoint || '')
+  }
+  return target.namespace || target.service?.namespace || ''
+}
+const targetOptionLabel = (target:any) => [
+  targetSourceLabel(target),
+  target.name,
+  targetTypeLabel(target) || '服务',
+  targetOptionMeta(target),
+].filter(Boolean).join(' · ')
 const applySelectedConfigBinding = async () => {
   const target = selectedConnectionTarget.value
   const comp = configDrawer.value.component
@@ -6995,6 +7654,10 @@ const applyServiceTargetBinding = async (target:any) => {
     generated.RABBITMQ_USERNAME = username
     generated.RABBITMQ_PASSWORD = `${secretName}/${passwordKey}`
     generated.RABBITMQ_URL = 'uses RABBITMQ_PASSWORD'
+  } else if (serviceType === 'eureka') {
+    const eurekaURL = `http://${host}:${portText || 8761}/eureka/`
+    upsertEnvValue('EUREKA_URL', eurekaURL, managedEnvOptionsForTarget(target, 'EUREKA_URL'))
+    generated.EUREKA_URL = eurekaURL
   } else if (serviceType === 'kafka') {
     const brokers = `${host}:${portText}`
     upsertEnvValue('KAFKA_BROKERS', brokers, managedEnvOptionsForTarget(target, 'KAFKA_BROKERS'))
@@ -7065,7 +7728,7 @@ const connectionTargetCredentials = async (target:any) => {
   if (target?.kind === 'capability') {
     const cap = target.capability || {}
     if (!cap.capability) return []
-    const res = await api.getEnvironmentCapabilityCredentials(envId.value, cap.capability)
+    const res = await api.getEnvironmentCapabilityCredentials(envId.value, capabilityRequestKey(cap))
     return Array.isArray(res?.data?.credentials) ? res.data.credentials : []
   }
   return serviceCredentials(target?.service)
@@ -7078,13 +7741,7 @@ const credentialValue = (credentials:any[], keys:string[]) => {
   return ''
 }
 const splitEndpoint = (endpoint:string, fallbackPort:number) => {
-  const clean = String(endpoint || '').replace(/^https?:\/\//, '')
-  const idx = clean.lastIndexOf(':')
-  if (idx > 0) {
-    const port = Number(clean.slice(idx + 1))
-    if (Number.isFinite(port)) return [clean.slice(0, idx), port] as const
-  }
-  return [clean || 'service', fallbackPort] as const
+  return componentTemplateSplitEndpoint(endpoint, fallbackPort)
 }
 const defaultServicePortForBinding = (serviceType:string) => ({
   postgresql: 5432,
@@ -7094,6 +7751,7 @@ const defaultServicePortForBinding = (serviceType:string) => ({
   rabbitmq: 5672,
   kafka: 9092,
   minio: 9000,
+  eureka: 8761,
   log: 3100,
 } as Record<string, number>)[serviceType] || 80
 const serviceRole = (serviceType:string) => {
@@ -7150,9 +7808,9 @@ const upsertSecretValue = (name:string, key:string, value:string) => {
   else configForm.value.secrets.push(current)
 }
 const componentTemplateCredentialsForTarget = async (target:any, cache:Record<string, any[]>) => {
-  if (!target?.key || target.kind !== 'service') return []
+  if (!target?.key || !['service', 'capability'].includes(String(target.kind || ''))) return []
   if (cache[target.key]) return cache[target.key]
-  const credentials = await serviceCredentials(target.service)
+  const credentials = await connectionTargetCredentials(target)
   cache[target.key] = credentials
   return credentials
 }
@@ -7183,15 +7841,18 @@ const buildComponentTemplateFieldRenderValues = async () => {
     if (!target) continue
     const credentials = await componentTemplateCredentialsForTarget(target, credentialsByTargetKey)
     fieldValues[key] = componentTemplateTargetRenderedValue(field, target, credentials)
-    if (target.kind !== 'service') continue
 
     const serviceType = String(target.type || '').toLowerCase()
     const password = credentialValue(credentials, componentTemplateCredentialPasswordKeys(serviceType))
     for (const passwordKey of componentTemplateServicePasswordFieldKeys(componentTemplateFields.value, serviceType)) {
       if (!fieldValues[passwordKey]) fieldValues[passwordKey] = password
     }
+    const username = credentialValue(credentials, componentTemplateCredentialUsernameKeys(serviceType)) || componentTemplateDefaultCredentialUsername(serviceType)
+    for (const usernameKey of componentTemplateServiceUsernameFieldKeys(componentTemplateFields.value, serviceType)) {
+      if (!fieldValues[usernameKey]) fieldValues[usernameKey] = username
+    }
     if (['postgresql', 'mysql', 'mongodb'].includes(serviceType)) {
-      if (!fieldValues['database.username']) fieldValues['database.username'] = credentialValue(credentials, componentTemplateCredentialUsernameKeys(serviceType)) || componentTemplateDefaultCredentialUsername(serviceType)
+      if (!fieldValues['database.username']) fieldValues['database.username'] = username
       if (!fieldValues['database.password']) fieldValues['database.password'] = password
     }
     if (serviceType === 'redis' && !fieldValues['redis.password']) {
@@ -7213,7 +7874,7 @@ const applyComponentTemplateServiceRefs = async () => {
           const target = componentTemplateTargetForValue(row?.[componentTemplateFieldKey(itemField)])
           if (!target?.key || applied.has(target.key)) continue
           applied.add(target.key)
-          if (target.kind === 'service') await applyServiceTargetBinding(target)
+          if (['service', 'capability'].includes(String(target.kind || ''))) await applyServiceTargetBinding(target)
           else {
             upsertBinding({
               targetKey: target.key,
@@ -7570,13 +8231,14 @@ const configFormPayload = () => {
   return {
     framework: configForm.value.framework === 'auto' ? '' : configForm.value.framework,
     ...componentConfigTemplateSelectionPayload(),
+    registryTarget: registryTargetSelectionPayload(),
     env,
     configMaps: configForm.value.configMaps,
     secrets: configForm.value.secrets,
     files: configForm.value.files,
     bindings: configForm.value.bindings,
     dependencies: Array.from(new Set([...(cfg.dependencies || []), ...bindingDeps])),
-    containerPort: ['saved', 'user'].includes(configForm.value.containerPortSource) ? Number(configForm.value.containerPort || 0) : 0,
+    containerPort: ['saved', 'user'].includes(configForm.value.containerPortSource) && Number(configForm.value.containerPort || 0) > 0 ? Number(configForm.value.containerPort || 0) : 0,
     command: arrayFromLines(configForm.value.commandText),
     args: arrayFromLines(configForm.value.argsText),
   }
@@ -7591,7 +8253,7 @@ const validateConfigFileMountPaths = () => {
   configDrawer.value.error = `请填写配置文件 ${missing.key || missing.name || ''} 的挂载路径。`
   return false
 }
-const saveConfigDrawer = async (options: { refresh?: boolean } = {}) => {
+const saveConfigDrawer = async (options: { refresh?: boolean; includeDelivery?: boolean } = {}) => {
   const comp = configDrawer.value.component
   if (!comp?.id || configDrawer.value.saving) return
   const shouldRefresh = options.refresh !== false
@@ -7600,32 +8262,14 @@ const saveConfigDrawer = async (options: { refresh?: boolean } = {}) => {
   configDrawer.value.message = ''
   try {
     const deliveryMode = configForm.value.deliveryMode === 'source' ? 'source' : 'image'
-    const version = imageTagVersion(configForm.value.imageTag) || String(configForm.value.version || '').trim()
+    const includeDelivery = options.includeDelivery === true
+    const version = deliveryMode === 'source'
+      ? String(configForm.value.version || '').trim()
+      : imageTagVersion(configForm.value.imageTag) || String(configForm.value.version || '').trim()
     const image = registryImageFromConfig.value || String(configForm.value.image || '').trim()
-    const sourceRepoUrl = String(configForm.value.sourceRepoUrl || '').trim()
     const sourceBranch = String(configForm.value.sourceBranch || 'main').trim() || 'main'
     const buildContext = String(configForm.value.buildContext || '.').trim() || '.'
-    if (deliveryMode === 'image' && (!version || version.toLowerCase() === 'latest')) {
-      configDrawer.value.error = '请填写明确镜像 Tag，不能使用 latest。'
-      return
-    }
-    if (deliveryMode === 'source' && version && version.toLowerCase() === 'latest') {
-      configDrawer.value.error = '镜像 Tag 不能使用 latest。'
-      return
-    }
-    if (deliveryMode === 'image' && !image) {
-      configDrawer.value.error = '请填写镜像地址。'
-      return
-    }
-    if (deliveryMode === 'source' && !sourceRepoUrl) {
-      configDrawer.value.error = '请填写源码仓库地址。'
-      return
-    }
-    const containerPort = Number(configForm.value.containerPort || 0)
-    if (!Number.isInteger(containerPort) || containerPort < 1 || containerPort > 65535) {
-      configDrawer.value.error = '请填写 1-65535 范围内的容器端口。'
-      return
-    }
+    const buildModule = String(configForm.value.buildModule || '').trim()
     syncNginxRouteRowsFromTemplateFieldValues()
     const templateReady = await prepareSelectedComponentConfigTemplateForSave()
     if (!templateReady) return
@@ -7634,15 +8278,21 @@ const saveConfigDrawer = async (options: { refresh?: boolean } = {}) => {
       if (!nginxReady) return
     }
     if (!validateConfigFileMountPaths()) return
+    const deliveryPayload = includeDelivery
+      ? {
+          deliveryMode: configForm.value.deliveryMode,
+          image: deliveryMode === 'image' ? image : '',
+          version,
+          sourceRepoUrl: configForm.value.sourceRepoUrl,
+          sourceBranch,
+          buildContext,
+          buildModule,
+          dockerfilePath: String(configForm.value.dockerfilePath || '').trim(),
+        }
+      : {}
     const res = await api.updateComponent(Number(comp.id), {
       type: componentDrawerRole.value,
-      deliveryMode: configForm.value.deliveryMode,
-      image: deliveryMode === 'image' ? image : '',
-      version,
-      sourceRepoUrl: configForm.value.sourceRepoUrl,
-      sourceBranch,
-      buildContext,
-      dockerfilePath: String(configForm.value.dockerfilePath || '').trim(),
+      ...deliveryPayload,
       replicas: Number(configForm.value.replicas || 0),
       cpu: configForm.value.cpu,
       memory: configForm.value.memory,
@@ -7665,7 +8315,7 @@ const saveConfigDrawer = async (options: { refresh?: boolean } = {}) => {
     configDrawer.value.saving = false
   }
 }
-const saveConfigDrawerIfComponent = async (options: { refresh?: boolean } = {}) => {
+const saveConfigDrawerIfComponent = async (options: { refresh?: boolean; includeDelivery?: boolean } = {}) => {
   if (configDrawer.value.kind !== 'component' || !configDrawer.value.component?.id) return true
   const saved = await saveConfigDrawer(options)
   return configDrawer.value.error ? false : (saved || true)
@@ -7707,6 +8357,7 @@ const saveCapabilityConfigDrawer = async () => {
   const authType = String(capabilityForm.value.authType || 'none')
   const payload: any = {
     source: 'external',
+    capabilityKey: capabilityRequestKey(cap),
     provider: cap.provider || providerForCapability(cap.capability),
     serviceType: cap.serviceType || serviceTypeForCapability(cap.capability),
     externalEndpoint: capabilityForm.value.externalEndpoint,
@@ -7727,7 +8378,7 @@ const saveCapabilityConfigDrawer = async () => {
     payload.credentialSecretRef = ''
   }
   try {
-    const res = await api.updateEnvironmentCapability(envId.value, cap.capability, payload)
+    const res = await api.updateEnvironmentCapability(envId.value, capabilityRequestKey(cap), payload)
     await loadEnvironmentCapabilities()
     const updated = environmentCapabilities.value.find((item:any) => Number(item.id) === Number(res.data?.id || cap.id)) || res.data || cap
     const currentForm = capabilityForm.value
@@ -7746,6 +8397,32 @@ const saveCapabilityConfigDrawer = async () => {
     configDrawer.value.error = '保存外部资源配置失败：' + (e?.message || '未知错误')
   } finally {
     configDrawer.value.saving = false
+  }
+}
+const validateCapabilityConfigDrawer = async () => {
+  const cap = drawerCapability.value
+  if (!cap?.capability || capabilityValidationLoading.value) return
+  if (cap.source !== 'external') {
+    configDrawer.value.error = '只有外部资源需要验证连接。'
+    return
+  }
+  capabilityValidationLoading.value = true
+  configDrawer.value.error = ''
+  configDrawer.value.message = ''
+  try {
+    const res = await api.validateEnvironmentCapability(envId.value, capabilityRequestKey(cap))
+    await loadEnvironmentCapabilities()
+    const updated = environmentCapabilities.value.find((item:any) => Number(item.id) === Number(res.data?.id || cap.id)) || res.data || cap
+    configDrawer.value.capability = updated
+    if (updated.validationStatus === 'valid') {
+      configDrawer.value.message = updated.validationMessage || '外部资源连接验证通过。'
+    } else {
+      configDrawer.value.error = updated.validationMessage || '外部资源连接验证失败。'
+    }
+  } catch (e:any) {
+    configDrawer.value.error = '验证外部资源连接失败：' + (e?.message || '未知错误')
+  } finally {
+    capabilityValidationLoading.value = false
   }
 }
 const deployServiceFromDrawer = async () => {
@@ -7865,7 +8542,9 @@ const toggleComponentNodePortAccess = async () => {
 const deployDrawerComponent = async () => {
   const comp = configDrawer.value.component
   if (!comp?.id) return
-  const saved = await saveConfigDrawerIfComponent({ refresh: false })
+  configDrawer.value.error = ''
+  if (!validateComponentDeliveryForm()) return
+  const saved = await saveConfigDrawerIfComponent({ refresh: false, includeDelivery: true })
   if (!saved) return
   const next = saved === true ? (components.value.find((item:any) => Number(item.id) === Number(comp.id)) || comp) : saved
   await deployComponent(next)
@@ -8001,11 +8680,12 @@ const performDeleteCapability = async (cap:any) => {
   configDrawer.value.saving = true
   pageError.value = ''
   try {
-    await api.deleteEnvironmentCapability(envId.value, cap.capability)
+    const requestKey = capabilityRequestKey(cap)
+    await api.deleteEnvironmentCapability(envId.value, requestKey)
     const key = `capability:${cap.id || cap.capability}`
     environmentCapabilities.value = environmentCapabilities.value.filter((item:any) => {
       if (cap.id && Number(item.id) === Number(cap.id)) return false
-      return String(item.capability || '') !== String(cap.capability || '')
+      return capabilityRequestKey(item) !== requestKey
     })
     const nextPositions = { ...componentNodePositions.value }
     deleteCanvasPositionKeys(nextPositions, key)
@@ -8043,7 +8723,7 @@ const configureContextNode = () => {
   const svc = componentContextMenu.value.service
   const capability = componentContextMenu.value.capability
   closeComponentContextMenu()
-  if (comp?.id) openComponentConfigDrawer(comp)
+  if (comp?.id) openComponentConfigDrawer(comp, 'variables')
   else if (svc?.id) openServiceConfigDrawer(svc)
   else if (capability) openCapabilityConfigDrawer(capability)
 }
@@ -8284,6 +8964,7 @@ const createSharedCapabilityReference = async (resource:any) => {
   try {
     const res = await api.updateEnvironmentCapability(envId.value, resource.capability, {
       source: 'shared',
+      capabilityKey: `shared-${resource.capability}-${resource.id}`,
       provider: resource.provider,
       serviceType: resource.serviceType,
       refServiceId: Number(resource.id),
@@ -8302,6 +8983,7 @@ const createExternalCapabilityDraft = async (item:any) => {
   try {
     const res = await api.updateEnvironmentCapability(envId.value, item.capability, {
       source: 'external',
+      capabilityKey: `external-${item.capability}-${item.provider || item.serviceType || item.capability}`,
       provider: item.provider,
       serviceType: item.serviceType,
     })
@@ -8370,6 +9052,8 @@ const closeServiceInstallModal = () => {
   showServiceModal.value = false
   serviceModalError.value = ''
   serviceModalNotice.value = ''
+  serviceProvisionMode.value = 'managed'
+  selectedSharedResourceId.value = ''
 }
 
 const openServiceInstallModal = (mode:'tool'|'infra' = 'tool') => {
@@ -8397,6 +9081,12 @@ const selectServiceTemplate = (svc:any) => {
   }
   serviceModalError.value = ''
   serviceForm.value.serviceType = svc.type
+  selectedSharedResourceId.value = ''
+  if (serviceProvisionMode.value === 'shared') {
+    void loadSharedCapabilityResources().then(() => {
+      selectedSharedResourceId.value = matchingSharedResources.value[0]?.id ? String(matchingSharedResources.value[0].id) : ''
+    })
+  }
 }
 
 const submitComponent = async () => {
@@ -8406,6 +9096,7 @@ const submitComponent = async () => {
   const sourceRepoUrl = compForm.value.sourceRepoUrl.trim()
   const sourceBranch = compForm.value.sourceBranch.trim() || 'main'
   const buildContext = compForm.value.buildContext.trim() || '.'
+  const buildModule = compForm.value.buildModule.trim()
   componentModalError.value = ''
   if (!compForm.value.name.trim()) { componentModalError.value = '请填写组件名称'; return }
   if (deliveryMode === 'image' && (!version || version.toLowerCase() === 'latest')) { componentModalError.value = '请填写明确版本号，不能使用 latest'; return }
@@ -8413,8 +9104,8 @@ const submitComponent = async () => {
   if (deliveryMode === 'image' && !image) { componentModalError.value = '请填写镜像地址'; return }
   if (deliveryMode === 'source' && !sourceRepoUrl) { componentModalError.value = '请填写源码仓库地址'; return }
   const payload = deliveryMode === 'source'
-    ? { ...compForm.value, deliveryMode, sourceRepoUrl, sourceBranch, buildContext, image: '', version }
-    : { ...compForm.value, deliveryMode, image, version }
+    ? { ...compForm.value, deliveryMode, sourceRepoUrl, sourceBranch, buildContext, buildModule, image: '', version, draftOnly: true }
+    : { ...compForm.value, deliveryMode, image, version, draftOnly: true }
   try {
     await api.createComponent(envId.value, payload)
     const res = await api.getEnv(envId.value)
@@ -8425,34 +9116,85 @@ const submitComponent = async () => {
   }
   catch(e:any) { componentModalError.value = '创建失败：' + (e?.message || '未知错误') }
 }
+const submitManagedServiceInstall = async (selectedType: string) => {
+  if (isActiveServiceInstalled(selectedType, 'managed')) {
+    serviceModalError.value = `${svcLabel(selectedType)} 已添加、已安装或正在安装。`
+    availableServices.value = filterTemplates(serviceModalMode.value)
+    serviceForm.value.serviceType = preferredServiceTypeForProvisionMode()
+    return
+  }
+  const beforeIds = new Set(services.value.map((item:any) => Number(item.id)))
+  await api.installService(envId.value, { serviceType: selectedType })
+  await refreshServices()
+  const installed = services.value.find((item:any) => !beforeIds.has(Number(item.id)) && item.serviceType === selectedType)
+    || services.value.find((item:any) => item.serviceType === selectedType)
+  availableServices.value = filterTemplates(serviceModalMode.value)
+  serviceForm.value.serviceType = preferredServiceTypeForProvisionMode()
+  serviceModalNotice.value = pickerNotice(serviceModalMode.value, visibleServiceOptions.value.length, serviceForm.value.serviceType)
+  showServiceModal.value = false
+  if (installed) {
+    setActiveTab('components')
+    openServiceConfigDrawer(installed)
+  }
+}
+const submitSharedServiceReference = async () => {
+  const resource = selectedSharedResource.value
+  if (!resource) {
+    serviceModalError.value = `共享资源池中没有可引用的 ${svcLabel(serviceForm.value.serviceType)}。`
+    return
+  }
+  await createSharedCapabilityReference(resource)
+  showServiceModal.value = false
+}
+const submitExternalServiceConnection = async () => {
+  const external = externalCapabilityForService(selectedServiceTemplate.value)
+  if (!external) {
+    serviceModalError.value = `${svcLabel(serviceForm.value.serviceType)} 暂不支持外部连接。`
+    return
+  }
+  await createExternalCapabilityDraft(external)
+  showServiceModal.value = false
+}
+const submitKubeVirtServiceInstall = async (selectedType: string) => {
+  if (isActiveServiceInstalled(selectedType, 'kubevirt')) {
+    serviceModalError.value = `${svcLabel(selectedType)} 已添加、已安装或正在安装。`
+    availableServices.value = filterTemplates(serviceModalMode.value)
+    serviceForm.value.serviceType = preferredServiceTypeForProvisionMode()
+    return
+  }
+  const beforeIds = new Set(services.value.map((item:any) => Number(item.id)))
+  await api.installService(envId.value, { serviceType: selectedType, provisionMode: 'kubevirt' })
+  await refreshServices()
+  const installed = services.value.find((item:any) => !beforeIds.has(Number(item.id)) && item.serviceType === selectedType && item.provisionMode === 'kubevirt')
+    || services.value.find((item:any) => item.serviceType === selectedType && item.provisionMode === 'kubevirt')
+    || services.value.find((item:any) => item.serviceType === selectedType)
+  availableServices.value = filterTemplates(serviceModalMode.value)
+  serviceForm.value.serviceType = preferredServiceTypeForProvisionMode()
+  serviceModalNotice.value = pickerNotice(serviceModalMode.value, visibleServiceOptions.value.length, serviceForm.value.serviceType)
+  showServiceModal.value = false
+  if (installed) {
+    setActiveTab('components')
+    openServiceConfigDrawer(installed)
+  }
+}
 const submitService = async () => {
   if (!serviceForm.value.serviceType) return
   const selectedType = serviceForm.value.serviceType
-  if (isActiveServiceInstalled(selectedType)) {
-    serviceModalError.value = `${svcLabel(selectedType)} 已添加、已安装或正在安装。`
-    availableServices.value = filterTemplates(serviceModalMode.value)
-    serviceForm.value.serviceType = availableServices.value.find((svc:any) => !svc.disabled)?.type || ''
-    return
-  }
   serviceSubmitting.value = true
   serviceModalError.value = ''
   serviceModalNotice.value = ''
   try {
-    const beforeIds = new Set(services.value.map((item:any) => Number(item.id)))
-    await api.installService(envId.value, { serviceType: selectedType })
-    await refreshServices()
-    const installed = services.value.find((item:any) => !beforeIds.has(Number(item.id)) && item.serviceType === selectedType)
-      || services.value.find((item:any) => item.serviceType === selectedType)
-    availableServices.value = filterTemplates(serviceModalMode.value)
-    serviceForm.value.serviceType = availableServices.value.find((svc:any) => !svc.disabled)?.type || ''
-    serviceModalNotice.value = pickerNotice(serviceModalMode.value, availableServices.value.length, serviceForm.value.serviceType)
-    showServiceModal.value = false
-    if (installed) {
-      setActiveTab('components')
-      openServiceConfigDrawer(installed)
+    if (serviceProvisionMode.value === 'managed') {
+      await submitManagedServiceInstall(selectedType)
+    } else if (serviceProvisionMode.value === 'shared') {
+      await submitSharedServiceReference()
+    } else if (serviceProvisionMode.value === 'external') {
+      await submitExternalServiceConnection()
+    } else {
+      await submitKubeVirtServiceInstall(selectedType)
     }
   }
-  catch(e:any) { serviceModalError.value = '安装失败：' + (e?.message || '未知错误') }
+  catch(e:any) { serviceModalError.value = '处理失败：' + (e?.message || '未知错误') }
   finally { serviceSubmitting.value = false }
 }
 
@@ -8525,16 +9267,16 @@ const performDeleteService = async (svc:any) => {
   right: var(--paap-space-7);
   bottom: -1px;
   height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(37,99,235,0.3), transparent);
+  background: linear-gradient(90deg, transparent, var(--paap-accent-glow), transparent);
 }
 .title-group { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .title-row { display: flex; align-items: center; gap: var(--paap-space-3); flex-wrap: wrap; }
-.page-title { font-size: 28px; font-weight: 600; color: var(--paap-text); line-height: 1.2; letter-spacing: -0.02em; margin: 0; }
-.title-id { font-family: var(--paap-mono); font-size: 12px; color: var(--paap-muted); letter-spacing: 0.02em; }
+.page-title { font-size: 24px; font-weight: 600; color: var(--paap-text); line-height: 1.2; letter-spacing: -0.02em; margin: 0; }
+.title-id { font-family: var(--paap-mono); font-size: var(--paap-fs-code); color: var(--paap-muted); letter-spacing: 0.02em; }
 .status-badge {
   display: inline-flex; align-items: center; gap: 5px;
-  font-size: 11px; font-weight: 500; padding: 2px 10px; border-radius: var(--paap-radius-full);
-  background: var(--paap-bg-04); color: var(--paap-muted);
+  font-size: var(--paap-fs-small); font-weight: 500; padding: 2px 10px; border-radius: var(--paap-radius-full);
+  background: var(--paap-panel-subtle); color: var(--paap-muted);
 }
 .status-badge.running { background: var(--paap-success-soft); color: var(--paap-emerald); }
 .status-badge.error { background: var(--paap-danger-soft); color: var(--paap-danger); }
@@ -8546,7 +9288,7 @@ const performDeleteService = async (svc:any) => {
   color: var(--paap-danger-text-strong);
   border-radius: var(--paap-radius);
   padding: 10px 12px;
-  font-size: 13px;
+  font-size: var(--paap-fs-compact);
   line-height: 1.4;
   margin-bottom: var(--paap-space-4);
 }
@@ -8592,10 +9334,10 @@ const performDeleteService = async (svc:any) => {
 }
 button.overview-stat { cursor: pointer; transition: border-color 0.15s; }
 button.overview-stat:hover { border-color: var(--paap-border-strong); }
-.stat-label { color: var(--paap-muted); font-size: 13px; font-weight: 500; }
+.stat-label { color: var(--paap-muted); font-size: var(--paap-fs-compact); font-weight: 500; }
 .stat-value { margin-top: var(--paap-space-4); color: var(--paap-text); font-size: 42px; font-weight: 700; line-height: 1; letter-spacing: -0.02em; }
 .stat-value.danger { color: var(--paap-danger); }
-.stat-hint { margin-top: var(--paap-space-3); color: var(--paap-muted); font-size: 12px; }
+.stat-hint { margin-top: var(--paap-space-3); color: var(--paap-muted); font-size: var(--paap-fs-label); }
 .overview-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(320px, 420px);
@@ -8616,7 +9358,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 .overview-wide { margin-bottom: 0; }
 .overview-section-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--paap-space-3); min-width: 0; margin-bottom: var(--paap-space-4); }
 .overview-title { margin: 0; color: var(--paap-text); font-size: 18px; font-weight: 600; }
-.overview-subtitle { color: var(--paap-muted); font-size: 12px; max-width: 520px; text-align: right; line-height: 1.4; }
+.overview-subtitle { color: var(--paap-muted); font-size: var(--paap-fs-label); max-width: 520px; text-align: right; line-height: 1.4; }
 .external-access-section { order: -2; }
 .external-access-grid {
   display: grid;
@@ -8633,7 +9375,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   align-items: center;
   justify-content: space-between;
   color: var(--paap-muted);
-  font-size: 12px;
+  font-size: var(--paap-fs-label);
   font-weight: 600;
 }
 .external-access-group-head strong { color: var(--paap-text); }
@@ -8666,8 +9408,8 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.external-access-main strong { font-size: 13px; font-weight: 650; }
-.external-access-main small { color: var(--paap-muted); font-size: 12px; }
+.external-access-main strong { font-size: var(--paap-fs-compact); font-weight: 600; }
+.external-access-main small { color: var(--paap-muted); font-size: var(--paap-fs-label); }
 .component-focus { order: -1; }
 .component-overview-workspace {
   display: grid;
@@ -8692,7 +9434,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   background: var(--paap-panel-subtle);
 }
 .component-lane-label span {
-  color: var(--paap-muted-2);
+  color: var(--paap-muted);
   font-weight: 600;
 }
 .component-overview-node {
@@ -8716,15 +9458,15 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   min-width: 0;
   overflow: hidden;
   color: var(--paap-text);
-  font-size: 12px;
-  font-weight: 650;
+  font-size: var(--paap-fs-label);
+  font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .component-overview-node small {
   grid-column: 2;
   color: var(--paap-muted);
-  font-size: 11px;
+  font-size: var(--paap-fs-small);
 }
 .component-overview-summary {
   display: grid;
@@ -8741,12 +9483,12 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   justify-content: space-between;
   gap: var(--paap-space-3);
   color: var(--paap-muted);
-  font-size: 12px;
+  font-size: var(--paap-fs-label);
 }
 .component-summary-row strong {
   color: var(--paap-text);
-  font-size: 14px;
-  font-weight: 650;
+  font-size: var(--paap-fs-body);
+  font-weight: 600;
 }
 .component-overview-edges {
   display: grid;
@@ -8765,7 +9507,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   background: var(--paap-panel);
   color: var(--paap-muted);
   font-family: inherit;
-  font-size: 11px;
+  font-size: var(--paap-fs-small);
   cursor: pointer;
 }
 .component-overview-edges button:hover {
@@ -8779,20 +9521,20 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   white-space: nowrap;
 }
 .flow-list { display: flex; flex-direction: column; }
-.flow-step { display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; align-items: start; gap: var(--paap-space-3); padding: 13px 0; border-bottom: 1px solid var(--paap-bg-04); }
+.flow-step { display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; align-items: start; gap: var(--paap-space-3); padding: 13px 0; border-bottom: 1px solid var(--paap-panel-subtle); }
 .flow-step:last-child { border-bottom: none; }
 .flow-dot { width: 9px; height: 9px; margin-top: 5px; border-radius: 50%; background: var(--paap-border-strong); }
 .flow-step.ready .flow-dot { background: var(--paap-success); }
 .flow-step.pending .flow-dot,
-.flow-step.missing .flow-dot { background: var(--paap-muted-2); }
+.flow-step.missing .flow-dot { background: var(--paap-muted); }
 .flow-step.failed .flow-dot { background: var(--paap-danger); }
-.flow-name { color: var(--paap-text); font-size: 13px; font-weight: 600; }
-.flow-desc { margin-top: 2px; color: var(--paap-muted); font-size: 12px; line-height: 1.4; }
+.flow-name { color: var(--paap-text); font-size: var(--paap-fs-compact); font-weight: 600; }
+.flow-desc { margin-top: 2px; color: var(--paap-muted); font-size: var(--paap-fs-label); line-height: 1.4; }
 .flow-link, .text-btn {
   border: none;
   background: transparent;
   color: var(--paap-accent);
-  font-size: 12px;
+  font-size: var(--paap-fs-label);
   font-weight: 600;
   cursor: pointer;
 }
@@ -8805,7 +9547,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   width: 100%;
   padding: 12px 0;
   border: none;
-  border-bottom: 1px solid var(--paap-bg-04);
+  border-bottom: 1px solid var(--paap-panel-subtle);
   background: transparent;
   text-align: left;
   cursor: pointer;
@@ -8820,17 +9562,17 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 .quick-icon.monitor { color: var(--paap-service-monitor); }
 .quick-icon.log { color: var(--paap-service-log); }
 .quick-main { display: flex; flex-direction: column; flex: 1; min-width: 0; }
-.quick-name, .compact-name { color: var(--paap-text); font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.quick-desc { color: var(--paap-muted); font-size: 12px; margin-top: 2px; }
+.quick-name, .compact-name { color: var(--paap-text); font-size: var(--paap-fs-compact); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.quick-desc { color: var(--paap-muted); font-size: var(--paap-fs-label); margin-top: 2px; }
 .overview-empty {
   display: flex; align-items: center; justify-content: space-between; gap: var(--paap-space-3);
   padding: var(--paap-space-4);
   border: 1px dashed var(--paap-border-strong); border-radius: var(--paap-radius);
-  background: var(--paap-panel-subtle); color: var(--paap-muted); font-size: 13px;
+  background: var(--paap-panel-subtle); color: var(--paap-muted); font-size: var(--paap-fs-compact);
 }
 .overview-two-col { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--paap-space-4); }
-.compact-head { display: flex; align-items: center; justify-content: space-between; padding-bottom: var(--paap-space-2); color: var(--paap-muted); font-size: 12px; font-weight: 600; }
-.compact-empty { padding: var(--paap-space-5) 0; color: var(--paap-muted-2); font-size: 13px; }
+.compact-head { display: flex; align-items: center; justify-content: space-between; padding-bottom: var(--paap-space-2); color: var(--paap-muted); font-size: var(--paap-fs-label); font-weight: 600; }
+.compact-empty { padding: var(--paap-space-5) 0; color: var(--paap-muted); font-size: var(--paap-fs-compact); }
 
 /* Capability workspace */
 .capability-workspace {
@@ -8856,7 +9598,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 }
 .capability-workspace-title span {
   color: var(--paap-muted);
-  font-size: 12px;
+  font-size: var(--paap-fs-label);
   line-height: 1.4;
 }
 .capability-workspace-actions {
@@ -8879,7 +9621,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   background: var(--paap-panel);
   color: var(--paap-muted);
   font-family: inherit;
-  font-size: 12px;
+  font-size: var(--paap-fs-label);
   font-weight: 600;
   line-height: 1.25;
   overflow-wrap: anywhere;
@@ -8901,7 +9643,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   background: var(--paap-panel);
   color: var(--paap-accent);
   text-decoration: none;
-  font-size: 12px;
+  font-size: var(--paap-fs-label);
   font-weight: 600;
 }
 .capability-external-link:hover {
@@ -8947,21 +9689,21 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   min-width: 0;
 }
 .workspace-action-inline header span {
-  color: var(--paap-muted-2);
-  font-size: 11px;
+  color: var(--paap-muted);
+  font-size: var(--paap-fs-small);
   font-weight: 700;
   text-transform: uppercase;
 }
 .workspace-action-inline header strong {
   min-width: 0;
   color: var(--paap-text);
-  font-size: 14px;
+  font-size: var(--paap-fs-body);
   overflow-wrap: anywhere;
 }
 .workspace-action-inline p {
   margin: 0;
   color: var(--paap-muted);
-  font-size: 13px;
+  font-size: var(--paap-fs-compact);
   line-height: 1.45;
 }
 .workspace-action-inline-form {
@@ -8981,10 +9723,10 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   border: 1px solid var(--paap-border);
   border-radius: var(--paap-radius-sm);
   background: var(--paap-panel);
-  color: var(--paap-text-soft);
+  color: var(--paap-muted);
   font-family: inherit;
-  font-size: 12px;
-  font-weight: 650;
+  font-size: var(--paap-fs-label);
+  font-weight: 600;
   line-height: 1.2;
   overflow-wrap: anywhere;
   cursor: pointer;
@@ -9000,7 +9742,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 .workspace-action-btn--primary {
   border-color: var(--paap-accent);
    background: var(--paap-accent);
-   color: var(--paap-white);
+   color: var(--paap-panel);
 }
 .workspace-action-btn--primary:hover:not(:disabled) {
   border-color: var(--paap-accent-hover);
@@ -9009,7 +9751,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 .workspace-action-btn--danger {
   border-color: var(--paap-danger);
    background: var(--paap-danger);
-   color: var(--paap-white);
+   color: var(--paap-panel);
 }
 .workspace-action-btn--danger:hover:not(:disabled) {
   border-color: var(--paap-danger-dark);
@@ -9022,7 +9764,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   color: var(--paap-emerald-dark);
   border-radius: var(--paap-radius);
   padding: 10px 12px;
-  font-size: 13px;
+  font-size: var(--paap-fs-compact);
   line-height: 1.4;
 }
 .workspace-loading {
@@ -9031,7 +9773,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   background: var(--paap-panel-subtle);
   color: var(--paap-muted);
   padding: 10px 12px;
-  font-size: 12px;
+  font-size: var(--paap-fs-label);
 }
 .compact-empty-state {
   padding: var(--paap-space-10) 0;
@@ -9060,13 +9802,13 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 }
 .service-name-group { display: flex; align-items: center; gap: var(--paap-space-2); flex-wrap: wrap; }
 .service-name-group span:first-child { font-weight: 600; font-size: 15px; line-height: 1.4; color: var(--paap-text); }
-.service-desc { color: var(--paap-muted); line-height: 1.4; font-size: 13px; }
-.service-error { color: var(--paap-danger); line-height: 1.4; font-size: 12px; margin-top: 4px; max-width: 760px; overflow-wrap: anywhere; }
-.service-meta { color: var(--paap-muted-2); font-size: 12px; margin-top: 4px; }
+.service-desc { color: var(--paap-muted); line-height: 1.4; font-size: var(--paap-fs-compact); }
+.service-error { color: var(--paap-danger); line-height: 1.4; font-size: var(--paap-fs-label); margin-top: 4px; max-width: 760px; overflow-wrap: anywhere; }
+.service-meta { color: var(--paap-muted); font-size: var(--paap-fs-label); margin-top: 4px; }
 
 .service-action {
   width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;
-  background: transparent; border: none; color: var(--paap-muted-2); cursor: pointer;
+  background: transparent; border: none; color: var(--paap-muted); cursor: pointer;
   transition: all 0.15s; flex-shrink: 0; margin-top: -4px; border-radius: var(--paap-radius-xs);
   opacity: 0;
 }
@@ -9114,7 +9856,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   background: var(--paap-panel);
   color: var(--paap-text);
   font-family: inherit;
-  font-size: 13px;
+  font-size: var(--paap-fs-compact);
   outline: none;
 }
 .component-search-input {
@@ -9127,8 +9869,8 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 }
 .component-search-input:focus,
 .component-type-select:focus {
-  border-color: var(--cds-border-interactive, #0f62fe);
-  box-shadow: inset 0 0 0 1px var(--cds-border-interactive, #0f62fe);
+  border-color: var(--paap-accent);
+  box-shadow: inset 0 0 0 1px var(--paap-accent);
 }
 .component-topology-layout {
   display: block;
@@ -9160,19 +9902,19 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   border-radius: 0;
 }
 .application-set-deploy-btn--blocked {
-  border-color: var(--cds-border-subtle-01, var(--paap-text-04));
-  background: var(--cds-layer-02, #ffffff);
-  color: var(--cds-text-disabled, rgba(22, 22, 22, 0.25));
+  border-color: var(--paap-border);
+  background: var(--paap-panel);
+  color: var(--paap-muted);
   cursor: not-allowed;
 }
 .application-set-deploy-hint {
   margin: -4px var(--paap-space-5) var(--paap-space-3);
-  padding: var(--cds-spacing-03, 8px) var(--cds-spacing-04, 12px);
-  border-left: 3px solid var(--cds-yellow-40, #d2a106);
-  background: var(--cds-yellow-10, #fcf4d6);
-  color: var(--cds-text-primary, #161616);
-  font-size: var(--cds-helper-text-01-font-size, 12px);
-  line-height: var(--cds-helper-text-01-line-height, 1.33333);
+  padding: 8px 12px;
+  border-left: 3px solid var(--paap-warning);
+  background: var(--paap-warning-soft);
+  color: var(--paap-text);
+  font-size: var(--paap-fs-label);
+  line-height: 1.33333;
 }
 .component-map-title {
   color: var(--paap-text);
@@ -9183,7 +9925,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 }
 .component-map-desc {
   color: var(--paap-muted);
-  font-size: 12px;
+  font-size: var(--paap-fs-label);
   line-height: 1.5;
   margin-top: 3px;
 }
@@ -9198,22 +9940,23 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   border-radius: var(--paap-radius-sm);
   background:
     radial-gradient(circle at 1px 1px, rgba(141, 141, 141, 0.34) 1px, transparent 0),
-    var(--paap-white);
+    var(--paap-panel);
   background-size: 18px 18px;
 }
 .topology-controls {
   position: absolute;
   top: 12px;
   right: 12px;
-  z-index: 100;
+  z-index: var(--paap-z-sticky);
   display: flex;
-  gap: 4px;
-  align-items: center;
-  padding: 6px;
-  background: var(--cds-layer-01, #ffffff);
-  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
-  border-radius: 0;
-  box-shadow: none;
+  gap: 0;
+  align-items: stretch;
+  padding: 0;
+  overflow: hidden;
+  background: var(--paap-panel);
+  border: 1px solid var(--paap-border);
+  border-radius: var(--paap-radius-sm, 6px);
+  box-shadow: var(--paap-shadow-md);
 }
 .topology-control-btn {
   display: flex;
@@ -9222,27 +9965,28 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   width: 32px;
   height: 32px;
   padding: 0;
-  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  border: 0;
+  border-right: 1px solid var(--paap-border);
   border-radius: 0;
-  background: var(--cds-layer-01, #ffffff);
-  color: var(--cds-text-primary, #161616);
+  background: var(--paap-panel);
+  color: var(--paap-text);
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background 0.15s, color 0.15s;
   font-family: inherit;
 }
 .topology-control-btn:hover {
-  background: var(--cds-background-hover, rgba(141, 141, 141, 0.12));
-  border-color: var(--cds-border-interactive, #0f62fe);
-  color: var(--cds-blue-60, #0f62fe);
+  background: var(--paap-accent-fill);
+  color: var(--paap-accent);
 }
 .topology-zoom-label {
-  margin-left: 4px;
-  padding: 0 8px;
-  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 10px;
+  font-size: var(--paap-fs-label);
   font-weight: 600;
   color: var(--paap-muted);
-  border-left: 1px solid var(--paap-border);
-  min-width: 40px;
+  min-width: 48px;
   text-align: center;
 }
 .component-topology-canvas--main {
@@ -9292,10 +10036,11 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   align-items: center;
   min-height: 24px;
   padding: 0 8px;
-  border: 1px solid var(--cds-border-subtle-01, var(--paap-border));
-  background: var(--cds-layer-01, var(--paap-panel));
-  color: var(--cds-text-secondary, var(--paap-muted));
-  font-size: 11px;
+  border: 1px solid var(--paap-border);
+  border-radius: var(--paap-radius-xs, 4px);
+  background: var(--paap-panel);
+  color: var(--paap-muted);
+  font-size: var(--paap-fs-small);
   font-weight: 600;
 }
 .component-topology-zone {
@@ -9303,8 +10048,9 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   z-index: 1;
   display: block;
   overflow: visible;
-  border: 1px solid var(--cds-border-subtle-01, var(--paap-border));
-  background: rgba(var(--cds-white-rgb, 255, 255, 255), 0.72);
+  border: 1px solid var(--paap-border);
+  border-radius: var(--paap-radius-sm, 6px);
+  background: rgba(255, 255, 255, 0.72);
   cursor: grab;
   pointer-events: auto;
   touch-action: none;
@@ -9313,14 +10059,14 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   cursor: grabbing;
 }
 .component-topology-zone--collapsed {
-  background: rgba(var(--cds-white-rgb, 255, 255, 255), 0.94);
+  background: rgba(255, 255, 255, 0.94);
 }
 .component-topology-zone--shared {
-  border-color: var(--cds-blue-20, #d0e2ff);
+  border-color: var(--paap-accent-soft);
 }
 .component-topology-zone--external {
-  border-color: var(--cds-gray-30, var(--paap-text-04));
-  background: rgba(var(--cds-gray-10-rgb, 244, 244, 244), 0.72);
+  border-color: var(--paap-text-04);
+  background: rgba(244, 244, 244, 0.72);
 }
 .component-topology-zone-toggle {
   position: relative;
@@ -9332,26 +10078,26 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   gap: 8px;
   min-height: 28px;
   padding: 0 8px;
-  border: 1px solid var(--cds-border-subtle-01, var(--paap-border));
-  border-radius: 0;
-  background: var(--cds-layer-01, var(--paap-panel));
-  color: var(--cds-text-secondary, var(--paap-muted));
+  border: 1px solid var(--paap-border);
+  border-radius: var(--paap-radius-xs, 4px);
+  background: var(--paap-panel);
+  color: var(--paap-muted);
   font-family: inherit;
-  font-size: 11px;
+  font-size: var(--paap-fs-small);
   line-height: 1.2;
   cursor: pointer;
   pointer-events: auto;
 }
 .component-topology-zone-toggle:hover {
-  border-color: var(--cds-border-interactive, var(--paap-accent));
-  color: var(--cds-link-primary, var(--paap-accent));
+  border-color: var(--paap-accent);
+  color: var(--paap-accent);
 }
 .component-topology-zone-toggle:focus-visible {
-  outline: 2px solid var(--cds-focus, var(--paap-accent));
+  outline: 2px solid var(--paap-accent);
   outline-offset: 1px;
 }
 .component-topology-zone-toggle span {
-  color: var(--cds-text-primary, var(--paap-text));
+  color: var(--paap-text);
   font-weight: 700;
 }
 .component-topology-zone-resize-handle {
@@ -9366,7 +10112,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   touch-action: none;
 }
 .component-topology-zone-resize-handle:focus-visible {
-  outline: 2px solid var(--cds-focus, var(--paap-accent));
+  outline: 2px solid var(--paap-accent);
   outline-offset: 1px;
 }
 .component-topology-zone-resize-handle--top,
@@ -9423,9 +10169,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   width: 360px;
   padding: 24px;
   border: 1px dashed var(--paap-border-strong);
-  background: rgba(255, 255, 255, 0.88);
-  color: var(--paap-muted);
-  pointer-events: none;
+  background: var(--paap-overlay-white);
 }
 .component-canvas-empty-hint strong {
   color: var(--paap-text);
@@ -9445,7 +10189,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   background: var(--paap-panel);
   color: var(--paap-accent);
   font-family: inherit;
-  font-size: 12px;
+  font-size: var(--paap-fs-label);
   font-weight: 600;
   cursor: pointer;
 }
@@ -9465,7 +10209,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 }
 .component-lane-label {
   color: var(--paap-muted);
-  font-size: 11px;
+  font-size: var(--paap-fs-small);
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -9517,7 +10261,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   cursor: pointer;
 }
 .component-canvas-link--selected {
-  stroke: var(--cds-blue-70, #0043ce);
+  stroke: var(--paap-accent);
   stroke-width: 3;
   stroke-dasharray: none;
   animation: none;
@@ -9533,16 +10277,16 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   position: absolute;
   z-index: 4;
   display: grid;
-  grid-template-columns: 36px auto minmax(0, 1fr);
+  grid-template-columns: 36px minmax(0, 1fr);
   grid-template-rows: minmax(0, auto) minmax(0, auto);
-  column-gap: 10px;
+  column-gap: 12px;
   row-gap: 2px;
   align-items: center;
   padding: 12px 14px;
-  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  border: 1px solid var(--paap-border);
   border-radius: var(--paap-radius, 8px);
-  background: var(--cds-layer-01, #ffffff);
-  box-shadow: var(--paap-shadow-md, 0 1px 3px rgba(0,0,0,0.05));
+  background: var(--paap-panel);
+  box-shadow: var(--paap-shadow-sm);
   box-sizing: border-box;
   text-align: left;
   cursor: grab;
@@ -9554,44 +10298,44 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 }
 .component-topology-node:hover,
 .component-topology-node.active {
-  border-color: var(--cds-border-interactive, #0f62fe);
-  background: var(--cds-layer-01, #ffffff);
-  box-shadow: 0 1px 4px 1px rgba(0,0,0,0.08), 0 0 0 2px rgba(15,98,244,0.15);
+  border-color: var(--paap-accent);
+  background: var(--paap-panel);
+  box-shadow: var(--paap-shadow-md), 0 0 0 2px var(--paap-accent-ring);
   z-index: 10;
 }
-.component-topology-node strong { color: var(--paap-text); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.component-topology-node strong { grid-column: 2; color: var(--paap-text); font-size: var(--paap-fs-compact); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .component-topology-node strong,
 .component-topology-node small,
 .component-topology-node .node-rename-input {
   min-width: 0;
 }
 .node-rename-input {
-  grid-column: 3;
+  grid-column: 2;
   color: var(--paap-text);
-  font-size: 13px;
+  font-size: var(--paap-fs-compact);
   font-weight: 600;
   background: var(--paap-card-bg, #fff);
-  border: 1px solid var(--cds-interactive-01, #0f62fe);
-  border-radius: 3px;
+  border: 1px solid var(--paap-accent);
+  border-radius: var(--paap-radius-xs, 4px);
   padding: 1px 4px;
   outline: none;
   width: 100%;
   box-sizing: border-box;
 }
-.component-topology-node small { grid-column: 3; color: var(--paap-muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.component-topology-node small { grid-column: 2; color: var(--paap-muted); font-size: var(--paap-fs-small); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .node-source-badge {
   position: absolute;
-  right: 8px;
-  bottom: 6px;
+  right: 14px;
+  bottom: 10px;
   display: inline-flex;
   align-items: center;
   max-width: 82px;
   min-height: 18px;
   padding: 0 6px;
-  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  border: 1px solid var(--paap-border);
   border-radius: var(--paap-radius-xs, 4px);
-  background: var(--cds-layer-01, #ffffff);
-  color: var(--cds-text-secondary, #525252);
+  background: var(--paap-panel);
+  color: var(--paap-muted);
   font-size: 10px;
   font-weight: 600;
   line-height: 1;
@@ -9600,25 +10344,25 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   white-space: nowrap;
 }
 .node-source-badge--managed {
-  border-color: var(--cds-blue-20, #d0e2ff);
-  background: var(--cds-blue-10, #edf5ff);
-  color: var(--cds-blue-70, #0043ce);
+  border-color: var(--paap-accent-soft);
+  background: var(--paap-accent-soft);
+  color: var(--paap-accent);
 }
 .node-source-badge--shared {
-  border-color: var(--cds-green-20, #a7f0ba);
-  background: var(--cds-green-10, #defbe6);
-  color: var(--cds-green-70, #0e6027);
+  border-color: var(--paap-success-border);
+  background: var(--paap-success-soft);
+  color: var(--paap-success);
 }
 .node-source-badge--external {
-  border-color: var(--cds-purple-20, #e8daff);
-  background: var(--cds-purple-10, var(--paap-purple-bg));
-  color: var(--cds-purple-70, #6929c4);
+  border-color: var(--paap-purple-bg);
+  background: var(--paap-purple-bg);
+  color: var(--paap-purple-text);
 }
 .node-source-badge--component,
 .node-source-badge--deferred {
-  border-color: var(--cds-gray-20, #e0e0e0);
-  background: var(--cds-gray-10, #f4f4f4);
-  color: var(--cds-gray-70, #525252);
+  border-color: var(--paap-border);
+  background: var(--paap-panel-subtle);
+  color: var(--paap-muted);
 }
 .node-delete-action {
   position: absolute;
@@ -9631,10 +10375,10 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   height: 22px;
   border: 1px solid transparent;
   background: transparent;
-  color: var(--cds-gray-60, #6f6f6f);
+  color: var(--paap-muted);
   cursor: pointer;
   opacity: 0;
-  transition: opacity var(--cds-motion-duration-fast, 110ms), background var(--cds-motion-duration-fast, 110ms), color var(--cds-motion-duration-fast, 110ms);
+  transition: opacity 110ms, background 110ms, color 110ms;
 }
 .component-topology-node:hover .node-delete-action,
 .component-topology-node:focus .node-delete-action,
@@ -9643,30 +10387,30 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 }
 .node-delete-action:hover,
 .node-delete-action:focus {
-  border-color: var(--cds-red-50, #fa4d56);
-  background: var(--cds-red-10, #fff1f1);
-  color: var(--cds-red-60, #da1e28);
+  border-color: var(--paap-danger);
+  background: var(--paap-danger-soft);
+  color: var(--paap-danger);
   outline: none;
 }
 .component-topology-node--service {
-  background: var(--cds-layer-01, #ffffff);
-  border-color: var(--cds-border-subtle-01, #e0e0e0);
+  background: var(--paap-panel);
+  border-color: var(--paap-border);
 }
 .component-topology-node--service:hover,
 .component-topology-node--service.active {
-  border-color: var(--cds-border-interactive, #0f62fe);
-  background: var(--cds-layer-01, #ffffff);
+  border-color: var(--paap-accent);
+  background: var(--paap-panel);
 }
 .component-topology-node.selected {
-  border-color: var(--cds-border-interactive, #0f62fe);
+  border-color: var(--paap-accent);
   box-shadow:
-    inset 0 0 0 1px var(--cds-border-interactive, #0f62fe),
-    0 0 0 2px rgba(15, 98, 244, 0.15),
-    var(--paap-shadow-md, 0 1px 3px rgba(0,0,0,0.05));
+    inset 0 0 0 1px var(--paap-accent),
+     0 0 0 2px var(--paap-accent-ring),
+    var(--paap-shadow-sm);
 }
 .topology-marquee {
-  fill: rgba(15, 98, 254, 0.08);
-  stroke: var(--cds-blue-60, #0f62fe);
+  fill: var(--paap-accent-fill);
+  stroke: var(--paap-accent);
   stroke-width: 1.5;
   stroke-dasharray: 5 3;
   pointer-events: none;
@@ -9691,7 +10435,16 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 .node-type-icon--middleware,
 .node-type-icon--rabbitmq,
 .node-type-icon--kafka { background: var(--paap-warning-soft); color: var(--paap-amber-dark); }
-.node-status { width: 7px; height: 7px; border-radius: 50%; background: var(--paap-border-strong); }
+.node-status {
+  position: absolute;
+  top: 9px;
+  left: 42px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--paap-border-strong);
+  box-shadow: 0 0 0 2px var(--paap-panel);
+}
 .node-status.running, .node-status.linked { background: var(--paap-success); }
 .node-status.error, .node-status.failed { background: var(--paap-danger); }
 .node-status.creating, .node-status.deploying, .node-status.building, .node-status.installing, .node-status.syncing { background: var(--paap-accent); }
@@ -9713,7 +10466,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   background: var(--paap-panel);
   color: var(--paap-muted);
   font: inherit;
-  font-size: 12px;
+  font-size: var(--paap-fs-label);
   cursor: pointer;
 }
 .component-edge:hover,
@@ -9722,7 +10475,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   background: var(--paap-accent-soft);
   color: var(--paap-accent);
 }
-.component-edge-empty { margin-top: var(--paap-space-4); color: var(--paap-muted-2); font-size: 12px; }
+.component-edge-empty { margin-top: var(--paap-space-4); color: var(--paap-muted); font-size: var(--paap-fs-label); }
 .component-detail-panel {
   display: grid;
   gap: var(--paap-space-4);
@@ -9738,14 +10491,14 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 }
 .component-context-menu {
   position: fixed;
-  z-index: 9500;
+  z-index: var(--paap-z-menu);
   display: grid;
   width: 220px;
   padding: 6px;
-  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
-  border-radius: 0;
-  background: var(--cds-layer-01, #ffffff);
-  box-shadow: none;
+  border: 1px solid var(--paap-border);
+  border-radius: var(--paap-radius-sm);
+  background: var(--paap-panel);
+  box-shadow: var(--paap-shadow-md);
 }
 .component-context-menu button {
   display: grid;
@@ -9760,9 +10513,27 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   text-align: left;
   cursor: pointer;
 }
+.component-context-menu button:has(.menu-icon) {
+  grid-template-columns: 16px minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  column-gap: 10px;
+  row-gap: 2px;
+  align-items: center;
+}
 .component-context-menu button:hover { background: var(--paap-accent-soft); }
-.component-context-menu span { font-size: 13px; font-weight: 650; }
-.component-context-menu small { color: var(--paap-muted); font-size: 11px; }
+.menu-icon {
+  grid-row: 1 / span 2;
+  grid-column: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--paap-muted);
+}
+.component-context-menu button:hover .menu-icon { color: var(--paap-text); }
+.component-context-menu button:has(.menu-icon) span { grid-column: 2; }
+.component-context-menu button:has(.menu-icon) small { grid-column: 2; }
+.component-context-menu span { font-size: var(--paap-fs-compact); font-weight: 600; }
+.component-context-menu small { color: var(--paap-muted); font-size: var(--paap-fs-small); }
 .component-context-menu button { position: relative; }
 .submenu-arrow {
   position: absolute;
@@ -9787,9 +10558,9 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   position: absolute;
   width: 12px;
   height: 12px;
-  border: 2px solid var(--cds-blue-60, #0f62fe);
+  border: 2px solid var(--paap-accent);
   border-radius: 50%;
-  background: var(--cds-layer-01, #ffffff);
+  background: var(--paap-panel);
   cursor: crosshair;
   opacity: 0;
   transition: opacity 0.2s;
@@ -9818,7 +10589,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   opacity: 1;
 }
 .connection-drag-line {
-  color: var(--cds-blue-60, #0f62fe);
+  color: var(--paap-accent);
   pointer-events: none;
 }
 .context-menu-divider {
@@ -9837,7 +10608,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 .config-drawer-shell {
   position: fixed;
   inset: 0;
-  z-index: 9400;
+  z-index: var(--paap-z-drawer);
   display: flex;
   align-items: stretch;
   justify-content: flex-end;
@@ -9851,10 +10622,10 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   width: clamp(760px, 46vw, 1184px);
   height: 100vh;
   border: 0;
-  border-left: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  border-left: 1px solid var(--paap-border);
   border-radius: 0;
-  background: var(--cds-layer-01, #ffffff);
-  box-shadow: none;
+  background: var(--paap-panel);
+  box-shadow: -4px 0 8px 0 var(--paap-shadow);
   overflow: hidden;
   pointer-events: auto;
 }
@@ -9864,7 +10635,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   justify-content: space-between;
   gap: var(--paap-space-4);
   padding: 24px 38px 14px;
-  background: var(--cds-layer-01, #ffffff);
+  background: var(--paap-panel);
 }
 .config-drawer-footer {
   display: flex;
@@ -9872,8 +10643,8 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   justify-content: flex-end;
   gap: var(--paap-space-2);
   padding: 14px 38px;
-  border-top: 1px solid var(--cds-border-subtle-01, #e0e0e0);
-  background: var(--cds-layer-01, #ffffff);
+  border-top: 1px solid var(--paap-border);
+  background: var(--paap-panel);
 }
 .config-drawer-title-block {
   display: grid;
@@ -9889,22 +10660,22 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   min-width: 34px;
   width: 34px;
   height: 34px;
-  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
-  border-radius: var(--cds-border-radius-md, 2px);
-  background: var(--cds-layer-01, #ffffff);
-  color: var(--cds-blue-60, #0f62fe);
-  font-size: 12px;
+  border: 1px solid var(--paap-border);
+  border-radius: var(--paap-radius-sm);
+  background: var(--paap-panel);
+  color: var(--paap-accent);
+  font-size: var(--paap-fs-label);
   font-weight: 750;
 }
 .config-drawer-avatar--service {
-  background: var(--cds-layer-01, #ffffff);
-  color: var(--cds-text-secondary, #525252);
+  background: var(--paap-panel);
+  color: var(--paap-muted);
 }
 .config-drawer-header h3 {
   margin: 2px 0;
   color: var(--paap-text);
   font-size: 24px;
-  font-weight: 720;
+  font-weight: 700;
   line-height: 1.15;
   letter-spacing: 0;
 }
@@ -9915,7 +10686,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 }
 .config-drawer-header small {
   color: var(--paap-muted);
-  font-size: 12px;
+  font-size: var(--paap-fs-label);
 }
 .config-drawer-tabs {
   display: flex;
@@ -9923,8 +10694,8 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   gap: 0;
   min-height: 48px;
   padding: 0 24px;
-  border-bottom: 1px solid var(--cds-border-subtle-01, #e0e0e0);
-  background: var(--cds-layer-01, #ffffff);
+  border-bottom: 1px solid var(--paap-border);
+  background: var(--paap-panel);
   overflow-x: auto;
   scrollbar-width: thin;
 }
@@ -9935,9 +10706,9 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   padding: 0 16px;
   border: 0;
   background: transparent;
-  color: var(--cds-text-secondary, #525252);
-  font-family: var(--cds-font-family-sans, 'IBM Plex Sans', sans-serif);
-  font-size: 14px;
+  color: var(--paap-muted);
+  font-family: 'IBM Plex Sans', sans-serif;
+  font-size: var(--paap-fs-body);
   font-weight: 400;
   letter-spacing: 0.16px;
   line-height: 48px;
@@ -9946,10 +10717,10 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   transition: color 0.15s ease;
 }
 .config-drawer-tabs button:hover {
-  color: var(--cds-text-primary, #161616);
+  color: var(--paap-text);
 }
 .config-drawer-tabs button.active {
-  color: var(--cds-text-primary, #161616);
+  color: var(--paap-text);
   font-weight: 600;
 }
 .config-drawer-tabs button.active::after {
@@ -9959,7 +10730,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   bottom: -1px;
   left: 0;
   height: 2px;
-  background: var(--cds-blue-60, #0f62fe);
+  background: var(--paap-accent);
 }
 .config-drawer-body {
   display: grid;
@@ -9968,16 +10739,16 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   min-height: 0;
   overflow-y: auto;
   padding: 26px 38px 36px;
-  background: var(--cds-layer-01, #ffffff);
+  background: var(--paap-panel);
 }
 .config-section {
   display: grid;
   gap: var(--paap-space-3);
   padding: 20px 24px 26px;
   border: 0;
-  border-bottom: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  border-bottom: 1px solid var(--paap-border);
   border-radius: 0;
-  background: var(--cds-layer-01, #ffffff);
+  background: var(--paap-panel);
 }
 .config-section + .config-section {
   padding-top: 20px;
@@ -9998,27 +10769,27 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 }
 .config-section-title span,
 .config-stack-field span {
-  color: var(--paap-muted-2);
-  font-size: 11px;
+  color: var(--paap-muted);
+  font-size: var(--paap-fs-small);
   font-weight: 700;
   text-transform: uppercase;
 }
 .config-form-grid label span {
-  color: var(--paap-muted-2);
-  font-size: 12px;
-  font-weight: 650;
+  color: var(--paap-muted);
+  font-size: var(--paap-fs-label);
+  font-weight: 600;
 }
 .config-section-title small {
   min-width: 0;
-  color: var(--paap-muted-2);
-  font-size: 12px;
+  color: var(--paap-muted);
+  font-size: var(--paap-fs-label);
   font-weight: 400;
   text-align: right;
 }
 .config-section-title a {
   color: var(--paap-accent);
-  font-size: 12px;
-  font-weight: 650;
+  font-size: var(--paap-fs-label);
+  font-weight: 600;
   text-decoration: none;
 }
 .config-section--workspace {
@@ -10034,7 +10805,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 .drawer-workspace-head p {
   margin: 6px 0 0;
   color: var(--paap-muted);
-  font-size: 13px;
+  font-size: var(--paap-fs-compact);
   line-height: 1.5;
 }
 .drawer-workspace-actions {
@@ -10073,7 +10844,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   background: var(--paap-panel-subtle);
   color: var(--paap-text);
   font-family: var(--paap-mono);
-  font-size: 12px;
+  font-size: var(--paap-fs-label);
   overflow-wrap: anywhere;
 }
 .service-access-stack {
@@ -10085,9 +10856,9 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   display: grid;
   gap: var(--paap-space-4);
   padding: 16px;
-  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
-  border-radius: 0;
-  background: var(--cds-layer-01, #ffffff);
+  border: 1px solid var(--paap-border);
+  border-radius: var(--paap-radius);
+  background: var(--paap-panel);
 }
 .config-deployment-main {
   display: grid;
@@ -10099,13 +10870,13 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   display: block;
   color: var(--paap-text);
   font-size: 15px;
-  font-weight: 720;
+  font-weight: 700;
 }
 .config-deployment-main small {
   display: block;
   margin-top: 2px;
   color: var(--paap-muted);
-  font-size: 12px;
+  font-size: var(--paap-fs-label);
   overflow-wrap: anywhere;
 }
 .config-deployment-meta {
@@ -10119,20 +10890,20 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   gap: 4px;
   min-width: 0;
   padding: 10px 12px;
-  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  border: 1px solid var(--paap-border);
   border-radius: 0;
-  background: var(--cds-layer-01, #ffffff);
+  background: var(--paap-panel);
 }
 .config-deployment-meta span,
 .config-variable-row small {
   color: var(--paap-muted);
-  font-size: 11px;
+  font-size: var(--paap-fs-small);
 }
 .config-deployment-meta strong {
   min-width: 0;
   color: var(--paap-text);
-  font-size: 13px;
-  font-weight: 650;
+  font-size: var(--paap-fs-compact);
+  font-weight: 600;
   overflow-wrap: anywhere;
 }
 .config-deployment-actions {
@@ -10152,25 +10923,25 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   gap: 4px;
   min-width: 0;
   padding: 10px 12px;
-  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  border: 1px solid var(--paap-border);
   border-radius: 0;
-  background: var(--cds-layer-01, #ffffff);
+  background: var(--paap-panel);
 }
 .source-semantics-row > span {
-  color: var(--cds-text-secondary, #525252);
-  font-size: 11px;
+  color: var(--paap-muted);
+  font-size: var(--paap-fs-small);
   font-weight: 600;
 }
 .source-semantics-row > strong {
   min-width: 0;
-  color: var(--cds-text-primary, #161616);
-  font-size: 13px;
-  font-weight: 650;
+  color: var(--paap-text);
+  font-size: var(--paap-fs-compact);
+  font-weight: 600;
   overflow-wrap: anywhere;
 }
 .source-semantics-row > small {
-  color: var(--cds-text-secondary, #525252);
-  font-size: 12px;
+  color: var(--paap-muted);
+  font-size: var(--paap-fs-label);
   line-height: 1.4;
 }
 .config-variable-list {
@@ -10184,13 +10955,13 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 .config-variable-name {
   color: var(--paap-text);
   font-family: var(--paap-mono);
-  font-size: 12px;
-  font-weight: 650;
+  font-size: var(--paap-fs-label);
+  font-weight: 600;
 }
 .config-variable-row code {
   min-width: 0;
   color: var(--paap-text);
-  font-size: 12px;
+  font-size: var(--paap-fs-label);
   overflow-wrap: anywhere;
 }
 .config-variable-row code.masked {
@@ -10210,19 +10981,19 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   justify-content: center;
   width: 32px;
   height: 32px;
-  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  border: 1px solid var(--paap-border);
   border-radius: 0;
-  background: var(--cds-layer-01, #ffffff);
-  color: var(--cds-icon-secondary, #525252);
+  background: var(--paap-panel);
+  color: var(--paap-muted);
   cursor: pointer;
   transition: border-color 110ms, color 110ms, box-shadow 110ms;
 }
 .service-secret-reveal-btn:hover:not(:disabled) {
-  border-color: var(--cds-border-interactive, #0f62fe);
-  color: var(--cds-blue-60, #0f62fe);
+  border-color: var(--paap-accent);
+  color: var(--paap-accent);
 }
 .service-secret-reveal-btn:focus-visible {
-  outline: 2px solid var(--cds-focus, #0f62fe);
+  outline: 2px solid var(--paap-accent);
   outline-offset: 1px;
 }
 .service-secret-reveal-btn:disabled {
@@ -10231,11 +11002,11 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 }
 .config-inline-note {
   padding: 10px 12px;
-  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  border: 1px solid var(--paap-border);
   border-radius: 0;
-  background: var(--cds-field-01, #f4f4f4);
-  color: var(--cds-text-secondary, #525252);
-  font-size: 13px;
+  background: var(--paap-panel-subtle);
+  color: var(--paap-muted);
+  font-size: var(--paap-fs-compact);
   line-height: 1.5;
 }
 .service-access-row {
@@ -10245,20 +11016,20 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   gap: var(--paap-space-2);
   min-width: 0;
   padding: 9px 10px;
-  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
-  background: var(--cds-layer-01, #ffffff);
+  border: 1px solid var(--paap-border);
+  background: var(--paap-panel);
 }
 .service-access-row > span {
   color: var(--paap-muted);
-  font-size: 12px;
-  font-weight: 650;
+  font-size: var(--paap-fs-label);
+  font-weight: 600;
 }
 .service-access-row code,
 .service-access-row strong {
   min-width: 0;
   color: var(--paap-text);
   font-family: var(--paap-mono);
-  font-size: 12px;
+  font-size: var(--paap-fs-label);
   font-weight: 600;
   overflow-wrap: anywhere;
 }
@@ -10286,7 +11057,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 .cds-image-field {
   display: flex;
   flex-direction: column;
-  gap: var(--cds-spacing-02, 4px);
+  gap: 4px;
   min-width: 0;
 }
 .cds-image-field .cds-text-input {
@@ -10294,29 +11065,29 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   min-width: 0;
 }
 .cds-label {
-  font-size: var(--cds-label-01-font-size, 12px);
-  font-weight: var(--cds-label-01-font-weight, 400);
-  line-height: var(--cds-label-01-line-height, 1.33333);
-  letter-spacing: var(--cds-label-01-letter-spacing, 0.32px);
-  color: var(--cds-text-secondary, #525252);
+  font-size: var(--paap-fs-label);
+  font-weight: 400;
+  line-height: 1.33333;
+  letter-spacing: 0.32px;
+  color: var(--paap-muted);
 }
 .cds-text-input {
   height: 32px;
-  padding: 0 var(--cds-spacing-03, 8px);
-  background: var(--cds-field-01, #f4f4f4);
-  border: 1px solid var(--cds-border-strong-01, #8d8d8d);
+  padding: 0 8px;
+  background: var(--paap-panel-subtle);
+  border: 1px solid var(--paap-border-strong);
   border-radius: 0;
-  font-size: var(--cds-body-01-font-size, 14px);
+  font-size: var(--paap-fs-body);
   line-height: 1.4;
-  color: var(--cds-text-primary, #161616);
+  color: var(--paap-text);
   outline: none;
   min-width: 0;
   text-overflow: ellipsis;
   transition: border-color 110ms;
 }
 .cds-text-input:focus {
-  border-color: var(--cds-border-interactive, #0f62fe);
-  box-shadow: inset 0 0 0 1px var(--cds-border-interactive, #0f62fe);
+  border-color: var(--paap-accent);
+  box-shadow: inset 0 0 0 1px var(--paap-accent);
 }
 .cds-text-input[readonly] {
   background: var(--paap-panel-subtle);
@@ -10324,32 +11095,32 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   cursor: default;
 }
 .cds-text-input::placeholder {
-  color: var(--cds-text-placeholder, rgba(22,22,22,0.4));
+  color: var(--paap-muted);
 }
 .cds-image-preview {
   display: grid;
   grid-template-columns: auto auto minmax(0, 1fr);
   align-items: center;
-  gap: var(--cds-spacing-02, 4px);
-  margin-top: var(--cds-spacing-02, 4px);
-  padding: var(--cds-spacing-02, 4px) var(--cds-spacing-03, 8px);
-  background: var(--cds-layer-01, #fff);
-  border-left: 2px solid var(--cds-blue-60, #0f62fe);
+  gap: 4px;
+  margin-top: 4px;
+  padding: 4px 8px;
+  background: var(--paap-panel);
+  border-left: 2px solid var(--paap-accent);
 }
 .cds-image-preview__icon {
   flex-shrink: 0;
-  color: var(--cds-blue-60, #0f62fe);
+  color: var(--paap-accent);
 }
 .cds-image-preview__label {
   color: var(--paap-muted);
-  font-size: 12px;
-  font-weight: 650;
+  font-size: var(--paap-fs-label);
+  font-weight: 600;
   white-space: nowrap;
 }
 .cds-image-preview__text {
-  font-family: var(--cds-font-family-mono, monospace);
-  font-size: 12px;
-  color: var(--cds-text-primary, #161616);
+  font-family: monospace;
+  font-size: var(--paap-fs-label);
+  color: var(--paap-text);
   min-width: 0;
   overflow-wrap: anywhere;
   white-space: normal;
@@ -10362,25 +11133,25 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   gap: var(--paap-space-3);
 }
 .service-config-form-grid {
-  gap: var(--cds-spacing-05, 16px) var(--cds-spacing-06, 24px);
+  gap: 16px 24px;
 }
 .service-config-field {
   min-width: 0;
   padding: 0;
   border: 0;
   border-radius: 0;
-  background: var(--cds-layer-01, #ffffff);
+  background: var(--paap-panel);
 }
 .service-config-field .bx--text-input,
 .service-config-field .bx--select-input {
   min-height: 40px;
   padding-top: 10px;
   padding-bottom: 10px;
-  background: var(--cds-field-01, #f4f4f4);
-  font-size: 13px;
+  background: var(--paap-panel-subtle);
+  font-size: var(--paap-fs-compact);
 }
 .service-config-field:focus-within {
-  background: var(--cds-layer-01, #ffffff);
+  background: var(--paap-panel);
 }
 .config-kv-grid div,
 .config-ref-grid div {
@@ -10390,14 +11161,14 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 }
 .config-kv-grid span,
 .config-ref-grid span {
-  color: var(--paap-muted-2);
-  font-size: 11px;
+  color: var(--paap-muted);
+  font-size: var(--paap-fs-small);
 }
 .config-kv-grid strong,
 .config-ref-grid strong {
   min-width: 0;
   color: var(--paap-text);
-  font-size: 12px;
+  font-size: var(--paap-fs-label);
   font-weight: 550;
   overflow-wrap: anywhere;
 }
@@ -10415,12 +11186,12 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   gap: var(--paap-space-3);
   min-width: 0;
   padding: 12px;
-  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
-  border-radius: 0;
-  background: var(--cds-layer-01, #ffffff);
+  border: 1px solid var(--paap-border);
+  border-radius: var(--paap-radius);
+  background: var(--paap-panel);
 }
 .service-volume-card.disabled {
-  background: var(--cds-field-01, #f4f4f4);
+  background: var(--paap-panel-subtle);
 }
 .service-volume-card__head {
   display: grid;
@@ -10442,20 +11213,20 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 }
 .service-volume-card strong {
   color: var(--paap-text);
-  font-size: 13px;
-  font-weight: 650;
+  font-size: var(--paap-fs-compact);
+  font-weight: 600;
 }
 .service-volume-card small,
 .service-volume-size span {
-  color: var(--paap-muted-2);
-  font-size: 12px;
+  color: var(--paap-muted);
+  font-size: var(--paap-fs-label);
 }
 .service-volume-toggle {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   color: var(--paap-text);
-  font-size: 12px;
+  font-size: var(--paap-fs-label);
   white-space: nowrap;
   cursor: pointer;
 }
@@ -10470,7 +11241,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   gap: var(--paap-space-2);
 }
 .service-volume-size .bx--text-input:disabled {
-  color: var(--paap-muted-2);
+  color: var(--paap-muted);
   background: var(--paap-panel-subtle);
 }
 .service-volume-presets {
@@ -10482,19 +11253,19 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 .service-volume-preset {
   min-height: 28px;
   padding: 0 10px;
-  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  border: 1px solid var(--paap-border);
   border-radius: 0;
-  background: var(--cds-layer-01, #ffffff);
-  color: var(--cds-text-secondary, #525252);
-  font-size: 12px;
-  font-weight: 650;
+  background: var(--paap-panel);
+  color: var(--paap-muted);
+  font-size: var(--paap-fs-label);
+  font-weight: 600;
   cursor: pointer;
 }
 .service-volume-preset:hover:not(:disabled),
 .service-volume-preset.active {
-  border-color: var(--cds-border-interactive, #0f62fe);
-  background: var(--cds-layer-01, #ffffff);
-  color: var(--cds-blue-60, #0f62fe);
+  border-color: var(--paap-accent);
+  background: var(--paap-panel);
+  color: var(--paap-accent);
 }
 .service-volume-preset:disabled {
   cursor: not-allowed;
@@ -10518,8 +11289,8 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   border-radius: var(--paap-radius-full);
   background: var(--paap-panel-subtle);
   color: var(--paap-muted);
-  font-size: 11px;
-  font-weight: 650;
+  font-size: var(--paap-fs-small);
+  font-weight: 600;
 }
 .service-topology-node-row {
   display: grid;
@@ -10540,11 +11311,11 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 12px;
+  font-size: var(--paap-fs-label);
 }
 .service-topology-node-row small {
   grid-column: 1 / -1;
-  color: var(--paap-muted-2);
+  color: var(--paap-muted);
 }
 .config-form-grid label,
 .config-stack-field {
@@ -10606,8 +11377,8 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 .component-preset-card strong,
 .component-discovered-row strong {
   min-width: 0;
-  font-size: 12px;
-  font-weight: 650;
+  font-size: var(--paap-fs-label);
+  font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -10615,8 +11386,8 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 .component-preset-card small,
 .component-discovered-row small {
   min-width: 0;
-  color: var(--paap-muted-2);
-  font-size: 11px;
+  color: var(--paap-muted);
+  font-size: var(--paap-fs-small);
   line-height: 1.35;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -10627,7 +11398,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   display: block;
   min-width: 0;
   color: var(--paap-muted);
-  font-size: 11px;
+  font-size: var(--paap-fs-small);
   line-height: 1.35;
   overflow-wrap: anywhere;
   white-space: normal;
@@ -10649,7 +11420,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 .component-template-head > span {
   min-width: 0;
   color: var(--paap-text);
-  font-size: 12px;
+  font-size: var(--paap-fs-label);
   font-weight: 700;
 }
 .component-template-actions,
@@ -10694,11 +11465,11 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 .component-template-badge {
   justify-self: start;
   margin: 0 10px 10px;
-  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
-  border-radius: var(--cds-border-radius-md, 2px);
+  border: 1px solid var(--paap-border);
+  border-radius: var(--paap-radius-sm);
   padding: 2px 8px;
   color: var(--paap-muted);
-  font-size: 11px;
+  font-size: var(--paap-fs-small);
   line-height: 18px;
 }
 .component-config-flow {
@@ -10716,7 +11487,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   padding: 0;
   border: 0;
   border-radius: 0;
-  background: var(--cds-layer-01, #ffffff);
+  background: var(--paap-panel);
 }
 .component-template-select {
   display: grid;
@@ -10729,14 +11500,14 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 .component-template-field-label,
 .component-connected-list > span {
   color: var(--paap-muted);
-  font-size: 12px;
-  font-weight: 650;
+  font-size: var(--paap-fs-label);
+  font-weight: 600;
 }
 .component-template-helper {
   margin: 0;
   padding-left: calc(28% + 14px);
   color: var(--paap-muted);
-  font-size: 12px;
+  font-size: var(--paap-fs-label);
   line-height: 1.45;
 }
 .component-config-actions,
@@ -10752,9 +11523,9 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   min-width: 0;
   padding: 10px 0;
   border: 0;
-  border-top: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  border-top: 1px solid var(--paap-border);
   border-radius: 0;
-  background: var(--cds-layer-01, #ffffff);
+  background: var(--paap-panel);
 }
 .component-template-advanced-config > summary {
   display: grid;
@@ -10771,13 +11542,13 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 }
 .component-template-advanced-config > summary span {
   color: var(--paap-text);
-  font-size: 12px;
+  font-size: var(--paap-fs-label);
   font-weight: 700;
 }
 .component-template-advanced-config > summary small {
   min-width: 0;
-  color: var(--paap-muted-2);
-  font-size: 11px;
+  color: var(--paap-muted);
+  font-size: var(--paap-fs-small);
   text-align: right;
 }
 .component-template-advanced-config:not([open]) {
@@ -10786,16 +11557,79 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 }
 .component-template-advanced-config[open] > summary {
   padding-bottom: 8px;
-  border-bottom: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  border-bottom: 1px solid var(--paap-border);
+}
+.component-current-config-panel {
+  display: grid;
+  gap: var(--paap-space-2);
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--paap-border);
+  background: var(--paap-panel);
+}
+.component-current-config-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--paap-space-2);
+  min-width: 0;
+}
+.component-current-config-head span {
+  color: var(--paap-text);
+  font-size: var(--paap-fs-label);
+  font-weight: 700;
+}
+.component-current-config-head small {
+  color: var(--paap-muted);
+  font-size: var(--paap-fs-small);
+}
+.component-current-config-list {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+.component-current-config-row {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.9fr) minmax(0, 1.1fr);
+  align-items: center;
+  gap: var(--paap-space-2);
+  min-width: 0;
+  padding: 7px 8px;
+  border: 1px solid var(--paap-panel-subtle);
+  background: var(--paap-surface);
+}
+.component-current-config-row span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.component-current-config-row strong,
+.component-current-config-row small,
+.component-current-config-row code {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--paap-fs-label);
+}
+.component-current-config-row strong {
+  color: var(--paap-text);
+  font-weight: 600;
+}
+.component-current-config-row small {
+  color: var(--paap-muted);
+}
+.component-current-config-row code {
+  color: var(--paap-muted);
 }
 .component-config-warning {
   color: var(--paap-danger);
-  font-size: 12px;
+  font-size: var(--paap-fs-label);
 }
 .component-template-save-note {
   margin: 0;
   color: var(--paap-muted);
-  font-size: 12px;
+  font-size: var(--paap-fs-label);
   line-height: 1.45;
 }
 .component-connected-list {
@@ -10821,12 +11655,12 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 }
 .component-connected-row strong {
   color: var(--paap-text);
-  font-size: 12px;
-  font-weight: 650;
+  font-size: var(--paap-fs-label);
+  font-weight: 600;
 }
 .component-connected-row small {
-  color: var(--paap-muted-2);
-  font-size: 11px;
+  color: var(--paap-muted);
+  font-size: var(--paap-fs-small);
 }
 .component-config-step {
   display: grid;
@@ -10852,18 +11686,18 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   justify-content: center;
   width: 24px;
   height: 24px;
-  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
-  border-radius: var(--cds-border-radius-md, 2px);
-  background: var(--cds-layer-01, #ffffff);
-  color: var(--cds-text-secondary, #525252);
-  font-size: 12px;
+  border: 1px solid var(--paap-border);
+  border-radius: var(--paap-radius-sm);
+  background: var(--paap-panel);
+  color: var(--paap-muted);
+  font-size: var(--paap-fs-label);
   font-weight: 700;
 }
 .component-config-step__head strong {
   min-width: 0;
   overflow: hidden;
   color: var(--paap-text);
-  font-size: 13px;
+  font-size: var(--paap-fs-compact);
   font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -10881,7 +11715,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   gap: var(--paap-space-2);
   min-width: 0;
   padding: 2px 0 10px;
-  border-bottom: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  border-bottom: 1px solid var(--paap-border);
 }
 .component-file-mount-head {
   display: flex;
@@ -10891,8 +11725,8 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   min-width: 0;
 }
 .component-file-mount-head span {
-  color: var(--cds-text-primary, #161616);
-  font-size: 12px;
+  color: var(--paap-text);
+  font-size: var(--paap-fs-label);
   font-weight: 700;
 }
 .component-file-mount-list {
@@ -10920,21 +11754,21 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   white-space: nowrap;
 }
 .component-file-mount-source strong {
-  color: var(--cds-text-primary, #161616);
-  font-size: 12px;
-  font-weight: 650;
+  color: var(--paap-text);
+  font-size: var(--paap-fs-label);
+  font-weight: 600;
 }
 .component-file-mount-source small {
-  color: var(--cds-text-secondary, #525252);
-  font-size: 11px;
+  color: var(--paap-muted);
+  font-size: var(--paap-fs-small);
 }
 .component-file-readonly {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   min-height: 32px;
-  color: var(--cds-text-secondary, #525252);
-  font-size: 12px;
+  color: var(--paap-muted);
+  font-size: var(--paap-fs-label);
   white-space: nowrap;
 }
 .component-file-readonly input {
@@ -10947,7 +11781,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   gap: var(--paap-space-2);
   min-width: 0;
   padding: 2px 0 10px;
-  border-bottom: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  border-bottom: 1px solid var(--paap-border);
 }
 .nginx-route-head {
   display: flex;
@@ -10957,8 +11791,8 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   min-width: 0;
 }
 .nginx-route-head span {
-  color: var(--cds-text-primary, #161616);
-  font-size: 12px;
+  color: var(--paap-text);
+  font-size: var(--paap-fs-label);
   font-weight: 700;
 }
 .component-template-advanced {
@@ -10975,7 +11809,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 .nginx-route-row .bx--text-input,
 .nginx-route-row .bx--select-input {
   min-width: 0;
-  font-size: 12px;
+  font-size: var(--paap-fs-label);
 }
 .nginx-route-apply {
   justify-self: start;
@@ -10987,8 +11821,8 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 }
 .config-section-subtitle {
   color: var(--paap-muted);
-  font-size: 11px;
-  font-weight: 650;
+  font-size: var(--paap-fs-small);
+  font-weight: 600;
   text-transform: uppercase;
 }
 .component-discovered-row {
@@ -11004,19 +11838,19 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   gap: 3px;
 }
 .component-suggestion-chip {
-  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  border: 1px solid var(--paap-border);
   border-radius: 0;
-  background: var(--cds-layer-01, #ffffff);
-  color: var(--cds-text-primary, #161616);
+  background: var(--paap-panel);
+  color: var(--paap-text);
   font: inherit;
-  font-size: 12px;
+  font-size: var(--paap-fs-label);
   line-height: 1;
   padding: 7px 9px;
   cursor: pointer;
 }
 .component-suggestion-chip:hover {
-  border-color: var(--cds-border-interactive, #0f62fe);
-  color: var(--cds-blue-60, #0f62fe);
+  border-color: var(--paap-accent);
+  color: var(--paap-accent);
 }
 .config-binding-row {
   display: grid;
@@ -11024,8 +11858,8 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   gap: var(--paap-space-2);
   align-items: center;
   padding: 8px 10px;
-  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
-  background: var(--cds-layer-01, #ffffff);
+  border: 1px solid var(--paap-border);
+  background: var(--paap-panel);
 }
 .config-binding-row span {
   display: grid;
@@ -11036,8 +11870,8 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 .config-binding-row code {
   min-width: 0;
   overflow-wrap: anywhere;
-  color: var(--paap-muted-2);
-  font-size: 12px;
+  color: var(--paap-muted);
+  font-size: var(--paap-fs-label);
 }
 .config-env-row {
   display: grid;
@@ -11047,7 +11881,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 }
 .config-env-row .bx--text-input,
 .config-env-row .bx--select-input {
-  font-size: 13px;
+  font-size: var(--paap-fs-compact);
   min-width: 0;
 }
 .config-env-row .danger {
@@ -11056,9 +11890,9 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 .config-env-row--managed {
   grid-template-columns: minmax(160px, 1fr) auto minmax(220px, 1.4fr) auto;
   padding: 8px 10px;
-  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  border: 1px solid var(--paap-border);
   border-radius: 0;
-  background: var(--cds-layer-01, #ffffff);
+  background: var(--paap-panel);
 }
 .config-env-managed-name,
 .config-env-managed-value {
@@ -11069,23 +11903,23 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 }
 .config-env-managed-name {
   color: var(--paap-text);
-  font-size: 12px;
-  font-weight: 650;
+  font-size: var(--paap-fs-label);
+  font-weight: 600;
 }
 .config-env-managed-value {
-  color: var(--paap-muted-2);
-  font-size: 12px;
+  color: var(--paap-muted);
+  font-size: var(--paap-fs-label);
 }
 .config-env-managed-secret {
   display: inline-flex;
   align-items: center;
   min-height: 32px;
   padding: 0 10px;
-  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  border: 1px solid var(--paap-border);
   border-radius: 0;
-  background: var(--cds-layer-01, #ffffff);
-  color: var(--cds-text-secondary, #525252);
-  font-size: 12px;
+  background: var(--paap-panel);
+  color: var(--paap-muted);
+  font-size: var(--paap-fs-label);
   white-space: nowrap;
 }
 .config-readonly-row {
@@ -11093,14 +11927,14 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   grid-template-columns: minmax(120px, 0.8fr) minmax(0, 1.2fr);
   gap: var(--paap-space-3);
   padding: 8px 10px;
-  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
-  background: var(--cds-layer-01, #ffffff);
+  border: 1px solid var(--paap-border);
+  background: var(--paap-panel);
 }
 .config-readonly-row strong,
 .config-readonly-row span {
   min-width: 0;
   overflow-wrap: anywhere;
-  font-size: 12px;
+  font-size: var(--paap-fs-label);
 }
 .backup-list {
   display: grid;
@@ -11113,9 +11947,9 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   gap: var(--paap-space-3);
   min-width: 0;
   padding: 10px 12px;
-  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  border: 1px solid var(--paap-border);
   border-radius: 0;
-  background: var(--cds-layer-01, #ffffff);
+  background: var(--paap-panel);
 }
 .backup-row > div {
   display: grid;
@@ -11130,15 +11964,15 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 12px;
+  font-size: var(--paap-fs-label);
 }
 .backup-row strong {
   color: var(--paap-text);
-  font-size: 13px;
-  font-weight: 650;
+  font-size: var(--paap-fs-compact);
+  font-weight: 600;
 }
 .backup-row small {
-  color: var(--paap-muted-2);
+  color: var(--paap-muted);
 }
 .backup-row span {
   color: var(--paap-muted);
@@ -11158,68 +11992,56 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   gap: var(--paap-space-2);
   min-width: 0;
   padding: 8px 10px;
-  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
-  background: var(--cds-layer-01, #ffffff);
+  border: 1px solid var(--paap-border);
+  background: var(--paap-panel);
 }
 .runtime-console-status span {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   color: var(--paap-muted);
-  font-size: 12px;
-  font-weight: 650;
+  font-size: var(--paap-fs-label);
+  font-weight: 600;
 }
 .runtime-console-status span::before {
   content: "";
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: var(--cds-border-strong-01, #8d8d8d);
+  background: var(--paap-border-strong);
 }
 .runtime-console-status.connected span::before {
-  background: var(--cds-green-60, #198038);
+  background: var(--paap-success);
 }
 .runtime-console-status.connecting span::before {
-  background: var(--cds-blue-60, #0f62fe);
+  background: var(--paap-accent);
 }
 .runtime-console-status small {
   min-width: 0;
   overflow: hidden;
-  color: var(--paap-muted-2);
+  color: var(--paap-muted);
   font-family: var(--paap-mono);
-  font-size: 12px;
+  font-size: var(--paap-fs-label);
   text-align: right;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .runtime-console-output {
+  height: 52vh;
   min-height: 320px;
-  max-height: 52vh;
   min-width: 0;
   margin: 0;
-  overflow: auto;
-  padding: 12px;
-  border: 1px solid var(--cds-gray-80, #393939);
-  border-radius: 0;
-  background: var(--cds-gray-100, #161616);
-  color: var(--cds-text-inverse, #ffffff);
-  font-family: var(--paap-mono);
-  font-size: 12px;
-  line-height: 1.55;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
+  padding: 8px;
+  border: 1px solid #393939;
+  border-radius: var(--paap-radius-sm, 6px);
+  background: #161616;
+  overflow: hidden;
 }
-.runtime-console-input-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: var(--paap-space-2);
-  align-items: center;
-}
-.runtime-console-input-row input {
-  font-family: var(--paap-mono);
-}
-.runtime-console-hints {
-  margin-top: var(--paap-space-2);
+.runtime-console-hint {
+  margin: 0;
+  color: var(--paap-muted);
+  font-size: var(--paap-fs-label);
+  line-height: 1.5;
 }
 .runtime-logs-panel {
   display: grid;
@@ -11230,14 +12052,14 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   display: flex;
   flex-wrap: wrap;
   gap: var(--paap-space-2);
-  color: var(--paap-muted-2);
-  font-size: 12px;
+  color: var(--paap-muted);
+  font-size: var(--paap-fs-label);
 }
 .runtime-log-meta span {
   padding: 3px 8px;
-  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
-  border-radius: var(--cds-border-radius-md, 2px);
-  background: var(--cds-layer-01, #ffffff);
+  border: 1px solid var(--paap-border);
+  border-radius: var(--paap-radius-sm);
+  background: var(--paap-panel);
 }
 .runtime-log-list {
   display: grid;
@@ -11265,12 +12087,12 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 }
 .runtime-log-sample strong {
   color: var(--paap-text);
-  font-size: 13px;
+  font-size: var(--paap-fs-compact);
 }
 .runtime-log-sample small {
-  color: var(--paap-muted-2);
+  color: var(--paap-muted);
   font-family: var(--paap-mono);
-  font-size: 12px;
+  font-size: var(--paap-fs-label);
 }
 .runtime-log-output {
   min-height: 220px;
@@ -11279,12 +12101,12 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   margin: 0;
   overflow: auto;
   padding: 12px;
-  border: 1px solid var(--cds-gray-80, #393939);
+  border: 1px solid #393939;
   border-radius: 0;
-  background: var(--cds-gray-100, #161616);
-  color: var(--cds-text-inverse, #ffffff);
+  background: #161616;
+  color: #ffffff;
   font-family: var(--paap-mono);
-  font-size: 12px;
+  font-size: var(--paap-fs-label);
   line-height: 1.55;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -11302,13 +12124,13 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   display: grid;
   gap: 4px;
   padding: 10px 12px;
-  background: var(--cds-layer-01, #ffffff);
-  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  background: var(--paap-panel);
+  border: 1px solid var(--paap-border);
 }
 .runtime-metric-card span,
 .runtime-metric-card small {
-  color: var(--paap-muted-2);
-  font-size: 12px;
+  color: var(--paap-muted);
+  font-size: var(--paap-fs-label);
 }
 .runtime-metric-card strong {
   min-width: 0;
@@ -11328,9 +12150,9 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   gap: var(--paap-space-2);
   min-width: 0;
   padding: 10px 12px;
-  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  border: 1px solid var(--paap-border);
   border-radius: 0;
-  background: var(--cds-layer-01, #ffffff);
+  background: var(--paap-panel);
 }
 .runtime-metric-chart header,
 .runtime-metric-chart footer {
@@ -11344,8 +12166,8 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 .runtime-metric-chart footer span {
   min-width: 0;
   overflow: hidden;
-  color: var(--paap-muted-2);
-  font-size: 12px;
+  color: var(--paap-muted);
+  font-size: var(--paap-fs-label);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -11353,8 +12175,8 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   min-width: 0;
   overflow: hidden;
   color: var(--paap-text);
-  font-size: 14px;
-  font-weight: 650;
+  font-size: var(--paap-fs-body);
+  font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -11369,7 +12191,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   stroke-width: 1;
 }
 .runtime-metric-chart path {
-  fill: rgba(37, 99, 235, 0.12);
+  fill: var(--paap-accent-fill-2);
 }
 .runtime-metric-chart polyline {
   fill: none;
@@ -11415,8 +12237,8 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 }
 .runtime-metric-row__head small,
 .runtime-metric-bars span {
-  color: var(--paap-muted-2);
-  font-size: 12px;
+  color: var(--paap-muted);
+  font-size: var(--paap-fs-label);
 }
 .runtime-metric-bars {
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -11429,7 +12251,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 }
 .runtime-metric-bars strong {
   justify-self: end;
-  font-size: 12px;
+  font-size: var(--paap-fs-label);
 }
 .runtime-metric-bars i {
   grid-column: 1 / -1;
@@ -11444,12 +12266,9 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   height: 100%;
   background: var(--paap-accent);
 }
-.runtime-details {
-  margin-top: var(--paap-space-3);
-}
 .config-empty {
-  color: var(--paap-muted-2);
-  font-size: 12px;
+  color: var(--paap-muted);
+  font-size: var(--paap-fs-label);
 }
 .config-section details {
   display: grid;
@@ -11458,7 +12277,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 .config-section summary {
   cursor: pointer;
   color: var(--paap-text);
-  font-weight: 650;
+  font-weight: 600;
 }
 .config-section textarea {
   min-height: 56px;
@@ -11468,7 +12287,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 .relationship-help {
   margin: 0 0 var(--paap-space-4);
   color: var(--paap-muted);
-  font-size: 13px;
+  font-size: var(--paap-fs-compact);
   line-height: 1.5;
 }
 .relationship-target-list {
@@ -11501,8 +12320,8 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.relationship-target strong { color: var(--paap-text); font-size: 13px; font-weight: 650; }
-.relationship-target small { color: var(--paap-muted); font-size: 12px; }
+.relationship-target strong { color: var(--paap-text); font-size: var(--paap-fs-compact); font-weight: 600; }
+.relationship-target small { color: var(--paap-muted); font-size: var(--paap-fs-label); }
 .component-detail-head {
   display: flex;
   align-items: flex-start;
@@ -11513,14 +12332,14 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   margin: 0;
   color: var(--paap-text);
   font-size: 16px;
-  font-weight: 650;
+  font-weight: 600;
   line-height: 1.3;
   overflow-wrap: anywhere;
 }
 .component-detail-head p {
   margin: 4px 0 0;
   color: var(--paap-muted);
-  font-size: 12px;
+  font-size: var(--paap-fs-label);
 }
 .component-detail-grid {
   display: grid;
@@ -11556,7 +12375,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   gap: var(--paap-space-2);
   min-height: 38px;
   color: var(--paap-muted);
-  font-size: 13px;
+  font-size: var(--paap-fs-compact);
 }
 .capability-checkbox-field input {
   margin: 0;
@@ -11575,15 +12394,15 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   justify-content: center;
   width: 40px;
   height: 40px;
-  border: 1px solid var(--cds-border-strong-01, #8d8d8d);
+  border: 1px solid var(--paap-border-strong);
   border-radius: 0;
-  background: var(--cds-layer-01, #ffffff);
-  color: var(--cds-icon-secondary, #525252);
+  background: var(--paap-panel);
+  color: var(--paap-muted);
   cursor: pointer;
   transition: border-color 110ms, color 110ms, box-shadow 110ms;
 }
 .password-visible-toggle:hover:not(:disabled) {
-  color: var(--cds-blue-60, #0f62fe);
+  color: var(--paap-accent);
 }
 .password-visible-toggle:disabled {
   cursor: progress;
@@ -11591,8 +12410,8 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 }
 .password-field-wrap:focus-within .password-field-input,
 .password-field-wrap:focus-within .password-visible-toggle {
-  border-color: var(--cds-border-interactive, #0f62fe);
-  box-shadow: inset 0 0 0 1px var(--cds-border-interactive, #0f62fe);
+  border-color: var(--paap-accent);
+  box-shadow: inset 0 0 0 1px var(--paap-accent);
 }
 .component-detail-grid div {
   display: grid;
@@ -11605,8 +12424,8 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 }
 .component-detail-grid span,
 .component-detail-label {
-  color: var(--paap-muted-2);
-  font-size: 11px;
+  color: var(--paap-muted);
+  font-size: var(--paap-fs-small);
   font-weight: 700;
   text-transform: uppercase;
 }
@@ -11614,7 +12433,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   min-width: 0;
   overflow: hidden;
   color: var(--paap-text);
-  font-size: 12px;
+  font-size: var(--paap-fs-label);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -11637,7 +12456,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   border-radius: var(--paap-radius-full);
   background: var(--paap-panel-subtle);
   color: var(--paap-muted);
-  font-size: 11px;
+  font-size: var(--paap-fs-small);
   font-weight: 600;
 }
 .component-relation-panel button {
@@ -11647,14 +12466,14 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   background: var(--paap-panel);
   color: var(--paap-text);
   font-family: inherit;
-  font-size: 12px;
+  font-size: var(--paap-fs-label);
   font-weight: 600;
   text-align: left;
   cursor: pointer;
 }
 .component-relation-panel button:hover { border-color: var(--paap-accent); color: var(--paap-accent); }
-.component-relation-panel small { color: var(--paap-muted-2); font-size: 12px; }
-.component-count-label { color: var(--paap-muted); font-size: 12px; }
+.component-relation-panel small { color: var(--paap-muted); font-size: var(--paap-fs-label); }
+.component-count-label { color: var(--paap-muted); font-size: var(--paap-fs-label); }
 .component-table-wrap {
   overflow: auto;
   border: 1px solid var(--paap-border);
@@ -11670,14 +12489,14 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   padding: 11px 12px;
   border-bottom: 1px solid var(--paap-border);
   color: var(--paap-muted);
-  font-size: 12px;
+  font-size: var(--paap-fs-label);
   text-align: left;
   vertical-align: middle;
 }
 .component-table th {
   background: var(--paap-panel-subtle);
-  color: var(--paap-muted-2);
-  font-size: 11px;
+  color: var(--paap-muted);
+  font-size: var(--paap-fs-small);
   font-weight: 700;
   text-transform: uppercase;
 }
@@ -11694,8 +12513,8 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   max-width: 220px;
   overflow: hidden;
   color: var(--paap-text);
-  font-size: 13px;
-  font-weight: 650;
+  font-size: var(--paap-fs-compact);
+  font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -11703,7 +12522,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   display: block;
   max-width: 220px;
   overflow: hidden;
-  color: var(--paap-muted-2);
+  color: var(--paap-muted);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -11743,7 +12562,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 }
 .empty-illustration { margin-bottom: var(--paap-space-4); }
 .empty-title { margin-bottom: var(--paap-space-2); font-weight: 600; font-size: 18px; color: var(--paap-text); }
-.empty-text { color: var(--paap-muted); line-height: 1.5; max-width: 420px; font-size: 14px; }
+.empty-text { color: var(--paap-muted); line-height: 1.5; max-width: 420px; font-size: var(--paap-fs-body); }
 .capability-install-panel {
   display: grid;
   gap: var(--paap-space-3);
@@ -11757,12 +12576,12 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 }
 .capability-install-head span {
   color: var(--paap-text);
-  font-size: 13px;
+  font-size: var(--paap-fs-compact);
   font-weight: 700;
 }
 .capability-install-head small {
   color: var(--paap-muted);
-  font-size: 12px;
+  font-size: var(--paap-fs-label);
   line-height: 1.45;
 }
 .capability-install-grid {
@@ -11777,17 +12596,17 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   gap: var(--paap-space-3);
   min-height: 68px;
   padding: 12px;
-  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  border: 1px solid var(--paap-border);
   border-radius: 0;
-  background: var(--cds-layer-01, #ffffff);
-  color: var(--cds-text-primary, #161616);
+  background: var(--paap-panel);
+  color: var(--paap-text);
   font-family: inherit;
   text-align: left;
   cursor: pointer;
 }
 .capability-install-card:hover {
-  border-color: var(--cds-border-interactive, #0f62fe);
-  background: var(--cds-layer-01, #ffffff);
+  border-color: var(--paap-accent);
+  background: var(--paap-panel);
 }
 .capability-install-card.disabled,
 .capability-install-card:disabled {
@@ -11807,7 +12626,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 .capability-install-card strong {
   min-width: 0;
   color: var(--paap-text);
-  font-size: 13px;
+  font-size: var(--paap-fs-compact);
   font-weight: 700;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -11816,51 +12635,50 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 .capability-install-card small {
   min-width: 0;
   color: var(--paap-muted);
-  font-size: 12px;
+  font-size: var(--paap-fs-label);
   line-height: 1.35;
 }
 
 /* Modal */
-.modal-overlay { position: fixed; inset: 0; z-index: 9000; display: flex; align-items: center; justify-content: center; background: rgba(17,19,24,0.46); backdrop-filter: blur(10px); padding: var(--paap-space-6); }
-.modal-container { background: var(--cds-layer-01, #ffffff); width: 100%; max-height: 90vh; overflow-y: auto; border-radius: 0; border: 1px solid var(--cds-border-subtle-01, #e0e0e0); box-shadow: none; position: relative; }
+.modal-container { background: var(--paap-panel); width: 100%; max-height: 90vh; overflow-y: auto; border-radius: var(--paap-radius); border: 1px solid var(--paap-border); box-shadow: var(--paap-shadow-lg); position: relative; }
 .confirm-modal { max-width: 460px; }
 .modal-header { display: flex; justify-content: space-between; align-items: flex-start; padding: var(--paap-space-5) var(--paap-space-6); border-bottom: 1px solid var(--paap-border); }
-.modal-label { font-size: 11px; color: var(--paap-muted); letter-spacing: 0.04em; margin-bottom: 4px; text-transform: uppercase; font-weight: 600; }
+.modal-label { font-size: var(--paap-fs-small); color: var(--paap-muted); letter-spacing: 0.04em; margin-bottom: 4px; text-transform: uppercase; font-weight: 600; }
 .modal-heading { font-size: 18px; font-weight: 600; color: var(--paap-text); line-height: 1.3; margin: 0; }
-.modal-close { background: none; border: 1px solid var(--cds-border-subtle-01, #e0e0e0); color: var(--cds-text-secondary, #525252); cursor: pointer; padding: 4px; line-height: 1; transition: background 110ms, color 110ms, border-color 110ms; margin-top: -4px; border-radius: 0; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; }
+.modal-close { background: none; border: 1px solid var(--paap-border); color: var(--paap-muted); cursor: pointer; padding: 4px; line-height: 1; transition: background 110ms, color 110ms, border-color 110ms; margin-top: -4px; border-radius: var(--paap-radius-sm); width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; }
 .modal-close:hover { background: var(--paap-panel-subtle); color: var(--paap-text); }
 .modal-content { padding: var(--paap-space-6); }
 .capability-action-field { margin: 0; }
 .capability-action-textarea { min-height: 140px; resize: vertical; }
 .modal-footer { display: flex; justify-content: flex-end; gap: var(--paap-space-2); padding: var(--paap-space-4) var(--paap-space-6); border-top: 1px solid var(--paap-border); }
 .modal-error {
-  border: 1px solid var(--cds-red-60, #da1e28);
-  background: var(--cds-layer-01, #ffffff);
-  color: var(--cds-red-60, #da1e28);
+  border: 1px solid var(--paap-danger);
+  background: var(--paap-panel);
+  color: var(--paap-danger);
   border-radius: 0;
   padding: 10px 12px;
-  font-size: 13px;
+  font-size: var(--paap-fs-compact);
   line-height: 1.4;
   margin: 0;
 }
 .confirm-text {
   margin: 0;
   color: var(--paap-muted);
-  font-size: 14px;
+  font-size: var(--paap-fs-body);
   line-height: 1.5;
 }
 
 /* Form */
 .bx--form-item { margin-bottom: var(--paap-space-5); }
-.bx--label { display: block; font-size: 12px; color: var(--paap-muted); margin-bottom: 6px; font-weight: 500; }
+.bx--label { display: block; font-size: var(--paap-fs-label); color: var(--paap-muted); margin-bottom: 6px; font-weight: 500; }
 .bx--text-input {
-  width: 100%; padding: 9px 12px; font-size: 14px;
-  border: 1px solid var(--cds-border-strong-01, #8d8d8d); border-radius: 0;
-  background: var(--cds-layer-01, #ffffff); color: var(--cds-text-primary, #161616); outline: none;
+  width: 100%; padding: 9px 12px; font-size: var(--paap-fs-body);
+  border: 1px solid var(--paap-border-strong); border-radius: 0;
+  background: var(--paap-panel); color: var(--paap-text); outline: none;
   font-family: inherit; transition: border-color 110ms, box-shadow 110ms;
 }
-.bx--text-input:focus { border-color: var(--cds-border-interactive, #0f62fe); box-shadow: inset 0 0 0 1px var(--cds-border-interactive, #0f62fe); }
-.bx--text-input::placeholder { color: var(--paap-muted-2); }
+.bx--text-input:focus { border-color: var(--paap-accent); box-shadow: inset 0 0 0 1px var(--paap-accent); }
+.bx--text-input::placeholder { color: var(--paap-muted); }
 .form-row {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -11877,40 +12695,53 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   gap: var(--paap-space-2);
   min-height: 38px;
   padding: 8px 10px;
-  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  border: 1px solid var(--paap-border);
   border-radius: 0;
-  color: var(--cds-text-secondary, #525252);
-  font-size: 13px;
+  color: var(--paap-muted);
+  font-size: var(--paap-fs-compact);
   font-weight: 500;
   cursor: pointer;
-  background: var(--cds-layer-01, #ffffff);
+  background: var(--paap-panel);
   transition: border-color 110ms, background 110ms, color 110ms;
 }
 .delivery-option.active {
-  border-color: var(--cds-border-interactive, #0f62fe);
-  background: var(--cds-layer-01, #ffffff);
-  color: var(--cds-text-primary, #161616);
+  border-color: var(--paap-accent);
+  background: var(--paap-panel);
+  color: var(--paap-text);
 }
 .delivery-option input { margin: 0; }
 
 .bx--select { position: relative; }
 .bx--select-input {
-  width: 100%; padding: 9px 36px 9px 12px; font-size: 14px;
-  border: 1px solid var(--cds-border-strong-01, #8d8d8d); border-radius: 0;
-  background: var(--cds-layer-01, #ffffff); color: var(--cds-text-primary, #161616); outline: none;
+  width: 100%; padding: 9px 36px 9px 12px; font-size: var(--paap-fs-body);
+  border: 1px solid var(--paap-border-strong); border-radius: 0;
+  background: var(--paap-panel); color: var(--paap-text); outline: none;
   appearance: none; cursor: pointer; font-family: inherit;
   transition: border-color 110ms, box-shadow 110ms;
 }
-.bx--select-input:focus { border-color: var(--cds-border-interactive, #0f62fe); box-shadow: inset 0 0 0 1px var(--cds-border-interactive, #0f62fe); }
+.bx--select-input:focus { border-color: var(--paap-accent); box-shadow: inset 0 0 0 1px var(--paap-accent); }
 .bx--select__arrow { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); pointer-events: none; }
 
 /* Service select grid in modal */
 .no-data { color: var(--paap-muted); text-align: center; padding: var(--paap-space-8); }
 .error-text { color: var(--paap-danger); }
 .service-picker-summary { display: flex; align-items: center; gap: var(--paap-space-3); margin-bottom: var(--paap-space-4); padding: var(--paap-space-3) var(--paap-space-4); background: var(--paap-panel-subtle); border-left: 3px solid var(--paap-accent); border-radius: 0 var(--paap-radius-xs) var(--paap-radius-xs) 0; }
-.summary-pill { display: inline-flex; align-items: center; justify-content: center; padding: 2px 8px; font-size: 11px; font-weight: 600; background: var(--paap-accent-soft); color: var(--paap-accent); border-radius: var(--paap-radius-xs); }
-.summary-text { color: var(--paap-muted); font-size: 13px; line-height: 1.4; }
+.summary-pill { display: inline-flex; align-items: center; justify-content: center; padding: 2px 8px; font-size: var(--paap-fs-small); font-weight: 600; background: var(--paap-accent-soft); color: var(--paap-accent); border-radius: var(--paap-radius-xs); }
+.summary-text { color: var(--paap-muted); font-size: var(--paap-fs-compact); line-height: 1.4; }
+.service-provision-mode-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--paap-space-2); margin-bottom: var(--paap-space-4); }
+.service-provision-mode-card {
+  display: flex; flex-direction: column; gap: 4px; min-height: 78px;
+  border: 1px solid var(--paap-border); background: var(--paap-panel); color: var(--paap-text);
+  padding: var(--paap-space-3); text-align: left; cursor: pointer; border-radius: var(--paap-radius-sm);
+}
+.service-provision-mode-card strong { font-size: var(--paap-fs-compact); line-height: 1.25; }
+.service-provision-mode-card small { color: var(--paap-muted); font-size: var(--paap-fs-small); line-height: 1.35; }
+.service-provision-mode-card:hover { border-color: var(--paap-accent); }
+.service-provision-mode-card.selected { border-color: var(--paap-accent); background: var(--paap-accent-soft); }
+.service-provision-mode-card.disabled { cursor: not-allowed; opacity: 0.48; }
+.service-provision-mode-card.disabled:hover { border-color: var(--paap-border); }
 .service-select-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--paap-space-3); }
+.service-select-grid--compact { margin-top: var(--paap-space-3); }
 .service-select-card {
   display: flex; align-items: flex-start; gap: var(--paap-space-3);
   padding: var(--paap-space-4); border: 1px solid var(--paap-border);
@@ -11923,21 +12754,22 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 .service-select-card.disabled:hover { border-color: var(--paap-border); background: var(--paap-panel); }
 
 .select-radio { width: 18px; height: 18px; border: 1.5px solid var(--paap-border-strong); display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 2px; background: var(--paap-panel); transition: all 0.15s; border-radius: 50%; }
-.select-radio.selected { background: var(--paap-accent); border-color: var(--paap-accent); color: var(--paap-white); }
-.select-radio.disabled { background: var(--paap-bg-04); border-color: var(--paap-border-strong); color: var(--paap-muted-2); }
+.select-radio.selected { background: var(--paap-accent); border-color: var(--paap-accent); color: var(--paap-panel); }
+.select-radio.disabled { background: var(--paap-panel-subtle); border-color: var(--paap-border-strong); color: var(--paap-muted); }
 
 .service-name-row { display: flex; align-items: center; gap: var(--paap-space-2); flex-wrap: wrap; }
 .service-name { font-size: 15px; line-height: 1.4; font-weight: 600; }
-.service-desc { color: var(--paap-muted); margin-top: 4px; line-height: 1.4; font-size: 13px; }
+.service-desc { color: var(--paap-muted); margin-top: 4px; line-height: 1.4; font-size: var(--paap-fs-compact); }
+.shared-service-choice { margin-top: var(--paap-space-5); padding-top: var(--paap-space-4); border-top: 1px solid var(--paap-border-subtle); }
 
 /* Buttons */
-.bx--btn { display: inline-flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 500; cursor: pointer; outline: none; border: none; height: 36px; padding: 0 14px; transition: all 0.15s; border-radius: var(--paap-radius-sm); gap: 6px; font-family: inherit; }
-.bx--btn--primary { background: var(--cds-button-primary, var(--paap-accent)); color: var(--cds-text-on-color, #ffffff); }
-.bx--btn--primary:hover { background: var(--cds-button-primary-hover, var(--paap-accent-hover)); }
+.bx--btn { display: inline-flex; align-items: center; justify-content: center; font-size: var(--paap-fs-compact); font-weight: 500; cursor: pointer; outline: none; border: none; height: 36px; padding: 0 14px; transition: all 0.15s; border-radius: var(--paap-radius-sm); gap: 6px; font-family: inherit; }
+.bx--btn--primary { background: var(--paap-accent); color: #ffffff; }
+.bx--btn--primary:hover { background: var(--paap-accent-hover); }
 .bx--btn--secondary { background: var(--paap-panel); color: var(--paap-accent); border: 1px solid var(--paap-accent); }
 .bx--btn--secondary:hover { background: var(--paap-accent-soft); color: var(--paap-accent-hover); border-color: var(--paap-accent-hover); }
-.bx--btn--danger { background: var(--cds-button-danger-primary, var(--paap-danger)); color: var(--cds-text-on-color, #ffffff); }
-.bx--btn--danger:hover { background: var(--cds-button-danger-hover, var(--paap-danger-dark)); }
+.bx--btn--danger { background: var(--paap-danger); color: #ffffff; }
+.bx--btn--danger:hover { background: var(--paap-danger-hover); }
 .bx--btn--ghost { background: transparent; color: var(--paap-muted); border: 1px solid var(--paap-border); }
 .bx--btn--ghost:hover { background: var(--paap-panel-subtle); color: var(--paap-text); }
 .bx--btn:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -11947,21 +12779,21 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   justify-content: center;
   width: 32px;
   height: 32px;
-  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  border: 1px solid var(--paap-border);
   border-radius: 0;
-  background: var(--cds-layer-01, #ffffff);
-  color: var(--cds-text-secondary, #525252);
+  background: var(--paap-panel);
+  color: var(--paap-muted);
   font: inherit;
   cursor: pointer;
   transition: background 110ms, border-color 110ms, color 110ms;
 }
 .icon-btn:hover {
-  border-color: var(--cds-border-interactive, #0f62fe);
-  background: var(--cds-layer-hover-01, #e8e8e8);
-  color: var(--cds-link-primary, #0f62fe);
+  border-color: var(--paap-accent);
+  background: var(--paap-panel-subtle);
+  color: var(--paap-accent);
 }
 .icon-btn:focus-visible {
-  outline: 2px solid var(--cds-focus, #0f62fe);
+  outline: 2px solid var(--paap-accent);
   outline-offset: 1px;
 }
 .icon-btn--compact {
@@ -11969,12 +12801,12 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   height: 30px;
 }
 .icon-btn--danger:hover {
-  border-color: var(--cds-red-60, #da1e28);
-  color: var(--cds-red-60, #da1e28);
+  border-color: var(--paap-danger);
+  color: var(--paap-danger);
 }
 
 /* Service icon wrap */
-.service-icon-wrap { width: 32px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; align-self: center; background: transparent; color: var(--paap-muted-2); }
+.service-icon-wrap { width: 32px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; align-self: center; background: transparent; color: var(--paap-muted); }
 .service-icon-wrap.deploy   { color: var(--paap-service-deploy); }
 .service-icon-wrap.git      { color: var(--paap-service-git); }
 .service-icon-wrap.log      { color: var(--paap-service-log); }
@@ -11994,23 +12826,22 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 /* Tag status dot */
 .tag-dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; margin-right: 5px; vertical-align: middle; margin-top: -1px; background: var(--paap-border-strong); }
 .tag-dot.running   { background: var(--paap-emerald); }
-.tag-dot.installing{ background: var(--paap-accent); }
-.tag-dot.error     { background: var(--paap-danger); }
+.tag-dot.installing{ backgound: var(--paap-danger); }
 .tag-dot.failed    { background: var(--paap-danger); }
-.tag-dot.deleting  { background: var(--paap-muted-2); }
+.tag-dot.deleting  { background: var(--paap-muted); }
 .tag-dot.pending,
 .tag-dot.draft     { background: var(--paap-border-strong); }
 
 /* Tags */
-.bx--tag { font-size: 11px; padding: 2px 8px; border-radius: var(--paap-radius-full); font-weight: 500; }
+.bx--tag { font-size: var(--paap-fs-small); padding: 2px 8px; border-radius: var(--paap-radius-full); font-weight: 500; }
 .bx--tag--sm { font-size: 10px; padding: 1px 6px; }
 .bx--tag--blue { background: var(--paap-accent-soft); color: var(--paap-accent); }
 .bx--tag--green { background: var(--paap-success-soft); color: var(--paap-emerald); }
-.bx--tag--gray { background: var(--cds-tag-background-gray, var(--cds-gray-20, #e0e0e0)); color: var(--cds-tag-color-gray, var(--paap-text)); }
+.bx--tag--gray { background: var(--paap-border); color: var(--paap-text); }
 .bx--tag--red { background: var(--paap-danger-soft); color: var(--paap-danger); }
 
 /* Responsive */
-@media (max-width: 980px) {
+@media (max-width: 672px) {
   .environment-shell,
   .overview-grid,
   .overview-two-col,
@@ -12056,6 +12887,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   .component-filter-actions { justify-content: flex-start; }
   .component-search-input { width: 100%; }
   .component-detail-panel { position: static; }
+  .service-provision-mode-grid { grid-template-columns: 1fr; }
   .service-select-grid { grid-template-columns: 1fr; }
   .form-row { grid-template-columns: 1fr; }
   .config-binding-form,

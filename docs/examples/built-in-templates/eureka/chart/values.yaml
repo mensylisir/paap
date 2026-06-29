@@ -1,0 +1,28 @@
+replicaCount: 1
+fullnameOverride: ""
+
+image:
+  repository: steeltoeoss/eureka-server
+  tag: latest
+  pullPolicy: IfNotPresent
+
+serviceAccount:
+  create: false
+  name: ""
+
+service:
+  type: ClusterIP
+  port: 8761
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 1000m
+    memory: 768Mi
+
+paap:
+  toolNamespace: ""
+  primaryNamespace: ""
+  environment: ""

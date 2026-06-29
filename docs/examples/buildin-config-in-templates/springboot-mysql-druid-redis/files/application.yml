@@ -1,0 +1,41 @@
+server:
+  port: __TEMPLATE__SERVER_PORT__服务端口__DEFAULT__8889__
+
+spring:
+  main:
+    allow-circular-references: true
+
+  jackson:
+    time-zone: GMT+8
+
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 100MB
+
+  redis:
+    host: __TEMPLATE__REDIS_HOST__Redis 地址__DEFAULT__redis-master__
+    port: __TEMPLATE__REDIS_PORT__Redis 端口__DEFAULT__6379__
+    password: ${REDIS_PASSWORD:}
+
+  datasource:
+    druid:
+      driver-class-name: com.mysql.cj.jdbc.Driver
+      url: jdbc:mysql://__TEMPLATE__MYSQL_HOST__MySQL 地址__DEFAULT__mysql__:__TEMPLATE__MYSQL_PORT__MySQL 端口__DEFAULT__3306__/__TEMPLATE__MYSQL_DATABASE__MySQL 数据库__DEFAULT__music__?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai
+      username: __TEMPLATE__MYSQL_USERNAME__MySQL 用户__DEFAULT__root__
+      password: ${MYSQL_PASSWORD}
+
+token:
+  expireTime: 259200000
+  secretKey: ${TOKEN_SECRET}
+
+upload:
+  mode: local
+  local:
+    url: __TEMPLATE__UPLOAD_PUBLIC_URL__上传文件访问地址__DEFAULT__http://localhost/__
+    path: __TEMPLATE__UPLOAD_PATH__上传文件目录__DEFAULT__/upload/__
+
+mybatis-plus:
+  global-config:
+    db-config:
+      id-type: assign_id

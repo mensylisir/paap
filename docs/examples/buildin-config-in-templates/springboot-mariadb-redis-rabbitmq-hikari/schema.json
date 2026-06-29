@@ -1,0 +1,18 @@
+{
+  "fields": [
+    { "key": "SERVER_PORT", "label": "服务端口", "type": "number", "default": "8081" },
+    { "key": "MARIADB_HOST", "label": "MariaDB 地址", "type": "serviceRef", "target": "mysql", "format": "host", "required": true, "default": "mariadb" },
+    { "key": "MARIADB_PORT", "label": "MariaDB 端口", "type": "serviceRef", "target": "mysql", "format": "port", "required": true, "default": "3306" },
+    { "key": "MARIADB_DATABASE", "label": "MariaDB 数据库", "type": "text", "default": "blog" },
+    { "key": "MARIADB_USERNAME", "label": "MariaDB 用户", "type": "text", "default": "root" },
+    { "key": "MARIADB_PASSWORD", "label": "MariaDB 密码", "type": "password", "output": "secret", "required": true },
+    { "key": "REDIS_HOST", "label": "Redis 地址", "type": "serviceRef", "target": "redis", "format": "host", "required": true, "default": "redis-master" },
+    { "key": "REDIS_PORT", "label": "Redis 端口", "type": "serviceRef", "target": "redis", "format": "port", "default": "6379" },
+    { "key": "REDIS_PASSWORD", "label": "Redis 密码", "type": "password", "output": "secret" },
+    { "key": "RABBITMQ_HOST", "label": "RabbitMQ 地址", "type": "serviceRef", "target": "rabbitmq", "format": "host", "required": true, "default": "rabbitmq" },
+    { "key": "RABBITMQ_PORT", "label": "RabbitMQ 端口", "type": "serviceRef", "target": "rabbitmq", "format": "port", "default": "5672" },
+    { "key": "RABBITMQ_USERNAME", "label": "RabbitMQ 用户", "type": "text", "default": "admin" },
+    { "key": "RABBITMQ_PASSWORD", "label": "RabbitMQ 密码", "type": "password", "output": "secret" },
+    { "key": "JWT_SECRET", "label": "JWT 密钥", "type": "password", "output": "secret", "required": true }
+  ]
+}

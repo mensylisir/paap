@@ -8,11 +8,14 @@ import (
 	"strings"
 	"testing"
 
+	"paap/internal/authz"
 	"paap/internal/database"
 	"paap/internal/middleware"
 	"paap/internal/model"
+	"paap/internal/permission"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 func withTestAuthUser(userID uint, next gin.HandlerFunc) gin.HandlerFunc {
@@ -31,31 +34,157 @@ func withTestAuthUserRoles(userID uint, roles []string, next gin.HandlerFunc) gi
 	}
 }
 
-func TestAuthenticatedUserCanCreateAppRequiresAppAdminRole(t *testing.T) {
+func withTestAuthUserContext(userID uint) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Set(middleware.ContextUserIDKey, userID)
+		c.Set(middleware.ContextUserRolesKey, []string{model.RoleUser})
+		c.Next()
+	}
+}
+
+func seedApplicationRBACForTest(t *testing.T, db *gorm.DB) {
+	t.Helper()
+
+	permissions := []model.Permission{
+		{Code: permission.SystemUserRead, Name: "查看用户", ScopeType: model.ScopeSystem, Resource: "user", Action: "read", Enabled: true},
+		{Code: permission.SystemUserManage, Name: "管理用户", ScopeType: model.ScopeSystem, Resource: "user", Action: "manage", Enabled: true},
+		{Code: permission.SystemRoleManage, Name: "管理角色", ScopeType: model.ScopeSystem, Resource: "role", Action: "manage", Enabled: true},
+		{Code: permission.SystemTemplateManage, Name: "管理模板", ScopeType: model.ScopeSystem, Resource: "template", Action: "manage", Enabled: true},
+		{Code: permission.SystemSharedPoolManage, Name: "管理共享资源池", ScopeType: model.ScopeSystem, Resource: "shared_pool", Action: "manage", Enabled: true},
+		{Code: permission.AppCreate, Name: "创建应用", ScopeType: model.ScopeSystem, Resource: "app", Action: "create", Enabled: true},
+		{Code: permission.AppRead, Name: "查看应用", ScopeType: model.ScopeApp, Resource: "app", Action: "read", Enabled: true},
+		{Code: permission.AppUpdate, Name: "编辑应用", ScopeType: model.ScopeApp, Resource: "app", Action: "update", Enabled: true},
+		{Code: permission.AppDelete, Name: "删除应用", ScopeType: model.ScopeApp, Resource: "app", Action: "delete", Enabled: true},
+		{Code: permission.AppMemberRead, Name: "查看成员", ScopeType: model.ScopeApp, Resource: "member", Action: "read", Enabled: true},
+		{Code: permission.AppMemberManage, Name: "管理成员", ScopeType: model.ScopeApp, Resource: "member", Action: "manage", Enabled: true},
+		{Code: permission.EnvCreate, Name: "创建环境", ScopeType: model.ScopeApp, Resource: "env", Action: "create", Enabled: true},
+		{Code: permission.EnvRead, Name: "查看环境", ScopeType: model.ScopeEnv, Resource: "env", Action: "read", Enabled: true},
+		{Code: permission.EnvManage, Name: "管理环境", ScopeType: model.ScopeEnv, Resource: "env", Action: "manage", Enabled: true},
+		{Code: permission.EnvDelete, Name: "删除环境", ScopeType: model.ScopeEnv, Resource: "env", Action: "delete", Enabled: true},
+		{Code: permission.ServiceRead, Name: "查看服务", ScopeType: model.ScopeEnv, Resource: "service", Action: "read", Enabled: true},
+		{Code: permission.ServiceInstall, Name: "安装服务", ScopeType: model.ScopeEnv, Resource: "service", Action: "install", Enabled: true},
+		{Code: permission.ServiceManage, Name: "管理服务", ScopeType: model.ScopeEnv, Resource: "service", Action: "manage", Enabled: true},
+		{Code: permission.ComponentRead, Name: "查看组件", ScopeType: model.ScopeEnv, Resource: "component", Action: "read", Enabled: true},
+		{Code: permission.ComponentCreate, Name: "创建组件", ScopeType: model.ScopeEnv, Resource: "component", Action: "create", Enabled: true},
+		{Code: permission.ComponentDeploy, Name: "部署组件", ScopeType: model.ScopeEnv, Resource: "component", Action: "deploy", Enabled: true},
+		{Code: permission.ComponentManage, Name: "管理组件", ScopeType: model.ScopeEnv, Resource: "component", Action: "manage", Enabled: true},
+	}
+	if err := db.Create(&permissions).Error; err != nil {
+		t.Fatalf("seed permissions: %v", err)
+	}
+
+	roles := []model.Role{
+		{Code: model.RolePlatformAdmin, Name: "平台管理员", ScopeType: model.ScopeSystem, Builtin: true, Editable: false, Enabled: true},
+		{Code: model.RoleAppAdmin, Name: "应用管理员", ScopeType: model.ScopeSystem, Builtin: true, Editable: false, Enabled: true},
+		{Code: model.RoleUser, Name: "普通用户", ScopeType: model.ScopeSystem, Builtin: true, Editable: false, Enabled: true},
+		{Code: model.AppRoleAdmin, Name: "应用管理员", ScopeType: model.ScopeApp, Builtin: true, Editable: false, Enabled: true},
+		{Code: model.AppRoleMember, Name: "应用成员", ScopeType: model.ScopeApp, Builtin: true, Editable: false, Enabled: true},
+		{Code: model.AppRoleViewer, Name: "只读成员", ScopeType: model.ScopeApp, Builtin: true, Editable: false, Enabled: true},
+	}
+	if err := db.Create(&roles).Error; err != nil {
+		t.Fatalf("seed roles: %v", err)
+	}
+
+	permissionIDs := map[string]uint{}
+	for _, item := range permissions {
+		permissionIDs[item.Code] = item.ID
+	}
+	rolePermissions := make([]model.RolePermission, 0, 6)
+	for _, role := range roles {
+		switch {
+		case role.Code == model.RolePlatformAdmin:
+			for _, perm := range permissions {
+				rolePermissions = append(rolePermissions, model.RolePermission{RoleID: role.ID, PermissionID: perm.ID})
+			}
+		case role.Code == model.RoleAppAdmin && role.ScopeType == model.ScopeSystem:
+			rolePermissions = append(rolePermissions, model.RolePermission{RoleID: role.ID, PermissionID: permissionIDs[permission.AppCreate]})
+		case role.Code == model.AppRoleAdmin && role.ScopeType == model.ScopeApp:
+			for _, perm := range permissions {
+				if perm.ScopeType == model.ScopeApp || perm.ScopeType == model.ScopeEnv {
+					rolePermissions = append(rolePermissions, model.RolePermission{RoleID: role.ID, PermissionID: perm.ID})
+				}
+			}
+		case role.Code == model.AppRoleMember && role.ScopeType == model.ScopeApp:
+			for _, code := range []string{
+				permission.AppRead, permission.AppMemberRead, permission.EnvCreate,
+				permission.EnvRead, permission.EnvManage, permission.ServiceRead, permission.ServiceInstall, permission.ServiceManage,
+				permission.ComponentRead, permission.ComponentCreate, permission.ComponentDeploy, permission.ComponentManage,
+			} {
+				rolePermissions = append(rolePermissions, model.RolePermission{RoleID: role.ID, PermissionID: permissionIDs[code]})
+			}
+		case role.Code == model.AppRoleViewer && role.ScopeType == model.ScopeApp:
+			for _, code := range []string{permission.AppRead, permission.AppMemberRead, permission.EnvRead, permission.ServiceRead, permission.ComponentRead} {
+				rolePermissions = append(rolePermissions, model.RolePermission{RoleID: role.ID, PermissionID: permissionIDs[code]})
+			}
+		}
+	}
+	if err := db.Create(&rolePermissions).Error; err != nil {
+		t.Fatalf("seed role permissions: %v", err)
+	}
+}
+
+func bindSystemRoleForTest(t *testing.T, db *gorm.DB, userID uint, roleCode string) {
+	t.Helper()
+	if err := authz.BindRole(db, userID, roleCode, authz.SystemScope(), userID); err != nil {
+		t.Fatalf("bind %s role: %v", roleCode, err)
+	}
+}
+
+func TestCreateApplicationRequiresAppCreatePermission(t *testing.T) {
+	previousDB := database.DB
+	t.Cleanup(func() { database.DB = previousDB })
+
+	db, err := openTestDB(t)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := db.AutoMigrate(
+		&model.Application{},
+		&model.AppMember{},
+		&model.Permission{},
+		&model.Role{},
+		&model.RolePermission{},
+		&model.RoleBinding{},
+	); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	seedApplicationRBACForTest(t, db)
+	database.DB = db
+	if err := authz.BindRole(db, 1, model.RoleAppAdmin, authz.SystemScope(), 0); err != nil {
+		t.Fatalf("bind app_admin: %v", err)
+	}
+
 	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.POST(
+		"/api/v1/applications",
+		withTestAuthUserContext(1),
+		middleware.RequireSystemPermission(permission.AppCreate),
+		CreateApplication,
+	)
 
 	rec := httptest.NewRecorder()
-	ctx, _ := gin.CreateTestContext(rec)
-	ctx.Set(middleware.ContextUserIDKey, uint(1))
-	ctx.Set(middleware.ContextUserRolesKey, []string{model.RolePlatformAdmin})
-
-	if authenticatedUserCanCreateApp(ctx) {
-		t.Fatalf("platform_admin without app_admin must not create applications")
+	body, _ := json.Marshal(CreateAppRequest{Name: "有权限应用"})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/applications", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("app_admin status = %d, want %d; body=%s", rec.Code, http.StatusCreated, rec.Body.String())
 	}
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusForbidden, rec.Body.String())
-	}
-	if !strings.Contains(rec.Body.String(), "only application administrators can create applications") {
-		t.Fatalf("unexpected body: %s", rec.Body.String())
-	}
-
 	rec = httptest.NewRecorder()
-	ctx, _ = gin.CreateTestContext(rec)
-	ctx.Set(middleware.ContextUserIDKey, uint(1))
-	ctx.Set(middleware.ContextUserRolesKey, []string{model.RolePlatformAdmin, model.RoleAppAdmin})
-
-	if !authenticatedUserCanCreateApp(ctx) {
-		t.Fatalf("user with app_admin role must create applications")
+	body, _ = json.Marshal(CreateAppRequest{Name: "无权限应用"})
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/applications", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router = gin.New()
+	router.POST(
+		"/api/v1/applications",
+		withTestAuthUserContext(2),
+		middleware.RequireSystemPermission(permission.AppCreate),
+		CreateApplication,
+	)
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("regular user status = %d, want %d; body=%s", rec.Code, http.StatusForbidden, rec.Body.String())
 	}
 }
 
@@ -214,19 +343,21 @@ func TestListApplicationsIncludesSystemAppsForPlatformAdmins(t *testing.T) {
 		&model.ServiceInstallation{},
 		&model.Component{},
 		&model.User{},
-		&model.UserRole{},
+		&model.Permission{},
+		&model.Role{},
+		&model.RolePermission{},
+		&model.RoleBinding{},
 	); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	database.DB = db
+	seedApplicationRBACForTest(t, db)
 
 	admin := model.User{Username: "admin", Email: "admin@example.com", Password: "x"}
 	if err := db.Create(&admin).Error; err != nil {
 		t.Fatalf("create admin: %v", err)
 	}
-	if _, err := model.ReplaceUserRoles(db, admin.ID, []string{model.RolePlatformAdmin}); err != nil {
-		t.Fatalf("create admin roles: %v", err)
-	}
+	bindSystemRoleForTest(t, db, admin.ID, model.RolePlatformAdmin)
 	normal := model.Application{Name: "业务应用", Identifier: "billing", OwnerID: admin.ID}
 	if err := db.Create(&normal).Error; err != nil {
 		t.Fatalf("create normal app: %v", err)
@@ -297,19 +428,21 @@ func TestListApplicationsDoesNotCreateSharedResourcePool(t *testing.T) {
 		&model.ServiceInstallation{},
 		&model.Component{},
 		&model.User{},
-		&model.UserRole{},
+		&model.Permission{},
+		&model.Role{},
+		&model.RolePermission{},
+		&model.RoleBinding{},
 	); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	database.DB = db
+	seedApplicationRBACForTest(t, db)
 
 	admin := model.User{Username: "admin", Email: "admin@example.com", Password: "x"}
 	if err := db.Create(&admin).Error; err != nil {
 		t.Fatalf("create admin: %v", err)
 	}
-	if _, err := model.ReplaceUserRoles(db, admin.ID, []string{model.RolePlatformAdmin}); err != nil {
-		t.Fatalf("create admin roles: %v", err)
-	}
+	bindSystemRoleForTest(t, db, admin.ID, model.RolePlatformAdmin)
 	normal := model.Application{Name: "业务应用", Identifier: "billing", OwnerID: admin.ID}
 	if err := db.Create(&normal).Error; err != nil {
 		t.Fatalf("create normal app: %v", err)
@@ -361,9 +494,17 @@ func TestCreateApplicationGeneratesIdentifierWhenMissing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}); err != nil {
+	if err := db.AutoMigrate(
+		&model.Application{},
+		&model.AppMember{},
+		&model.Permission{},
+		&model.Role{},
+		&model.RolePermission{},
+		&model.RoleBinding{},
+	); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
+	seedApplicationRBACForTest(t, db)
 	database.DB = db
 
 	body, _ := json.Marshal(CreateAppRequest{Name: "订单服务"})
@@ -398,9 +539,17 @@ func TestCreateApplicationUsesAuthenticatedUserAsOwner(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}); err != nil {
+	if err := db.AutoMigrate(
+		&model.Application{},
+		&model.AppMember{},
+		&model.Permission{},
+		&model.Role{},
+		&model.RolePermission{},
+		&model.RoleBinding{},
+	); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
+	seedApplicationRBACForTest(t, db)
 	database.DB = db
 
 	body, _ := json.Marshal(CreateAppRequest{Name: "结算服务"})
@@ -442,9 +591,17 @@ func TestCreateApplicationRejectsRegularUser(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := db.AutoMigrate(&model.Application{}, &model.AppMember{}); err != nil {
+	if err := db.AutoMigrate(
+		&model.Application{},
+		&model.AppMember{},
+		&model.Permission{},
+		&model.Role{},
+		&model.RolePermission{},
+		&model.RoleBinding{},
+	); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
+	seedApplicationRBACForTest(t, db)
 	database.DB = db
 
 	body, _ := json.Marshal(CreateAppRequest{Name: "普通用户应用"})
@@ -454,13 +611,18 @@ func TestCreateApplicationRejectsRegularUser(t *testing.T) {
 
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	router.POST("/api/v1/applications", withTestAuthUser(42, CreateApplication))
+	router.POST(
+		"/api/v1/applications",
+		withTestAuthUserContext(42),
+		middleware.RequireSystemPermission(permission.AppCreate),
+		CreateApplication,
+	)
 	router.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusForbidden, rec.Body.String())
 	}
-	if !strings.Contains(rec.Body.String(), "only application administrators can create applications") {
+	if !strings.Contains(rec.Body.String(), "permission denied") {
 		t.Fatalf("unexpected body: %s", rec.Body.String())
 	}
 }

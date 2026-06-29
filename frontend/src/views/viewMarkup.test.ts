@@ -164,43 +164,80 @@ describe('Vue view markup', () => {
     expect(envDetail.default).not.toContain('/services/${svc.id}?tab=workspace')
   })
 
-  it('keeps global navigation focused on applications and templates', async () => {
+  it('moves the shared resource pool entry to global navigation', async () => {
     const mainLayout = await import('../layouts/MainLayout.vue?raw')
 
-    expect(mainLayout.default).toContain('<span>应用</span>')
-    expect(mainLayout.default).toContain('<span>模板</span>')
-    expect(mainLayout.default).not.toContain('<span>共享资源</span>')
-    expect(mainLayout.default).not.toContain('to="/shared-resources"')
+    expect(mainLayout.default).toContain('<span>应用列表</span>')
+    expect(mainLayout.default).toContain('<span>配置模板</span>')
+    expect(mainLayout.default).toContain('<span>服务目录</span>')
+    expect(mainLayout.default).toContain('<span>共享资源</span>')
+    expect(mainLayout.default).toContain('to="/shared-resources"')
+    expect(mainLayout.default).toContain("permissionStore.has('system.shared_pool.manage')")
+    expect(mainLayout.default).toContain('<span>平台服务</span>')
+    expect(mainLayout.default).toContain('to="/platform/services"')
     expect(mainLayout.default).not.toContain('<span>仓库</span>')
     expect(mainLayout.default).not.toContain('to="/registries"')
   })
 
-  it('exposes the platform shared resource pool through the normal application canvas route', async () => {
+  it('opens the platform shared resource pool through a dedicated overview route', async () => {
     const mainLayout = await import('../layouts/MainLayout.vue?raw')
     const router = await import('../router/index.ts?raw')
     const sharedResources = await import('./PlatformSharedResourcesView.vue?raw')
     const client = await import('../api/client.ts?raw')
 
-    expect(mainLayout.default).not.toContain('to="/shared-resources"')
+    expect(mainLayout.default).toContain('to="/shared-resources"')
     expect(mainLayout.default).not.toContain('isSharedResourcesActive')
     expect(router.default).toContain('PlatformSharedResourcesView')
     expect(sharedResources.default).toContain('api.getSharedResourcePool')
-    expect(sharedResources.default).toContain('router.replace(`/apps/${appId}/environments/${envId}`)')
+    expect(sharedResources.default).toContain('api.listServices(poolEnvId.value)')
+    expect(sharedResources.default).toContain('进入共享资源画布')
+    expect(sharedResources.default).toContain('router.push(`/apps/${poolAppId.value}/environments/${poolEnvId.value}`)')
+    expect(sharedResources.default).not.toContain('router.replace(`/apps/${appId}/environments/${envId}`)')
     expect(client.default).toContain('getSharedResourcePool')
   })
 
-  it('shows system shared applications in the normal app list without delete controls', async () => {
+  it('keeps role list and role editing on separate pages', async () => {
+    const router = await import('../router/index.ts?raw')
+    const usersView = await import('./PlatformUsersView.vue?raw')
+    const roleEditor = await import('./PlatformRoleEditorView.vue?raw')
+
+    expect(router.default).toContain("path: 'roles'")
+    expect(router.default).toContain("redirect: '/users?tab=roles'")
+    expect(router.default).toContain("path: 'roles/new'")
+    expect(router.default).toContain("path: 'roles/:roleId'")
+    expect(usersView.default).toContain('setActiveTab(\'roles\')')
+    expect(usersView.default).toContain("query: tab === 'roles' ? { tab: 'roles' } : {}")
+    expect(usersView.default).toContain('to="/roles/new"')
+    expect(usersView.default).toContain(':to="`/roles/${role.id}`"')
+    expect(roleEditor.default).toContain('permission-groups')
+    expect(roleEditor.default).toContain('to="/users?tab=roles"')
+    expect(roleEditor.default).toContain('返回用户角色')
+  })
+
+  it('hides the system shared resource pool from the normal app list', async () => {
     const appList = await import('./AppListView.vue?raw')
 
     expect(appList.default).toContain('app.isSystem')
+    expect(appList.default).toContain('<h1 class="page-title">应用列表</h1>')
     expect(appList.default).toContain('系统应用')
     expect(appList.default).toContain('isSystemSharedResourcePool')
+    expect(appList.default).toContain('listedApps')
     expect(appList.default).toContain('appDisplayName')
-    expect(appList.default).toContain('共享资源池')
-    expect(appList.default).toContain("router.push('/shared-resources')")
+    expect(appList.default).toContain('!isSystemSharedResourcePool(app)')
+    expect(appList.default).not.toContain('共享资源池')
+    expect(appList.default).not.toContain("router.push('/shared-resources')")
     expect(appList.default).toContain('v-if="!app.isSystem"')
     expect(appList.default).toContain('firstBusinessApp')
     expect(appList.default).toContain("goToDefaultWorkspace(firstBusinessApp())")
+  })
+
+  it('hides the system shared resource pool from the app context switcher', async () => {
+    const appLayout = await import('../layouts/AppLayout.vue?raw')
+
+    expect(appLayout.default).toContain('isSystemSharedResourcePool')
+    expect(appLayout.default).toContain("String(app?.identifier || '') === 'default'")
+    expect(appLayout.default).toContain('appItems.filter((item:any) => !isSystemSharedResourcePool(item))')
+    expect(appLayout.default).toContain('v-for="item in apps"')
   })
 
   it('refreshes stored platform roles from the current user endpoint for existing sessions', async () => {
@@ -213,15 +250,16 @@ describe('Vue view markup', () => {
     expect(mainLayout.default).toContain('roles: Array.isArray(user.roles) ? user.roles : []')
   })
 
-  it('splits template management into tool, middleware, and config template views', async () => {
+  it('keeps the template page focused on component config templates', async () => {
     const templatesView = await import('./TemplatesView.vue?raw')
     const envDetail = await import('./EnvDetailView.vue?raw')
 
-    expect(templatesView.default).toContain('工具模板')
-    expect(templatesView.default).toContain('中间件模板')
     expect(templatesView.default).toContain('配置模板')
     expect(templatesView.default).toContain('api.listComponentConfigTemplates')
-    expect(templatesView.default).toContain('syncBuiltinComponentConfigTemplates')
+    expect(templatesView.default).not.toContain('工具模板')
+    expect(templatesView.default).not.toContain('中间件模板')
+    expect(templatesView.default).not.toContain('environment-template-form')
+    expect(templatesView.default).not.toContain('openEnvironmentTemplateModal')
     expect(templatesView.default).toContain('configTemplateComponentTypeSummary')
     expect(templatesView.default).toContain('configTemplateEditableFieldCount')
     expect(templatesView.default).toContain('导入配置模板')
@@ -230,15 +268,19 @@ describe('Vue view markup', () => {
     expect(templatesView.default).toContain('configImportMode')
     expect(templatesView.default).toContain('config-template-component-type-select')
     expect(templatesView.default).not.toContain('placeholder="frontend, backend"')
-    expect(templatesView.default).toContain('从原生配置创建模板')
-    expect(templatesView.default).toContain('高级模板 JSON')
+    expect(templatesView.default).toContain('上传普通配置文件')
+    expect(templatesView.default).toContain('高级模板包')
+    expect(templatesView.default).toContain(":multiple=\"configImportMode === 'native'\"")
+    expect(templatesView.default).toContain("formData.set('mode', configImportMode.value)")
+    expect(templatesView.default).toContain("formData.append('files', file)")
     expect(templatesView.default).toContain('config-import-shell--carbon')
     expect(templatesView.default).toContain('config-import-mode-card')
-    expect(templatesView.default).toContain('普通配置适合从现有配置文件快速生成模板')
-    expect(templatesView.default).toContain('平台工程师可导入完整 schema/template JSON')
+    expect(templatesView.default).toContain('上传自己的配置文件，只把可变字段换成模板语法')
+    expect(templatesView.default).toContain('高级用户导入 template.json/schema.json')
+    expect(templatesView.default).toContain('template.json/schema.json 的 tar.gz 包')
     expect(templatesView.default).toContain('选择后会影响组件配置 Tab 的模板候选范围')
     expect(templatesView.default).toContain('__TEMPLATE__KEY__显示名__')
-    expect(templatesView.default).toContain('高级 JSON / schema 模式')
+    expect(templatesView.default).toContain('高级 JSON / schema 模式适合高级用户')
     expect(templatesView.default).toContain('原生配置预览')
     expect(templatesView.default).toContain('schema.json')
     expect(templatesView.default).toContain('configTemplateReadableNativeContent')
@@ -264,26 +306,19 @@ describe('Vue view markup', () => {
     expect(templatesView.default).toContain('configTemplateGeneratedFileCount')
   })
 
-  it('adds environment template management to the templates page', async () => {
+  it('moves environment templates into the service catalog as environment services', async () => {
     const templatesView = await import('./TemplatesView.vue?raw')
-    const client = await import('../api/client.ts?raw')
+    const catalogView = await import('./CatalogView.vue?raw')
+    const catalogGroups = await import('../utils/catalogGroups.ts?raw')
 
-    expect(templatesView.default).toContain('环境模板')
-    expect(templatesView.default).toContain('environmentTemplates')
-    expect(templatesView.default).toContain('environment-template-form')
-    expect(templatesView.default).toContain('openEnvironmentTemplateModal')
-    expect(templatesView.default).toContain('pendingEnvironmentTemplateDelete')
-    expect(templatesView.default).toContain('api.createTemplate')
-    expect(templatesView.default).toContain('api.updateTemplate')
-    expect(templatesView.default).toContain('api.deleteTemplate')
-    expect(templatesView.default).toContain('resourceCpu')
-    expect(templatesView.default).toContain('resourceMem')
-    expect(templatesView.default).toContain('resourceDisk')
-
-    expect(client.default).toContain('getTemplate')
-    expect(client.default).toContain('createTemplate')
-    expect(client.default).toContain('updateTemplate')
-    expect(client.default).toContain('deleteTemplate')
+    expect(templatesView.default).not.toContain('environmentTemplates')
+    expect(templatesView.default).not.toContain('environment-template-form')
+    expect(catalogView.default).toContain('api.templates()')
+    expect(catalogView.default).toContain('environment-template-${tmpl.id || tmpl.name}')
+    expect(catalogView.default).toContain("category: 'environment'")
+    expect(catalogView.default).toContain("catalogSource: 'environment-template'")
+    expect(catalogView.default).toContain("label: '从模板创建'")
+    expect(catalogGroups.default).toContain("label: '环境服务'")
   })
 
   it('shows extracted config template fields before raw preview content', async () => {
@@ -325,8 +360,7 @@ describe('Vue view markup', () => {
     expect(appList.default).toContain('overview?createEnvironment=true')
     expect(environmentsView.default).toContain('autoOpenCreateEnvironment')
     expect(environmentsView.default).toContain('goToDefaultEnvironment')
-    expect(environmentsView.default).toContain("mode: 'empty' as string")
-    expect(environmentsView.default).toContain("mode: 'empty'")
+    expect(environmentsView.default).toContain('emptyEnvironmentForm')
     expect(appLayout.default).toContain('context-bar')
     expect(appLayout.default.indexOf('<main class="main">')).toBeLessThan(appLayout.default.indexOf('context-bar'))
     expect(appLayout.default).toContain('workspace-switcher')
@@ -413,13 +447,16 @@ describe('Vue view markup', () => {
       expect(view).toContain("mode === 'blank'")
       expect(view).toContain("mode === 'empty'")
       expect(view).not.toContain('能力来源')
-      expect(view).not.toContain('capabilities:')
+      expect(view).toContain('capabilities: buildSharedCapabilityPayload(envForm.value.sharedResourceIds, sharedResources.value)')
+      expect(view).toContain('loadSharedResourcesForEnvironmentCreate')
       expect(view).not.toContain('createEnvironmentCapabilityOptions')
       expect(view).not.toContain('buildInitialCapabilityPayload')
     }
     expect(createEnvironmentModal.default).toContain('创建空环境')
     expect(createEnvironmentModal.default).toContain('创建基础环境')
     expect(createEnvironmentModal.default).toContain('从模板创建')
+    expect(createEnvironmentModal.default).toContain('sharedResources')
+    expect(createEnvironmentModal.default).toContain('form.sharedResourceIds')
     expect(createEnvironmentModal.default).not.toContain('能力来源')
   })
 
@@ -477,12 +514,37 @@ describe('Vue view markup', () => {
     expect(envDetail.default).toContain("getEnvironmentCapabilityCredentials")
     expect(envDetail.default).toContain('password: currentForm.password')
     expect(envDetail.default).toContain('saveCapabilityConfigDrawer')
+    expect(envDetail.default).toContain('validateCapabilityConfigDrawer')
+    expect(envDetail.default).toContain('验证连接')
+    expect(envDetail.default).toContain('capabilityValidationLoading')
     expect(envDetail.default).not.toContain('deployContextCapability')
 
     expect(client.default).toContain('listSharedCapabilityResources')
     expect(client.default).toContain('listEnvironmentCapabilities')
     expect(client.default).toContain('updateEnvironmentCapability')
+    expect(client.default).toContain('validateEnvironmentCapability')
     expect(client.default).toContain('getEnvironmentCapabilityCredentials')
+  })
+
+  it('allows component config templates to render credentials from shared and external capability cards', async () => {
+    const envDetail = await import('./EnvDetailView.vue?raw')
+    const templateFields = await import('../components/ComponentConfigTemplateFields.vue?raw')
+
+    expect(envDetail.default).toContain("['service', 'capability'].includes(String(target.kind || ''))")
+    expect(envDetail.default).toContain('const credentials = await connectionTargetCredentials(target)')
+    expect(envDetail.default).not.toContain("if (!target || target.kind !== 'service') continue")
+    expect(templateFields.default).toContain('<select')
+    expect(templateFields.default).toContain('fieldOptions(field)')
+    expect(templateFields.default).not.toContain('<datalist')
+  })
+
+  it('persists the selected registry target instead of guessing only from image host', async () => {
+    const envDetail = await import('./EnvDetailView.vue?raw')
+
+    expect(envDetail.default).toContain('registryTargetSelectionPayload')
+    expect(envDetail.default).toContain('registryTargetKeyFromConfig(cfg, registryHost)')
+    expect(envDetail.default).toContain('registryTarget: registryTargetSelectionPayload()')
+    expect(envDetail.default).toContain('registryTarget: raw.registryTarget || null')
   })
 
   it('makes resource source and removal semantics explicit on topology cards and drawers', async () => {
@@ -574,10 +636,53 @@ describe('Vue view markup', () => {
 
   it('groups catalog entries by product category instead of a single infra bucket', async () => {
     const catalogView = await import('./CatalogView.vue?raw')
+    const catalogGroups = await import('../utils/catalogGroups.ts?raw')
 
     expect(catalogView.default).toContain('catalogGroupForTemplate')
     expect(catalogView.default).toContain('compareCatalogGroupMeta')
     expect(catalogView.default).not.toContain("label = '中间件 / 数据库'")
+    expect(catalogGroups.default).toContain("label: 'CI服务'")
+    expect(catalogGroups.default).toContain("label: 'CD服务'")
+    expect(catalogGroups.default).toContain("label: '监控服务'")
+    expect(catalogGroups.default).toContain("label: '日志服务'")
+    expect(catalogGroups.default).toContain("label: '数据库服务'")
+    expect(catalogGroups.default).toContain("label: '中间件服务'")
+    expect(catalogGroups.default).toContain("label: '环境服务'")
+    expect(catalogGroups.default).toContain("label: '虚拟机服务'")
+  })
+
+  it('renders the service feature matrix from catalog data', async () => {
+    const catalogView = await import('./CatalogView.vue?raw')
+
+    expect(catalogView.default).toContain('catalogFeatureItems')
+    expect(catalogView.default).toContain('item.features.length')
+    expect(catalogView.default).toContain('catalog-feature-chip')
+    expect(catalogView.default).toContain('{{ feature.label }}')
+    expect(catalogView.default).toContain('环境内创建')
+    expect(catalogView.default).toContain('公共服务')
+  })
+
+  it('adds a platform service overview page backed by the stats API', async () => {
+    const platformServices = await import('./PlatformServicesView.vue?raw')
+    const router = await import('../router/index.ts?raw')
+    const client = await import('../api/client.ts?raw')
+
+    expect(platformServices.default).toContain('平台服务')
+    expect(platformServices.default).toContain('api.platformServiceStats')
+    expect(platformServices.default).toContain('featureItems(item.features)')
+    expect(platformServices.default).toContain('managedInstances')
+    expect(platformServices.default).toContain('sharedReferences')
+    expect(platformServices.default).toContain('externalConnections')
+    expect(platformServices.default).toContain('selectService(item)')
+    expect(platformServices.default).toContain('api.platformServiceInstances(item.type)')
+    expect(platformServices.default).toContain('api.platformServiceUsage(item.type)')
+    expect(platformServices.default).toContain('使用方')
+    expect(platformServices.default).toContain('serviceInstanceId')
+    expect(router.default).toContain('PlatformServicesView')
+    expect(router.default).toContain("path: 'platform/services'")
+    expect(client.default).toContain("platformServiceStats: () => request('/platform/services/stats')")
+    expect(client.default).toContain("platformServiceInstances: (type: string) => request(`/platform/services/${encodeURIComponent(type)}/instances`)")
+    expect(client.default).toContain("platformServiceUsage: (type: string) => request(`/platform/services/${encodeURIComponent(type)}/usage`)")
   })
 
   it('matches catalog search queries against product group names', async () => {
@@ -838,6 +943,8 @@ describe('Vue view markup', () => {
     expect(giteaWorkspace.default).toContain('readmePreview')
     expect(giteaWorkspace.default).toContain('loadRepositoryDirectory')
     expect(giteaWorkspace.default).toContain('repositoryContentsUrl')
+    expect(giteaWorkspace.default).toContain('repositoryFetch')
+    expect(giteaWorkspace.default).toContain('Authorization = `Bearer ${token}`')
     expect(giteaWorkspace.default).toContain('README')
     expect(giteaWorkspace.default).toContain('annotations?.commits')
     expect(giteaWorkspace.default).toContain('@click=\"selectFile')
@@ -1121,6 +1228,7 @@ describe('Vue view markup', () => {
     expect(envDetail.default).toContain('源码交付可留空')
     expect(envDetail.default).toContain("deliveryMode === 'image' && (!version || version.toLowerCase() === 'latest')")
     expect(envDetail.default).toContain("deliveryMode === 'source' && version && version.toLowerCase() === 'latest'")
+    expect(envDetail.default).toContain('draftOnly: true')
   })
 
   it('lets the component drawer edit image or source delivery without hiding the delivery mode', async () => {
@@ -1157,6 +1265,29 @@ describe('Vue view markup', () => {
     expect(client.default).toContain('deployComponent')
   })
 
+  it('keeps context-menu icon class in sync between template markup and CSS grid rule', async () => {
+    const envDetail = await import('./EnvDetailView.vue?raw')
+
+    // Every menu icon in the template must use the exact class the CSS grid targets.
+    // A typo (e.g. menu-item-icon vs menu-icon) compiles and passes build, but the
+    // :has(.menu-icon) grid never engages and icons render unplaced — only this
+    // markup/CSS contract check catches it.
+    expect(envDetail.default).toContain('class="menu-icon"')
+    expect(envDetail.default).not.toContain('class="menu-item-icon"')
+
+    // The grid rule and its column overrides must key off the same .menu-icon class.
+    expect(envDetail.default).toContain('.component-context-menu button:has(.menu-icon)')
+    expect(envDetail.default).toContain('.component-context-menu button:has(.menu-icon) span')
+    expect(envDetail.default).toContain('.component-context-menu button:has(.menu-icon) small')
+
+    // The submenu renders its icon through the dynamic mapper, which must have a fallback.
+    expect(envDetail.default).toContain(':is="submenuTemplateIcon(tmpl)" class="menu-icon"')
+    expect(envDetail.default).toContain('return SubmenuIconFallback')
+
+    // .menu-icon styling lives in the floating-menu block, not orphaned.
+    expect(cssRule(envDetail.default, '.menu-icon')).toContain('grid-row: 1 / span 2')
+  })
+
   it('blocks canvas ApplicationSet deploy when single Applications already manage cards', async () => {
     const envDetail = await import('./EnvDetailView.vue?raw')
 
@@ -1180,6 +1311,9 @@ describe('Vue view markup', () => {
     expect(client.default).toContain('createServiceDraft')
     expect(envDetail.default).toContain('api.saveEnvironmentCanvasState')
     expect(envDetail.default).toContain('configureContextNode')
+    expect(envDetail.default).toContain(`@click.stop="openComponentConfigDrawer(comp, 'variables')"`)
+    expect(envDetail.default).toContain(`if (comp?.id) openComponentConfigDrawer(comp, 'variables')`)
+    expect(envDetail.default).toContain(`openComponentConfigDrawer(node, 'variables')`)
     expect(envDetail.default).toContain("componentContextMenu.kind === 'canvas'")
     expect(envDetail.default).toContain("componentContextMenu.kind === 'service'")
     expect(envDetail.default).toContain(`v-if="componentContextMenu.kind === 'canvas' && !isSystemSharedEnvironment" type="button" @mouseenter="openComponentSubmenu"`)
@@ -1243,13 +1377,13 @@ describe('Vue view markup', () => {
 
     for (const source of [appLayout.default, mainLayout.default]) {
       expect(source).toContain('.logo-icon')
-      expect(source).toContain('background: var(--cds-background-brand, var(--paap-accent));')
-      expect(source).toContain('color: var(--cds-icon-on-color, #fff);')
+      expect(source).toContain('background: var(--paap-accent);')
+      expect(source).toContain('color: #fff;')
       expect(source).not.toContain('background: var(--paap-text);\n  color: #fff;')
     }
 
     expect(appLayout.default).toContain('.context-avatar')
-    expect(appLayout.default).toContain('color: var(--cds-icon-interactive, var(--paap-accent));')
+    expect(appLayout.default).toContain('color: var(--paap-accent);')
   })
 
   it('tears down stale capability workspaces when switching environments', async () => {
@@ -1431,9 +1565,11 @@ describe('Vue view markup', () => {
     expect(envDetail.default).toContain('configForm.imageTag')
     expect(envDetail.default).toContain('v-model.trim="configForm.repository"')
     expect(envDetail.default).toContain('v-model.trim="configForm.imageTag"')
+    expect(envDetail.default).toContain('id="drawer-source-version"')
+    expect(envDetail.default).toContain('v-model.trim="configForm.version"')
     expect(envDetail.default).toContain('imageRefFromRegistryFields')
-    expect(envDetail.default).toContain('list="component-registry-image-tags"')
-    expect(envDetail.default).toContain('<datalist id="component-registry-image-tags">')
+    expect(envDetail.default).toContain('registryImageSelectionValid')
+    expect(envDetail.default).toContain('请选择环境镜像')
     expect(envDetail.default).toContain('.cds-image-preview__label')
     expect(envDetail.default).toContain('overflow-wrap: anywhere')
   })
@@ -1484,10 +1620,10 @@ describe('Vue view markup', () => {
     expect(templateFields.default).toContain('component-template-field-label')
     expect(templateFields.default).toContain('component-template-list-actions')
     expect(templateFields.default).toContain('aria-label="添加一组"')
-    expect(templateFields.default).toContain('componentTemplateFieldDatalistId')
-    expect(templateFields.default).toContain('updateComponentTemplateFieldFromDisplay')
+    expect(templateFields.default).toContain('class="bx--select-input"')
+    expect(templateFields.default).toContain(':value="option.value"')
     expect(templateFields.default).toContain('fieldUsesTargetSelect(itemField)')
-    expect(templateFields.default).toContain('updateComponentTemplateListCellFromDisplay')
+    expect(templateFields.default).toContain('updateComponentTemplateListCell(field, rowIndex, itemField, eventValue($event))')
     expect(envDetail.default).toContain('保存配置时会按当前字段生成运行配置并建立服务连接')
     expect(envDetail.default).not.toContain('查看生成内容')
     expect(envDetail.default).not.toContain('添加自定义配置')
@@ -1558,7 +1694,7 @@ describe('Vue view markup', () => {
     const templateFields = await import('../components/ComponentConfigTemplateFields.vue?raw')
 
     expect(envDetail.default).toContain('<select v-model="selectedComponentConfigTemplateId"')
-    expect(envDetail.default).toContain('选择模板后，下方只显示这个模板需要填写的业务配置。')
+    expect(envDetail.default).toContain('未选择模板时，直接编辑当前组件已有的环境变量、配置文件和手工覆盖项。')
     expect(envDetail.default).toContain('componentTemplateInlineHelp')
     expect(templateFields.default).toContain('component-template-field-list')
     expect(envDetail.default).toContain('serviceVolumeSizePresets')
@@ -1600,17 +1736,27 @@ describe('Vue view markup', () => {
     expect(envDetail.default).toContain('正在读取当前卡片的真实日志')
   })
 
-  it('uses a real runtime console from the card drawer', async () => {
+  it('uses a real xterm runtime console from the card drawer', async () => {
     const envDetail = await import('./EnvDetailView.vue?raw')
 
-    expect(envDetail.default).toContain('输入命令')
+    // The console must be a genuine PTY terminal (xterm.js), not a read-only
+    // <pre> with a separate input box. These assertions lock the xterm contract:
+    // dynamic import (no first-paint cost), char-by-char onData send, raw write
+    // (no ANSI stripping — clear/colors/cursor work), and instance teardown.
+    expect(envDetail.default).toContain("import('@xterm/xterm')")
+    expect(envDetail.default).toContain("import('@xterm/addon-fit')")
+    expect(envDetail.default).toContain('runtimeConsoleTerm.write(chunk)')
+    expect(envDetail.default).toContain('term.onData(')
+    expect(envDetail.default).toContain('destroyRuntimeConsoleTerm')
     expect(envDetail.default).toContain('进入当前卡片的运行实例')
     expect(envDetail.default).toContain('PAAP 会自动准备调试环境')
-    expect(envDetail.default).toContain('@keydown.enter.prevent="sendDrawerConsoleInput"')
-    expect(envDetail.default).toContain('@click="sendDrawerConsoleInput"')
+
+    // The old pseudo-terminal (read-only output + separate line-buffered input)
+    // must be gone — these are the exact markers of the broken UX it replaced.
+    expect(envDetail.default).not.toContain('sendDrawerConsoleInput')
+    expect(envDetail.default).not.toContain('normalizeRuntimeConsoleOutput')
     expect(envDetail.default).not.toContain('等效 kubectl exec')
     expect(envDetail.default).not.toContain('pod/<resolved-pod>')
-    expect(envDetail.default).not.toContain('attach 到当前卡片 Pod 的容器进程')
   })
 
   it('keeps canvas-created middleware on the topology and exposes service deletion', async () => {
@@ -1639,7 +1785,6 @@ describe('Vue view markup', () => {
     expect(envDetail.default).toContain('部署配置')
     expect(envDetail.default).toContain('连接参数')
     expect(envDetail.default).toContain('实例拓扑')
-    expect(envDetail.default).toContain('运行详情')
     expect(envDetail.default).toContain('环境内')
     expect(envDetail.default).toContain('外部访问')
     expect(envDetail.default).toContain('开启外部访问')
@@ -1684,7 +1829,6 @@ describe('Vue view markup', () => {
     expect(envDetail.default).toContain('部署参数可编辑')
     expect(envDetail.default).toContain('接入变量只读')
     expect(envDetail.default).toContain('实例拓扑')
-    expect(envDetail.default).toContain('运行详情')
     expect(envDetail.default).toContain('保存后写入服务部署参数')
     expect(envDetail.default).toContain('服务接入变量由模板、敏感配置和运行态发现生成')
     expect(envDetail.default).not.toContain('showServiceNewVariableHint')
@@ -1758,46 +1902,46 @@ describe('Vue view markup', () => {
     const templatesView = await import('./TemplatesView.vue?raw')
     const templateFields = await import('../components/ComponentConfigTemplateFields.vue?raw')
 
-    expect(cssRule(envDetail.default, '.config-drawer')).toContain('box-shadow: none')
-    expect(cssRule(envDetail.default, '.config-drawer')).toContain('var(--cds-border-subtle-01')
-    expect(cssRule(envDetail.default, '.config-drawer-avatar')).toContain('var(--cds-border-radius-md')
-    expect(cssRule(envDetail.default, '.config-deployment-card')).toContain('border-radius: 0')
+    expect(cssRule(envDetail.default, '.config-drawer')).toContain('var(--paap-shadow')
+    expect(cssRule(envDetail.default, '.config-drawer')).toContain('var(--paap-border)')
+    expect(cssRule(envDetail.default, '.config-drawer-avatar')).toContain('var(--paap-radius-sm')
+    expect(cssRule(envDetail.default, '.config-deployment-card')).toContain('border-radius: var(--paap-radius)')
     expect(cssRule(envDetail.default, '.service-config-field')).toContain('border-radius: 0')
     expect(cssRule(envDetail.default, '.service-config-field')).toContain('border: 0')
-    expect(cssRule(envDetail.default, '.service-config-field')).toContain('var(--cds-layer-01')
+    expect(cssRule(envDetail.default, '.service-config-field')).toContain('var(--paap-panel)')
     expect(cssRule(envDetail.default, '.service-config-field:focus-within')).not.toContain('background: var(--cds-layer-accent-01')
     expect(cssRule(envDetail.default, '.service-config-field:focus-within')).not.toContain('box-shadow')
     expect(cssRule(envDetail.default, '.component-template-picker')).toContain('border-radius: 0')
     expect(cssRule(envDetail.default, '.component-template-picker')).toContain('border: 0')
-    expect(cssRule(envDetail.default, '.component-template-picker')).toContain('var(--cds-layer-01')
+    expect(cssRule(envDetail.default, '.component-template-picker')).toContain('var(--paap-panel)')
     expect(cssRule(envDetail.default, '.component-template-advanced-config')).toContain('border-radius: 0')
-    expect(cssRule(envDetail.default, '.component-template-advanced-config')).toContain('var(--cds-layer-01')
-    expect(cssRule(envDetail.default, '.component-file-mount-panel')).toContain('var(--cds-border-subtle-01')
+    expect(cssRule(envDetail.default, '.component-template-advanced-config')).toContain('var(--paap-panel)')
+    expect(cssRule(envDetail.default, '.component-file-mount-panel')).toContain('var(--paap-border)')
     expect(cssRule(envDetail.default, '.component-file-mount-row')).toContain('grid-template-columns')
-    expect(cssRule(envDetail.default, '.component-file-mount-source strong')).toContain('var(--cds-text-primary')
+    expect(cssRule(envDetail.default, '.component-file-mount-source strong')).toContain('var(--paap-text)')
 
-    expect(cssRule(templateFields.default, '.component-template-field-list')).toContain('var(--cds-layer-01')
+    expect(cssRule(templateFields.default, '.component-template-field-list')).toContain('var(--paap-panel)')
     expect(cssRule(templateFields.default, '.component-template-field-list')).toContain('border-radius: 0')
     expect(cssRule(templateFields.default, '.component-template-field-list')).toContain('border: 0')
-    expect(cssRule(templateFields.default, '.component-template-list-row')).toContain('var(--cds-layer-01')
+    expect(cssRule(templateFields.default, '.component-template-list-row')).toContain('var(--paap-panel)')
     expect(cssRule(templateFields.default, '.component-template-list-row')).toContain('border: 0')
-    expect(cssRule(templateFields.default, '.component-template-control .bx--text-input')).toContain('var(--cds-border-strong-01')
-    expect(cssRule(templateFields.default, '.component-template-control .bx--text-input:focus')).toContain('var(--cds-border-interactive')
-    expect(cssRule(templateFields.default, '.component-template-field em')).toContain('var(--cds-red-60')
+    expect(cssRule(templateFields.default, '.component-template-control .bx--text-input')).toContain('var(--paap-border-strong)')
+    expect(cssRule(templateFields.default, '.component-template-control .bx--text-input:focus')).toContain('var(--paap-accent)')
+    expect(cssRule(templateFields.default, '.component-template-field em')).toContain('var(--paap-danger)')
     expect(cssRule(templateFields.default, '.component-template-list-actions button')).toContain('border-radius: 0')
     expect(templateFields.default).not.toContain('border-radius: 8px')
     expect(templateFields.default).not.toContain('border-radius: 999px')
 
     expect(cssRule(templatesView.default, '.modal-container')).toContain('border-radius: 0')
-    expect(cssRule(templatesView.default, '.modal-container')).toContain('box-shadow: none')
-    expect(cssRule(templatesView.default, '.template-preview-tabs')).toContain('var(--cds-layer-01')
-    expect(cssRule(templatesView.default, '.template-preview-tabs button.active')).toContain('var(--cds-blue-60')
-    expect(cssRule(templatesView.default, '.rail-input')).toContain('var(--cds-field-01')
+    expect(cssRule(templatesView.default, '.modal-container')).toContain('var(--paap-shadow-lg)')
+    expect(cssRule(templatesView.default, '.template-preview-tabs')).toContain('var(--paap-panel)')
+    expect(cssRule(templatesView.default, '.template-preview-tabs button.active')).toContain('var(--paap-accent)')
+    expect(cssRule(templatesView.default, '.rail-input')).toContain('var(--paap-panel-subtle)')
     expect(cssRule(templatesView.default, '.rail-input:focus')).toContain('inset 0 0 0 1px')
     expect(cssRule(templatesView.default, '.preview-block')).toContain('border-radius: 0')
-    expect(cssRule(templatesView.default, '.preview-block-title')).toContain('var(--cds-layer-01')
-    expect(cssRule(templatesView.default, '.preview-block pre')).toContain('var(--cds-field-01')
-    expect(cssRule(templatesView.default, '.preview-block code')).toContain('var(--cds-font-family-mono')
+    expect(cssRule(templatesView.default, '.preview-block-title')).toContain('var(--paap-panel)')
+    expect(cssRule(templatesView.default, '.preview-block pre')).toContain('var(--paap-panel-subtle)')
+    expect(cssRule(templatesView.default, '.preview-block code')).toContain('monospace')
     expect(templatesView.default).not.toContain('#3b82f6')
     expect(templatesView.default).not.toContain('#0f172a')
     expect(templatesView.default).not.toContain('%23687076')

@@ -1,0 +1,24 @@
+server:
+  port: __TEMPLATE__SERVER_PORT__服务端口__DEFAULT__8080__
+
+spring:
+  application:
+    name: __TEMPLATE__APP_NAME__应用名称__DEFAULT__user-service__
+
+  cloud:
+    nacos:
+      discovery:
+        server-addr: __TEMPLATE__NACOS_SERVER_ADDR__Nacos 地址__DEFAULT__nacos:8848__
+        namespace: __TEMPLATE__NACOS_NAMESPACE__Nacos 命名空间__DEFAULT__dev__
+        group: __TEMPLATE__NACOS_GROUP__Nacos 分组__DEFAULT__DEFAULT_GROUP__
+      config:
+        server-addr: __TEMPLATE__NACOS_SERVER_ADDR__Nacos 地址__DEFAULT__nacos:8848__
+        file-extension: __TEMPLATE__NACOS_FILE_EXTENSION__配置格式__DEFAULT__yaml__
+        namespace: __TEMPLATE__NACOS_NAMESPACE__Nacos 命名空间__DEFAULT__dev__
+        group: __TEMPLATE__NACOS_GROUP__Nacos 分组__DEFAULT__DEFAULT_GROUP__
+        shared-configs:
+          __TEMPLATE__FOR__NACOS_SHARED_CONFIGS__共享配置__
+          - data-id: __TEMPLATE__ITEM_DATA_ID__Data ID__DEFAULT__common-db.yaml__
+            group: __TEMPLATE__ITEM_GROUP__分组__DEFAULT__DEFAULT_GROUP__
+            refresh: __TEMPLATE__ITEM_REFRESH__自动刷新__DEFAULT__true__
+          __TEMPLATE__END__NACOS_SHARED_CONFIGS__

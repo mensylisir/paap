@@ -8,12 +8,62 @@ data:
   KC_DB_URL: jdbc:postgresql://paap-postgres.paap-system.svc.cluster.local:5432/keycloak
   KC_DB_USERNAME: paap
   KC_DB_PASSWORD: paap
-  KC_HOSTNAME: 172.18.0.2
+  # deploy/k8s/configure-auth-endpoints.sh sets KC_HOSTNAME on the Deployment
+  # from KEYCLOAK_PUBLIC_URL or the detected Keycloak NodePort entrypoint.
+  KC_HOSTNAME_STRICT: "false"
   KC_HTTP_ENABLED: "true"
   KC_HEALTH_ENABLED: "true"
   KC_METRICS_ENABLED: "true"
   KEYCLOAK_ADMIN: admin
-  KEYCLOAK_ADMIN_PASSWORD: admin
+  KEYCLOAK_ADMIN_PASSWORD: Def@u1tpwd
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: keycloak-realm
+  namespace: paap-system
+data:
+  # Development default realm. Replace redirectUris/webOrigins with concrete domains in production.
+  paap-realm.json: |
+    {
+      "realm": "paap",
+      "displayName": "PAAP",
+      "enabled": true,
+      "roles": {
+        "realm": [
+          { "name": "platform_admin", "description": "PAAP platform administrator" },
+          { "name": "app_admin", "description": "PAAP application creator" },
+          { "name": "user", "description": "PAAP regular user" }
+        ]
+      },
+      "clients": [
+        {
+          "clientId": "paap",
+          "name": "PAAP",
+          "enabled": true,
+          "protocol": "openid-connect",
+          "publicClient": true,
+          "standardFlowEnabled": true,
+          "directAccessGrantsEnabled": true,
+          "redirectUris": ["*"],
+          "webOrigins": ["*"]
+        }
+      ],
+      "users": [
+        {
+          "username": "admin",
+          "enabled": true,
+          "email": "admin@paap.local",
+          "emailVerified": true,
+          "firstName": "PAAP",
+          "lastName": "Admin",
+          "credentials": [
+            { "type": "password", "value": "Def@u1tpwd", "temporary": false }
+          ],
+          "realmRoles": ["platform_admin", "app_admin", "user"]
+        }
+      ]
+    }
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -47,12 +97,17 @@ spec:
           image: quay.io/keycloak/keycloak:25.0.0
           args:
             - start-dev
+            - --import-realm
           ports:
             - containerPort: 8080
             - containerPort: 9000
           envFrom:
             - configMapRef:
                 name: keycloak-config
+          volumeMounts:
+            - name: keycloak-realm
+              mountPath: /opt/keycloak/data/import/paap-realm.json
+              subPath: paap-realm.json
           readinessProbe:
             httpGet:
               path: /health/ready
@@ -65,6 +120,10 @@ spec:
               port: 9000
             initialDelaySeconds: 60
             periodSeconds: 30
+      volumes:
+        - name: keycloak-realm
+          configMap:
+            name: keycloak-realm
 ---
 apiVersion: v1
 kind: Service
@@ -78,7 +137,6 @@ spec:
     - name: http
       port: 8080
       targetPort: 8080
-      nodePort: 30080
     - name: health
       port: 9000
       targetPort: 9000

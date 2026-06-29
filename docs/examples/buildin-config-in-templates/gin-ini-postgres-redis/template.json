@@ -1,0 +1,19 @@
+{
+  "key": "gin-ini-postgres-redis",
+  "name": "Gin + INI + PostgreSQL + Redis",
+  "version": "v1",
+  "description": "Gin 服务使用 INI 文件读取 PostgreSQL 和 Redis 配置。",
+  "framework": "go",
+  "componentTypes": ["backend"],
+  "sortOrder": 102,
+  "nativeConfigs": [{ "name": "config.ini", "path": "files/config.ini" }],
+  "files": [{ "name": "Gin config.ini", "configMapName": "{{configMapName}}", "key": "config.ini", "recommendedMountPath": "/etc/paap/config.ini" }],
+  "env": [
+    { "name": "APP_CONFIG", "source": "value", "value": "/etc/paap/config.ini" },
+    { "name": "DATABASE_PASSWORD", "source": "secret", "refName": "{{secretName}}", "refKey": "DATABASE_PASSWORD" },
+    { "name": "REDIS_PASSWORD", "source": "secret", "refName": "{{secretName}}", "refKey": "REDIS_PASSWORD" }
+  ],
+  "secrets": [
+    { "name": "{{secretName}}", "data": { "DATABASE_PASSWORD": "__TEMPLATE__DATABASE_PASSWORD__数据库密码__", "REDIS_PASSWORD": "__TEMPLATE__REDIS_PASSWORD__Redis 密码__" } }
+  ]
+}

@@ -27,7 +27,6 @@ func main() {
 	}
 	handler.SeedServiceCatalog()
 	handler.SeedEnvTemplates()
-	handler.SeedComponentConfigTemplates()
 
 	// 初始化 K8s client（可选，集群内运行时自动连接）
 	if err := k8s.Init(); err != nil {
@@ -38,6 +37,16 @@ func main() {
 			log.Printf("Built-in template sync failed: %v", err)
 		} else {
 			log.Printf("Built-in template sync completed: updated=%d", result.Updated)
+		}
+		if result, err := handler.SeedBuiltinComponentConfigTemplatesToS3(context.Background(), true); err != nil {
+			log.Printf("Built-in component config template upload failed: %v", err)
+		} else {
+			log.Printf("Built-in component config template upload completed: uploaded=%d", result.Updated)
+		}
+		if result, err := handler.SyncComponentConfigTemplatesFromS3Now(context.Background()); err != nil {
+			log.Printf("Built-in component config template sync failed: %v", err)
+		} else {
+			log.Printf("Built-in component config template sync completed: updated=%d", result.Updated)
 		}
 		if err := service.SyncClusterState(context.Background(), database.DB, k8s.GetClient()); err != nil {
 			log.Printf("Cluster state sync failed: %v", err)

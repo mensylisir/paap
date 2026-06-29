@@ -1,0 +1,11 @@
+{
+  "key": "nginx-basic-conf",
+  "name": "Nginx 基础 nginx.conf",
+  "version": "v1",
+  "description": "静态站点容器常用的完整 nginx.conf，适合覆盖 /etc/nginx/nginx.conf。",
+  "framework": "nginx",
+  "componentTypes": ["frontend"],
+  "sortOrder": 9,
+  "nativeConfigs": [{ "name": "nginx.conf", "path": "files/nginx.conf" }],
+  "files": [{ "name": "Nginx nginx.conf", "configMapName": "{{configMapName}}", "key": "nginx.conf", "recommendedMountPath": "/etc/nginx/nginx.conf" }]
+}

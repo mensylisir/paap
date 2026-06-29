@@ -62,7 +62,7 @@ IMAGES=(
   "busybox:1.36"
   "minio/mc:RELEASE.2024-05-09T17-04-24Z"
   "quay.io/keycloak/keycloak:25.0.0"
-  "paap-server:v0.1.534"
+  "paap-server:v0.1.537"
   "paap-operator:v0.1.54"
 )
 echo "2. Exporting ${#IMAGES[@]} PAAP system images to oci-archive..."
@@ -151,7 +151,11 @@ echo "14. Deploying Server..."
 $KUBECTL apply -f "$SCRIPT_DIR/paap-server.yaml" 2>&1
 
 echo ""
-echo "15. Waiting for all pods..."
+echo "15. Configuring auth endpoints..."
+"$SCRIPT_DIR/configure-auth-endpoints.sh" --kubeconfig "$KUBECONFIG"
+
+echo ""
+echo "16. Waiting for all pods..."
 $KUBECTL wait --for=condition=ready pod -l app=paap-operator -n paap-system --timeout=120s 2>&1 || true
 $KUBECTL wait --for=condition=ready pod -l app=paap-server -n paap-system --timeout=120s 2>&1 || true
 

@@ -105,6 +105,36 @@ describe('componentTopology', () => {
     ])
   })
 
+  it('does not infer runtime dependencies from platform tool name collisions', () => {
+    const nodes = buildComponentTopologyNodes(
+      [
+        {
+          id: 1,
+          name: 'registry',
+          type: 'backend',
+          config: JSON.stringify({
+            env: [{ name: 'EUREKA_INSTANCE_HOSTNAME', value: 'registry' }],
+          }),
+        },
+        {
+          id: 2,
+          name: 'monitoring',
+          type: 'backend',
+          config: JSON.stringify({
+            env: [{ name: 'SPRING_APPLICATION_NAME', value: 'monitoring' }],
+            configMaps: [{ name: 'monitoring-config', data: { 'application.yml': 'monitor.enabled=true' } }],
+          }),
+        },
+      ],
+      [
+        { id: 20, serviceName: 'dev-registry', serviceType: 'registry', status: 'running' } as any,
+        { id: 21, serviceName: 'dev-kube-prometheus-stack', serviceType: 'monitor', status: 'running' } as any,
+      ],
+    )
+
+    expect(buildComponentDependencyEdges(nodes)).toEqual([])
+  })
+
   it('groups topology nodes by environment shared and external zones', () => {
     const nodes = [
       { id: 1, name: 'api', topologyKind: 'component' as const },

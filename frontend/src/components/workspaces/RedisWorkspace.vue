@@ -247,7 +247,7 @@ const statusBadge = (s?: string) => {
   gap: var(--paap-space-2);
   padding: var(--paap-space-3) var(--paap-space-4);
   border-bottom: 1px solid var(--paap-border);
-  font-size: 12px;
+  font-size: var(--paap-fs-label);
   font-weight: 600;
   color: var(--paap-muted);
   text-transform: uppercase;
@@ -285,7 +285,7 @@ const statusBadge = (s?: string) => {
   font-weight: 600;
   padding: 1px 6px;
   border-radius: var(--paap-radius-full);
-  background: #f3f4f6;
+  background: var(--paap-panel-subtle);
   color: var(--paap-muted);
   text-transform: uppercase;
 }
@@ -296,8 +296,8 @@ const statusBadge = (s?: string) => {
 .redis-key-name {
   flex: 1;
   min-width: 0;
-  font-size: 12px;
-  color: var(--paap-text-soft);
+  font-size: var(--paap-fs-label);
+  color: var(--paap-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -305,8 +305,8 @@ const statusBadge = (s?: string) => {
 .redis-key-empty {
   padding: var(--paap-space-6);
   text-align: center;
-  font-size: 12px;
-  color: var(--paap-muted-2);
+  font-size: var(--paap-fs-label);
+  color: var(--paap-muted);
 }
 
 /* Main */
@@ -333,14 +333,14 @@ const statusBadge = (s?: string) => {
   margin-bottom: var(--paap-space-2);
 }
 .redis-key-detail-name {
-  font-size: 16px;
+  font-size: var(--paap-fs-heading-lg);
   font-weight: 600;
   color: var(--paap-text);
   word-break: break-all;
 }
 .redis-key-detail-desc {
   color: var(--paap-muted);
-  font-size: 13px;
+  font-size: var(--paap-fs-compact);
   line-height: 1.5;
   margin-bottom: var(--paap-space-4);
 }
@@ -357,12 +357,12 @@ const statusBadge = (s?: string) => {
 }
 .redis-key-prop-key {
   display: block;
-  font-size: 11px;
+  font-size: var(--paap-fs-small);
   color: var(--paap-muted);
   margin-bottom: 2px;
 }
 .redis-key-prop-value {
-  font-size: 13px;
+  font-size: var(--paap-fs-compact);
   color: var(--paap-text);
   word-break: break-all;
 }
@@ -394,8 +394,8 @@ const statusBadge = (s?: string) => {
   align-items: center;
   justify-content: center;
   padding: var(--paap-space-12);
-  color: var(--paap-muted-2);
-  font-size: 14px;
+  color: var(--paap-muted);
+  font-size: var(--paap-fs-body);
   gap: var(--paap-space-3);
 }
 

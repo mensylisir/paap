@@ -530,8 +530,8 @@ const contentItemsToResources = (items: any[]): WorkspaceResource[] => items.map
 })
 
 const decodeGiteaContent = (payload: any) => {
-  const raw = String(payload?.content || '')
-  if (!raw) return ''
+	const raw = String(payload?.content || '')
+	if (!raw) return ''
   if (payload?.encoding === 'base64') {
     try {
       return decodeURIComponent(Array.from(atob(raw.replace(/\s/g, '')), c => `%${c.charCodeAt(0).toString(16).padStart(2, '0')}`).join(''))
@@ -539,7 +539,19 @@ const decodeGiteaContent = (payload: any) => {
       return atob(raw.replace(/\s/g, ''))
     }
   }
-  return raw
+	return raw
+}
+
+const storedAuthToken = () => {
+  if (typeof localStorage === 'undefined') return ''
+  return localStorage.getItem('paap_token') || ''
+}
+
+const repositoryFetch = (url: string) => {
+  const token = storedAuthToken()
+  const headers: Record<string, string> = {}
+  if (token) headers.Authorization = `Bearer ${token}`
+  return fetch(url, { headers })
 }
 
 const repositoryTreeKey = (repo: WorkspaceResource, path = '') => `${repoIdentity(repo)}:${path}`
@@ -561,8 +573,8 @@ const loadRepositoryDirectory = async (repo: WorkspaceResource, path = '', targe
   treeLoading.value = true
   treeError.value = ''
   try {
-    const res = await fetch(url)
-    if (!res.ok) throw new Error(res.statusText || `HTTP ${res.status}`)
+		const res = await repositoryFetch(url)
+		if (!res.ok) throw new Error(res.statusText || `HTTP ${res.status}`)
     const payload = await res.json()
     if (token !== treeLoadToken || selectedRepoKey !== requestRepoKey || (selectedRepo.value && repoIdentity(selectedRepo.value) !== requestRepoKey)) return
     const items = Array.isArray(payload) ? payload : [payload]
@@ -594,8 +606,8 @@ const loadSelectedFileContent = async (file: WorkspaceResource) => {
   lazyFileLoading.value = true
   lazyFileError.value = ''
   try {
-    const res = await fetch(url)
-    if (!res.ok) throw new Error(res.statusText || `HTTP ${res.status}`)
+		const res = await repositoryFetch(url)
+		if (!res.ok) throw new Error(res.statusText || `HTTP ${res.status}`)
     const payload = await res.json()
     const content = decodeGiteaContent(Array.isArray(payload) ? payload[0] : payload)
     if (token !== fileLoadToken || !selectedRepo.value || repoIdentity(selectedRepo.value) !== requestRepoKey) return
@@ -730,13 +742,13 @@ const statusBadge = (s?: string) => {
 .repo-home-head h3 {
   margin: 0 0 4px;
   color: var(--paap-text);
-  font-size: 16px;
+  font-size: var(--paap-fs-heading-lg);
   line-height: 1.2;
 }
 .repo-home-head p {
   margin: 0;
   color: var(--paap-muted);
-  font-size: 12px;
+  font-size: var(--paap-fs-label);
   line-height: 1.5;
 }
 .repo-guide-panel {
@@ -756,10 +768,10 @@ const statusBadge = (s?: string) => {
   overflow: auto;
   margin: 0;
   border-radius: var(--paap-radius-sm);
-  background: #0f1117;
-  color: #e5e7eb;
+  background: var(--paap-term-bg);
+  color: var(--paap-term-text);
   padding: var(--paap-space-3);
-  font-size: 11px;
+  font-size: var(--paap-fs-small);
   line-height: 1.55;
 }
 .push-help code {
@@ -768,7 +780,7 @@ const statusBadge = (s?: string) => {
 .push-help p {
   margin: var(--paap-space-2) 0 0;
   color: var(--paap-muted);
-  font-size: 12px;
+  font-size: var(--paap-fs-label);
   line-height: 1.5;
 }
 .repo-list { display: flex; flex-direction: column; gap: var(--paap-space-3); }
@@ -785,16 +797,16 @@ const statusBadge = (s?: string) => {
   transition: border-color 0.15s, box-shadow 0.15s;
   cursor: pointer;
 }
-.repo-card:hover { border-color: var(--paap-border-strong); box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
+.repo-card:hover { border-color: var(--paap-border-strong); box-shadow: var(--paap-shadow-sm); }
 .repo-header { display: flex; align-items: center; gap: var(--paap-space-2); margin-bottom: 4px; }
-.repo-name { font-weight: 600; font-size: 14px; color: var(--paap-accent); }
-.repo-desc { font-size: 12px; color: var(--paap-muted); }
+.repo-name { font-weight: 600; font-size: var(--paap-fs-body); color: var(--paap-accent); }
+.repo-desc { font-size: var(--paap-fs-label); color: var(--paap-muted); }
 .visibility { font-size: 10px; padding: 1px 6px; border-radius: var(--paap-radius-full); font-weight: 600; border: 1px solid; }
-.visibility.public { color: #059669; border-color: #a7f3d0; background: var(--paap-success-soft); }
-.visibility.private { color: #9a3412; border-color: #fed7aa; background: var(--paap-warning-soft); }
-.visibility.role { color: var(--paap-accent); border-color: #bfdbfe; background: var(--paap-accent-soft); }
+.visibility.public { color: var(--paap-success); border-color: var(--paap-success-border); background: var(--paap-success-soft); }
+.visibility.private { color: var(--paap-warning); border-color: var(--paap-warning-soft); background: var(--paap-warning-soft); }
+.visibility.role { color: var(--paap-accent); border-color: var(--paap-accent-soft); background: var(--paap-accent-soft); }
 .repo-meta { display: flex; align-items: center; gap: var(--paap-space-4); flex-shrink: 0; }
-.meta-item { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--paap-muted); }
+.meta-item { display: flex; align-items: center; gap: 4px; font-size: var(--paap-fs-label); color: var(--paap-muted); }
 .meta-item svg { opacity: 0.7; }
 
 /* Repo detail */
@@ -805,15 +817,15 @@ const statusBadge = (s?: string) => {
 .detail-header { margin-bottom: var(--paap-space-5); }
 .detail-title-row { display: flex; align-items: center; gap: var(--paap-space-3); flex-wrap: wrap; margin-bottom: 6px; }
 .detail-name { font-size: 18px; font-weight: 600; color: var(--paap-text); margin: 0; }
-.detail-desc { font-size: 13px; color: var(--paap-muted); margin: 0; }
+.detail-desc { font-size: var(--paap-fs-compact); color: var(--paap-muted); margin: 0; }
 .detail-stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: var(--paap-space-3); margin-bottom: var(--paap-space-5); }
 .stat-box { background: var(--paap-panel); border: 1px solid var(--paap-border); border-radius: var(--paap-radius); padding: var(--paap-space-4); text-align: center; }
 .stat-num { font-size: 18px; font-weight: 600; color: var(--paap-text); }
-.stat-label { font-size: 11px; color: var(--paap-muted); margin-top: 4px; display: block; }
+.stat-label { font-size: var(--paap-fs-small); color: var(--paap-muted); margin-top: 4px; display: block; }
 .detail-section { margin-bottom: var(--paap-space-5); }
-.section-label { font-size: 11px; font-weight: 600; color: var(--paap-muted); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 6px; }
+.section-label { font-size: var(--paap-fs-small); font-weight: 600; color: var(--paap-muted); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 6px; }
 .clone-box { background: var(--paap-panel-subtle); border: 1px solid var(--paap-border); border-radius: var(--paap-radius-xs); padding: 10px 12px; }
-.clone-box code { font-size: 12px; color: var(--paap-text); font-family: var(--paap-mono); }
+.clone-box code { font-size: var(--paap-fs-code); color: var(--paap-text); font-family: var(--paap-mono); }
 .repo-workbench { display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, 340px); gap: var(--paap-space-4); align-items: start; }
 .repo-main-column, .file-detail { min-width: 0; }
 .repo-main-column { display: grid; gap: var(--paap-space-3); }
@@ -835,7 +847,7 @@ const statusBadge = (s?: string) => {
   color: var(--paap-text);
   height: 30px;
   padding: 0 10px;
-  font-size: 12px;
+  font-size: var(--paap-fs-label);
   font-weight: 600;
   cursor: pointer;
   font-family: inherit;
@@ -846,14 +858,14 @@ const statusBadge = (s?: string) => {
   gap: 6px;
   min-width: 0;
   overflow: hidden;
-  color: var(--paap-muted-2);
-  font-size: 13px;
+  color: var(--paap-muted);
+  font-size: var(--paap-fs-compact);
 }
 .path-crumbs button {
   border: 0;
   background: transparent;
   color: var(--paap-accent);
-  font-size: 13px;
+  font-size: var(--paap-fs-compact);
   font-weight: 600;
   padding: 0;
   cursor: pointer;
@@ -866,10 +878,10 @@ const statusBadge = (s?: string) => {
 .repository-browser { min-height: 360px; }
 .browser-head { min-height: 58px; display: flex; align-items: center; justify-content: space-between; gap: var(--paap-space-3); padding: 12px 14px; border-bottom: 1px solid var(--paap-border); background: var(--paap-panel-subtle); }
 .editor-head { min-height: 58px; display: flex; align-items: center; justify-content: space-between; gap: var(--paap-space-3); padding: 12px 14px; border-bottom: 1px solid var(--paap-border); background: var(--paap-panel-subtle); }
-.editor-path { color: var(--paap-text); font-size: 14px; font-weight: 600; word-break: break-all; }
-.editor-desc { color: var(--paap-muted); font-size: 12px; margin-top: 3px; line-height: 1.4; }
+.editor-path { color: var(--paap-text); font-size: var(--paap-fs-body); font-weight: 600; word-break: break-all; }
+.editor-desc { color: var(--paap-muted); font-size: var(--paap-fs-label); margin-top: 3px; line-height: 1.4; }
 .editor-actions { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; }
-.editor-actions .act-btn.active { background: var(--cds-button-primary, var(--paap-accent)); color: var(--cds-text-on-color, #fff); border-color: var(--cds-button-primary, var(--paap-accent)); }
+.editor-actions .act-btn.active { background: var(--paap-accent); color: #fff; border-color: var(--paap-accent); }
 .gitlab-file-table { display: grid; }
 .gitlab-file-row {
   display: grid;
@@ -878,24 +890,25 @@ const statusBadge = (s?: string) => {
   gap: var(--paap-space-3);
   min-height: 42px;
   border: none;
-  border-bottom: 1px solid #f3f4f6;
+  border-bottom: 1px solid var(--paap-panel-subtle);
   background: transparent;
   color: var(--paap-text);
   padding: 8px 12px;
   text-align: left;
   cursor: pointer;
   font-family: inherit;
+  transition: background var(--paap-transition-fast);
 }
 .gitlab-file-row:hover { background: var(--paap-panel-subtle); }
 .gitlab-file-row:last-child { border-bottom: none; }
-.gitlab-file-row strong { color: var(--paap-accent); font-size: 13px; word-break: break-word; }
+.gitlab-file-row strong { color: var(--paap-accent); font-size: var(--paap-fs-compact); word-break: break-word; }
 .gitlab-file-row.directory strong { color: var(--paap-text); }
-.gitlab-file-row small { color: var(--paap-muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.gitlab-file-row > span:last-child { color: var(--paap-muted-2); font-size: 12px; text-align: right; }
+.gitlab-file-row small { color: var(--paap-muted); font-size: var(--paap-fs-label); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gitlab-file-row > span:last-child { color: var(--paap-muted); font-size: var(--paap-fs-label); text-align: right; }
 .file-kind {
   justify-self: start;
   border-radius: var(--paap-radius-xs);
-  background: #f3f4f6;
+  background: var(--paap-panel-subtle);
   color: var(--paap-muted);
   padding: 2px 6px;
   font-size: 10px;
@@ -917,7 +930,7 @@ const statusBadge = (s?: string) => {
   border-bottom: 1px solid var(--paap-border);
   background: var(--paap-panel-subtle);
   color: var(--paap-text);
-  font-size: 13px;
+  font-size: var(--paap-fs-compact);
   font-weight: 600;
 }
 .readme-body {
@@ -927,46 +940,46 @@ const statusBadge = (s?: string) => {
   background: var(--paap-panel);
   color: var(--paap-text);
   padding: var(--paap-space-4);
-  font-size: 13px;
+  font-size: var(--paap-fs-compact);
   line-height: 1.6;
   white-space: pre-wrap;
   word-break: break-word;
 }
 .readme-body code { font-family: var(--paap-mono); }
-.file-editor-textarea { display: block; width: 100%; min-height: 620px; border: 0; resize: vertical; padding: var(--paap-space-4); outline: none; background: var(--paap-panel); color: var(--paap-text); font-family: var(--paap-mono); font-size: 12px; line-height: 1.6; tab-size: 2; }
-.editor-footer { display: flex; align-items: center; justify-content: space-between; gap: var(--paap-space-3); padding: 10px 12px; border-top: 1px solid var(--paap-border); background: var(--paap-panel-subtle); color: var(--paap-muted); font-size: 12px; }
+.file-editor-textarea { display: block; width: 100%; min-height: 620px; border: 0; resize: vertical; padding: var(--paap-space-4); outline: none; background: var(--paap-panel); color: var(--paap-text); font-family: var(--paap-mono); font-size: var(--paap-fs-code); line-height: 1.6; tab-size: 2; }
+.editor-footer { display: flex; align-items: center; justify-content: space-between; gap: var(--paap-space-3); padding: 10px 12px; border-top: 1px solid var(--paap-border); background: var(--paap-panel-subtle); color: var(--paap-muted); font-size: var(--paap-fs-label); }
 .directory-main { display: grid; gap: var(--paap-space-2); padding: var(--paap-space-4); }
-.directory-row { display: grid; grid-template-columns: 16px minmax(140px, 0.45fr) minmax(0, 1fr); gap: var(--paap-space-2); align-items: center; border: 1px solid var(--paap-border); border-radius: var(--paap-radius-xs); background: var(--paap-panel); padding: 9px 10px; text-align: left; cursor: pointer; font-family: inherit; }
+.directory-row { display: grid; grid-template-columns: 16px minmax(140px, 0.45fr) minmax(0, 1fr); gap: var(--paap-space-2); align-items: center; border: 1px solid var(--paap-border); border-radius: var(--paap-radius-xs); background: var(--paap-panel); padding: 9px 10px; text-align: left; cursor: pointer; font-family: inherit; transition: border-color var(--paap-transition-fast), box-shadow var(--paap-transition-fast), background var(--paap-transition-fast); }
 .directory-row:hover { border-color: var(--paap-border-strong); background: var(--paap-panel-subtle); }
 .directory-row span { color: var(--paap-muted); }
-.directory-row strong { color: var(--paap-text); font-size: 13px; word-break: break-all; }
-.directory-row small { color: var(--paap-muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.directory-row strong { color: var(--paap-text); font-size: var(--paap-fs-compact); word-break: break-all; }
+.directory-row small { color: var(--paap-muted); font-size: var(--paap-fs-label); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .file-tree { background: var(--paap-panel); border: 1px solid var(--paap-border); border-radius: var(--paap-radius); overflow: hidden; }
-.tree-row { width: 100%; display: flex; align-items: center; gap: var(--paap-space-2); padding: 8px 14px; font-size: 13px; color: var(--paap-text); border: none; border-bottom: 1px solid #f3f4f6; background: transparent; text-align: left; font-family: inherit; }
+.tree-row { width: 100%; display: flex; align-items: center; gap: var(--paap-space-2); padding: 8px 14px; font-size: var(--paap-fs-compact); color: var(--paap-text); border: none; border-bottom: 1px solid var(--paap-panel-subtle); background: transparent; text-align: left; font-family: inherit; transition: background var(--paap-transition-fast); }
 .tree-row:not(.root) { cursor: pointer; }
 .tree-row:not(.root):hover { background: var(--paap-panel-subtle); }
 .tree-row.selected { background: var(--paap-accent-soft); color: var(--paap-accent); }
-.tree-row.directory .tree-name { color: var(--paap-text-soft); }
+.tree-row.directory .tree-name { color: var(--paap-muted); }
 .tree-row:last-child { border-bottom: none; }
 .tree-row.root { background: var(--paap-panel-subtle); font-weight: 600; }
-.tree-icon { font-size: 14px; }
+.tree-icon { font-size: var(--paap-fs-body); }
 .tree-name { font-weight: 600; min-width: 0; word-break: break-all; }
-.tree-desc { color: var(--paap-muted-2); font-size: 12px; margin-left: auto; }
+.tree-desc { color: var(--paap-muted); font-size: var(--paap-fs-label); margin-left: auto; }
 .file-detail { background: var(--paap-panel); border: 1px solid var(--paap-border); border-radius: var(--paap-radius); padding: var(--paap-space-4); }
 .detail-side-head { display: flex; align-items: center; justify-content: space-between; gap: var(--paap-space-2); margin-bottom: var(--paap-space-3); }
 .file-summary { display: flex; flex-direction: column; gap: var(--paap-space-2); margin-bottom: var(--paap-space-4); }
-.file-name { font-size: 14px; font-weight: 600; color: var(--paap-text); word-break: break-all; }
-.file-desc { font-size: 12px; color: var(--paap-muted); line-height: 1.5; }
+.file-name { font-size: var(--paap-fs-body); font-weight: 600; color: var(--paap-text); word-break: break-all; }
+.file-desc { font-size: var(--paap-fs-label); color: var(--paap-muted); line-height: 1.5; }
 .file-meta-grid { display: grid; gap: 6px; }
-.file-meta-grid > div { display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: var(--paap-space-2); font-size: 12px; }
-.file-meta-grid span { color: var(--paap-muted-2); }
+.file-meta-grid > div { display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: var(--paap-space-2); font-size: var(--paap-fs-label); }
+.file-meta-grid span { color: var(--paap-muted); }
 .file-meta-grid strong { color: var(--paap-text); font-weight: 600; word-break: break-all; }
-.file-empty { color: var(--paap-muted-2); font-size: 12px; text-align: center; padding: var(--paap-space-5) 0; }
-.file-preview { max-height: 360px; overflow: auto; margin: var(--paap-space-3) 0 0; border: 1px solid var(--paap-border); border-radius: var(--paap-radius); background: var(--paap-panel); color: var(--paap-text); padding: var(--paap-space-3); font-size: 12px; line-height: 1.55; white-space: pre-wrap; word-break: break-word; }
+.file-empty { color: var(--paap-muted); font-size: var(--paap-fs-label); text-align: center; padding: var(--paap-space-5) 0; }
+.file-preview { max-height: 360px; overflow: auto; margin: var(--paap-space-3) 0 0; border: 1px solid var(--paap-border); border-radius: var(--paap-radius); background: var(--paap-panel); color: var(--paap-text); padding: var(--paap-space-3); font-size: var(--paap-fs-label); line-height: 1.55; white-space: pre-wrap; word-break: break-word; }
 .main-preview { min-height: 620px; max-height: none; margin: 0; border: 0; border-radius: 0; padding: var(--paap-space-4); }
 .file-preview code { font-family: var(--paap-mono); }
 .commit-panel { border-top: 1px solid var(--paap-border); padding-top: var(--paap-space-3); margin-top: var(--paap-space-3); }
-.commit-row { display: grid; grid-template-columns: 58px minmax(0, 1fr); gap: var(--paap-space-2); padding: var(--paap-space-2) 0; border-bottom: 1px solid #f3f4f6; font-size: 12px; }
+.commit-row { display: grid; grid-template-columns: 58px minmax(0, 1fr); gap: var(--paap-space-2); padding: var(--paap-space-2) 0; border-bottom: 1px solid var(--paap-panel-subtle); font-size: var(--paap-fs-label); }
 .commit-row:last-child { border-bottom: none; }
 .commit-row code { font-family: var(--paap-mono); color: var(--paap-accent); background: var(--paap-accent-soft); border-radius: var(--paap-radius-xs); padding: 2px 4px; align-self: start; }
 .commit-row strong { display: block; color: var(--paap-text); font-weight: 600; margin-bottom: 2px; }

@@ -1,0 +1,16 @@
+server:
+  port: __TEMPLATE__SERVER_PORT__服务端口__DEFAULT__8080__
+
+spring:
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://__TEMPLATE__MYSQL_HOST__MySQL 地址__DEFAULT__mysql__:__TEMPLATE__MYSQL_PORT__MySQL 端口__DEFAULT__3306__/__TEMPLATE__MYSQL_DATABASE__MySQL 数据库__DEFAULT__cos__?serverTimezone=Asia/Seoul
+    username: __TEMPLATE__MYSQL_USERNAME__MySQL 用户__DEFAULT__root__
+    password: ${MYSQL_PASSWORD}
+
+  jpa:
+    hibernate:
+      ddl-auto: __TEMPLATE__JPA_DDL_AUTO__表结构策略__DEFAULT__update__
+      naming:
+        physical-strategy: org.hibernate.boot.model.naming.PhysicalNamingStrategyStandardImpl
+    show-sql: __TEMPLATE__SHOW_SQL__显示 SQL__DEFAULT__true__

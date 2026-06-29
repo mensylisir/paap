@@ -1,0 +1,7 @@
+{
+  "fields": [
+    { "key": "VITE_APP_TITLE", "label": "应用标题", "type": "text", "default": "企业级后台管理系统" },
+    { "key": "VITE_API_BASE_URL", "label": "API 地址", "type": "text", "required": true, "default": "https://api.example.com" },
+    { "key": "VITE_UPLOAD_URL", "label": "上传地址", "type": "text", "default": "https://oss.example.com" }
+  ]
+}

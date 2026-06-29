@@ -1,11 +1,12 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 
 	"paap/internal/database"
-	"paap/internal/model"
+	"paap/internal/service"
 
 	"github.com/gin-gonic/gin"
 )
@@ -19,7 +20,7 @@ func parseApplicationID(c *gin.Context) (uint, bool) {
 	return uint(id), true
 }
 
-func parseMemberID(c *gin.Context) (uint, bool) {
+func parseAppMemberID(c *gin.Context) (uint, bool) {
 	id, err := strconv.Atoi(c.Param("memberId"))
 	if err != nil || id <= 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid member id"})
@@ -28,119 +29,62 @@ func parseMemberID(c *gin.Context) (uint, bool) {
 	return uint(id), true
 }
 
-// ListApplicationMembers returns all members of an application.
+// ListApplicationMembers returns members for an application visible to the current user.
 func ListApplicationMembers(c *gin.Context) {
 	appID, ok := parseApplicationID(c)
 	if !ok {
 		return
 	}
-	var members []model.AppMember
-	if err := database.DB.Where("application_id = ?", appID).
-		Preload("User").
-		Order("id asc").
-		Find(&members).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	members, err := service.ListApplicationMembers(database.DB, appID)
+	if err != nil {
+		respondAppMemberServiceError(c, err)
 		return
 	}
-	type memberItem struct {
-		ID     uint   `json:"id"`
-		UserID uint   `json:"userId"`
-		Role   string `json:"role"`
-		User   *struct {
-			ID       uint   `json:"id"`
-			Username string `json:"username"`
-			Email    string `json:"email"`
-		} `json:"user,omitempty"`
-	}
-	items := make([]memberItem, 0, len(members))
-	for _, m := range members {
-		item := memberItem{
-			ID:     m.ID,
-			UserID: m.UserID,
-			Role:   m.Role,
-		}
-		if m.User.ID != 0 {
-			item.User = &struct {
-				ID       uint   `json:"id"`
-				Username string `json:"username"`
-				Email    string `json:"email"`
-			}{
-				ID:       m.User.ID,
-				Username: m.User.Username,
-				Email:    m.User.Email,
-			}
-		}
-		items = append(items, item)
-	}
-	c.JSON(http.StatusOK, gin.H{"data": items})
+	c.JSON(http.StatusOK, gin.H{"data": members})
 }
 
-// InviteApplicationMember adds a user to an application.
+// InviteApplicationMember adds an existing platform user to an application.
 func InviteApplicationMember(c *gin.Context) {
 	appID, ok := parseApplicationID(c)
 	if !ok {
 		return
 	}
-	var req struct {
-		Username string `json:"username" binding:"required"`
-		Role     string `json:"role" binding:"required"`
-	}
+	var req InviteAppMemberRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	var user model.User
-	if err := database.DB.Where("username = ?", req.Username).First(&user).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
-		return
-	}
-	var existing int64
-	database.DB.Model(&model.AppMember{}).Where("application_id = ? AND user_id = ?", appID, user.ID).Count(&existing)
-	if existing > 0 {
-		c.JSON(http.StatusConflict, gin.H{"error": "user is already a member of this application"})
-		return
-	}
-	member := model.AppMember{
-		ApplicationID: appID,
-		UserID:        user.ID,
-		Role:          req.Role,
-	}
-	if err := database.DB.Create(&member).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	createdBy, _ := authenticatedUserID(c)
+	member, err := service.InviteApplicationMember(database.DB, appID, req.Username, req.Role, createdBy)
+	if err != nil {
+		respondAppMemberServiceError(c, err)
 		return
 	}
 	c.JSON(http.StatusCreated, gin.H{"data": member})
 }
 
-// UpdateApplicationMemberRole changes a member's role.
+// UpdateApplicationMemberRole changes a member's application role.
 func UpdateApplicationMemberRole(c *gin.Context) {
 	appID, ok := parseApplicationID(c)
 	if !ok {
 		return
 	}
-	memberID, ok := parseMemberID(c)
+	memberID, ok := parseAppMemberID(c)
 	if !ok {
 		return
 	}
-	var req struct {
-		Role string `json:"role" binding:"required"`
-	}
+	var req UpdateAppMemberRoleRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	result := database.DB.Model(&model.AppMember{}).
-		Where("id = ? AND application_id = ?", memberID, appID).
-		Update("role", req.Role)
-	if result.Error != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
+	createdBy, _ := authenticatedUserID(c)
+	member, err := service.UpdateApplicationMemberRole(database.DB, appID, memberID, req.Role, createdBy)
+	if err != nil {
+		respondAppMemberServiceError(c, err)
 		return
 	}
-	if result.RowsAffected == 0 {
-		c.JSON(http.StatusNotFound, gin.H{"error": "member not found"})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"data": gin.H{"ok": true}})
+	c.JSON(http.StatusOK, gin.H{"data": member})
 }
 
 // RemoveApplicationMember removes a member from an application.
@@ -149,18 +93,29 @@ func RemoveApplicationMember(c *gin.Context) {
 	if !ok {
 		return
 	}
-	memberID, ok := parseMemberID(c)
+	memberID, ok := parseAppMemberID(c)
 	if !ok {
 		return
 	}
-	result := database.DB.Where("id = ? AND application_id = ?", memberID, appID).Delete(&model.AppMember{})
-	if result.Error != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
+	if err := service.RemoveApplicationMember(database.DB, appID, memberID); err != nil {
+		respondAppMemberServiceError(c, err)
 		return
 	}
-	if result.RowsAffected == 0 {
-		c.JSON(http.StatusNotFound, gin.H{"error": "member not found"})
-		return
+	c.JSON(http.StatusOK, gin.H{"message": "removed"})
+}
+
+func respondAppMemberServiceError(c *gin.Context, err error) {
+	switch {
+	case errors.Is(err, service.ErrApplicationNotFound),
+		errors.Is(err, service.ErrAppMemberNotFound),
+		errors.Is(err, service.ErrUserNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+	case errors.Is(err, service.ErrAppMemberExists):
+		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+	case errors.Is(err, service.ErrInvalidAppRole),
+		errors.Is(err, service.ErrLastAppAdmin):
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	default:
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 	}
-	c.JSON(http.StatusOK, gin.H{"data": gin.H{"ok": true}})
 }

@@ -20,7 +20,7 @@
               <rect x="3" y="14" width="7" height="7" rx="1.5"/>
               <rect x="14" y="14" width="7" height="7" rx="1.5"/>
             </svg>
-            <span>应用</span>
+            <span>应用列表</span>
           </router-link>
           <router-link to="/templates" class="nav-item" :class="{ active: $route.path === '/templates' }">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
@@ -30,9 +30,9 @@
               <line x1="16" y1="17" x2="8" y2="17"/>
               <polyline points="10 9 9 9 8 9"/>
             </svg>
-            <span>模板</span>
+            <span>配置模板</span>
           </router-link>
-          <router-link to="/catalog" class="nav-item" :class="{ active: $route.path === '/catalog' }">
+          <router-link to="/catalog" class="nav-item" :class="{ active: $route.path === '/catalog' || $route.path.startsWith('/catalog/') }">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
               <circle cx="4" cy="4" r="2"/>
               <circle cx="12" cy="4" r="2"/>
@@ -44,16 +44,35 @@
               <circle cx="12" cy="20" r="2"/>
               <circle cx="20" cy="20" r="2"/>
             </svg>
-            <span>目录</span>
+            <span>服务目录</span>
           </router-link>
-          <router-link v-if="isPlatformAdmin" to="/users" class="nav-item" :class="{ active: $route.path === '/users' }">
+          <router-link v-if="permissionStore.has('system.shared_pool.manage')" to="/shared-resources" class="nav-item" :class="{ active: $route.path === '/shared-resources' }">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 3l8 4.5-8 4.5-8-4.5L12 3z"/>
+              <path d="M4 12l8 4.5 8-4.5"/>
+              <path d="M4 16.5l8 4.5 8-4.5"/>
+            </svg>
+            <span>共享资源</span>
+          </router-link>
+          <router-link v-if="permissionStore.has('system.shared_pool.manage')" to="/platform/services" class="nav-item" :class="{ active: $route.path === '/platform/services' }">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 7h16"/>
+              <path d="M4 12h16"/>
+              <path d="M4 17h16"/>
+              <circle cx="8" cy="7" r="1.5"/>
+              <circle cx="13" cy="12" r="1.5"/>
+              <circle cx="17" cy="17" r="1.5"/>
+            </svg>
+            <span>平台服务</span>
+          </router-link>
+          <router-link v-if="canManageUsersOrRoles" to="/users" class="nav-item" :class="{ active: isUsersRolesActive }">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
               <path d="M16 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"/>
               <circle cx="9.5" cy="7" r="4"/>
               <path d="M22 21v-2a4 4 0 0 0-3-3.9"/>
               <path d="M16 3.1a4 4 0 0 1 0 7.8"/>
             </svg>
-            <span>用户</span>
+            <span>用户角色</span>
           </router-link>
         </nav>
       </div>
@@ -82,6 +101,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { api } from '../api/client'
+import { usePermissionStore } from '../stores/permission'
 
 type StoredUser = {
   id?: number
@@ -92,8 +112,15 @@ type StoredUser = {
 }
 
 const route = useRoute()
+const permissionStore = usePermissionStore()
 const isAppsActive = computed(() =>
   route.path === '/apps' || route.path.startsWith('/apps/')
+)
+const isUsersRolesActive = computed(() =>
+  route.path === '/users' || route.path === '/roles' || route.path.startsWith('/roles/')
+)
+const canManageUsersOrRoles = computed(() =>
+  permissionStore.has('system.user.manage') || permissionStore.has('system.role.manage')
 )
 const readStoredUser = (): StoredUser | null => {
   try {
@@ -127,10 +154,6 @@ const refreshCurrentUser = async () => {
   } catch {}
 }
 
-const isPlatformAdmin = computed(() =>
-  Array.isArray(currentUser.value?.roles) && currentUser.value.roles.includes('platform_admin')
-)
-
 const userName = computed(() => {
   const user = currentUser.value
   return user?.name || user?.username || user?.email || '用户'
@@ -144,6 +167,7 @@ const userInitial = computed(() => {
 const logout = () => {
   localStorage.removeItem('paap_user')
   localStorage.removeItem('paap_token')
+  permissionStore.reset()
   location.href = '/login'
 }
 
@@ -172,7 +196,7 @@ onMounted(() => {
   top: 0;
   left: 0;
   bottom: 0;
-  z-index: 100;
+  z-index: var(--paap-z-sticky);
 }
 
 .sidebar-top {
@@ -195,8 +219,8 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--cds-background-brand, var(--paap-accent));
-  color: var(--cds-icon-on-color, #fff);
+  background: var(--paap-accent);
+  color: #fff;
   border-radius: var(--paap-radius-sm);
 }
 
@@ -221,7 +245,7 @@ onMounted(() => {
   gap: var(--paap-space-3);
   padding: var(--paap-space-2) var(--paap-space-3);
   border-radius: var(--paap-radius-sm);
-  font-size: 14px;
+  font-size: var(--paap-fs-body);
   font-weight: 500;
   color: var(--paap-muted);
   text-decoration: none;
@@ -239,9 +263,21 @@ onMounted(() => {
 }
 
 .nav-item.active {
-  background: var(--paap-panel-subtle);
-  color: var(--cds-icon-interactive, var(--paap-accent));
+  background: var(--paap-accent-fill);
+  color: var(--paap-accent);
   font-weight: 600;
+  position: relative;
+}
+.nav-item.active::before {
+  content: '';
+  position: absolute;
+  left: -12px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 20px;
+  border-radius: 0 2px 2px 0;
+  background: var(--paap-accent);
 }
 
 .sidebar-bottom {
@@ -268,13 +304,13 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 13px;
+  font-size: var(--paap-fs-compact);
   font-weight: 600;
   flex-shrink: 0;
 }
 
 .user-name {
-  font-size: 13px;
+  font-size: var(--paap-fs-compact);
   font-weight: 500;
   color: var(--paap-text);
   overflow: hidden;

@@ -77,6 +77,25 @@ describe('serviceAssetConfig', () => {
     })
   })
 
+  it('renders Eureka as a Spring Cloud service URL instead of generic host and port variables', () => {
+    const eureka = {
+      serviceType: 'eureka',
+      serviceName: 'dev-eureka',
+      releaseName: 'billing-dev-eureka',
+      namespace: 'billing-dev-eureka',
+      values: JSON.stringify({ fullnameOverride: 'billing-dev-eureka' }),
+    }
+
+    expect(serviceInternalEndpoint(eureka)).toBe('billing-dev-eureka.billing-dev-eureka.svc.cluster.local:8761')
+    expect(connectionBindingPreview({}, eureka).bindings).toEqual([
+      {
+        name: 'EUREKA_URL',
+        value: 'http://billing-dev-eureka.billing-dev-eureka.svc.cluster.local:8761/eureka/',
+        source: 'billing-dev-eureka',
+      },
+    ])
+  })
+
   it('maps Redis form values only to deployable Helm values supported by the bundled chart', () => {
     const values = serviceConfigValuesFromForm('redis', {
       architecture: 'replication',

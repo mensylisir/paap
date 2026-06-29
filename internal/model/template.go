@@ -6,14 +6,15 @@ import (
 	"gorm.io/gorm"
 )
 
-// ServiceCatalog defines available tool and infra service types
+// ServiceCatalog defines available platform service product types.
 type ServiceCatalog struct {
 	gorm.Model
 	Type        string `gorm:"uniqueIndex;size:30;not null" json:"type"`
 	Name        string `gorm:"size:50;not null" json:"name"`
-	Category    string `gorm:"size:20;not null" json:"category"` // tool | infra
+	Category    string `gorm:"size:20;not null" json:"category"` // ci | cd | monitor | log | database | middleware | environment | virtualMachine | other
 	Description string `gorm:"size:200" json:"description"`
 	Icon        string `gorm:"size:50" json:"icon"`
+	Features    string `gorm:"type:text" json:"features,omitempty"` // JSON feature matrix: managed/shared/external/kubevirt
 	Enabled     bool   `gorm:"default:true" json:"enabled"`
 }
 

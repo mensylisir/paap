@@ -1,0 +1,17 @@
+[server]
+port = __TEMPLATE__SERVER_PORT__服务端口__DEFAULT__8888__
+mode = "__TEMPLATE__GIN_MODE__运行模式__DEFAULT__release__"
+
+[database]
+driver = "postgres"
+dsn = "host=__TEMPLATE__POSTGRES_HOST__PostgreSQL 地址__DEFAULT__postgresql__ user=__TEMPLATE__DATABASE_USERNAME__数据库用户__DEFAULT__postgres__ password=${DATABASE_PASSWORD} dbname=__TEMPLATE__POSTGRES_DATABASE__数据库名__DEFAULT__mydb__ port=__TEMPLATE__POSTGRES_PORT__PostgreSQL 端口__DEFAULT__5432__ sslmode=disable"
+max_idle = __TEMPLATE__DB_MAX_IDLE__数据库最大空闲连接__DEFAULT__10__
+max_open = __TEMPLATE__DB_MAX_OPEN__数据库最大连接数__DEFAULT__50__
+
+[redis]
+addr = "__TEMPLATE__REDIS_HOST__Redis 地址__DEFAULT__redis-master__:__TEMPLATE__REDIS_PORT__Redis 端口__DEFAULT__6379__"
+password = "${REDIS_PASSWORD}"
+db = __TEMPLATE__REDIS_DB__Redis 数据库__DEFAULT__0__
+
+[log]
+level = "__TEMPLATE__LOG_LEVEL__日志级别__DEFAULT__info__"

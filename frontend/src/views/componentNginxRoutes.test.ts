@@ -92,4 +92,30 @@ describe('componentNginxRoutes', () => {
 
     expect(rows).toEqual([{ path: '/api', targetKey: 'component:38', targetUrl: 'http://backend-1' }])
   })
+
+  it('supports generic location directive list fields', () => {
+    const field = {
+      key: 'LOCATION_LIST',
+      type: 'list',
+      itemFields: [
+        { key: 'MATCH', label: '匹配规则', type: 'text' },
+        { key: 'DIRECTIVES', label: '指令块', type: 'textarea' },
+      ],
+    }
+
+    const generated = nginxRouteRowsToTemplateListRows([{
+      path: '/api',
+      targetKey: '',
+      targetUrl: 'http://backend-1',
+    }], field)
+
+    expect(generated[0]).toMatchObject({ MATCH: '/api' })
+    expect(generated[0].DIRECTIVES).toContain('proxy_pass http://backend-1;')
+
+    const recovered = nginxTemplateListRowsToRouteRows(generated, field, [
+      { key: 'component:38', name: 'backend-1', serviceName: 'backend-1' },
+    ])
+
+    expect(recovered).toEqual([{ path: '/api', targetKey: 'component:38', targetUrl: 'http://backend-1' }])
+  })
 })

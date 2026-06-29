@@ -1,0 +1,20 @@
+{
+  "fields": [
+    {
+      "key": "LOCATION_LIST",
+      "label": "Location 规则",
+      "type": "list",
+      "required": true,
+      "itemFields": [
+        { "key": "MATCH", "label": "匹配规则", "type": "text", "required": true, "default": "~* \\.(jpg|jpeg|png|gif|ico|css|js)$" },
+        {
+          "key": "DIRECTIVES",
+          "label": "指令块",
+          "type": "textarea",
+          "required": true,
+          "default": "root /var/www/static;\nexpires 30d;\nadd_header Cache-Control \"public, no-transform\";\naccess_log off;"
+        }
+      ]
+    }
+  ]
+}

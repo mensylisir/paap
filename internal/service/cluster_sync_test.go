@@ -20,7 +20,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
-func TestClusterSyncOwnerIDUsesUserRolesWhenAdminUsernameMissing(t *testing.T) {
+func TestClusterSyncOwnerIDUsesRoleBindingsWhenAdminUsernameMissing(t *testing.T) {
 	db, mock := openMockClusterSyncDB(t)
 
 	mock.ExpectQuery(regexp.QuoteMeta(`SELECT count(*) FROM information_schema.tables WHERE table_schema = CURRENT_SCHEMA() AND table_name = $1 AND table_type = $2`)).
@@ -29,8 +29,8 @@ func TestClusterSyncOwnerIDUsesUserRolesWhenAdminUsernameMissing(t *testing.T) {
 	mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "users" WHERE username = $1 AND "users"."deleted_at" IS NULL ORDER BY "users"."id" LIMIT $2`)).
 		WithArgs("admin", 1).
 		WillReturnRows(userSQLRows())
-	mock.ExpectQuery(`SELECT .* FROM "users" JOIN user_roles .*user_roles\.role = \$1.*`).
-		WithArgs(model.RolePlatformAdmin, 1).
+	mock.ExpectQuery(`SELECT .* FROM "users" JOIN role_bindings .* JOIN roles .*roles\.code = \$3.*`).
+		WithArgs(model.ScopeSystem, 0, model.RolePlatformAdmin, model.ScopeSystem, 1).
 		WillReturnRows(userSQLRows().AddRow(42, time.Now(), time.Now(), nil, "platform-owner", "owner@example.local", "x"))
 
 	ownerID, err := clusterSyncOwnerID(db)
@@ -240,6 +240,96 @@ func TestSyncClusterStateRestoresDBFromExistingCRs(t *testing.T) {
 	}
 	if comp.ArgoCDApp != "test-staging-order-api" {
 		t.Fatalf("expected argocd app synced, got %#v", comp)
+	}
+}
+
+func TestClusterSyncDoesNotOverwriteDeclaredSourceImage(t *testing.T) {
+	db, err := openTestDB(t)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := db.AutoMigrate(&model.Component{}); err != nil {
+		t.Fatalf("migrate db: %v", err)
+	}
+	existing := model.Component{
+		EnvironmentID:  1,
+		Name:           "gateway",
+		Type:           "frontend",
+		Image:          "registry.shop-dev.paap.local/shop-dev/gateway:6bb2cf9",
+		RegistryImage:  "registry.shop-dev.paap.local/shop-dev/gateway:6bb2cf9",
+		Version:        "6bb2cf9",
+		DeliveryMode:   "source",
+		JenkinsJob:     "shop-dev-gateway-build",
+		PipelineStatus: "planned",
+		Replicas:       1,
+		Status:         "creating",
+	}
+	if err := db.Create(&existing).Error; err != nil {
+		t.Fatalf("create existing component: %v", err)
+	}
+
+	runtime := model.Component{
+		EnvironmentID: 1,
+		Name:          "gateway",
+		Type:          "frontend",
+		Image:         "10.96.190.247:5000/shop-dev/gateway:6bb2cf9",
+		Version:       "6bb2cf9",
+		Replicas:      2,
+		Status:        "running",
+	}
+	if err := upsertComponent(db, &runtime); err != nil {
+		t.Fatalf("upsert component: %v", err)
+	}
+
+	if runtime.Image != existing.Image || runtime.RegistryImage != existing.RegistryImage {
+		t.Fatalf("sync overwrote declared image: image=%q registry=%q", runtime.Image, runtime.RegistryImage)
+	}
+	if runtime.Version != existing.Version {
+		t.Fatalf("sync overwrote declared version: %q", runtime.Version)
+	}
+	if runtime.Status != "running" || runtime.Replicas != 2 {
+		t.Fatalf("runtime state was not updated: status=%q replicas=%d", runtime.Status, runtime.Replicas)
+	}
+}
+
+func TestClusterSyncPreservesFailedPipelineStatus(t *testing.T) {
+	db, err := openTestDB(t)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := db.AutoMigrate(&model.Component{}); err != nil {
+		t.Fatalf("migrate db: %v", err)
+	}
+	existing := model.Component{
+		EnvironmentID:  1,
+		Name:           "gateway",
+		Type:           "frontend",
+		Image:          "registry.shop-dev.paap.local/shop-dev/gateway:6bb2cf9",
+		Version:        "6bb2cf9",
+		DeliveryMode:   "source",
+		PipelineStatus: "failed",
+		Status:         "error",
+		Replicas:       1,
+	}
+	if err := db.Create(&existing).Error; err != nil {
+		t.Fatalf("create existing component: %v", err)
+	}
+
+	runtime := model.Component{
+		EnvironmentID: 1,
+		Name:          "gateway",
+		Type:          "frontend",
+		Image:         "10.96.190.247:5000/shop-dev/gateway:6bb2cf9",
+		Version:       "6bb2cf9",
+		Replicas:      1,
+		Status:        "creating",
+	}
+	if err := upsertComponent(db, &runtime); err != nil {
+		t.Fatalf("upsert component: %v", err)
+	}
+
+	if runtime.PipelineStatus != "failed" || runtime.Status != "error" {
+		t.Fatalf("failed pipeline state was overwritten: pipeline=%q status=%q", runtime.PipelineStatus, runtime.Status)
 	}
 }
 
@@ -1168,6 +1258,25 @@ func TestSyncClusterStatePreservesDraftComponentsMissingFromCluster(t *testing.T
 	if err := db.Create(&draft).Error; err != nil {
 		t.Fatalf("create draft component: %v", err)
 	}
+	sourceBuilding := model.Component{
+		EnvironmentID:  env.ID,
+		Name:           "source-smoke",
+		Type:           "backend",
+		Replicas:       1,
+		Status:         "building",
+		DeliveryMode:   "source",
+		PipelineStatus: "planned",
+		SourceRepoURL:  "http://gitea/paap/source-smoke.git",
+		SourceBranch:   "main",
+		BuildContext:   ".",
+		JenkinsJob:     "test-staging-source-smoke-build",
+		RegistryImage:  "registry.test-staging.paap.local:5000/test-staging/source-smoke:smoke-1",
+		Image:          "registry.test-staging.paap.local:5000/test-staging/source-smoke:smoke-1",
+		Version:        "smoke-1",
+	}
+	if err := db.Create(&sourceBuilding).Error; err != nil {
+		t.Fatalf("create source building component: %v", err)
+	}
 
 	scheme := runtime.NewScheme()
 	if err := clientgoscheme.AddToScheme(scheme); err != nil {
@@ -1215,6 +1324,13 @@ func TestSyncClusterStatePreservesDraftComponentsMissingFromCluster(t *testing.T
 	}
 	if saved.Status != "draft" {
 		t.Fatalf("status = %q, want draft", saved.Status)
+	}
+	var savedSource model.Component
+	if err := db.Where("environment_id = ? AND name = ?", env.ID, "source-smoke").First(&savedSource).Error; err != nil {
+		t.Fatalf("source building component should be preserved before runtime CR exists: %v", err)
+	}
+	if savedSource.Status != "building" || savedSource.PipelineStatus != "planned" {
+		t.Fatalf("unexpected source state: status=%q pipeline=%q", savedSource.Status, savedSource.PipelineStatus)
 	}
 }
 

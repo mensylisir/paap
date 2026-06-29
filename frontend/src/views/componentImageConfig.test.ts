@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  hasExplicitNonLatestImageTag,
   imageRefFromRegistryFields,
   imageTagForImageField,
   imageTagVersion,
@@ -34,6 +35,13 @@ describe('componentImageConfig', () => {
       'registry.shop-dev.paap.local:5000/nginx:1.25',
     )
     expect(splitImageRepositoryAndTag('nginx:1.25')).toEqual({ repository: 'nginx', tag: '1.25' })
+  })
+
+  it('accepts explicit non-latest image tags even when registry candidates are stale', () => {
+    expect(hasExplicitNonLatestImageTag('piggymetrics-dev/account-service:6bb2cf9')).toBe(true)
+    expect(hasExplicitNonLatestImageTag('10.96.190.247:5000/piggymetrics-dev/account-service:6bb2cf9')).toBe(true)
+    expect(hasExplicitNonLatestImageTag('piggymetrics-dev/account-service:latest')).toBe(false)
+    expect(hasExplicitNonLatestImageTag('piggymetrics-dev/account-service')).toBe(false)
   })
 
   it('normalizes repository names discovered from registry workspace resources', () => {

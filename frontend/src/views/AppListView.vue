@@ -7,10 +7,10 @@
     <template v-else>
       <header class="page-header">
         <div>
-          <h1 class="page-title">应用</h1>
+          <h1 class="page-title">应用列表</h1>
           <p class="page-subtitle">选择应用后进入应用菜单，再管理概览和环境</p>
         </div>
-        <button class="rail-btn rail-btn--primary" @click="openCreateAppModal">
+        <button v-has-perm="'app.create'" class="rail-btn rail-btn--primary" @click="openCreateAppModal">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <line x1="12" y1="5" x2="12" y2="19"/>
             <line x1="5" y1="12" x2="19" y2="12"/>
@@ -19,9 +19,9 @@
         </button>
       </header>
 
-      <section v-if="apps.length" class="app-list">
+      <section v-if="listedApps.length" class="app-list">
         <div
-          v-for="app in apps"
+          v-for="app in listedApps"
           :key="app.id"
           class="app-card"
           role="button"
@@ -60,13 +60,13 @@
         </div>
       </section>
       <div v-if="deleteError" class="form-error app-list-error" role="alert">{{ deleteError }}</div>
-      <section v-if="!apps.length && loadError" class="empty-panel">
+      <section v-if="!listedApps.length && loadError" class="empty-panel">
         <h2>应用加载失败</h2>
         <p>{{ loadError }}</p>
         <button class="rail-btn rail-btn--primary" @click="loadApps">重新加载</button>
       </section>
 
-      <section v-else-if="!apps.length" class="empty-panel">
+      <section v-else-if="!listedApps.length" class="empty-panel">
         <div class="empty-icon">
           <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
             <path d="M12 2L2 7l10 5 10-5-10-5z"/>
@@ -76,7 +76,7 @@
         </div>
         <h2>还没有应用</h2>
         <p>创建应用后会继续创建第一个环境，并直接进入环境工作台。</p>
-        <button class="rail-btn rail-btn--primary" @click="openCreateAppModal">创建第一个应用</button>
+        <button v-has-perm="'app.create'" class="rail-btn rail-btn--primary" @click="openCreateAppModal">创建第一个应用</button>
       </section>
     </template>
 
@@ -176,13 +176,15 @@ const appComponentCount = (app: any) =>
 const isSystemSharedResourcePool = (app: any) =>
   Boolean(app?.isSystem) && String(app?.identifier || '') === 'default'
 
+const listedApps = computed(() =>
+  apps.value.filter((app: any) => !isSystemSharedResourcePool(app))
+)
+
 const appDisplayName = (app: any) =>
-  isSystemSharedResourcePool(app)
-    ? '共享资源池'
-    : (app?.name || app?.identifier || '未命名应用')
+  app?.name || app?.identifier || '未命名应用'
 
 const firstBusinessApp = () =>
-  apps.value.find((app: any) => !app?.isSystem) || apps.value[0]
+  listedApps.value.find((app: any) => !app?.isSystem) || listedApps.value[0]
 
 const normalizeApps = (payload: any) => {
   if (Array.isArray(payload?.data)) return payload.data
@@ -200,7 +202,7 @@ async function loadApps() {
   loadError.value = ''
   try {
     apps.value = normalizeApps(await api.listApps())
-    if (apps.value.length === 0) openCreateAppModal()
+    if (listedApps.value.length === 0) openCreateAppModal()
     else if (route.query.auto === 'true') goToDefaultWorkspace(firstBusinessApp())
   } catch (e) {
     console.error(e)
@@ -228,10 +230,6 @@ function goToDefaultWorkspace(app: any) {
 }
 
 function goToAppHome(app: any) {
-  if (isSystemSharedResourcePool(app)) {
-    router.push('/shared-resources')
-    return
-  }
   router.push(`/apps/${app.id}/overview`)
 }
 
@@ -290,10 +288,9 @@ onMounted(loadApps)
 .rail-page { padding: var(--paap-space-5) var(--paap-space-5) var(--paap-space-10); max-width: none; }
 .loading-mask { display: flex; align-items: center; justify-content: center; min-height: calc(100vh - 48px); }
 .loading-spinner { width: 24px; height: 24px; border: 2px solid var(--paap-border); border-top-color: var(--paap-text); border-radius: 50%; animation: spin 0.8s linear infinite; }
-@keyframes spin { to { transform: rotate(360deg); } }
 .page-header { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: var(--paap-space-8); gap: var(--paap-space-4); }
-.page-title { font-size: 28px; font-weight: 600; color: var(--paap-text); line-height: 1.2; }
-.page-subtitle { font-size: 14px; color: var(--paap-muted); margin-top: var(--paap-space-1); }
+.page-title { font-size: 24px; font-weight: 600; color: var(--paap-text); line-height: 1.2; }
+.page-subtitle { font-size: var(--paap-fs-body); color: var(--paap-muted); margin-top: var(--paap-space-1); }
 .app-list { display: grid; gap: var(--paap-space-3); }
 .app-card {
   display: flex; align-items: center; justify-content: space-between; gap: var(--paap-space-6);
@@ -301,18 +298,18 @@ onMounted(loadApps)
   border: 1px solid var(--paap-border); border-radius: var(--paap-radius);
   padding: var(--paap-space-5) var(--paap-space-6); cursor: pointer; transition: all 0.15s;
 }
-.app-card:hover { border-color: var(--paap-border-strong); box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
+.app-card:hover { border-color: var(--paap-border-strong); box-shadow: var(--paap-shadow-lg); }
 .app-card-main { flex: 1; min-width: 0; }
 .app-card-header { display: flex; align-items: center; gap: var(--paap-space-3); margin-bottom: var(--paap-space-1); flex-wrap: wrap; }
-.app-card-name { font-size: 16px; font-weight: 600; color: var(--paap-text); line-height: 1.3; }
-.app-card-id { display: block; font-family: var(--paap-mono); font-size: 12px; color: var(--paap-muted-2); margin-bottom: var(--paap-space-1); }
-.app-card-desc { color: var(--paap-muted); font-size: 13px; line-height: 1.4; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 680px; }
+.app-card-name { font-size: var(--paap-fs-heading-lg); font-weight: 600; color: var(--paap-text); line-height: 1.3; }
+.app-card-id { display: block; font-family: var(--paap-mono); font-size: var(--paap-fs-code); color: var(--paap-muted); margin-bottom: var(--paap-space-1); }
+.app-card-desc { color: var(--paap-muted); font-size: var(--paap-fs-compact); line-height: 1.4; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 680px; }
 .app-card-meta { display: flex; align-items: center; gap: var(--paap-space-5); color: var(--paap-muted); flex-shrink: 0; }
 .app-delete-btn { white-space: nowrap; }
 .app-list-error { margin-top: var(--paap-space-4); }
 .app-stat { display: grid; gap: 2px; text-align: right; }
 .app-stat strong { color: var(--paap-text); font-size: 15px; line-height: 1.2; }
-.app-stat em { color: var(--paap-muted-2); font-style: normal; font-size: 11px; }
+.app-stat em { color: var(--paap-muted); font-style: normal; font-size: var(--paap-fs-small); }
 .empty-panel {
   min-height: calc(100vh - 260px); display: flex; flex-direction: column; align-items: center; justify-content: center;
   text-align: center; gap: var(--paap-space-4); color: var(--paap-muted);
@@ -320,10 +317,9 @@ onMounted(loadApps)
 .empty-panel h2 { color: var(--paap-text); font-size: 24px; font-weight: 600; }
 .empty-panel p { max-width: 460px; line-height: 1.6; }
 .empty-icon { width: 76px; height: 76px; display: flex; align-items: center; justify-content: center; border: 1px solid var(--paap-border); border-radius: var(--paap-radius); background: var(--paap-panel); color: var(--paap-muted); }
-.modal-overlay { position: fixed; inset: 0; z-index: 9000; background: rgba(17,19,24,0.46); backdrop-filter: blur(10px); display: flex; align-items: center; justify-content: center; padding: var(--paap-space-6); }
-.modal-container { background: var(--paap-panel); width: min(520px, 100%); max-height: 90vh; overflow-y: auto; border-radius: var(--paap-radius); border: 1px solid var(--paap-border); }
+.modal-container {   background: var(--paap-panel); width: min(520px, 100%); max-height: 90vh; overflow-y: auto; border-radius: var(--paap-radius); border: 1px solid var(--paap-border); box-shadow: var(--paap-shadow-lg); }
 .modal-header { display: flex; justify-content: space-between; align-items: flex-start; padding: var(--paap-space-5) var(--paap-space-6); border-bottom: 1px solid var(--paap-border); }
-.modal-label { font-size: 11px; color: var(--paap-muted); text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600; margin-bottom: 4px; }
+.modal-label { font-size: var(--paap-fs-small); color: var(--paap-muted); text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600; margin-bottom: 4px; }
 .modal-heading { color: var(--paap-text); font-size: 18px; font-weight: 600; }
 .modal-close { border: 1px solid var(--paap-border); background: var(--paap-panel); color: var(--paap-muted); border-radius: var(--paap-radius-sm); width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
 .modal-close:hover { background: var(--paap-panel-subtle); color: var(--paap-text); }
@@ -331,15 +327,15 @@ onMounted(loadApps)
 .modal-footer { display: flex; justify-content: flex-end; gap: var(--paap-space-2); padding: var(--paap-space-4) var(--paap-space-6); border-top: 1px solid var(--paap-border); }
 .form-item { display: grid; gap: 6px; margin-bottom: var(--paap-space-5); }
 .form-item:last-child { margin-bottom: 0; }
-.form-label { font-size: 12px; color: var(--paap-muted); font-weight: 500; }
+.form-label { font-size: var(--paap-fs-label); color: var(--paap-muted); font-weight: 500; }
 .required { color: var(--paap-danger); }
-.form-helper { font-size: 12px; color: var(--paap-muted-2); }
-.confirm-text { color: var(--paap-text); font-size: 14px; line-height: 1.6; margin: 0; }
+.form-helper { font-size: var(--paap-fs-label); color: var(--paap-muted); }
+.confirm-text { color: var(--paap-text); font-size: var(--paap-fs-body); line-height: 1.6; margin: 0; }
 .confirm-text + .form-error { margin-top: var(--paap-space-4); }
-.rail-textarea { width: 100%; padding: 9px 12px; resize: vertical; border: 1px solid var(--paap-border); border-radius: var(--paap-radius-sm); background: var(--paap-panel); color: var(--paap-text); outline: none; font-family: inherit; font-size: 14px; line-height: 1.5; }
-.rail-textarea:focus { border-color: var(--paap-accent); box-shadow: 0 0 0 3px rgba(37,99,235,0.1); }
-.form-error { border: 1px solid #fecaca; background: var(--paap-danger-soft); color: #991b1b; border-radius: var(--paap-radius); padding: 10px 12px; font-size: 13px; line-height: 1.4; }
-@media (max-width: 640px) {
+.rail-textarea { width: 100%; padding: 9px 12px; resize: vertical; border: 1px solid var(--paap-border); border-radius: var(--paap-radius-sm); background: var(--paap-panel); color: var(--paap-text); outline: none; font-family: inherit; font-size: var(--paap-fs-body); line-height: 1.5; }
+.rail-textarea:focus { border-color: var(--paap-accent); box-shadow: var(--paap-focus-ring); }
+.form-error { border: 1px solid var(--paap-danger); background: var(--paap-danger-soft); color: var(--paap-danger); border-radius: var(--paap-radius); padding: 10px 12px; font-size: var(--paap-fs-compact); line-height: 1.4; }
+@media (max-width: 672px) {
   .rail-page { padding: var(--paap-space-6) var(--paap-space-4) var(--paap-space-10); }
   .page-header, .app-card { flex-direction: column; align-items: flex-start; }
   .app-card-meta { width: 100%; justify-content: space-between; }

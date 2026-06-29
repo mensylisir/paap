@@ -5,6 +5,7 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -20,6 +21,7 @@ import (
 	paaphelm "paap/internal/helm"
 	"paap/internal/k8s"
 	"paap/internal/model"
+	"paap/internal/service"
 
 	"github.com/gin-gonic/gin"
 	"gopkg.in/yaml.v3"
@@ -31,6 +33,10 @@ func toJSON(v interface{}) string {
 		return "[]"
 	}
 	return string(b)
+}
+
+func serviceFeatureMatrixJSON(serviceType, category string) string {
+	return service.ServiceFeatureMatrixJSON(serviceType, category)
 }
 
 // S3 storage configuration
@@ -81,9 +87,9 @@ type UpdateTemplateRequest struct {
 
 // ListTemplates returns all environment templates
 func ListTemplates(c *gin.Context) {
-	var templates []model.EnvTemplate
-	if err := database.DB.Find(&templates).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	templates, err := service.ListTemplates(database.DB)
+	if err != nil {
+		respondTemplateServiceError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"data": templates})
@@ -91,9 +97,9 @@ func ListTemplates(c *gin.Context) {
 
 // ListServiceTemplates returns all service templates
 func ListServiceTemplates(c *gin.Context) {
-	var templates []model.ServiceTemplate
-	if err := database.DB.Where("enabled = ?", true).Order("install_order").Find(&templates).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	templates, err := service.ListServiceTemplates(database.DB)
+	if err != nil {
+		respondTemplateServiceError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"data": templates})
@@ -102,9 +108,9 @@ func ListServiceTemplates(c *gin.Context) {
 // GetServiceTemplate returns a single service template
 func GetServiceTemplate(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
-	var tmpl model.ServiceTemplate
-	if err := database.DB.First(&tmpl, id).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "template not found"})
+	tmpl, err := service.GetServiceTemplate(database.DB, uint(id))
+	if err != nil {
+		respondTemplateServiceError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"data": tmpl})
@@ -116,11 +122,14 @@ type CreateServiceTemplateRequest struct {
 	Category           string `json:"category" binding:"required"`
 	Description        string `json:"description"`
 	Installer          string `json:"installer" binding:"required"`
+	ProvisionMode      string `json:"provisionMode"`
+	RuntimeSpec        string `json:"runtimeSpec"`
 	ChartRepo          string `json:"chartRepo"`
 	ChartName          string `json:"chartName"`
 	ChartVersion       string `json:"chartVersion"`
 	DefaultValues      string `json:"defaultValues"`
 	ConfigurableParams string `json:"configurableParams"`
+	Features           string `json:"features"`
 	RawYamlTemplate    string `json:"rawYamlTemplate"`
 }
 
@@ -131,24 +140,9 @@ func CreateServiceTemplate(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-
-	tmpl := model.ServiceTemplate{
-		Type:               req.Type,
-		Name:               req.Name,
-		Category:           req.Category,
-		Description:        req.Description,
-		Installer:          req.Installer,
-		ChartRepo:          req.ChartRepo,
-		ChartName:          req.ChartName,
-		ChartVersion:       req.ChartVersion,
-		DefaultValues:      req.DefaultValues,
-		ConfigurableParams: req.ConfigurableParams,
-		RawYamlTemplate:    req.RawYamlTemplate,
-		Enabled:            true,
-	}
-
-	if err := database.DB.Create(&tmpl).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	tmpl, err := service.CreateServiceTemplate(database.DB, saveServiceTemplateInput(req))
+	if err != nil {
+		respondTemplateServiceError(c, err)
 		return
 	}
 
@@ -158,32 +152,14 @@ func CreateServiceTemplate(c *gin.Context) {
 // UpdateServiceTemplate updates an existing service template
 func UpdateServiceTemplate(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
-	var tmpl model.ServiceTemplate
-	if err := database.DB.First(&tmpl, id).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "template not found"})
-		return
-	}
-
 	var req CreateServiceTemplateRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-
-	updates := map[string]interface{}{
-		"name":                req.Name,
-		"description":         req.Description,
-		"installer":           req.Installer,
-		"chart_repo":          req.ChartRepo,
-		"chart_name":          req.ChartName,
-		"chart_version":       req.ChartVersion,
-		"default_values":      req.DefaultValues,
-		"configurable_params": req.ConfigurableParams,
-		"raw_yaml_template":   req.RawYamlTemplate,
-	}
-
-	if err := database.DB.Model(&tmpl).Updates(updates).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	tmpl, err := service.UpdateServiceTemplate(database.DB, uint(id), saveServiceTemplateInput(req))
+	if err != nil {
+		respondTemplateServiceError(c, err)
 		return
 	}
 
@@ -193,8 +169,8 @@ func UpdateServiceTemplate(c *gin.Context) {
 // DeleteServiceTemplate deletes a service template (hard delete)
 func DeleteServiceTemplate(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
-	if err := database.DB.Unscoped().Delete(&model.ServiceTemplate{}, id).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	if err := service.DeleteServiceTemplate(database.DB, uint(id)); err != nil {
+		respondTemplateServiceError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "deleted"})
@@ -203,9 +179,9 @@ func DeleteServiceTemplate(c *gin.Context) {
 // GetTemplate returns a single template
 func GetTemplate(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
-	var tmpl model.EnvTemplate
-	if err := database.DB.First(&tmpl, id).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "template not found"})
+	tmpl, err := service.GetTemplate(database.DB, uint(id))
+	if err != nil {
+		respondTemplateServiceError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"data": tmpl})
@@ -218,23 +194,9 @@ func CreateTemplate(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-
-	tmpl := model.EnvTemplate{
-		Name:         req.Name,
-		Description:  req.Description,
-		ResourceCPU:  req.ResourceCPU,
-		ResourceMem:  req.ResourceMem,
-		ResourceDisk: req.ResourceDisk,
-	}
-	if len(req.Services) > 0 {
-		tmpl.Services = toJSON(req.Services)
-	}
-	if len(req.Infra) > 0 {
-		tmpl.Infra = toJSON(req.Infra)
-	}
-
-	if err := database.DB.Create(&tmpl).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	tmpl, err := service.CreateTemplate(database.DB, service.CreateTemplateInput(req))
+	if err != nil {
+		respondTemplateServiceError(c, err)
 		return
 	}
 	c.JSON(http.StatusCreated, gin.H{"data": tmpl})
@@ -248,38 +210,8 @@ func UpdateTemplate(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-
-	var tmpl model.EnvTemplate
-	if err := database.DB.First(&tmpl, id).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "template not found"})
-		return
-	}
-
-	updates := make(map[string]interface{})
-	if req.Name != nil && strings.TrimSpace(*req.Name) != "" {
-		updates["name"] = strings.TrimSpace(*req.Name)
-	}
-	if req.Description != nil {
-		updates["description"] = *req.Description
-	}
-	if req.ResourceCPU != nil && strings.TrimSpace(*req.ResourceCPU) != "" {
-		updates["resource_cpu"] = strings.TrimSpace(*req.ResourceCPU)
-	}
-	if req.ResourceMem != nil && strings.TrimSpace(*req.ResourceMem) != "" {
-		updates["resource_mem"] = strings.TrimSpace(*req.ResourceMem)
-	}
-	if req.ResourceDisk != nil && strings.TrimSpace(*req.ResourceDisk) != "" {
-		updates["resource_disk"] = strings.TrimSpace(*req.ResourceDisk)
-	}
-	if req.Services != nil {
-		updates["services"] = toJSON(*req.Services)
-	}
-	if req.Infra != nil {
-		updates["infra"] = toJSON(*req.Infra)
-	}
-
-	if err := database.DB.Model(&model.EnvTemplate{}).Where("id = ?", id).Updates(updates).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	if err := service.UpdateTemplate(database.DB, uint(id), service.UpdateTemplateInput(req)); err != nil {
+		respondTemplateServiceError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "updated"})
@@ -288,8 +220,8 @@ func UpdateTemplate(c *gin.Context) {
 // DeleteTemplate deletes a template
 func DeleteTemplate(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
-	if err := database.DB.Delete(&model.EnvTemplate{}, id).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	if err := service.DeleteTemplate(database.DB, uint(id)); err != nil {
+		respondTemplateServiceError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "deleted"})
@@ -297,56 +229,70 @@ func DeleteTemplate(c *gin.Context) {
 
 // --- Service Catalog ---
 
-var unsupportedServiceCatalogTypes = []string{"kingbase", "nacos"}
+var unsupportedServiceCatalogTypes = service.UnsupportedServiceCatalogTypes()
 
 // ListServiceCatalog returns all available service types
 func ListServiceCatalog(c *gin.Context) {
-	var services []model.ServiceCatalog
-	if err := database.DB.Where("enabled = ?", true).Not("type IN ?", unsupportedServiceCatalogTypes).Find(&services).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	services, err := service.ListServiceCatalog(database.DB)
+	if err != nil {
+		respondTemplateServiceError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"data": services})
 }
 
+func saveServiceTemplateInput(req CreateServiceTemplateRequest) service.SaveServiceTemplateInput {
+	return service.SaveServiceTemplateInput{
+		Type:               req.Type,
+		Name:               req.Name,
+		Category:           req.Category,
+		Description:        req.Description,
+		Installer:          req.Installer,
+		ProvisionMode:      req.ProvisionMode,
+		RuntimeSpec:        req.RuntimeSpec,
+		ChartRepo:          req.ChartRepo,
+		ChartName:          req.ChartName,
+		ChartVersion:       req.ChartVersion,
+		DefaultValues:      req.DefaultValues,
+		ConfigurableParams: req.ConfigurableParams,
+		Features:           req.Features,
+		RawYamlTemplate:    req.RawYamlTemplate,
+	}
+}
+
+func respondTemplateServiceError(c *gin.Context, err error) {
+	switch {
+	case errors.Is(err, service.ErrTemplateNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"error": "template not found"})
+	default:
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	}
+}
+
 // SeedServiceCatalog creates default service types and templates
 func SeedServiceCatalog() {
 	services := []model.ServiceCatalog{
-		// Tools
-		{Type: "deploy", Name: "部署服务", Category: "tool", Description: "ArgoCD: 管理应用的部署、版本、回滚", Icon: "rocket", Enabled: true},
-		{Type: "ci", Name: "CI 服务", Category: "tool", Description: "Tekton/Jenkins: 自动构建和测试代码", Icon: "flow", Enabled: true},
-		{Type: "monitor", Name: "监控服务", Category: "tool", Description: "Prometheus+Grafana: 资源监控与告警", Icon: "chart-line", Enabled: true},
-		{Type: "log", Name: "日志服务", Category: "tool", Description: "Loki: 日志收集与查询", Icon: "document", Enabled: true},
-		{Type: "registry", Name: "轻量镜像仓库", Category: "tool", Description: "Docker Registry v2: 轻量 OCI 镜像仓库", Icon: "cube", Enabled: true},
-		{Type: "harbor", Name: "企业镜像仓库", Category: "tool", Description: "Harbor: 企业级容器镜像管理", Icon: "cube", Enabled: true},
-		{Type: "git", Name: "代码仓库", Category: "tool", Description: "Gitea: 轻量 Git 代码仓库", Icon: "document", Enabled: true},
-		// Infra - Database
-		{Type: "postgresql", Name: "PostgreSQL", Category: "infra", Description: "关系型数据库", Icon: "database", Enabled: true},
-		{Type: "mysql", Name: "MySQL", Category: "infra", Description: "关系型数据库", Icon: "database", Enabled: true},
-		{Type: "kingbase", Name: "人大金仓", Category: "infra", Description: "国产关系型数据库", Icon: "database", Enabled: false},
-		{Type: "mongodb", Name: "MongoDB", Category: "infra", Description: "文档型数据库", Icon: "database", Enabled: true},
-		// Infra - Cache
-		{Type: "redis", Name: "Redis", Category: "infra", Description: "缓存服务", Icon: "cloud", Enabled: true},
-		// Infra - MQ
-		{Type: "rabbitmq", Name: "RabbitMQ", Category: "infra", Description: "消息队列", Icon: "network", Enabled: true},
-		{Type: "kafka", Name: "Kafka", Category: "infra", Description: "消息队列", Icon: "network", Enabled: true},
-		// Infra - Storage
-		{Type: "minio", Name: "MinIO", Category: "infra", Description: "对象存储", Icon: "data-base", Enabled: true},
-		// Infra - Service Discovery
-		{Type: "nacos", Name: "Nacos", Category: "infra", Description: "注册中心与配置中心", Icon: "server", Enabled: false},
+		{Type: "deploy", Name: "部署服务", Category: "cd", Description: "ArgoCD: 管理应用的部署、版本、回滚", Icon: "rocket", Enabled: true},
+		{Type: "ci", Name: "CI 服务", Category: "ci", Description: "Tekton/Jenkins: 自动构建和测试代码", Icon: "flow", Enabled: true},
+		{Type: "monitor", Name: "监控服务", Category: "monitor", Description: "Prometheus+Grafana: 资源监控与告警", Icon: "chart-line", Enabled: true},
+		{Type: "log", Name: "日志服务", Category: "log", Description: "Loki: 日志收集与查询", Icon: "document", Enabled: true},
+		{Type: "registry", Name: "轻量镜像仓库", Category: "middleware", Description: "Docker Registry v2: 轻量 OCI 镜像仓库", Icon: "cube", Enabled: true},
+		{Type: "harbor", Name: "企业镜像仓库", Category: "middleware", Description: "Harbor: 企业级容器镜像管理", Icon: "cube", Enabled: true},
+		{Type: "git", Name: "代码仓库", Category: "middleware", Description: "Gitea: 轻量 Git 代码仓库", Icon: "document", Enabled: true},
+		{Type: "postgresql", Name: "PostgreSQL", Category: "database", Description: "关系型数据库", Icon: "database", Enabled: true},
+		{Type: "mysql", Name: "MySQL", Category: "database", Description: "关系型数据库", Icon: "database", Enabled: true},
+		{Type: "kingbase", Name: "人大金仓", Category: "database", Description: "国产关系型数据库", Icon: "database", Enabled: false},
+		{Type: "mongodb", Name: "MongoDB", Category: "database", Description: "文档型数据库", Icon: "database", Enabled: true},
+		{Type: "redis", Name: "Redis", Category: "middleware", Description: "缓存服务", Icon: "cloud", Enabled: true},
+		{Type: "rabbitmq", Name: "RabbitMQ", Category: "middleware", Description: "消息队列", Icon: "network", Enabled: true},
+		{Type: "kafka", Name: "Kafka", Category: "middleware", Description: "消息队列", Icon: "network", Enabled: true},
+		{Type: "minio", Name: "MinIO", Category: "middleware", Description: "对象存储", Icon: "data-base", Enabled: true},
+		{Type: "nacos", Name: "Nacos", Category: "middleware", Description: "注册中心与配置中心", Icon: "server", Enabled: true},
+		{Type: "eureka", Name: "Eureka", Category: "middleware", Description: "Spring Cloud 服务注册中心", Icon: "server", Enabled: true},
 	}
 
-	for _, s := range services {
-		var existing model.ServiceCatalog
-		if err := database.DB.Where("type = ?", s.Type).Assign(s).FirstOrCreate(&existing).Error; err != nil {
-			log.Printf("[SeedServiceCatalog] failed to seed %s: %v", s.Type, err)
-		}
-	}
-	if err := database.DB.Model(&model.ServiceCatalog{}).Where("type IN ?", unsupportedServiceCatalogTypes).Update("enabled", false).Error; err != nil {
-		log.Printf("[SeedServiceCatalog] failed to disable unsupported catalog entries: %v", err)
-	}
-	if err := database.DB.Where("type = ?", "docker-registry").Delete(&model.ServiceCatalog{}).Error; err != nil {
-		log.Printf("[SeedServiceCatalog] failed to remove obsolete docker-registry catalog: %v", err)
+	if err := service.SeedServiceCatalogEntries(database.DB, services); err != nil {
+		log.Printf("[SeedServiceCatalog] seed warnings: %v", err)
 	}
 
 	// Seed ServiceTemplate entries for built-in tools with Helm chart info
@@ -378,26 +324,27 @@ func SeedServiceTemplates() {
 		tmpl.WorkloadRolePolicy = builtInWorkloadRolePolicy(archive.ServiceType)
 		tmpl.EnvironmentRolePolicy = builtInEnvironmentRolePolicy(archive.ServiceType)
 
-		// Upsert by type + s3_key (safe even after removing unique index)
-		var existing model.ServiceTemplate
-		if err := database.DB.Where("type = ? AND s3_key = ?", tmpl.Type, tmpl.S3Key).First(&existing).Error; err != nil {
-			if err := database.DB.Create(&tmpl).Error; err != nil {
-				log.Printf("[SeedServiceTemplates] failed to create %s: %v", tmpl.Type, err)
-			}
-		} else {
-			tmpl.ID = existing.ID
-			if err := database.DB.Model(&existing).Updates(tmpl).Error; err != nil {
-				log.Printf("[SeedServiceTemplates] failed to update %s: %v", tmpl.Type, err)
-			}
+		if err := service.UpsertSeedServiceTemplate(database.DB, tmpl); err != nil {
+			log.Printf("[SeedServiceTemplates] failed to upsert %s: %v", tmpl.Type, err)
 		}
 	}
+	seedKubeVirtServiceTemplates()
 	removeObsoleteDockerRegistryTemplate()
+}
+
+func seedKubeVirtServiceTemplates() {
+	for _, tmpl := range builtInKubeVirtServiceTemplates() {
+		if err := service.UpsertSeedServiceTemplate(database.DB, tmpl); err != nil {
+			log.Printf("[SeedServiceTemplates] failed to upsert kubevirt %s: %v", tmpl.Type, err)
+		}
+	}
 }
 
 func migrateServiceTemplateUniqueIndex() {
 	oldIndexName := "idx_service_templates_type"
-	if database.DB.Migrator().HasIndex(&model.ServiceTemplate{}, oldIndexName) {
-		if err := database.DB.Migrator().DropIndex(&model.ServiceTemplate{}, oldIndexName); err != nil {
+	dropped, err := service.MigrateServiceTemplateUniqueIndex(database.DB, oldIndexName)
+	if dropped {
+		if err != nil {
 			log.Printf("[migrateServiceTemplateUniqueIndex] drop %s: %v", oldIndexName, err)
 		} else {
 			log.Printf("[migrateServiceTemplateUniqueIndex] dropped %s", oldIndexName)
@@ -472,6 +419,8 @@ func builtInTemplateArchives() []builtInTemplateArchive {
 		{ServiceType: "rabbitmq", ChartName: "rabbitmq"},
 		{ServiceType: "kafka", ChartName: "kafka"},
 		{ServiceType: "minio", ChartName: "minio"},
+		{ServiceType: "nacos", ChartName: "nacos"},
+		{ServiceType: "eureka", ChartName: "eureka"},
 	}
 }
 
@@ -667,17 +616,122 @@ func builtInServiceTemplateByType(serviceType string) (model.ServiceTemplate, bo
 			InstallOrder: 160,
 			Enabled:      true,
 		},
+		"nacos": {
+			Type:         "nacos",
+			Name:         "Nacos",
+			Category:     "infra",
+			Description:  "Nacos - 注册中心与配置中心",
+			Icon:         "server",
+			Installer:    "helm",
+			S3Bucket:     "paap-charts",
+			S3Key:        "charts/nacos.tar.gz",
+			IsCustom:     false,
+			InstallOrder: 170,
+			Enabled:      true,
+		},
+		"eureka": {
+			Type:         "eureka",
+			Name:         "Eureka",
+			Category:     "infra",
+			Description:  "Eureka - Spring Cloud 服务注册中心",
+			Icon:         "server",
+			Installer:    "helm",
+			S3Bucket:     "paap-charts",
+			S3Key:        "charts/eureka.tar.gz",
+			IsCustom:     false,
+			InstallOrder: 180,
+			Enabled:      true,
+		},
 	}
 	tmpl, ok := templates[serviceType]
+	if ok {
+		tmpl.Category = service.ProductServiceCategory(tmpl.Type, tmpl.Category)
+		tmpl.SupportedFeatures = serviceFeatureMatrixJSON(tmpl.Type, tmpl.Category)
+	}
 	return tmpl, ok
 }
 
-func removeObsoleteDockerRegistryTemplate() {
-	if err := database.DB.Where("type = ?", "docker-registry").Delete(&model.ServiceTemplate{}).Error; err != nil {
-		log.Printf("[SeedServiceTemplates] failed to remove obsolete docker-registry template: %v", err)
+func builtInKubeVirtServiceTemplates() []model.ServiceTemplate {
+	return []model.ServiceTemplate{
+		{
+			Type:          "postgresql",
+			Name:          "PostgreSQL KubeVirt 模板",
+			Category:      "database",
+			Description:   "基于 KubeVirt 虚拟机模板创建 PostgreSQL 服务",
+			Icon:          "database",
+			Installer:     "raw-yaml",
+			ProvisionMode: model.ServiceProvisionModeKubeVirt,
+			RuntimeSpec: toJSON(map[string]interface{}{
+				"image":    "docker.io/library/postgres:16",
+				"cpu":      "1",
+				"memory":   "2Gi",
+				"diskSize": "20Gi",
+				"database": "postgres",
+				"ports": []map[string]interface{}{
+					{"name": "postgresql", "port": 5432},
+				},
+				"credentials": map[string]string{"username": "postgres"},
+			}),
+			SupportedFeatures: serviceFeatureMatrixJSON("postgresql", "database"),
+			IsCustom:          false,
+			S3Key:             "service-templates/kubevirt/postgresql.json",
+			InstallOrder:      100,
+			Enabled:           true,
+		},
+		{
+			Type:          "mysql",
+			Name:          "MySQL KubeVirt 模板",
+			Category:      "database",
+			Description:   "基于 KubeVirt 虚拟机模板创建 MySQL 服务",
+			Icon:          "database",
+			Installer:     "raw-yaml",
+			ProvisionMode: model.ServiceProvisionModeKubeVirt,
+			RuntimeSpec: toJSON(map[string]interface{}{
+				"image":    "docker.io/library/mysql:8",
+				"cpu":      "1",
+				"memory":   "2Gi",
+				"diskSize": "20Gi",
+				"database": "mysql",
+				"ports": []map[string]interface{}{
+					{"name": "mysql", "port": 3306},
+				},
+				"credentials": map[string]string{"username": "root"},
+			}),
+			SupportedFeatures: serviceFeatureMatrixJSON("mysql", "database"),
+			IsCustom:          false,
+			S3Key:             "service-templates/kubevirt/mysql.json",
+			InstallOrder:      110,
+			Enabled:           true,
+		},
+		{
+			Type:          "redis",
+			Name:          "Redis KubeVirt 模板",
+			Category:      "middleware",
+			Description:   "基于 KubeVirt 虚拟机模板创建 Redis 服务",
+			Icon:          "cloud",
+			Installer:     "raw-yaml",
+			ProvisionMode: model.ServiceProvisionModeKubeVirt,
+			RuntimeSpec: toJSON(map[string]interface{}{
+				"image":    "docker.io/library/redis:7",
+				"cpu":      "500m",
+				"memory":   "1Gi",
+				"diskSize": "5Gi",
+				"ports": []map[string]interface{}{
+					{"name": "redis", "port": 6379},
+				},
+			}),
+			SupportedFeatures: serviceFeatureMatrixJSON("redis", "middleware"),
+			IsCustom:          false,
+			S3Key:             "service-templates/kubevirt/redis.json",
+			InstallOrder:      130,
+			Enabled:           true,
+		},
 	}
-	if err := database.DB.Where("service_type = ?", "docker-registry").Delete(&model.ServiceInstallation{}).Error; err != nil {
-		log.Printf("[SeedServiceTemplates] failed to remove obsolete docker-registry installs: %v", err)
+}
+
+func removeObsoleteDockerRegistryTemplate() {
+	if err := service.RemoveObsoleteDockerRegistryTemplate(database.DB); err != nil {
+		log.Printf("[SeedServiceTemplates] failed to remove obsolete docker-registry records: %v", err)
 	}
 }
 
@@ -769,6 +823,7 @@ func SyncBuiltinTemplatesNow(ctx context.Context, forceUpload bool) (BuiltInTemp
 			updates["chart_name"] = tmpl.ChartName
 			updates["default_values"] = tmpl.DefaultValues
 			updates["configurable_params"] = tmpl.ConfigurableParams
+			updates["supported_features"] = tmpl.SupportedFeatures
 			updates["raw_yaml_template"] = tmpl.RawYamlTemplate
 			updates["is_custom"] = tmpl.IsCustom
 			updates["chart_archive_path"] = tmpl.ChartArchivePath
@@ -780,29 +835,21 @@ func SyncBuiltinTemplatesNow(ctx context.Context, forceUpload bool) (BuiltInTemp
 			updates["description"] = description
 		}
 
-		result := database.DB.Model(&model.ServiceTemplate{}).Where("type = ? AND s3_key = ?", archive.ServiceType, builtinS3Key).Updates(updates)
-		if result.Error != nil {
-			return BuiltInTemplateSyncResult{Updated: updated}, result.Error
+		fallbackTemplate, canCreate := builtInServiceTemplateByType(archive.ServiceType)
+		if canCreate {
+			fallbackTemplate.ChartVersion = chartVersion
+			fallbackTemplate.AppVersion = appVersion
+			fallbackTemplate.PlatformManifestJSON = string(manifestJSON)
+			fallbackTemplate.WorkloadRolePolicy = workloadRoleJSON
+			fallbackTemplate.EnvironmentRolePolicy = environmentRoleJSON
 		}
-		if result.RowsAffected > 0 {
+		refreshedTemplate, changed, err := service.SyncBuiltinServiceTemplateRecord(database.DB, archive.ServiceType, builtinS3Key, updates, fallbackTemplate, canCreate)
+		if err != nil {
+			return BuiltInTemplateSyncResult{Updated: updated}, err
+		}
+		if changed {
 			updated++
 			log.Printf("[SyncBuiltinTemplates] updated DB for %s", archive.ServiceType)
-		} else if tmpl, ok := builtInServiceTemplateByType(archive.ServiceType); ok {
-			tmpl.ChartVersion = chartVersion
-			tmpl.AppVersion = appVersion
-			tmpl.PlatformManifestJSON = string(manifestJSON)
-			tmpl.WorkloadRolePolicy = workloadRoleJSON
-			tmpl.EnvironmentRolePolicy = environmentRoleJSON
-			if err := database.DB.Create(&tmpl).Error; err != nil {
-				return BuiltInTemplateSyncResult{Updated: updated}, err
-			}
-			updated++
-			log.Printf("[SyncBuiltinTemplates] created DB template for %s", archive.ServiceType)
-		}
-
-		var refreshedTemplate model.ServiceTemplate
-		if err := database.DB.Where("type = ? AND s3_key = ?", archive.ServiceType, builtinS3Key).First(&refreshedTemplate).Error; err != nil {
-			return BuiltInTemplateSyncResult{Updated: updated}, err
 		}
 		if k8s.GetClient() != nil {
 			if err := refreshBuiltInServiceInstances(ctx, archive.ServiceType, refreshedTemplate); err != nil {
@@ -829,19 +876,14 @@ func SyncBuiltinTemplates(c *gin.Context) {
 }
 
 func refreshBuiltInServiceInstances(ctx context.Context, serviceType string, template model.ServiceTemplate) error {
-	var installs []model.ServiceInstallation
-	if err := database.DB.Where("service_type = ?", serviceType).Find(&installs).Error; err != nil {
+	contexts, err := service.ListServiceInstallationTemplateContexts(database.DB, serviceType)
+	if err != nil {
 		return err
 	}
-	for _, inst := range installs {
-		var env model.Environment
-		if err := database.DB.First(&env, inst.EnvironmentID).Error; err != nil {
-			return err
-		}
-		var app model.Application
-		if err := database.DB.First(&app, env.ApplicationID).Error; err != nil {
-			return err
-		}
+	for _, installContext := range contexts {
+		app := installContext.Application
+		env := installContext.Environment
+		inst := installContext.Installation
 
 		helmSpec := buildHelmInstallSpec(&app, &env, &template, serviceType)
 		if strings.TrimSpace(inst.Namespace) != "" {
@@ -856,10 +898,10 @@ func refreshBuiltInServiceInstances(ctx context.Context, serviceType string, tem
 				}
 			}
 		}
-		workloadRole := getWorkloadRole(serviceType)
-		toolNamespaceRole := getToolNamespaceRole(serviceType)
-		environmentRole := getEnvironmentRole(serviceType)
-		clusterRole := getClusterRole(serviceType)
+		workloadRole := service.ServiceWorkloadRoleFromTemplate(&template)
+		toolNamespaceRole := service.ServiceToolNamespaceRoleFromTemplate(&template)
+		environmentRole := service.ServiceEnvironmentRoleFromTemplate(&template)
+		clusterRole := service.ServiceClusterRoleFromTemplate(&template)
 		resourceLabels := serviceResourceLabels(app.Identifier, env.Identifier, &template, serviceType)
 		resourceAnnotations := serviceResourceAnnotations(app.Identifier, env.Identifier, &template, serviceType)
 		if err := k8s.UpsertServiceInstanceCR(ctx, app.Identifier, env.Identifier, serviceType, workloadRole, toolNamespaceRole, environmentRole, clusterRole, nil, helmSpec, resourceLabels, resourceAnnotations); err != nil {
@@ -871,7 +913,7 @@ func refreshBuiltInServiceInstances(ctx context.Context, serviceType string, tem
 		inst.Values = "{}"
 		inst.Status = "installing"
 		inst.ErrorMessage = ""
-		if err := database.DB.Save(&inst).Error; err != nil {
+		if err := service.SaveServiceInstallation(database.DB, inst); err != nil {
 			return err
 		}
 
@@ -916,6 +958,8 @@ func builtInInstallOrder(serviceType string) int {
 		"rabbitmq":   140,
 		"kafka":      150,
 		"minio":      160,
+		"nacos":      170,
+		"eureka":     180,
 		"harbor":     900,
 	}
 	if order, ok := orders[serviceType]; ok {
@@ -1134,7 +1178,8 @@ func UploadTemplate(c *gin.Context) {
 		Enabled:               true,
 	}
 
-	if err := database.DB.Create(&tmpl).Error; err != nil {
+	tmpl, err = service.CreateUploadedServiceTemplate(database.DB, tmpl)
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("db error: %v", err)})
 		return
 	}

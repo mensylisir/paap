@@ -5,10 +5,13 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"paap/internal/database"
 	"paap/internal/model"
+	"paap/internal/service"
 
 	"github.com/gin-gonic/gin"
 )
@@ -30,6 +33,7 @@ func TestListServiceCatalogHidesUnsupportedPlaceholders(t *testing.T) {
 		{Type: "postgresql", Name: "PostgreSQL", Category: "infra", Enabled: true},
 		{Type: "kingbase", Name: "人大金仓", Category: "infra", Enabled: true},
 		{Type: "nacos", Name: "Nacos", Category: "infra", Enabled: true},
+		{Type: "eureka", Name: "Eureka", Category: "infra", Enabled: true},
 		{Type: "disabled-demo", Name: "Disabled", Category: "infra", Enabled: false},
 	} {
 		if err := db.Create(&item).Error; err != nil {
@@ -61,14 +65,187 @@ func TestListServiceCatalogHidesUnsupportedPlaceholders(t *testing.T) {
 	for _, item := range body.Data {
 		got[item.Type] = true
 	}
-	if !got["postgresql"] {
-		t.Fatalf("expected postgresql in catalog, got %#v", got)
+	for _, visible := range []string{"postgresql", "nacos", "eureka"} {
+		if !got[visible] {
+			t.Fatalf("expected %s in catalog, got %#v", visible, got)
+		}
 	}
-	for _, hidden := range []string{"kingbase", "nacos", "disabled-demo"} {
+	for _, hidden := range []string{"kingbase", "disabled-demo"} {
 		if got[hidden] {
 			t.Fatalf("%s should be hidden from service catalog, got %#v", hidden, got)
 		}
 	}
+}
+
+func TestBuiltInServiceTemplatesExposeFeatureMatrix(t *testing.T) {
+	postgres, ok := builtInServiceTemplateByType("postgresql")
+	if !ok {
+		t.Fatalf("postgresql template not found")
+	}
+	git, ok := builtInServiceTemplateByType("git")
+	if !ok {
+		t.Fatalf("git template not found")
+	}
+	nacos, ok := builtInServiceTemplateByType("nacos")
+	if !ok {
+		t.Fatalf("nacos template not found")
+	}
+	eureka, ok := builtInServiceTemplateByType("eureka")
+	if !ok {
+		t.Fatalf("eureka template not found")
+	}
+
+	postgresFeatures := decodeServiceFeatureMatrix(t, postgres.SupportedFeatures)
+	gitFeatures := decodeServiceFeatureMatrix(t, git.SupportedFeatures)
+
+	for _, key := range []string{"managed", "shared", "external", "kubevirt"} {
+		if _, ok := postgresFeatures[key]; !ok {
+			t.Fatalf("postgres features missing %s: %#v", key, postgresFeatures)
+		}
+	}
+	if !postgresFeatures["managed"] || !postgresFeatures["shared"] || !postgresFeatures["external"] || !postgresFeatures["kubevirt"] {
+		t.Fatalf("postgres features = %#v, want all core feature modes enabled", postgresFeatures)
+	}
+	if !gitFeatures["managed"] || !gitFeatures["shared"] || !gitFeatures["external"] {
+		t.Fatalf("git features = %#v, want managed/shared/external enabled", gitFeatures)
+	}
+	if gitFeatures["kubevirt"] {
+		t.Fatalf("git features = %#v, kubevirt should be disabled for tool services", gitFeatures)
+	}
+	if postgres.Category != "database" {
+		t.Fatalf("postgres category = %q, want database", postgres.Category)
+	}
+	if git.Category != "middleware" {
+		t.Fatalf("git category = %q, want middleware", git.Category)
+	}
+	if nacos.S3Key != "charts/nacos.tar.gz" || eureka.S3Key != "charts/eureka.tar.gz" {
+		t.Fatalf("nacos/eureka chart keys = %q/%q", nacos.S3Key, eureka.S3Key)
+	}
+	if nacos.Category != "middleware" || eureka.Category != "middleware" {
+		t.Fatalf("nacos/eureka categories = %q/%q, want middleware", nacos.Category, eureka.Category)
+	}
+}
+
+func TestBuiltInKubeVirtServiceTemplatesAreSeedable(t *testing.T) {
+	templates := builtInKubeVirtServiceTemplates()
+	byType := map[string]model.ServiceTemplate{}
+	for _, tmpl := range templates {
+		byType[tmpl.Type] = tmpl
+	}
+	for _, serviceType := range []string{"postgresql", "mysql", "redis"} {
+		tmpl, ok := byType[serviceType]
+		if !ok {
+			t.Fatalf("missing kubevirt template for %s; got %#v", serviceType, byType)
+		}
+		if tmpl.ProvisionMode != model.ServiceProvisionModeKubeVirt {
+			t.Fatalf("%s provisionMode = %q, want kubevirt", serviceType, tmpl.ProvisionMode)
+		}
+		if tmpl.Installer != "raw-yaml" {
+			t.Fatalf("%s installer = %q, want raw-yaml", serviceType, tmpl.Installer)
+		}
+		if tmpl.S3Key == "" || !strings.Contains(tmpl.S3Key, "kubevirt/"+serviceType) {
+			t.Fatalf("%s s3 key = %q, want stable kubevirt key", serviceType, tmpl.S3Key)
+		}
+		var runtimeSpec struct {
+			Image string `json:"image"`
+			Ports []struct {
+				Port int `json:"port"`
+			} `json:"ports"`
+		}
+		if err := json.Unmarshal([]byte(tmpl.RuntimeSpec), &runtimeSpec); err != nil {
+			t.Fatalf("%s runtime spec is not json: %v", serviceType, err)
+		}
+		if runtimeSpec.Image == "" || len(runtimeSpec.Ports) == 0 || runtimeSpec.Ports[0].Port == 0 {
+			t.Fatalf("%s runtime spec incomplete: %#v", serviceType, runtimeSpec)
+		}
+		features := decodeServiceFeatureMatrix(t, tmpl.SupportedFeatures)
+		if !features["kubevirt"] {
+			t.Fatalf("%s features = %#v, want kubevirt enabled", serviceType, features)
+		}
+	}
+}
+
+func TestServiceCatalogSeedNormalizesProductCategories(t *testing.T) {
+	db, err := openTestDB(t)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := db.AutoMigrate(&model.ServiceCatalog{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	if err := service.SeedServiceCatalogEntries(db, []model.ServiceCatalog{
+		{Type: "ci", Name: "CI", Category: "tool", Enabled: true},
+		{Type: "deploy", Name: "CD", Category: "tool", Enabled: true},
+		{Type: "postgresql", Name: "PostgreSQL", Category: "infra", Enabled: true},
+		{Type: "redis", Name: "Redis", Category: "infra", Enabled: true},
+	}); err != nil {
+		t.Fatalf("seed catalog: %v", err)
+	}
+
+	var items []model.ServiceCatalog
+	if err := db.Find(&items).Error; err != nil {
+		t.Fatalf("list catalog: %v", err)
+	}
+	byType := map[string]string{}
+	for _, item := range items {
+		byType[item.Type] = item.Category
+	}
+	want := map[string]string{
+		"ci":         "ci",
+		"deploy":     "cd",
+		"postgresql": "database",
+		"redis":      "middleware",
+	}
+	for serviceType, category := range want {
+		if byType[serviceType] != category {
+			t.Fatalf("%s category = %q, want %q; all=%#v", serviceType, byType[serviceType], category, byType)
+		}
+	}
+}
+
+func TestNacosAndEurekaBuiltInChartArchivesParse(t *testing.T) {
+	for _, item := range []struct {
+		serviceType string
+		chartName   string
+	}{
+		{serviceType: "nacos", chartName: "nacos"},
+		{serviceType: "eureka", chartName: "eureka"},
+	} {
+		t.Run(item.serviceType, func(t *testing.T) {
+			archivePath := filepath.Join("..", "..", "data", "charts", item.chartName+".tar.gz")
+			manifest, err := extractManifestFromTar(archivePath)
+			if err != nil {
+				t.Fatalf("extract manifest from %s: %v", archivePath, err)
+			}
+			if manifest.Name != item.serviceType {
+				t.Fatalf("manifest name = %q, want %q", manifest.Name, item.serviceType)
+			}
+			chartVersion, appVersion, err := extractChartYamlMeta(archivePath)
+			if err != nil {
+				t.Fatalf("extract chart metadata from %s: %v", archivePath, err)
+			}
+			if chartVersion == "" || appVersion == "" {
+				t.Fatalf("chart metadata missing: chartVersion=%q appVersion=%q", chartVersion, appVersion)
+			}
+		})
+	}
+}
+
+func decodeServiceFeatureMatrix(t *testing.T, raw string) map[string]bool {
+	t.Helper()
+	var rows []struct {
+		Key     string `json:"key"`
+		Enabled bool   `json:"enabled"`
+	}
+	if err := json.Unmarshal([]byte(raw), &rows); err != nil {
+		t.Fatalf("decode feature matrix %q: %v", raw, err)
+	}
+	out := map[string]bool{}
+	for _, row := range rows {
+		out[row.Key] = row.Enabled
+	}
+	return out
 }
 
 func TestEnvironmentTemplateCRUDRoutesAreMounted(t *testing.T) {
@@ -81,10 +258,11 @@ func TestEnvironmentTemplateCRUDRoutesAreMounted(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := db.AutoMigrate(&model.User{}, &model.UserRole{}, &model.EnvTemplate{}); err != nil {
+	if err := db.AutoMigrate(&model.User{}, &model.Permission{}, &model.Role{}, &model.RolePermission{}, &model.RoleBinding{}, &model.EnvTemplate{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	database.DB = db
+	seedApplicationRBACForTest(t, db)
 
 	passwordHash, err := hashPassword("Def@u1tpwd")
 	if err != nil {
@@ -94,9 +272,7 @@ func TestEnvironmentTemplateCRUDRoutesAreMounted(t *testing.T) {
 	if err := db.Create(&user).Error; err != nil {
 		t.Fatalf("create user: %v", err)
 	}
-	if _, err := model.ReplaceUserRoles(db, user.ID, []string{model.RolePlatformAdmin}); err != nil {
-		t.Fatalf("create roles: %v", err)
-	}
+	bindSystemRoleForTest(t, db, user.ID, model.RolePlatformAdmin)
 
 	gin.SetMode(gin.TestMode)
 	router := gin.New()

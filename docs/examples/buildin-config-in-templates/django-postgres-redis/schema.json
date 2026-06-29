@@ -1,0 +1,14 @@
+{
+  "fields": [
+    { "key": "DJANGO_SETTINGS_MODULE", "label": "Settings 模块", "type": "text", "default": "project.settings" },
+    { "key": "POSTGRES_HOST", "label": "PostgreSQL 地址", "type": "serviceRef", "target": "postgresql", "format": "host", "default": "postgresql" },
+    { "key": "POSTGRES_PORT", "label": "PostgreSQL 端口", "type": "serviceRef", "target": "postgresql", "format": "port", "default": "5432" },
+    { "key": "POSTGRES_DATABASE", "label": "数据库名", "type": "text", "default": "mydb" },
+    { "key": "DATABASE_USERNAME", "label": "数据库用户", "type": "text", "default": "postgres" },
+    { "key": "DATABASE_PASSWORD", "label": "数据库密码", "type": "password", "output": "secret", "required": true },
+    { "key": "REDIS_HOST", "label": "Redis 地址", "type": "serviceRef", "target": "redis", "format": "host", "default": "redis-master" },
+    { "key": "REDIS_PORT", "label": "Redis 端口", "type": "serviceRef", "target": "redis", "format": "port", "default": "6379" },
+    { "key": "REDIS_DB", "label": "Redis 数据库", "type": "number", "default": "1" },
+    { "key": "REDIS_PASSWORD", "label": "Redis 密码", "type": "password", "output": "secret" }
+  ]
+}

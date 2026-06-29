@@ -1,0 +1,41 @@
+replicaCount: 1
+fullnameOverride: ""
+
+image:
+  repository: nacos/nacos-server
+  tag: v2.3.2
+  pullPolicy: IfNotPresent
+
+serviceAccount:
+  create: false
+  name: ""
+
+mode: standalone
+
+auth:
+  enabled: false
+
+persistence:
+  enabled: false
+  size: 2Gi
+  storageClass: ""
+
+service:
+  type: ClusterIP
+  ports:
+    http: 8848
+    grpc: 9848
+    raft: 9849
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 512Mi
+  limits:
+    cpu: 1000m
+    memory: 1Gi
+
+paap:
+  toolNamespace: ""
+  primaryNamespace: ""
+  environment: ""

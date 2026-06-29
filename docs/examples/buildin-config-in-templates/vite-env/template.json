@@ -1,0 +1,11 @@
+{
+  "key": "vite-env",
+  "name": "Vue/React Vite 环境变量",
+  "version": "v1",
+  "description": "前端构建常用 .env.production 模板。",
+  "framework": "node",
+  "componentTypes": ["frontend"],
+  "sortOrder": 140,
+  "nativeConfigs": [{ "name": ".env.production", "path": "files/.env.production" }],
+  "files": [{ "name": "Vite .env.production", "configMapName": "{{configMapName}}", "key": ".env.production", "recommendedMountPath": "/app/.env.production" }]
+}

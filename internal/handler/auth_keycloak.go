@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -17,10 +18,10 @@ import (
 	"paap/internal/database"
 	"paap/internal/middleware"
 	"paap/internal/model"
+	"paap/internal/service"
 
 	"github.com/gin-gonic/gin"
 	"golang.org/x/oauth2"
-	"gorm.io/gorm"
 )
 
 const keycloakStateCookie = "paap_keycloak_state"
@@ -74,7 +75,12 @@ func KeycloakCallback(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "keycloak token exchange failed"})
 		return
 	}
-	info, err := fetchKeycloakUserInfo(cfg.KeycloakIssuerURL, token.AccessToken)
+	issuer, ok := keycloakBackchannelIssuerURL(c, cfg)
+	if !ok {
+		c.JSON(http.StatusNotImplemented, gin.H{"error": "keycloak login is not configured"})
+		return
+	}
+	info, err := fetchKeycloakUserInfo(issuer, token.AccessToken)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 		return
@@ -102,10 +108,14 @@ func KeycloakCallback(c *gin.Context) {
 }
 
 func keycloakOAuthConfig(c *gin.Context, cfg *config.Config) (oauth2.Config, bool) {
-	issuer := strings.TrimRight(strings.TrimSpace(cfg.KeycloakIssuerURL), "/")
+	issuer, ok := keycloakIssuerURL(c, cfg)
+	backchannelIssuer, backchannelOK := keycloakBackchannelIssuerURL(c, cfg)
 	clientID := strings.TrimSpace(cfg.KeycloakClientID)
-	if issuer == "" || clientID == "" {
+	if !ok || clientID == "" {
 		return oauth2.Config{}, false
+	}
+	if !backchannelOK {
+		backchannelIssuer = issuer
 	}
 	return oauth2.Config{
 		ClientID:     clientID,
@@ -114,20 +124,94 @@ func keycloakOAuthConfig(c *gin.Context, cfg *config.Config) (oauth2.Config, boo
 		Scopes:       []string{"openid", "profile", "email"},
 		Endpoint: oauth2.Endpoint{
 			AuthURL:  issuer + "/protocol/openid-connect/auth",
-			TokenURL: issuer + "/protocol/openid-connect/token",
+			TokenURL: backchannelIssuer + "/protocol/openid-connect/token",
 		},
 	}, true
 }
 
+func keycloakIssuerURL(c *gin.Context, cfg *config.Config) (string, bool) {
+	issuer := strings.TrimRight(resolveKeycloakURLTemplate(c, cfg.KeycloakIssuerURL), "/")
+	return issuer, issuer != ""
+}
+
+func keycloakBackchannelIssuerURL(c *gin.Context, cfg *config.Config) (string, bool) {
+	issuer := strings.TrimRight(resolveKeycloakURLTemplate(c, cfg.KeycloakBackchannelIssuerURL), "/")
+	if issuer != "" {
+		return issuer, true
+	}
+	return keycloakIssuerURL(c, cfg)
+}
+
 func keycloakRedirectURL(c *gin.Context, cfg *config.Config) string {
 	if strings.TrimSpace(cfg.KeycloakRedirectURL) != "" {
-		return strings.TrimSpace(cfg.KeycloakRedirectURL)
+		return resolveKeycloakURLTemplate(c, cfg.KeycloakRedirectURL)
 	}
-	scheme := c.GetHeader("X-Forwarded-Proto")
-	if scheme == "" {
-		scheme = "http"
+	return keycloakExternalScheme(c) + "://" + keycloakExternalHost(c) + "/api/v1/auth/keycloak/callback"
+}
+
+func resolveKeycloakURLTemplate(c *gin.Context, value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" || c == nil {
+		return value
 	}
-	return scheme + "://" + c.Request.Host + "/api/v1/auth/keycloak/callback"
+	fullHost := keycloakExternalHost(c)
+	replacer := strings.NewReplacer(
+		"{scheme}", keycloakExternalScheme(c),
+		"{host}", fullHost,
+		"{hostname}", hostWithoutPort(fullHost),
+	)
+	return replacer.Replace(value)
+}
+
+func keycloakExternalScheme(c *gin.Context) string {
+	if c == nil {
+		return "http"
+	}
+	if scheme := firstHeaderValue(c.GetHeader("X-Forwarded-Proto")); scheme != "" {
+		return scheme
+	}
+	if c.Request != nil && c.Request.TLS != nil {
+		return "https"
+	}
+	return "http"
+}
+
+func keycloakExternalHost(c *gin.Context) string {
+	if c == nil || c.Request == nil {
+		return ""
+	}
+	if host := firstHeaderValue(c.GetHeader("X-Forwarded-Host")); host != "" {
+		return host
+	}
+	if host := firstHeaderValue(c.GetHeader("X-Forwarded-Server")); host != "" {
+		return host
+	}
+	return c.Request.Host
+}
+
+func firstHeaderValue(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	parts := strings.Split(value, ",")
+	return strings.TrimSpace(parts[0])
+}
+
+func hostWithoutPort(host string) string {
+	host = strings.TrimSpace(host)
+	if host == "" {
+		return ""
+	}
+	if hostname, _, err := net.SplitHostPort(host); err == nil {
+		return strings.Trim(hostname, "[]")
+	}
+	if strings.Count(host, ":") == 1 {
+		if idx := strings.LastIndex(host, ":"); idx > 0 {
+			return host[:idx]
+		}
+	}
+	return strings.Trim(host, "[]")
 }
 
 func fetchKeycloakUserInfo(issuer, accessToken string) (keycloakUserInfo, error) {
@@ -154,42 +238,7 @@ func fetchKeycloakUserInfo(issuer, accessToken string) (keycloakUserInfo, error)
 }
 
 func upsertKeycloakUser(info keycloakUserInfo, roles []string) (model.User, []string, error) {
-	username := firstUserInfoString(info, "preferred_username", "email", "sub")
-	if username == "" {
-		return model.User{}, nil, fmt.Errorf("keycloak userinfo is missing username")
-	}
-	email := firstUserInfoString(info, "email")
-	if email == "" {
-		email = username + "@keycloak.local"
-	}
-
-	var user model.User
-	err := database.DB.Transaction(func(tx *gorm.DB) error {
-		err := tx.Where("username = ?", username).First(&user).Error
-		if err == gorm.ErrRecordNotFound {
-			passwordHash, err := randomInitialUserPasswordHash()
-			if err != nil {
-				return err
-			}
-			user = model.User{Username: username, Email: email, Password: passwordHash}
-			if err := tx.Create(&user).Error; err != nil {
-				return err
-			}
-		} else if err != nil {
-			return err
-		} else if email != "" && user.Email != email {
-			if err := tx.Model(&user).Update("email", email).Error; err != nil {
-				return err
-			}
-			user.Email = email
-		}
-		_, err = model.ReplaceUserRoles(tx, user.ID, roles)
-		return err
-	})
-	if err != nil {
-		return model.User{}, nil, err
-	}
-	return user, roles, nil
+	return service.UpsertKeycloakUser(database.DB, map[string]interface{}(info), roles)
 }
 
 func rolesFromKeycloakUserInfo(info keycloakUserInfo, clientID string) []string {
@@ -220,7 +269,7 @@ func rolesFromKeycloakClaims(claims map[string]interface{}, clientID string) []s
 	roleSet := map[string]struct{}{}
 	addRole := func(role string) {
 		role = strings.TrimPrefix(strings.ToLower(strings.TrimSpace(role)), "/")
-		if model.IsValidUserRole(role) {
+		if isBuiltInSystemRoleCode(role) {
 			roleSet[role] = struct{}{}
 		}
 	}
@@ -244,7 +293,7 @@ func mergeKeycloakRoles(roleLists ...[]string) []string {
 	roleSet := map[string]struct{}{}
 	for _, roles := range roleLists {
 		for _, role := range roles {
-			if model.IsValidUserRole(role) {
+			if isBuiltInSystemRoleCode(role) {
 				roleSet[role] = struct{}{}
 			}
 		}
@@ -257,6 +306,15 @@ func mergeKeycloakRoles(roleLists ...[]string) []string {
 		roles = append(roles, role)
 	}
 	return roles
+}
+
+func isBuiltInSystemRoleCode(role string) bool {
+	switch strings.ToLower(strings.TrimSpace(role)) {
+	case model.RolePlatformAdmin, model.RoleAppAdmin, model.RoleUser:
+		return true
+	default:
+		return false
+	}
 }
 
 func addRolesFromInterface(value interface{}, add func(string)) {
@@ -272,23 +330,6 @@ func addRolesFromInterface(value interface{}, add func(string)) {
 			add(role)
 		}
 	}
-}
-
-func firstUserInfoString(info keycloakUserInfo, keys ...string) string {
-	for _, key := range keys {
-		if value, ok := info[key].(string); ok && strings.TrimSpace(value) != "" {
-			return strings.TrimSpace(value)
-		}
-	}
-	return ""
-}
-
-func randomInitialUserPasswordHash() (string, error) {
-	value, err := randomHex(32)
-	if err != nil {
-		return "", err
-	}
-	return hashPassword(value)
 }
 
 func randomHex(size int) (string, error) {

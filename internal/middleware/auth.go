@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"paap/config"
+	"paap/internal/authz"
 	"paap/internal/database"
 	"paap/internal/model"
 
@@ -145,7 +146,7 @@ func AuthRequired() gin.HandlerFunc {
 			return
 		}
 
-		roles, err := model.UserRoleValues(database.DB, user.ID)
+		roles, err := authz.SystemRoleCodes(database.DB, user.ID)
 		if err != nil {
 			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "load user roles failed"})
 			return

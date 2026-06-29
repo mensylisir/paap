@@ -1,0 +1,31 @@
+{
+  "key": "n8n-postgres-env",
+  "name": "n8n + PostgreSQL 环境变量",
+  "version": "v1",
+  "description": "n8n 官方镜像使用 PostgreSQL 时的运行环境变量。",
+  "framework": "node",
+  "componentTypes": ["backend", "custom"],
+  "sortOrder": 175,
+  "env": [
+    { "name": "N8N_PORT", "value": "__TEMPLATE__N8N_PORT__服务端口__DEFAULT__5678__" },
+    { "name": "N8N_HOST", "value": "__TEMPLATE__N8N_HOST__访问域名__DEFAULT__localhost__" },
+    { "name": "N8N_PROTOCOL", "value": "__TEMPLATE__N8N_PROTOCOL__访问协议__DEFAULT__http__" },
+    { "name": "N8N_DIAGNOSTICS_ENABLED", "value": "__TEMPLATE__N8N_DIAGNOSTICS_ENABLED__诊断开关__DEFAULT__false__" },
+    { "name": "DB_TYPE", "value": "postgresdb" },
+    { "name": "DB_POSTGRESDB_HOST", "value": "__TEMPLATE__DB_POSTGRESDB_HOST__PostgreSQL__" },
+    { "name": "DB_POSTGRESDB_PORT", "value": "__TEMPLATE__DB_POSTGRESDB_PORT__PostgreSQL端口__" },
+    { "name": "DB_POSTGRESDB_DATABASE", "value": "__TEMPLATE__DB_POSTGRESDB_DATABASE__数据库名称__DEFAULT__postgres__" },
+    { "name": "DB_POSTGRESDB_USER", "value": "__TEMPLATE__DB_POSTGRESDB_USER__数据库用户__DEFAULT__postgres__" },
+    { "name": "DB_POSTGRESDB_PASSWORD", "source": "secret", "refName": "{{secretName}}", "refKey": "DB_POSTGRESDB_PASSWORD" },
+    { "name": "N8N_ENCRYPTION_KEY", "source": "secret", "refName": "{{secretName}}", "refKey": "N8N_ENCRYPTION_KEY" }
+  ],
+  "secrets": [
+    {
+      "name": "{{secretName}}",
+      "data": {
+        "DB_POSTGRESDB_PASSWORD": "__TEMPLATE__DB_POSTGRESDB_PASSWORD__数据库密码__",
+        "N8N_ENCRYPTION_KEY": "__TEMPLATE__N8N_ENCRYPTION_KEY__加密密钥__"
+      }
+    }
+  ]
+}

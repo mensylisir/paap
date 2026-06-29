@@ -190,6 +190,8 @@ const primaryEnvMenuItems = computed(() => [
 const contextInitial = (value: string) => String(value || 'P').trim().slice(0, 1).toUpperCase()
 const appEnvironmentCount = (app:any) => Number(app?.environmentCount ?? app?.environments?.length ?? 0)
 const normalizeListPayload = (payload: any) => Array.isArray(payload) ? payload : Array.isArray(payload?.data) ? payload.data : []
+const isSystemSharedResourcePool = (app: any) =>
+  Boolean(app?.isSystem) && String(app?.identifier || '') === 'default'
 const envStatusText = (status?: string) => environmentStatusLabel(status)
 const closeSwitchers = () => {
   showAppSwitcher.value = false
@@ -216,7 +218,8 @@ watch(() => route.params.id, async (id) => {
       const appPayload = appRes.data?.application || appRes.data
       const appEnvironments = appRes.data?.environments || appRes.environments || appPayload?.environments
       appName.value = appPayload?.name || '应用'
-      apps.value = Array.isArray(appsRes.data) ? appsRes.data : appsRes.data?.applications || []
+      const appItems = Array.isArray(appsRes.data) ? appsRes.data : appsRes.data?.applications || []
+      apps.value = appItems.filter((item:any) => !isSystemSharedResourcePool(item))
       const fallbackEnvironments = normalizeListPayload(envsRes.data)
       environments.value = Array.isArray(appEnvironments) && appEnvironments.length ? appEnvironments : fallbackEnvironments
     }
@@ -344,7 +347,7 @@ const envMenuIconPath = (key: string) => {
   top: 0;
   left: 0;
   bottom: 0;
-  z-index: 100;
+  z-index: var(--paap-z-sticky);
 }
 
 .sidebar-top {
@@ -367,8 +370,8 @@ const envMenuIconPath = (key: string) => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--cds-background-brand, var(--paap-accent));
-  color: var(--cds-icon-on-color, #fff);
+  background: var(--paap-accent);
+  color: #fff;
   border-radius: var(--paap-radius-xs);
 }
 
@@ -433,7 +436,7 @@ const envMenuIconPath = (key: string) => {
 .context-switcher-button:focus-visible {
   outline: none;
   border-color: var(--paap-accent);
-  box-shadow: 0 0 0 3px rgba(37,99,235,0.1);
+  box-shadow: var(--paap-focus-ring);
 }
 
 .context-avatar {
@@ -444,16 +447,16 @@ const envMenuIconPath = (key: string) => {
   height: 24px;
   flex-shrink: 0;
   border-radius: var(--paap-radius-xs);
-  background: var(--cds-background-brand, var(--paap-accent));
-  color: var(--cds-icon-on-color, #fff);
-  font-size: 12px;
+  background: var(--paap-accent);
+  color: #fff;
+  font-size: var(--paap-fs-label);
   font-weight: 700;
 }
 
 .context-avatar.small {
   width: 22px;
   height: 22px;
-  font-size: 11px;
+  font-size: var(--paap-fs-small);
 }
 
 .context-copy,
@@ -464,7 +467,7 @@ const envMenuIconPath = (key: string) => {
 }
 
 .context-kicker {
-  color: var(--paap-muted-2);
+  color: var(--paap-muted);
   font-size: 10px;
   font-weight: 700;
   line-height: 1;
@@ -476,8 +479,8 @@ const envMenuIconPath = (key: string) => {
   min-width: 0;
   overflow: hidden;
   color: var(--paap-text);
-  font-size: 13px;
-  font-weight: 650;
+  font-size: var(--paap-fs-compact);
+  font-weight: 600;
   line-height: 1.25;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -487,7 +490,7 @@ const envMenuIconPath = (key: string) => {
   min-width: 0;
   overflow: hidden;
   color: var(--paap-muted);
-  font-size: 11px;
+  font-size: var(--paap-fs-small);
   line-height: 1.3;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -496,11 +499,11 @@ const envMenuIconPath = (key: string) => {
 .context-chevron {
   margin-left: auto;
   flex-shrink: 0;
-  color: var(--paap-muted-2);
+  color: var(--paap-muted);
 }
 
 .context-divider {
-  color: var(--paap-muted-2);
+  color: var(--paap-muted);
   font-size: 18px;
   line-height: 1;
 }
@@ -509,7 +512,7 @@ const envMenuIconPath = (key: string) => {
   position: absolute;
   top: calc(100% + 8px);
   left: 0;
-  z-index: 500;
+  z-index: var(--paap-z-header);
   display: grid;
   gap: 2px;
   width: min(320px, calc(100vw - 32px));
@@ -519,7 +522,7 @@ const envMenuIconPath = (key: string) => {
   border: 1px solid var(--paap-border);
   border-radius: var(--paap-radius-sm);
   background: var(--paap-panel);
-  box-shadow: none;
+  box-shadow: var(--paap-shadow-md);
 }
 
 .context-option {
@@ -566,12 +569,12 @@ const envMenuIconPath = (key: string) => {
 .env-status-dot.failed,
 .env-status-dot.error { background: var(--paap-danger); }
 .env-status-dot.empty,
-.env-status-dot.stopped { background: var(--paap-muted-2); }
+.env-status-dot.stopped { background: var(--paap-muted); }
 
 .app-name {
   display: block;
   padding: 0 var(--paap-space-4) var(--paap-space-3);
-  font-size: 13px;
+  font-size: var(--paap-fs-compact);
   font-weight: 600;
   color: var(--paap-muted);
   text-decoration: none;
@@ -591,7 +594,7 @@ const envMenuIconPath = (key: string) => {
   border-radius: var(--paap-radius-sm);
   background: var(--paap-panel-subtle);
   color: var(--paap-text);
-  font-size: 13px;
+  font-size: var(--paap-fs-compact);
   font-weight: 600;
   text-decoration: none;
   white-space: nowrap;
@@ -617,7 +620,7 @@ const envMenuIconPath = (key: string) => {
   height: 40px;
   padding: 0 var(--paap-space-3);
   border-radius: var(--paap-radius-sm);
-  font-size: 14px;
+  font-size: var(--paap-fs-body);
   font-weight: 500;
   color: var(--paap-muted);
   text-decoration: none;
@@ -643,13 +646,13 @@ const envMenuIconPath = (key: string) => {
   border-radius: var(--paap-radius-full);
   background: var(--paap-panel-subtle);
   color: var(--paap-muted);
-  font-size: 11px;
+  font-size: var(--paap-fs-small);
   line-height: 18px;
   text-align: center;
 }
 
 .nav-item.active .nav-count {
-  background: #fff;
+  background: var(--paap-panel);
   color: var(--paap-text);
 }
 
@@ -660,7 +663,7 @@ const envMenuIconPath = (key: string) => {
 
 .nav-item.active {
   background: var(--paap-panel-subtle);
-  color: var(--cds-icon-interactive, var(--paap-accent));
+  color: var(--paap-accent);
   font-weight: 600;
 }
 
@@ -669,8 +672,8 @@ const envMenuIconPath = (key: string) => {
 }
 
 .nav-item.back {
-  color: var(--paap-muted-2);
-  font-size: 13px;
+  color: var(--paap-muted);
+  font-size: var(--paap-fs-compact);
 }
 .nav-item.back:hover {
   color: var(--paap-muted);

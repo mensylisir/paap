@@ -6,6 +6,11 @@ import (
 	"gorm.io/gorm"
 )
 
+const (
+	SystemSharedApplicationIdentifier = "default"
+	SystemSharedEnvironmentIdentifier = "shared"
+)
+
 type Environment struct {
 	ID            uint           `gorm:"primarykey" json:"id"`
 	CreatedAt     time.Time      `json:"createdAt"`
@@ -20,6 +25,13 @@ type Environment struct {
 	Namespace     string         `gorm:"size:100" json:"namespace"`
 	ErrorMessage  string         `gorm:"type:text" json:"errorMessage,omitempty"` // 环境创建/运行过程中的错误信息
 	IsSystem      bool           `gorm:"default:false;index" json:"isSystem"`
+}
+
+func IsSystemSharedEnvironment(app Application, env Environment) bool {
+	return app.IsSystem &&
+		app.Identifier == SystemSharedApplicationIdentifier &&
+		env.IsSystem &&
+		env.Identifier == SystemSharedEnvironmentIdentifier
 }
 
 type EnvironmentCanvasState struct {

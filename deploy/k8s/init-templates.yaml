@@ -27,7 +27,7 @@ data:
 
     # 上传所有模板
     echo ""
-    echo "Uploading templates to MinIO..."
+    echo "Uploading service templates to MinIO..."
     echo "================================"
 
     template_count=0
@@ -50,14 +50,40 @@ data:
       fi
     done
 
+    config_template_count=0
+    echo ""
+    echo "Uploading component config templates to MinIO..."
+    echo "================================"
+    for template in /config-templates/*.tar.gz; do
+      if [ ! -f "$template" ]; then
+        echo "No component config templates found in /config-templates/"
+        break
+      fi
+
+      template_name=$(basename "$template")
+      echo "Uploading $template_name..."
+
+      mc cp "$template" "paap-minio/paap-charts/config-templates/builtin/$template_name"
+
+      if [ $? -eq 0 ]; then
+        echo "✓ Uploaded config template $template_name"
+        config_template_count=$((config_template_count + 1))
+      else
+        echo "✗ Failed to upload config template $template_name"
+      fi
+    done
+
     echo ""
     echo "================================"
-    echo "Uploaded $template_count templates"
+    echo "Uploaded $template_count service templates"
+    echo "Uploaded $config_template_count component config templates"
     echo ""
 
     # 列出所有模板
-    echo "Templates in MinIO:"
+    echo "Service templates in MinIO:"
     mc ls paap-minio/paap-charts/charts/
+    echo "Component config templates in MinIO:"
+    mc ls paap-minio/paap-charts/config-templates/builtin/ || true
 
     echo ""
     echo "✓ Template initialization complete!"
@@ -96,7 +122,7 @@ spec:
             done
             echo "MinIO service is up!"
       - name: stage-templates
-        image: paap-server:v0.1.534
+        image: paap-server:v0.1.537
         imagePullPolicy: IfNotPresent
         securityContext:
           runAsUser: 0
@@ -104,12 +130,17 @@ spec:
           - sh
           - -c
           - |
-            echo "Staging built-in templates from /charts..."
+            echo "Staging built-in templates from /charts and /config-templates..."
             cp /charts/*.tar.gz /templates/
+            mkdir -p /staged-config-templates
+            cp /config-templates/*.tar.gz /staged-config-templates/ || true
             ls -la /templates
+            ls -la /staged-config-templates
         volumeMounts:
         - name: templates
           mountPath: /templates
+        - name: config-templates
+          mountPath: /staged-config-templates
       containers:
       - name: upload-templates
         image: minio/mc:RELEASE.2024-05-09T17-04-24Z
@@ -119,6 +150,8 @@ spec:
           mountPath: /scripts
         - name: templates
           mountPath: /templates
+        - name: config-templates
+          mountPath: /config-templates
         resources:
           requests:
             memory: "128Mi"
@@ -132,4 +165,6 @@ spec:
           name: init-templates-script
           defaultMode: 0755
       - name: templates
+        emptyDir: {}
+      - name: config-templates
         emptyDir: {}

@@ -23,6 +23,7 @@ type RuntimeResource struct {
 type ServiceNetworkInfo struct {
 	ServiceName    string `json:"serviceName,omitempty"`
 	ServiceType    string `json:"serviceType,omitempty"`
+	Port           int32  `json:"port,omitempty"`
 	ClusterIP      string `json:"clusterIP,omitempty"`
 	LoadBalancerIP string `json:"loadBalancerIP,omitempty"`
 }
@@ -159,10 +160,90 @@ func DiscoverNamespaceServiceNetwork(ctx context.Context, namespace, serviceType
 	info := &ServiceNetworkInfo{
 		ServiceName: target.Name,
 		ServiceType: string(target.Spec.Type),
+		Port:        primaryServicePort(target.Spec.Ports),
 		ClusterIP:   serviceClusterIP(target.Spec.ClusterIP),
 	}
 	info.LoadBalancerIP = serviceLoadBalancerIP(target.Status.LoadBalancer.Ingress)
 	return info, nil
+}
+
+func DiscoverRegistryServiceNetwork(ctx context.Context, namespace, releaseName string) (*ServiceNetworkInfo, error) {
+	namespace = strings.TrimSpace(namespace)
+	if namespace == "" {
+		return nil, nil
+	}
+	cl, err := requireClient()
+	if err != nil {
+		return nil, err
+	}
+	services := &corev1.ServiceList{}
+	if err := cl.List(ctx, services, client.InNamespace(namespace)); err != nil {
+		return nil, fmt.Errorf("list services: %w", err)
+	}
+	target := registryServiceTarget(services.Items, releaseName)
+	if target == nil {
+		return nil, nil
+	}
+	info := &ServiceNetworkInfo{
+		ServiceName: target.Name,
+		ServiceType: string(target.Spec.Type),
+		Port:        primaryServicePort(target.Spec.Ports),
+		ClusterIP:   serviceClusterIP(target.Spec.ClusterIP),
+	}
+	info.LoadBalancerIP = serviceLoadBalancerIP(target.Status.LoadBalancer.Ingress)
+	return info, nil
+}
+
+func registryServiceTarget(services []corev1.Service, releaseName string) *corev1.Service {
+	releaseName = strings.ToLower(strings.TrimSpace(releaseName))
+	bestScore := -1
+	var best *corev1.Service
+	for i := range services {
+		score := registryServiceScore(services[i], releaseName)
+		if score < 0 {
+			continue
+		}
+		if score > bestScore || (score == bestScore && best != nil && services[i].Name < best.Name) {
+			bestScore = score
+			best = &services[i]
+		}
+	}
+	return best
+}
+
+func registryServiceScore(svc corev1.Service, releaseName string) int {
+	name := strings.ToLower(strings.TrimSpace(svc.Name))
+	if svc.Spec.Type == corev1.ServiceTypeExternalName || svc.Spec.ClusterIP == corev1.ClusterIPNone || len(svc.Spec.Ports) == 0 {
+		return -1
+	}
+	score := 0
+	if releaseName != "" && name == releaseName {
+		score += 100
+	}
+	if strings.EqualFold(svc.Labels["app.kubernetes.io/instance"], releaseName) {
+		score += 90
+	}
+	if strings.EqualFold(svc.Labels["paap.io/service-type"], "registry") || strings.EqualFold(svc.Labels["paap.io/service"], "registry") {
+		score += 80
+	}
+	if strings.EqualFold(svc.Labels["app.kubernetes.io/name"], "registry") {
+		score += 70
+	}
+	if strings.Contains(name, "registry") {
+		score += 50
+	}
+	hasRegistryPort := false
+	for _, port := range svc.Spec.Ports {
+		if port.Port == 5000 || strings.EqualFold(port.Name, "registry") || strings.EqualFold(port.Name, "https") {
+			hasRegistryPort = true
+			score += 40
+			break
+		}
+	}
+	if score == 0 || !hasRegistryPort {
+		return -1
+	}
+	return score
 }
 
 func serviceClusterIP(value string) string {
@@ -171,6 +252,15 @@ func serviceClusterIP(value string) string {
 		return ""
 	}
 	return value
+}
+
+func primaryServicePort(ports []corev1.ServicePort) int32 {
+	for _, port := range ports {
+		if port.Port > 0 {
+			return port.Port
+		}
+	}
+	return 0
 }
 
 func serviceLoadBalancerIP(ingresses []corev1.LoadBalancerIngress) string {

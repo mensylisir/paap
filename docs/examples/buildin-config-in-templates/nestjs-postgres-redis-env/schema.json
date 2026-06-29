@@ -1,0 +1,14 @@
+{
+  "fields": [
+    { "key": "APP_PORT", "label": "服务端口", "type": "number", "default": "3000" },
+    { "key": "DB_HOST", "label": "PostgreSQL 地址", "type": "serviceRef", "target": "postgresql", "format": "host", "default": "postgresql" },
+    { "key": "DB_PORT", "label": "PostgreSQL 端口", "type": "serviceRef", "target": "postgresql", "format": "port", "default": "5432" },
+    { "key": "DB_USERNAME", "label": "数据库用户", "type": "text", "default": "postgres" },
+    { "key": "DB_PASSWORD", "label": "数据库密码", "type": "password", "output": "secret", "required": true },
+    { "key": "DB_DATABASE", "label": "数据库名", "type": "text", "default": "nest_db" },
+    { "key": "REDIS_HOST", "label": "Redis 地址", "type": "serviceRef", "target": "redis", "format": "host", "default": "redis-master" },
+    { "key": "REDIS_PORT", "label": "Redis 端口", "type": "serviceRef", "target": "redis", "format": "port", "default": "6379" },
+    { "key": "REDIS_PASSWORD", "label": "Redis 密码", "type": "password", "output": "secret" },
+    { "key": "JWT_SECRET", "label": "JWT 密钥", "type": "password", "output": "secret", "required": true }
+  ]
+}

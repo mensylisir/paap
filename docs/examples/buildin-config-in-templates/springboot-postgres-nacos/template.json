@@ -1,0 +1,14 @@
+{
+  "key": "springboot-postgres-nacos",
+  "name": "Spring Boot + PostgreSQL + Nacos",
+  "version": "v1",
+  "description": "Spring Cloud Alibaba 应用接入 Nacos 注册发现和配置中心，本地只保留 Nacos 连接信息。",
+  "framework": "springboot",
+  "componentTypes": ["backend"],
+  "sortOrder": 28,
+  "nativeConfigs": [{ "name": "application.yml", "path": "files/application.yml" }],
+  "files": [{ "name": "Spring Boot application.yml", "configMapName": "{{configMapName}}", "key": "application.yml", "recommendedMountPath": "/etc/paap/application.yml" }],
+  "env": [
+    { "name": "SPRING_CONFIG_ADDITIONAL_LOCATION", "source": "value", "value": "file:/etc/paap/application.yml" }
+  ]
+}

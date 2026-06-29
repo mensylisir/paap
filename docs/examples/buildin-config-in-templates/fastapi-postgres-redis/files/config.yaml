@@ -1,0 +1,22 @@
+app:
+  name: "__TEMPLATE__APP_NAME__应用名称__DEFAULT__fastapi-service__"
+  host: "0.0.0.0"
+  port: __TEMPLATE__APP_PORT__服务端口__DEFAULT__8000__
+  reload: false
+  workers: 4
+
+database:
+  url: "postgresql+asyncpg://__TEMPLATE__DATABASE_USERNAME__数据库用户__DEFAULT__postgres__:${DATABASE_PASSWORD}@__TEMPLATE__POSTGRES_HOST__PostgreSQL 地址__DEFAULT__postgresql__:__TEMPLATE__POSTGRES_PORT__PostgreSQL 端口__DEFAULT__5432__/__TEMPLATE__POSTGRES_DATABASE__数据库名__DEFAULT__dbname__"
+  pool_size: 20
+  max_overflow: 10
+
+redis:
+  host: "__TEMPLATE__REDIS_HOST__Redis 地址__DEFAULT__redis-master__"
+  port: __TEMPLATE__REDIS_PORT__Redis 端口__DEFAULT__6379__
+  db: 0
+  password: "${REDIS_PASSWORD}"
+
+security:
+  secret_key: "${SECRET_KEY}"
+  algorithm: "HS256"
+  access_token_expire_minutes: 30

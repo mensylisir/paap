@@ -4,6 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 KIND_CLUSTER="${KIND_CLUSTER:-kind}"
+CONTAINER_CLI="${CONTAINER_CLI:-docker}"
 IMAGE_LIST="${IMAGE_LIST:-$PROJECT_DIR/deploy/k8s/kind-images.txt}"
 DISCOVERED_LIST="$(mktemp)"
 FINAL_LIST="$(mktemp)"
@@ -33,7 +34,7 @@ docker_pull_with_retry() {
   local attempts="${PULL_RETRIES:-3}"
   local attempt=1
   while true; do
-    if docker pull "$pull_image"; then
+    if "$CONTAINER_CLI" pull "$pull_image"; then
       return
     fi
     if [ "$attempt" -ge "$attempts" ]; then
@@ -48,7 +49,7 @@ docker_pull_with_retry() {
 pull_or_tag_image() {
   local image="$1"
   local legacy_image
-  if docker image inspect "$image" >/dev/null 2>&1; then
+  if "$CONTAINER_CLI" image inspect "$image" >/dev/null 2>&1; then
     echo "local: $image"
     return
   fi
@@ -64,13 +65,13 @@ pull_or_tag_image() {
   # and retag it back to the name Kubernetes will request inside kind.
   if [[ "$image" == docker.io/bitnami/* ]]; then
     legacy_image="${image/docker.io\/bitnami\//docker.io\/bitnamilegacy\/}"
-    if ! docker image inspect "$legacy_image" >/dev/null 2>&1; then
+    if ! "$CONTAINER_CLI" image inspect "$legacy_image" >/dev/null 2>&1; then
       echo "pull:  $legacy_image (for $image)"
       docker_pull_with_retry "$legacy_image"
     else
       echo "local: $legacy_image (for $image)"
     fi
-    docker tag "$legacy_image" "$image"
+    "$CONTAINER_CLI" tag "$legacy_image" "$image"
     echo "tag:   $legacy_image -> $image"
     return
   fi
@@ -86,13 +87,13 @@ load_image_into_kind() {
     if kind load docker-image "$image" --name "$KIND_CLUSTER"; then
       return
     fi
-    echo "kind load failed for $image; falling back to docker save + ctr import" >&2
+    echo "kind load failed for $image; falling back to $CONTAINER_CLI save + ctr import" >&2
   fi
 
   while read -r node; do
     [ -n "$node" ] || continue
     echo "load:  $image -> $node"
-    docker save "$image" | docker exec --privileged -i "$node" \
+    "$CONTAINER_CLI" save "$image" | "$CONTAINER_CLI" exec --privileged -i "$node" \
       ctr --namespace=k8s.io images import --snapshotter=overlayfs -
   done < <(kind get nodes --name "$KIND_CLUSTER")
 }
@@ -136,7 +137,7 @@ else
   missing=0
   while read -r image; do
     [ -n "$image" ] || continue
-    if ! docker image inspect "$image" >/dev/null 2>&1; then
+    if ! "$CONTAINER_CLI" image inspect "$image" >/dev/null 2>&1; then
       echo "missing local image: $image" >&2
       missing=1
     fi

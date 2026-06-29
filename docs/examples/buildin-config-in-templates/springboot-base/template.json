@@ -1,0 +1,23 @@
+{
+  "key": "springboot-base",
+  "name": "Spring Boot 基础配置",
+  "version": "v1",
+  "description": "无数据库或轻量微服务的 Spring Boot application.yml。",
+  "framework": "springboot",
+  "componentTypes": ["backend"],
+  "sortOrder": 20,
+  "nativeConfigs": [
+    { "name": "application.yml", "path": "files/application.yml" }
+  ],
+  "files": [
+    {
+      "name": "Spring Boot application.yml",
+      "configMapName": "{{configMapName}}",
+      "key": "application.yml",
+      "recommendedMountPath": "/etc/paap/application.yml"
+    }
+  ],
+  "env": [
+    { "name": "SPRING_CONFIG_ADDITIONAL_LOCATION", "source": "value", "value": "file:/etc/paap/application.yml" }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "fields": [
+    { "key": "SERVER_PORT", "label": "服务端口", "type": "number", "default": "8080" },
+    { "key": "APP_NAME", "label": "应用名称", "type": "text", "default": "springboot-postgres-redis-cluster" },
+    { "key": "POSTGRES_HOST", "label": "PostgreSQL 地址", "type": "serviceRef", "target": "postgresql", "format": "host", "required": true, "default": "postgresql" },
+    { "key": "POSTGRES_PORT", "label": "PostgreSQL 端口", "type": "serviceRef", "target": "postgresql", "format": "port", "default": "5432" },
+    { "key": "POSTGRES_DATABASE", "label": "数据库名", "type": "text", "default": "mydb" },
+    { "key": "POSTGRES_USERNAME", "label": "数据库用户", "type": "text", "default": "postgres" },
+    { "key": "POSTGRES_PASSWORD", "label": "数据库密码", "type": "password", "output": "secret", "required": true },
+    { "key": "REDIS_CLUSTER_NODES", "label": "Redis Cluster 节点", "type": "serviceRef", "target": "redis", "format": "hosts", "required": true, "default": "redis-cluster-0:6379,redis-cluster-1:6379,redis-cluster-2:6379" },
+    { "key": "REDIS_PASSWORD", "label": "Redis 密码", "type": "password", "output": "secret" }
+  ]
+}

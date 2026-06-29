@@ -2,8 +2,9 @@
   <div class="login-page">
     <div class="login-card">
       <div class="brand-panel">
+        <div class="brand-bg-pattern" />
         <div class="brand-icon">
-          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M12 2L2 7l10 5 10-5-10-5z"/>
             <path d="M2 17l10 5 10-5"/>
             <path d="M2 12l10 5 10-5"/>
@@ -13,7 +14,8 @@
         <p class="brand-desc">应用管理平台</p>
       </div>
       <div class="form-panel">
-        <h2 class="form-title">登录</h2>
+        <h2 class="form-title">欢迎回来</h2>
+        <p class="form-subtitle">登录以管理你的应用和环境</p>
         <form @submit.prevent="handleLogin" class="login-form">
           <div class="form-group">
             <label class="form-label">用户名</label>
@@ -23,11 +25,14 @@
             <label class="form-label">密码</label>
             <input v-model.trim="password" type="password" class="form-input" placeholder="请输入密码" required />
           </div>
-          <p v-if="errorMessage" class="login-error" role="alert">登录失败：{{ errorMessage }}</p>
-          <button type="submit" class="btn btn--primary" :disabled="loading">
+          <p v-if="errorMessage" class="login-error" role="alert">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            <span>{{ errorMessage }}</span>
+          </p>
+          <button type="submit" class="rail-btn rail-btn--primary login-btn" :disabled="loading">
             {{ loading ? '登录中...' : '登录' }}
           </button>
-          <button type="button" class="btn btn--secondary" :disabled="loading" @click="loginWithKeycloak">
+          <button type="button" class="rail-btn rail-btn--secondary login-btn" :disabled="loading" @click="loginWithKeycloak">
             Keycloak 登录
           </button>
         </form>
@@ -115,15 +120,23 @@ onMounted(() => {
 
 .login-card {
   display: flex;
-  width: 820px;
+  width: 840px;
   max-width: 95vw;
-  min-height: 460px;
-  background: var(--cds-layer-01);
-  border: 1px solid var(--cds-border-subtle-01);
-  border-radius: 0;
+  min-height: 480px;
+  background: var(--paap-panel);
+  border: 1px solid var(--paap-border);
+  border-radius: var(--paap-radius);
+  box-shadow: var(--paap-shadow-lg);
   overflow: hidden;
+  animation: card-enter 0.45s ease-out;
 }
 
+@keyframes card-enter {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Brand panel: warm gradient ── */
 .brand-panel {
   flex: 1;
   display: flex;
@@ -131,38 +144,53 @@ onMounted(() => {
   justify-content: center;
   align-items: flex-start;
   padding: var(--paap-space-12);
-  background: var(--cds-layer-accent-01);
-  color: var(--cds-text-primary);
-  border-right: 1px solid var(--cds-border-subtle-01);
+  background: linear-gradient(135deg, var(--paap-accent) 0%, var(--paap-accent-secondary) 100%);
+  color: #ffffff;
+  position: relative;
+  overflow: hidden;
+}
+
+.brand-bg-pattern {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 20% 80%, rgba(255,255,255,0.10) 0%, transparent 50%),
+    radial-gradient(circle at 80% 20%, rgba(255,255,255,0.06) 0%, transparent 50%);
+  pointer-events: none;
 }
 
 .brand-icon {
-  width: 56px;
-  height: 56px;
+  width: 48px;
+  height: 48px;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--cds-interactive-01);
-  border-radius: 0;
-  color: var(--cds-text-on-color);
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: var(--paap-radius);
+  color: #ffffff;
   margin-bottom: var(--paap-space-6);
+  position: relative;
+  backdrop-filter: blur(4px);
 }
 
 .brand-title {
   font-family: var(--paap-mono);
-  font-size: 28px;
-  font-weight: 400;
-  letter-spacing: 0;
-  color: var(--cds-text-primary);
+  font-size: 30px;
+  font-weight: 500;
+  letter-spacing: -0.5px;
+  color: #ffffff;
   margin: 0 0 var(--paap-space-2);
+  position: relative;
 }
 
 .brand-desc {
   font-size: 15px;
-  color: var(--cds-text-secondary);
+  color: rgba(255, 255, 255, 0.7);
   line-height: 1.5;
+  position: relative;
 }
 
+/* ── Form panel ── */
 .form-panel {
   flex: 1;
   display: flex;
@@ -172,10 +200,15 @@ onMounted(() => {
 }
 
 .form-title {
-  font-size: 24px;
-  font-weight: 400;
-  color: var(--cds-text-primary);
-  letter-spacing: 0;
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--paap-text);
+  margin: 0 0 4px;
+}
+
+.form-subtitle {
+  font-size: var(--paap-fs-body);
+  color: var(--paap-muted);
   margin: 0 0 var(--paap-space-8);
 }
 
@@ -190,70 +223,57 @@ onMounted(() => {
   flex-direction: column;
   gap: 6px;
 }
+
 .form-label {
-  font-size: 13px;
-  font-weight: 400;
-  color: var(--cds-text-secondary);
+  font-size: var(--paap-fs-label);
+  font-weight: 500;
+  color: var(--paap-muted);
 }
+
 .form-input {
   width: 100%;
-  padding: 10px 12px;
-  font-size: 14px;
-  border: 0;
-  border-bottom: 1px solid var(--cds-border-strong-01);
-  border-radius: 0;
-  background: var(--cds-field-01);
-  color: var(--cds-text-primary);
+  padding: 10px 13px;
+  font-size: var(--paap-fs-body);
+  border: 1px solid var(--paap-border);
+  border-radius: var(--paap-radius-sm);
+  background: var(--paap-panel-subtle);
+  color: var(--paap-text);
   outline: none;
   font-family: inherit;
-  transition: box-shadow 0.15s;
+  transition: border-color 0.15s, box-shadow 0.15s;
 }
+
 .form-input:focus {
-  box-shadow: inset 0 0 0 2px var(--cds-border-interactive);
+  border-color: var(--paap-accent);
+  box-shadow: var(--paap-accent-ring);
 }
+
 .form-input::placeholder {
-  color: var(--cds-text-placeholder);
+  color: var(--paap-muted);
 }
 
 .login-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   margin: 0;
   padding: 10px 12px;
-  background: var(--cds-support-error-inverse, #da1e28);
-  color: var(--cds-text-on-color);
-  font-size: 13px;
+  border: 1px solid var(--paap-danger);
+  background: var(--paap-danger-soft);
+  color: var(--paap-danger);
+  font-size: var(--paap-fs-compact);
+  border-radius: var(--paap-radius-sm);
   line-height: 1.4;
 }
 
-.btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-family: inherit;
-  font-size: 14px;
-  font-weight: 400;
-  cursor: pointer;
-  outline: none;
-  border: none;
-  height: 44px;
-  padding: 0 20px;
-  border-radius: 0;
-  transition: all 0.15s;
+.login-btn {
   margin-top: var(--paap-space-2);
-}
-.btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-.btn--primary {
-  background: var(--cds-button-primary, var(--paap-accent));
-  color: #ffffff;
-}
-.btn--primary:hover:not(:disabled) {
-  background: var(--cds-button-primary-hover, var(--paap-accent-hover));
+  height: 40px;
+  font-size: var(--paap-fs-body);
 }
 
-@media (max-width: 640px) {
-  .login-card { flex-direction: column; min-height: auto; }
+@media (max-width: 672px) {
+  .login-card { flex-direction: column; min-height: auto; width: 100%; }
   .brand-panel { padding: var(--paap-space-8); align-items: center; text-align: center; }
   .form-panel { padding: var(--paap-space-8); }
 }

@@ -2,6 +2,7 @@ package k8s
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -99,8 +100,14 @@ func TestEnsureKpackBuildEnvironmentCreatesServiceAccountAndBuilderResources(t *
 		t.Fatalf("registry secret type = %q", registrySecret.Type)
 	}
 	dockerConfig := string(registrySecret.Data[corev1.DockerConfigJsonKey])
-	if !strings.Contains(dockerConfig, "registry.shop-dev.corp.example.com:5443") {
-		t.Fatalf("docker config should contain registry server, got %s", dockerConfig)
+	var dockerConfigJSON struct {
+		Auths map[string]map[string]string `json:"auths"`
+	}
+	if err := json.Unmarshal(registrySecret.Data[corev1.DockerConfigJsonKey], &dockerConfigJSON); err != nil {
+		t.Fatalf("docker config should be valid json: %v", err)
+	}
+	if len(dockerConfigJSON.Auths) != 0 {
+		t.Fatalf("public registry docker config must not contain empty auth entries, got %s", dockerConfig)
 	}
 	var caSecret corev1.Secret
 	if err := cl.Get(context.Background(), types.NamespacedName{Name: KpackRegistryCASecretName, Namespace: "shop-dev-ci"}, &caSecret); err != nil {
@@ -210,9 +217,85 @@ func TestEnsureKpackBuildEnvironmentCreatesServiceAccountAndBuilderResources(t *
 	}
 }
 
-func TestKpackRegistryCompatibilityWarnsForClusterServiceRegistry(t *testing.T) {
+func TestKpackBuildpackRefFromMirroredSourceWithRegistryPort(t *testing.T) {
+	ref := kpackBuildpackRefFromSource("piggymetrics-dev-registry.piggymetrics-dev-registry.svc.cluster.local:5000/piggymetrics-dev/paap-buildpack-java:22.0.0")
+	if ref["id"] != "paketo-buildpacks/java" {
+		t.Fatalf("mirrored buildpack id = %#v", ref)
+	}
+	if ref["version"] != "22.0.0" {
+		t.Fatalf("mirrored buildpack version = %#v", ref)
+	}
+	repo := imageReferenceRepository("piggymetrics-dev-registry.piggymetrics-dev-registry.svc.cluster.local:5000/piggymetrics-dev/paap-buildpack-nodejs:10.3.2")
+	if repo != "piggymetrics-dev-registry.piggymetrics-dev-registry.svc.cluster.local:5000/piggymetrics-dev/paap-buildpack-nodejs" {
+		t.Fatalf("repository parsed incorrectly: %q", repo)
+	}
+}
+
+func TestEnsureKpackBuildEnvironmentRecreatesStaleFailedBuilder(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := clientgoscheme.AddToScheme(scheme); err != nil {
+		t.Fatalf("add client-go scheme: %v", err)
+	}
+	if err := apiextensionsv1.AddToScheme(scheme); err != nil {
+		t.Fatalf("add apiextensions scheme: %v", err)
+	}
+	staleBuilder := kpackObject("Builder", "shop-dev-ci", KpackBuilderName)
+	staleBuilder.SetGeneration(3)
+	staleBuilder.Object["spec"] = map[string]interface{}{
+		"tag": "registry.old.example.com/shop-dev/paap-builder:latest",
+	}
+	staleBuilder.Object["status"] = map[string]interface{}{
+		"observedGeneration": int64(2),
+		"conditions": []interface{}{
+			map[string]interface{}{
+				"type":    "UpToDate",
+				"status":  "False",
+				"reason":  "ReconcileFailed",
+				"message": "could not find buildpack with id 'paketo-buildpacks/java'",
+			},
+		},
+	}
+	cl := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(
+			kpackCRD("builders.kpack.io"),
+			kpackCRD("builds.kpack.io"),
+			kpackCRD("clusterstores.kpack.io"),
+			kpackCRD("clusterstacks.kpack.io"),
+			kpackCRD("images.kpack.io"),
+			kpackCRD("sourceresolvers.kpack.io"),
+			kpackCRD("clusterlifecycles.kpack.io"),
+			kpackControllerDeployment(),
+			staleBuilder,
+		).
+		Build()
+
+	status := EnsureKpackBuildEnvironment(context.Background(), cl, KpackBuildEnvironmentSpec{
+		Namespace:        "shop-dev-ci",
+		BuilderImage:     "registry.shop-dev.corp.example.com:5443/shop-dev/paap-builder:latest",
+		RegistryServer:   "registry.shop-dev.corp.example.com:5443",
+		BuildpackSources: []string{PaketoJavaBuildpackImage},
+	})
+	if !status.Ready || status.Warning != "" {
+		t.Fatalf("unexpected bootstrap status: %#v", status)
+	}
+
+	builder := kpackObject("Builder", "shop-dev-ci", KpackBuilderName)
+	if err := cl.Get(context.Background(), types.NamespacedName{Name: KpackBuilderName, Namespace: "shop-dev-ci"}, builder); err != nil {
+		t.Fatalf("expected recreated builder: %v", err)
+	}
+	if _, ok, _ := unstructured.NestedSlice(builder.Object, "status", "conditions"); ok {
+		t.Fatalf("recreated builder should not keep stale failed status: %#v", builder.Object["status"])
+	}
+	tag, _, _ := unstructured.NestedString(builder.Object, "spec", "tag")
+	if tag != "registry.shop-dev.corp.example.com:5443/shop-dev/paap-builder:latest" {
+		t.Fatalf("builder tag = %q", tag)
+	}
+}
+
+func TestKpackRegistryCompatibilityAllowsClusterServiceRegistryForInternalBuilds(t *testing.T) {
 	warning := kpackRegistryCompatibilityWarning("registry.shop-dev-registry.svc.cluster.local:5000")
-	if !strings.Contains(warning, "trusted TLS registry") || !strings.Contains(warning, "svc.cluster.local") {
+	if warning != "" {
 		t.Fatalf("warning = %q", warning)
 	}
 }
@@ -233,6 +316,44 @@ func TestKpackRegistryCompatibilityAllowsConfiguredKindRegistryHost(t *testing.T
 func TestKpackRegistryCompatibilityAllowsTrustedExternalHost(t *testing.T) {
 	if warning := kpackRegistryCompatibilityWarning("registry.shop-dev.corp.example.com:5443"); warning != "" {
 		t.Fatalf("warning = %q", warning)
+	}
+}
+
+func TestGetKpackImageStatusReadsReadyConditionAndLatestImage(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := clientgoscheme.AddToScheme(scheme); err != nil {
+		t.Fatalf("add client-go scheme: %v", err)
+	}
+	cl := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(kpackImage("shop-dev-ci", "orders-api", "registry.example.com/shop/orders-api:v2", "True", "", "")).
+		Build()
+
+	status, err := GetKpackImageStatus(context.Background(), cl, "shop-dev-ci", "orders-api")
+	if err != nil {
+		t.Fatalf("get kpack image status: %v", err)
+	}
+	if !status.Exists || !status.Ready || status.LatestImage != "registry.example.com/shop/orders-api:v2" || status.Warning != "" {
+		t.Fatalf("unexpected kpack image status: %#v", status)
+	}
+}
+
+func TestGetKpackImageStatusReportsNotReadyWarning(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := clientgoscheme.AddToScheme(scheme); err != nil {
+		t.Fatalf("add client-go scheme: %v", err)
+	}
+	cl := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(kpackImage("shop-dev-ci", "orders-api", "", "False", "BuildFailed", "compile failed")).
+		Build()
+
+	status, err := GetKpackImageStatus(context.Background(), cl, "shop-dev-ci", "orders-api")
+	if err != nil {
+		t.Fatalf("get kpack image status: %v", err)
+	}
+	if !status.Exists || status.Ready || !strings.Contains(status.Warning, "BuildFailed") || !strings.Contains(status.Warning, "compile failed") {
+		t.Fatalf("unexpected not-ready status: %#v", status)
 	}
 }
 
@@ -299,6 +420,33 @@ func kpackCRD(name string) *apiextensionsv1.CustomResourceDefinition {
 	return &apiextensionsv1.CustomResourceDefinition{
 		ObjectMeta: metav1.ObjectMeta{Name: name},
 	}
+}
+
+func kpackImage(namespace, name, latestImage, readyStatus, reason, message string) *unstructured.Unstructured {
+	condition := map[string]interface{}{
+		"type":   "Ready",
+		"status": readyStatus,
+	}
+	if reason != "" {
+		condition["reason"] = reason
+	}
+	if message != "" {
+		condition["message"] = message
+	}
+	obj := &unstructured.Unstructured{Object: map[string]interface{}{
+		"apiVersion": "kpack.io/v1alpha2",
+		"kind":       "Image",
+		"metadata": map[string]interface{}{
+			"name":      name,
+			"namespace": namespace,
+		},
+		"status": map[string]interface{}{
+			"latestImage": latestImage,
+			"conditions":  []interface{}{condition},
+		},
+	}}
+	obj.SetGroupVersionKind(schema.GroupVersionKind{Group: "kpack.io", Version: "v1alpha2", Kind: "Image"})
+	return obj
 }
 
 func kpackControllerDeployment() *appsv1.Deployment {

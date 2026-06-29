@@ -1,0 +1,6 @@
+serviceAccount.create: false
+replicaCount: 1
+mode: standalone
+persistence.enabled: false
+auth.enabled: false
+service.type: ClusterIP

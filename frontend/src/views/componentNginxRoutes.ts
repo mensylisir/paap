@@ -119,16 +119,18 @@ const templateRouteFieldKeys = (field:TemplateListField) => {
   if (!itemFields.length || fieldType(field) !== 'list') return null
   const pathField = itemFields.find((item:any) => {
     const key = fieldKey(item).toUpperCase()
-    return key === 'PATH' || key === 'API_PATH' || key.endsWith('_PATH') || key.includes('LOCATION')
+    return key === 'MATCH' || key === 'PATH' || key === 'API_PATH' || key.endsWith('_PATH') || key.includes('LOCATION')
   })
   const proxyField = itemFields.find((item:any) => {
     const key = fieldKey(item).toUpperCase()
     const targets = fieldTargets(item)
     return targets.includes('backend') || key.includes('PROXY_PASS') || key.includes('BACKEND') || key.includes('TARGET_URL')
   })
+  const directivesField = itemFields.find((item:any) => fieldKey(item).toUpperCase().includes('DIRECTIVES'))
   const pathKey = fieldKey(pathField)
   const proxyKey = fieldKey(proxyField)
-  return pathKey && proxyKey ? { pathKey, proxyKey } : null
+  const directivesKey = fieldKey(directivesField)
+  return pathKey && (proxyKey || directivesKey) ? { pathKey, proxyKey, directivesKey } : null
 }
 
 export const nginxTemplateListFieldSupportsRoutes = (field:TemplateListField) =>
@@ -142,7 +144,19 @@ export const nginxRouteRowsToTemplateListRows = (
   if (!keys) return []
   return (routes || []).map((route) => ({
     [keys.pathKey]: normalizeLocationPath(route.path),
-    [keys.proxyKey]: stringValue(route.targetKey) || normalizeProxyUrl(route.targetUrl),
+    ...(keys.proxyKey
+      ? { [keys.proxyKey]: stringValue(route.targetKey) || normalizeProxyUrl(route.targetUrl) }
+      : {}),
+    ...(keys.directivesKey
+      ? { [keys.directivesKey]: [
+        `proxy_pass ${normalizeProxyUrl(route.targetUrl) || 'http://backend:8080'};`,
+        'proxy_http_version 1.1;',
+        'proxy_set_header Host $host;',
+        'proxy_set_header X-Real-IP $remote_addr;',
+        'proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;',
+        'proxy_set_header X-Forwarded-Proto $scheme;',
+      ].join('\n') }
+      : {}),
   })).filter((row) => row[keys.pathKey] || row[keys.proxyKey])
 }
 
@@ -154,8 +168,12 @@ export const nginxTemplateListRowsToRouteRows = (
   const keys = templateRouteFieldKeys(field)
   if (!keys) return []
   return (rows || []).map((row) => {
-    const rawTarget = stringValue(row?.[keys.proxyKey])
+    const directivesTarget = keys.directivesKey
+      ? normalizeProxyUrl(/proxy_pass\s+([^;\s]+)\s*;/.exec(stringValue(row?.[keys.directivesKey]))?.[1])
+      : ''
+    const rawTarget = keys.proxyKey ? stringValue(row?.[keys.proxyKey]) : directivesTarget
     const target = backendTargets.find((item) => stringValue(item.key) === rawTarget)
+      || findTargetForProxyUrl(rawTarget, backendTargets)
     return {
       path: normalizeLocationPath(row?.[keys.pathKey]),
       targetKey: stringValue(target?.key),

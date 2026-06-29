@@ -15,7 +15,7 @@
         </div>
       </div>
 
-      <form class="member-invite-form" @submit.prevent="inviteMember">
+      <form v-has-perm="'app.member.manage'" class="member-invite-form" @submit.prevent="inviteMember">
         <div class="member-form-fields">
           <label class="sr-only" for="member-username">用户名</label>
           <input
@@ -30,7 +30,7 @@
             <option v-for="role in memberRoles" :key="role.value" :value="role.value">{{ role.label }}</option>
           </select>
         </div>
-        <button type="submit" class="rail-btn rail-btn--primary" :disabled="!memberForm.username || memberSubmitting">
+        <button type="submit" class="rail-btn rail-btn--primary" :disabled="!memberForm.username || !memberForm.role || memberSubmitting">
           {{ memberSubmitting ? '邀请中...' : '邀请成员' }}
         </button>
       </form>
@@ -50,7 +50,7 @@
             <select
               v-model="member.role"
               class="rail-select member-role-select"
-              :disabled="updatingMemberId === Number(member.id)"
+              :disabled="updatingMemberId === Number(member.id) || !permissionStore.has('app.member.manage')"
               @change="updateMemberRole(member, member.role)"
             >
               <option v-for="role in memberRoles" :key="role.value" :value="role.value">{{ role.label }}</option>
@@ -58,7 +58,7 @@
             <button
               type="button"
               class="rail-btn rail-btn--ghost rail-btn--sm"
-              :disabled="removingMemberId === Number(member.id) || !canRemoveMember(member)"
+              :disabled="removingMemberId === Number(member.id) || !canRemoveMember(member) || !permissionStore.has('app.member.manage')"
               @click="removeMember(member)"
             >
               {{ removingMemberId === Number(member.id) ? '移除中...' : '移除' }}
@@ -77,20 +77,33 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { api } from '../api/client'
+import { usePermissionStore } from '../stores/permission'
 
 const route = useRoute()
+const permissionStore = usePermissionStore()
 const appId = Number(route.params.id)
 const members = ref<any[]>([])
 const memberSubmitting = ref(false)
 const updatingMemberId = ref<number | null>(null)
 const removingMemberId = ref<number | null>(null)
 const memberError = ref('')
-const memberForm = ref({ username: '', role: 'member' })
-const memberRoles = [
-  { value: 'admin', label: '管理员' },
-  { value: 'member', label: '成员' },
-  { value: 'viewer', label: '只读' },
-]
+const memberForm = ref({ username: '', role: '' })
+const memberRoles = ref<{ value: string; label: string }[]>([])
+
+async function loadAppRoles() {
+  try {
+    const res = await api.listAssignableRoles('app')
+    memberRoles.value = Array.isArray(res.data)
+      ? res.data
+          .map((role: any) => ({ value: String(role?.code || ''), label: String(role?.name || role?.code || '') }))
+          .filter((role: { value: string }) => role.value)
+      : []
+    const defaultRole = memberRoles.value.find((role) => role.value === 'member') || memberRoles.value[0]
+    if (!memberForm.value.role && defaultRole) memberForm.value.role = defaultRole.value
+  } catch (e: any) {
+    memberError.value = '加载角色失败：' + (e?.message || '未知错误')
+  }
+}
 
 async function loadAppMembers() {
   try {
@@ -112,7 +125,8 @@ const inviteMember = async () => {
   memberError.value = ''
   try {
     await api.inviteAppMember(appId, { ...memberForm.value })
-    memberForm.value = { username: '', role: 'member' }
+    const defaultRole = memberRoles.value.find((role) => role.value === 'member') || memberRoles.value[0]
+    memberForm.value = { username: '', role: defaultRole?.value || '' }
     await loadAppMembers()
   } catch (e: any) {
     memberError.value = '邀请成员失败：' + (e?.message || '未知错误')
@@ -150,7 +164,10 @@ const removeMember = async (member: any) => {
   }
 }
 
-onMounted(loadAppMembers)
+onMounted(async () => {
+  await loadAppRoles()
+  await loadAppMembers()
+})
 </script>
 
 <style scoped>
@@ -170,14 +187,14 @@ onMounted(loadAppMembers)
   gap: 2px;
 }
 .page-title {
-  font-size: 28px;
+  font-size: 24px;
   font-weight: 600;
   color: var(--paap-text);
   letter-spacing: -0.02em;
   line-height: 1.2;
 }
 .page-desc {
-  font-size: 14px;
+  font-size: var(--paap-fs-body);
   color: var(--paap-muted);
   line-height: 1.4;
   margin-top: var(--paap-space-1);
@@ -197,11 +214,11 @@ onMounted(loadAppMembers)
 }
 .form-error {
   padding: 10px 12px;
-  border: 1px solid #fecaca;
+  border: 1px solid var(--paap-danger);
   border-radius: var(--paap-radius-sm);
   background: var(--paap-danger-soft);
   color: var(--paap-danger);
-  font-size: 13px;
+  font-size: var(--paap-fs-compact);
 }
 .member-section {
   display: grid;
@@ -250,10 +267,10 @@ onMounted(loadAppMembers)
   height: 34px;
   border: 1px solid var(--paap-border);
   border-radius: var(--paap-radius-sm);
-  background: var(--cds-layer-accent-01, var(--paap-bg));
+  background: var(--paap-panel-subtle);
   color: var(--paap-text);
-  font-size: 13px;
-  font-weight: 650;
+  font-size: var(--paap-fs-compact);
+  font-weight: 600;
 }
 .member-copy {
   display: grid;
@@ -262,13 +279,13 @@ onMounted(loadAppMembers)
 }
 .member-copy strong {
   color: var(--paap-text);
-  font-size: 14px;
+  font-size: var(--paap-fs-body);
   font-weight: 600;
 }
 .member-copy span {
   overflow: hidden;
   color: var(--paap-muted);
-  font-size: 12px;
+  font-size: var(--paap-fs-label);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -288,7 +305,7 @@ onMounted(loadAppMembers)
 @media (max-width: 960px) {
   .member-invite-form { flex-direction: column; }
 }
-@media (max-width: 640px) {
+@media (max-width: 672px) {
   .rail-page { padding: var(--paap-space-6) var(--paap-space-4) var(--paap-space-10); }
   .page-header { flex-direction: column; align-items: flex-start; gap: var(--paap-space-4); }
   .section-header { flex-direction: column; gap: var(--paap-space-3); }

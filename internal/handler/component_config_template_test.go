@@ -1,20 +1,26 @@
 package handler
 
 import (
+	"archive/tar"
 	"bytes"
+	"compress/gzip"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"paap/internal/database"
 	"paap/internal/middleware"
 	"paap/internal/model"
+	"paap/internal/service"
 
 	"github.com/gin-gonic/gin"
 )
 
-func TestComponentConfigTemplatesSeedBuiltInsAndList(t *testing.T) {
+func TestComponentConfigTemplatesListStartsEmpty(t *testing.T) {
 	router, token := setupComponentConfigTemplateTest(t)
 
 	rec := httptest.NewRecorder()
@@ -31,121 +37,254 @@ func TestComponentConfigTemplatesSeedBuiltInsAndList(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if len(body.Data) < 6 {
-		t.Fatalf("expected built-in templates, got %#v", body.Data)
-	}
-	var spring componentConfigTemplateResponse
-	for _, item := range body.Data {
-		if item.Key == "springboot-postgres-redis" {
-			spring = item
-			break
-		}
-	}
-	if spring.Key == "" || !spring.IsBuiltin || spring.Framework != "springboot" {
-		t.Fatalf("missing springboot built-in template: %#v", spring)
-	}
-	if len(spring.Fields) == 0 || len(spring.Env) == 0 || len(spring.ConfigMaps) == 0 || len(spring.Files) == 0 {
-		t.Fatalf("springboot template must expose fields and real outputs: %#v", spring)
-	}
-	if len(spring.NativeConfigs) == 0 {
-		t.Fatalf("springboot template must keep native template preview source: %#v", spring)
-	}
-	if len(spring.Files) == 0 || spring.Files[0]["recommendedMountPath"] == "" {
-		t.Fatalf("springboot template must expose only recommended mount path hints: %#v", spring.Files)
-	}
-	if _, exists := spring.Files[0]["mountPath"]; exists {
-		t.Fatalf("springboot template must not bind runtime mountPath at template level: %#v", spring.Files[0])
-	}
-	if !bytes.Contains([]byte(spring.NativeConfigs[0]["content"].(string)), []byte("__TEMPLATE__JDBC_URL__数据库地址__")) {
-		t.Fatalf("springboot native preview must use ordinary template syntax: %#v", spring.NativeConfigs)
-	}
-}
-
-func TestBuiltInNginxTemplateDoesNotAssumeBusinessRoute(t *testing.T) {
-	router, token := setupComponentConfigTemplateTest(t)
-
-	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/component-config-templates", nil)
-	req.Header.Set("Authorization", "Bearer "+token)
-	router.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
-	}
-	var body struct {
-		Data []componentConfigTemplateResponse `json:"data"`
-	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
-		t.Fatalf("decode response: %v", err)
-	}
-	var nginx componentConfigTemplateResponse
-	for _, item := range body.Data {
-		if item.Key == "nginx-spa-api-proxy" {
-			nginx = item
-			break
-		}
-	}
-	if nginx.Key == "" {
-		t.Fatalf("missing nginx built-in template")
-	}
-	if len(nginx.NativeConfigs) == 0 {
-		t.Fatalf("nginx template must keep native preview source")
-	}
-	content, _ := nginx.NativeConfigs[0]["content"].(string)
-	for _, unwanted := range []string{"location /api/", "BACKEND_URL", "后端地址", "更多代理路由"} {
-		if bytes.Contains([]byte(content), []byte(unwanted)) {
-			t.Fatalf("nginx built-in template must not assume %q: %s", unwanted, content)
-		}
-	}
-	if !bytes.Contains([]byte(content), []byte("__TEMPLATE__FOR__LOCATION_LIST__代理路由__")) {
-		t.Fatalf("nginx built-in template must expose neutral proxy route list: %s", content)
-	}
-	if len(nginx.Files) == 0 || nginx.Files[0]["recommendedMountPath"] != "/etc/nginx/conf.d/default.conf" {
-		t.Fatalf("nginx built-in template must provide a recommended mount path hint: %#v", nginx.Files)
-	}
-	if _, exists := nginx.Files[0]["mountPath"]; exists {
-		t.Fatalf("nginx built-in template must not bind runtime mountPath at template level: %#v", nginx.Files[0])
+	if len(body.Data) != 0 {
+		t.Fatalf("component config templates must be user/import data, got %#v", body.Data)
 	}
 }
 
 func TestParseNativeComponentConfigTemplate(t *testing.T) {
-	parsed := parseNativeComponentConfigTemplate(`server {
+	parsed := service.ParseNativeComponentConfigTemplate(`server {
   listen __TEMPLATE__LISTEN_PORT__监听端口__DEFAULT__80__;
   __TEMPLATE__FOR__LOCATION_LIST__位置块列表__
   location __TEMPLATE__ITEM_PATH__匹配路径__ {
     proxy_pass __TEMPLATE__ITEM_PROXY_PASS__转发地址__;
   }
   __TEMPLATE__END__LOCATION_LIST__
-}`, nativeComponentConfigTemplateOptions{
+}`, service.NativeComponentConfigTemplateOptions{
 		Framework: "nginx",
 		FileName:  "default.conf",
 	})
 
-	if len(parsed.fields) != 2 {
-		t.Fatalf("fields = %#v", parsed.fields)
+	if len(parsed.Fields) != 2 {
+		t.Fatalf("fields = %#v", parsed.Fields)
 	}
-	if parsed.fields[0]["key"] != "LISTEN_PORT" || parsed.fields[0]["label"] != "监听端口" || parsed.fields[0]["default"] != "80" {
-		t.Fatalf("listen field not parsed from ordinary syntax: %#v", parsed.fields[0])
+	if parsed.Fields[0]["key"] != "LISTEN_PORT" || parsed.Fields[0]["label"] != "监听端口" || parsed.Fields[0]["default"] != "80" {
+		t.Fatalf("listen field not parsed from ordinary syntax: %#v", parsed.Fields[0])
 	}
-	list, ok := parsed.fields[1]["itemFields"].([]map[string]interface{})
+	list, ok := parsed.Fields[1]["itemFields"].([]map[string]interface{})
 	if !ok || len(list) != 2 {
-		t.Fatalf("list item fields not parsed: %#v", parsed.fields[1])
+		t.Fatalf("list item fields not parsed: %#v", parsed.Fields[1])
 	}
 	if list[1]["key"] != "PROXY_PASS" || list[1]["type"] != "serviceRef" || list[1]["target"] != "backend" {
 		t.Fatalf("proxy_pass item field must be a backend service reference: %#v", list[1])
 	}
-	content := parsed.configMaps[0]["data"].(map[string]string)["default.conf"]
+	content := parsed.ConfigMaps[0]["data"].(map[string]string)["default.conf"]
 	if !bytes.Contains([]byte(content), []byte("[[paap:LISTEN_PORT default=80]]")) {
 		t.Fatalf("value token not converted: %s", content)
 	}
 	if !bytes.Contains([]byte(content), []byte("[[paap:for LOCATION_LIST]]")) {
 		t.Fatalf("for token not converted: %s", content)
 	}
-	if len(parsed.files) != 1 || parsed.files[0]["recommendedMountPath"] != "/etc/nginx/conf.d/default.conf" {
-		t.Fatalf("parsed native template must expose recommended mount path: %#v", parsed.files)
+	if len(parsed.Files) != 1 || parsed.Files[0]["recommendedMountPath"] != "/etc/nginx/conf.d/default.conf" {
+		t.Fatalf("parsed native template must expose recommended mount path: %#v", parsed.Files)
 	}
-	if _, exists := parsed.files[0]["mountPath"]; exists {
-		t.Fatalf("parsed native template must not bind runtime mountPath: %#v", parsed.files[0])
+	if _, exists := parsed.Files[0]["mountPath"]; exists {
+		t.Fatalf("parsed native template must not bind runtime mountPath: %#v", parsed.Files[0])
+	}
+}
+
+func TestParseNativeComponentConfigTemplateInfersTextareaItems(t *testing.T) {
+	parsed := service.ParseNativeComponentConfigTemplate(`server {
+  __TEMPLATE__FOR__LOCATION_LIST__Location 规则__
+  location __TEMPLATE__ITEM_MATCH__匹配规则__DEFAULT__/__ {
+    __TEMPLATE__ITEM_DIRECTIVES__指令块__
+  }
+  __TEMPLATE__END__LOCATION_LIST__
+}`, service.NativeComponentConfigTemplateOptions{
+		Framework: "nginx",
+		FileName:  "default.conf",
+	})
+
+	if len(parsed.Fields) != 1 {
+		t.Fatalf("fields = %#v", parsed.Fields)
+	}
+	list, ok := parsed.Fields[0]["itemFields"].([]map[string]interface{})
+	if !ok || len(list) != 2 {
+		t.Fatalf("list item fields not parsed: %#v", parsed.Fields[0])
+	}
+	if list[0]["key"] != "MATCH" || list[0]["type"] != "text" {
+		t.Fatalf("match item field not parsed: %#v", list[0])
+	}
+	if list[1]["key"] != "DIRECTIVES" || list[1]["type"] != "textarea" {
+		t.Fatalf("directives item field must be textarea: %#v", list[1])
+	}
+}
+
+func TestParseUploadedNativeJSONConfigTemplateFile(t *testing.T) {
+	dir := t.TempDir()
+	filePath := filepath.Join(dir, "appsettings.json")
+	if err := os.WriteFile(filePath, []byte(`{
+  "fields": {
+    "note": "this is an application config field, not a PAAP template field"
+  },
+  "schema": {
+    "version": "2020-12"
+  },
+  "ConnectionStrings": {
+    "Default": "__TEMPLATE__DATABASE_URL__数据库地址__"
+  },
+  "JwtSecret": "__TEMPLATE__JWT_SECRET__JWT密钥__"
+}`), 0644); err != nil {
+		t.Fatalf("write native json: %v", err)
+	}
+
+	tmpl, err := service.ParseUploadedComponentConfigTemplateFile(filePath, "appsettings.json", service.ComponentConfigTemplateUploadOptions{
+		Mode:           "native",
+		Name:           "ASP.NET Runtime",
+		Framework:      "custom",
+		ComponentTypes: []string{"backend"},
+	})
+	if err != nil {
+		t.Fatalf("parse native json upload: %v", err)
+	}
+	if tmpl.Name != "ASP.NET Runtime" {
+		t.Fatalf("native json must not be decoded as advanced template: %#v", tmpl)
+	}
+	fields := service.DecodeObjectArray(tmpl.FieldsJSON)
+	if len(fields) != 2 {
+		t.Fatalf("native json fields = %#v", fields)
+	}
+	configs := service.DecodeObjectArray(tmpl.ConfigJSON)
+	data := configs[0]["data"].(map[string]interface{})
+	if !strings.Contains(data["appsettings.json"].(string), "[[paap:DATABASE_URL]]") {
+		t.Fatalf("native json must be stored as converted config file: %#v", data)
+	}
+	if tmpl.Syntax != service.NativeComponentConfigTemplateSyntax {
+		t.Fatalf("native json must keep native syntax, got %q", tmpl.Syntax)
+	}
+}
+
+func TestParseUploadedConfigTemplateDefaultsToOrdinaryConfig(t *testing.T) {
+	dir := t.TempDir()
+	filePath := filepath.Join(dir, "schema.json")
+	if err := os.WriteFile(filePath, []byte(`{
+  "schema": {
+    "note": "this belongs to the user's application config"
+  },
+  "fields": {
+    "note": "this is also application data, not PAAP template metadata"
+  },
+  "database": {
+    "host": "__TEMPLATE__DATABASE_HOST__数据库地址__"
+  }
+}`), 0644); err != nil {
+		t.Fatalf("write ordinary json config: %v", err)
+	}
+
+	tmpl, err := service.ParseUploadedComponentConfigTemplateFile(filePath, "schema.json", service.ComponentConfigTemplateUploadOptions{
+		Name:      "Ordinary JSON Config",
+		Framework: "custom",
+	})
+	if err != nil {
+		t.Fatalf("parse ordinary config with default mode: %v", err)
+	}
+	if tmpl.Name != "Ordinary JSON Config" || tmpl.Syntax != service.NativeComponentConfigTemplateSyntax {
+		t.Fatalf("default upload must be ordinary config mode: %#v", tmpl)
+	}
+	fields := service.DecodeObjectArray(tmpl.FieldsJSON)
+	if len(fields) != 1 || fields[0]["key"] != "DATABASE_HOST" {
+		t.Fatalf("ordinary JSON config fields = %#v", fields)
+	}
+	configs := service.DecodeObjectArray(tmpl.ConfigJSON)
+	data := configs[0]["data"].(map[string]interface{})
+	content := data["schema.json"].(string)
+	if !strings.Contains(content, `"schema"`) || !strings.Contains(content, "[[paap:DATABASE_HOST]]") {
+		t.Fatalf("ordinary JSON config must be kept as config content: %s", content)
+	}
+}
+
+func TestParseUploadedConfigTemplateAutoModeDoesNotGuessAdvancedTemplate(t *testing.T) {
+	dir := t.TempDir()
+	filePath := filepath.Join(dir, "template.json")
+	if err := os.WriteFile(filePath, []byte(`{
+  "template": {
+    "note": "this is an application-owned config object"
+  },
+  "schema": {
+    "fields": ["application", "data"]
+  },
+  "endpoint": "__TEMPLATE__API_ENDPOINT__API地址__"
+}`), 0644); err != nil {
+		t.Fatalf("write ordinary json config: %v", err)
+	}
+
+	tmpl, err := service.ParseUploadedComponentConfigTemplateFile(filePath, "template.json", service.ComponentConfigTemplateUploadOptions{
+		Mode:      "auto",
+		Name:      "普通业务 template.json",
+		Framework: "custom",
+	})
+	if err != nil {
+		t.Fatalf("parse auto mode ordinary config: %v", err)
+	}
+	if tmpl.Name != "普通业务 template.json" || tmpl.Syntax != service.NativeComponentConfigTemplateSyntax {
+		t.Fatalf("auto mode must fall back to ordinary config semantics: %#v", tmpl)
+	}
+	fields := service.DecodeObjectArray(tmpl.FieldsJSON)
+	if len(fields) != 1 || fields[0]["key"] != "API_ENDPOINT" {
+		t.Fatalf("ordinary template.json fields = %#v", fields)
+	}
+	configs := service.DecodeObjectArray(tmpl.ConfigJSON)
+	data := configs[0]["data"].(map[string]interface{})
+	content := data["template.json"].(string)
+	if !strings.Contains(content, `"template"`) || !strings.Contains(content, "[[paap:API_ENDPOINT]]") {
+		t.Fatalf("ordinary template.json must remain config content: %s", content)
+	}
+}
+
+func TestParseNativeComponentConfigTemplateFilesCombinesFiles(t *testing.T) {
+	tmpl, err := service.ParseNativeComponentConfigTemplateFiles([]service.NativeComponentConfigTemplateFile{
+		{Name: "application.yml", Content: "spring:\n  data:\n    mongodb:\n      host: __TEMPLATE__MONGODB_HOST__MongoDB地址__\n"},
+		{Name: "bootstrap.yml", Content: "eureka:\n  client:\n    serviceUrl:\n      defaultZone: __TEMPLATE__EUREKA_URL__Eureka地址__\n"},
+	}, service.ComponentConfigTemplateUploadOptions{
+		Mode:           "native",
+		Name:           "Piggy Component Runtime",
+		Framework:      "springboot",
+		ComponentTypes: []string{"backend"},
+	})
+	if err != nil {
+		t.Fatalf("parse multiple native files: %v", err)
+	}
+	nativeConfigs := service.DecodeObjectArray(tmpl.NativeJSON)
+	if len(nativeConfigs) != 2 {
+		t.Fatalf("native configs = %#v", nativeConfigs)
+	}
+	fields := service.DecodeObjectArray(tmpl.FieldsJSON)
+	if len(fields) != 2 {
+		t.Fatalf("fields = %#v", fields)
+	}
+	if fields[0]["type"] != "serviceRef" || fields[0]["target"] != "mongodb" {
+		t.Fatalf("mongodb host must infer serviceRef: %#v", fields[0])
+	}
+	if fields[1]["type"] != "serviceRef" || fields[1]["target"] != "eureka" {
+		t.Fatalf("eureka url must infer serviceRef: %#v", fields[1])
+	}
+	configs := service.DecodeObjectArray(tmpl.ConfigJSON)
+	data := configs[0]["data"].(map[string]interface{})
+	if _, ok := data["application.yml"]; !ok {
+		t.Fatalf("application.yml missing from combined config map: %#v", data)
+	}
+	if _, ok := data["bootstrap.yml"]; !ok {
+		t.Fatalf("bootstrap.yml missing from combined config map: %#v", data)
+	}
+	files := service.DecodeObjectArray(tmpl.FileJSON)
+	if len(files) != 2 {
+		t.Fatalf("file hints = %#v", files)
+	}
+}
+
+func TestParseNativeComponentConfigTemplateAllowsChineseNameWithoutKey(t *testing.T) {
+	tmpl, err := service.ParseNativeComponentConfigTemplateFiles([]service.NativeComponentConfigTemplateFile{
+		{Name: "application.yml", Content: "server:\n  port: __TEMPLATE__SERVER_PORT__服务端口__DEFAULT__8080__\n"},
+	}, service.ComponentConfigTemplateUploadOptions{
+		Mode:      "native",
+		Name:      "中文配置模板",
+		Framework: "springboot",
+	})
+	if err != nil {
+		t.Fatalf("parse native template with chinese name: %v", err)
+	}
+	if !strings.HasPrefix(tmpl.Key, "custom-template-") {
+		t.Fatalf("unexpected fallback key: %s", tmpl.Key)
 	}
 }
 
@@ -184,19 +323,137 @@ func TestComponentConfigTemplatesCreateAndDeleteCustom(t *testing.T) {
 	}
 
 	rec = httptest.NewRecorder()
-	req = httptest.NewRequest(http.MethodDelete, "/api/v1/component-config-templates/1", nil)
-	req.Header.Set("Authorization", "Bearer "+token)
-	router.ServeHTTP(rec, req)
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("built-in delete status = %d, body=%s", rec.Code, rec.Body.String())
-	}
-
-	rec = httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodDelete, "/api/v1/component-config-templates/"+stringID(created.Data.ID), nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 	router.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("custom delete status = %d, body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestParseComponentConfigTemplatePackageFile(t *testing.T) {
+	archivePath := writeComponentConfigTemplatePackage(t, map[string]string{
+		"template.json": `{
+			"key":"nginx-default-conf",
+			"name":"Nginx default.conf",
+			"framework":"nginx",
+			"componentTypes":["frontend"],
+			"nativeConfigs":[{"name":"default.conf","path":"files/default.conf"}],
+			"secrets":[{"name":"{{secretName}}","data":{"TOKEN":"__TEMPLATE__TOKEN__Token__"}}]
+		}`,
+		"schema.json":        `{"fields":[{"key":"LISTEN_PORT","label":"监听端口","type":"number","default":"80"},{"key":"TOKEN","label":"Token","type":"password","output":"secret"}]}`,
+		"files/default.conf": "server { listen __TEMPLATE__LISTEN_PORT__监听端口__DEFAULT__80__; }",
+	})
+
+	tmpl, err := service.ParseComponentConfigTemplatePackageFile(archivePath)
+	if err != nil {
+		t.Fatalf("parse package: %v", err)
+	}
+	if tmpl.Key != "nginx-default-conf" || tmpl.Framework != "nginx" {
+		t.Fatalf("unexpected template identity: %#v", tmpl)
+	}
+	configs := service.DecodeObjectArray(tmpl.ConfigJSON)
+	if len(configs) != 1 {
+		t.Fatalf("generated config maps = %#v", configs)
+	}
+	data, ok := configs[0]["data"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("config data not decoded: %#v", configs[0])
+	}
+	if !bytes.Contains([]byte(data["default.conf"].(string)), []byte("[[paap:LISTEN_PORT default=80]]")) {
+		t.Fatalf("native placeholders not converted: %#v", data)
+	}
+	secrets := service.DecodeObjectArray(tmpl.SecretJSON)
+	secretData := secrets[0]["data"].(map[string]interface{})
+	if secretData["TOKEN"] != "[[paap:TOKEN]]" {
+		t.Fatalf("secret placeholders not converted: %#v", secretData)
+	}
+}
+
+func TestParsePackagedBuiltInComponentConfigTemplates(t *testing.T) {
+	paths, err := filepath.Glob("../../data/config-templates/*.tar.gz")
+	if err != nil {
+		t.Fatalf("glob packaged templates: %v", err)
+	}
+	if len(paths) == 0 {
+		t.Fatal("expected packaged built-in config templates")
+	}
+	for _, archivePath := range paths {
+		t.Run(filepath.Base(archivePath), func(t *testing.T) {
+			tmpl, err := service.ParseComponentConfigTemplatePackageFile(archivePath)
+			if err != nil {
+				t.Fatalf("parse packaged template: %v", err)
+			}
+			if tmpl.Key == "" || tmpl.Name == "" {
+				t.Fatalf("template identity missing: %#v", tmpl)
+			}
+			if strings.TrimSpace(tmpl.FieldsJSON) == "" {
+				t.Fatalf("fields json missing for %s", archivePath)
+			}
+		})
+	}
+}
+
+func TestBuiltInComponentConfigTemplateArchivePathsIncludesNginxDefault(t *testing.T) {
+	paths, err := service.BuiltInComponentConfigTemplateArchivePaths()
+	if err != nil {
+		t.Fatalf("list built-in config template archives: %v", err)
+	}
+	found := false
+	for _, archivePath := range paths {
+		if filepath.Base(archivePath) == "nginx-default-conf.tar.gz" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("nginx-default-conf.tar.gz not found in built-in config template archives: %#v", paths)
+	}
+}
+
+func TestComponentConfigTemplatesUpdateAndDeleteOldBuiltinData(t *testing.T) {
+	router, token := setupComponentConfigTemplateTest(t)
+
+	tmpl := model.ComponentConfigTemplate{
+		Key:            "legacy-built-in-template",
+		Name:           "Legacy Built In Template",
+		Framework:      "go",
+		BindingMode:    "recommended",
+		ComponentTypes: service.MustJSON([]string{"backend"}),
+		FieldsJSON:     "[]",
+		EnvJSON:        "[]",
+		ConfigJSON:     "[]",
+		SecretJSON:     "[]",
+		FileJSON:       "[]",
+		CommandJSON:    "[]",
+		ArgsJSON:       "[]",
+		IsBuiltin:      true,
+		Enabled:        true,
+	}
+	if err := database.DB.Create(&tmpl).Error; err != nil {
+		t.Fatalf("create legacy template: %v", err)
+	}
+
+	payload := []byte(`{
+		"name":"Edited Runtime Template",
+		"framework":"go",
+		"componentTypes":["backend"],
+		"env":[{"name":"APP_ENV","source":"value","value":"prod"}]
+	}`)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/component-config-templates/"+stringID(tmpl.ID), bytes.NewReader(payload))
+	req.Header.Set("Authorization", "Bearer "+token)
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("update legacy template status = %d, body=%s", rec.Code, rec.Body.String())
+	}
+
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodDelete, "/api/v1/component-config-templates/"+stringID(tmpl.ID), nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("delete legacy template status = %d, body=%s", rec.Code, rec.Body.String())
 	}
 }
 
@@ -214,10 +471,11 @@ func setupComponentConfigTemplateTest(t *testing.T) (*gin.Engine, string) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := db.AutoMigrate(&model.User{}, &model.UserRole{}, &model.ComponentConfigTemplate{}); err != nil {
+	if err := db.AutoMigrate(&model.User{}, &model.Permission{}, &model.Role{}, &model.RolePermission{}, &model.RoleBinding{}, &model.ComponentConfigTemplate{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	database.DB = db
+	seedApplicationRBACForTest(t, db)
 
 	passwordHash, err := hashPassword("admin123")
 	if err != nil {
@@ -227,18 +485,44 @@ func setupComponentConfigTemplateTest(t *testing.T) (*gin.Engine, string) {
 	if err := db.Create(&user).Error; err != nil {
 		t.Fatalf("create user: %v", err)
 	}
-	if _, err := model.ReplaceUserRoles(db, user.ID, []string{model.RolePlatformAdmin}); err != nil {
-		t.Fatalf("create roles: %v", err)
-	}
+	bindSystemRoleForTest(t, db, user.ID, model.RolePlatformAdmin)
 	token, err := middleware.GenerateToken(user.ID)
 	if err != nil {
 		t.Fatalf("generate token: %v", err)
 	}
 
-	SeedComponentConfigTemplates()
-
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	SetupRouter(router)
 	return router, token
+}
+
+func writeComponentConfigTemplatePackage(t *testing.T, files map[string]string) string {
+	t.Helper()
+	archivePath := filepath.Join(t.TempDir(), "template.tar.gz")
+	out, err := os.Create(archivePath)
+	if err != nil {
+		t.Fatalf("create package: %v", err)
+	}
+	gz := gzip.NewWriter(out)
+	tw := tar.NewWriter(gz)
+	for name, content := range files {
+		data := []byte(content)
+		if err := tw.WriteHeader(&tar.Header{Name: name, Mode: 0644, Size: int64(len(data))}); err != nil {
+			t.Fatalf("write header %s: %v", name, err)
+		}
+		if _, err := tw.Write(data); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatalf("close tar: %v", err)
+	}
+	if err := gz.Close(); err != nil {
+		t.Fatalf("close gzip: %v", err)
+	}
+	if err := out.Close(); err != nil {
+		t.Fatalf("close package: %v", err)
+	}
+	return archivePath
 }

@@ -1,0 +1,14 @@
+{
+  "fields": [
+    { "key": "SERVER_PORT", "label": "服务端口", "type": "number", "default": "8889" },
+    { "key": "MYSQL_HOST", "label": "MySQL 地址", "type": "serviceRef", "target": "mysql", "format": "host", "required": true, "default": "mysql" },
+    { "key": "MYSQL_PORT", "label": "MySQL 端口", "type": "serviceRef", "target": "mysql", "format": "port", "required": true, "default": "3306" },
+    { "key": "MYSQL_DATABASE", "label": "MySQL 数据库", "type": "text", "default": "music" },
+    { "key": "MYSQL_USERNAME", "label": "MySQL 用户", "type": "text", "default": "root" },
+    { "key": "MYSQL_PASSWORD", "label": "MySQL 密码", "type": "password", "output": "secret", "required": true },
+    { "key": "REDIS_HOST", "label": "Redis 地址", "type": "serviceRef", "target": "redis", "format": "host", "required": true, "default": "redis-master" },
+    { "key": "REDIS_PORT", "label": "Redis 端口", "type": "serviceRef", "target": "redis", "format": "port", "default": "6379" },
+    { "key": "REDIS_PASSWORD", "label": "Redis 密码", "type": "password", "output": "secret" },
+    { "key": "TOKEN_SECRET", "label": "Token 密钥", "type": "password", "output": "secret", "required": true }
+  ]
+}

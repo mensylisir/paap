@@ -1,0 +1,19 @@
+{
+  "key": "springboot-postgres-redis-cluster",
+  "name": "Spring Boot + PostgreSQL + Redis Cluster",
+  "version": "v1",
+  "description": "Spring Boot 使用 PostgreSQL 和 Redis Cluster 分布式缓存配置。",
+  "framework": "springboot",
+  "componentTypes": ["backend"],
+  "sortOrder": 26,
+  "nativeConfigs": [{ "name": "application.yml", "path": "files/application.yml" }],
+  "files": [{ "name": "Spring Boot application.yml", "configMapName": "{{configMapName}}", "key": "application.yml", "recommendedMountPath": "/etc/paap/application.yml" }],
+  "env": [
+    { "name": "SPRING_CONFIG_ADDITIONAL_LOCATION", "source": "value", "value": "file:/etc/paap/application.yml" },
+    { "name": "POSTGRES_PASSWORD", "source": "secret", "refName": "{{secretName}}", "refKey": "POSTGRES_PASSWORD" },
+    { "name": "REDIS_PASSWORD", "source": "secret", "refName": "{{secretName}}", "refKey": "REDIS_PASSWORD" }
+  ],
+  "secrets": [
+    { "name": "{{secretName}}", "data": { "POSTGRES_PASSWORD": "__TEMPLATE__POSTGRES_PASSWORD__PostgreSQL 密码__", "REDIS_PASSWORD": "__TEMPLATE__REDIS_PASSWORD__Redis 密码__" } }
+  ]
+}

@@ -97,6 +97,57 @@ func TestDiscoverNamespaceServiceNetworkReturnsPrimaryServiceIPs(t *testing.T) {
 	}
 }
 
+func TestDiscoverRegistryServiceNetworkReturnsRegistryClusterIP(t *testing.T) {
+	previous := GetClient()
+	t.Cleanup(func() { SetClient(previous) })
+
+	SetClient(fake.NewClientBuilder().WithObjects(
+		&corev1.Service{
+			ObjectMeta: metav1.ObjectMeta{Name: "piggymetrics-dev-registry-metrics", Namespace: "piggymetrics-dev-registry"},
+			Spec: corev1.ServiceSpec{
+				Type:      corev1.ServiceTypeClusterIP,
+				ClusterIP: "10.96.0.99",
+				Ports:     []corev1.ServicePort{{Name: "metrics", Port: 9113}},
+			},
+		},
+		&corev1.Service{
+			ObjectMeta: metav1.ObjectMeta{Name: "piggymetrics-dev-registry-headless", Namespace: "piggymetrics-dev-registry"},
+			Spec: corev1.ServiceSpec{
+				Type:      corev1.ServiceTypeClusterIP,
+				ClusterIP: corev1.ClusterIPNone,
+				Ports:     []corev1.ServicePort{{Name: "https", Port: 5000}},
+			},
+		},
+		&corev1.Service{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "piggymetrics-dev-registry",
+				Namespace: "piggymetrics-dev-registry",
+				Labels: map[string]string{
+					"app.kubernetes.io/instance": "piggymetrics-dev-registry",
+					"app.kubernetes.io/name":     "registry",
+					"paap.io/service-type":       "registry",
+				},
+			},
+			Spec: corev1.ServiceSpec{
+				Type:      corev1.ServiceTypeClusterIP,
+				ClusterIP: "10.96.190.247",
+				Ports:     []corev1.ServicePort{{Name: "https", Port: 5000}},
+			},
+		},
+	).Build())
+
+	got, err := DiscoverRegistryServiceNetwork(t.Context(), "piggymetrics-dev-registry", "piggymetrics-dev-registry")
+	if err != nil {
+		t.Fatalf("discover registry service network: %v", err)
+	}
+	if got.ServiceName != "piggymetrics-dev-registry" {
+		t.Fatalf("service name = %q, want piggymetrics-dev-registry", got.ServiceName)
+	}
+	if got.ClusterIP != "10.96.190.247" {
+		t.Fatalf("cluster IP = %q, want 10.96.190.247", got.ClusterIP)
+	}
+}
+
 func TestListNamespaceAdoptableResourcesDiscoversRealWorkloads(t *testing.T) {
 	previous := GetClient()
 	t.Cleanup(func() { SetClient(previous) })

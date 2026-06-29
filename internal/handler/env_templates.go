@@ -2,9 +2,11 @@ package handler
 
 import (
 	"log"
+	"strings"
 
 	"paap/internal/database"
 	"paap/internal/model"
+	"paap/internal/service"
 )
 
 // SeedEnvTemplates populates the EnvTemplate table with predefined environment templates.
@@ -57,21 +59,22 @@ func SeedEnvTemplates() {
 		},
 	}
 
-	for _, t := range templates {
-		var existing model.EnvTemplate
-		if err := database.DB.Where("name = ?", t.Name).First(&existing).Error; err == nil {
-			t.ID = existing.ID
-			database.DB.Model(&existing).Updates(map[string]interface{}{
-				"description":   t.Description,
-				"services":      t.Services,
-				"infra":         t.Infra,
-				"resource_cpu":  t.ResourceCPU,
-				"resource_mem":  t.ResourceMem,
-				"resource_disk": t.ResourceDisk,
-			})
-			continue
-		}
-		database.DB.Create(&t)
+	if err := service.SeedEnvTemplateEntries(database.DB, templates); err != nil {
+		log.Printf("Seed env templates warnings: %v", err)
 	}
 	log.Printf("Seeded or refreshed %d env templates", len(templates))
+}
+
+func appendServiceTypes(base []string, extra ...string) []string {
+	seen := map[string]bool{}
+	out := make([]string, 0, len(base)+len(extra))
+	for _, value := range append(base, extra...) {
+		value = strings.TrimSpace(value)
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		out = append(out, value)
+	}
+	return out
 }

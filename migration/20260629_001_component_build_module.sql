@@ -1,0 +1,1 @@
+ALTER TABLE components ADD COLUMN IF NOT EXISTS build_module VARCHAR(200);

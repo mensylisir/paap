@@ -95,7 +95,7 @@ const updateField = (name: string, value: string) => emit('update-param', { name
 }
 .workspace-action-form--danger {
   border-color: var(--paap-danger-soft);
-  background: #fff7f7;
+  background: var(--paap-danger-soft);
 }
 .workspace-action-form__head {
   display: flex;
@@ -111,20 +111,20 @@ const updateField = (name: string, value: string) => emit('update-param', { name
 }
 .workspace-action-form__head span {
   color: var(--paap-muted);
-  font-size: 11px;
-  font-weight: 650;
+  font-size: var(--paap-fs-small);
+  font-weight: 600;
 }
 .workspace-action-form__head strong {
   min-width: 0;
   color: var(--paap-text);
-  font-size: 14px;
+  font-size: var(--paap-fs-body);
   font-weight: 700;
   overflow-wrap: anywhere;
 }
 .workspace-action-form__description {
   margin: 0;
   color: var(--paap-muted);
-  font-size: 12px;
+  font-size: var(--paap-fs-label);
   line-height: 1.5;
 }
 .workspace-action-form__fields {
@@ -139,8 +139,8 @@ const updateField = (name: string, value: string) => emit('update-param', { name
 }
 .workspace-action-form__field > span {
   color: var(--paap-muted);
-  font-size: 12px;
-  font-weight: 650;
+  font-size: var(--paap-fs-label);
+  font-weight: 600;
 }
 .workspace-action-form__input {
   width: 100%;
@@ -152,7 +152,7 @@ const updateField = (name: string, value: string) => emit('update-param', { name
   background: var(--paap-panel);
   color: var(--paap-text);
   font: inherit;
-  font-size: 12px;
+  font-size: var(--paap-fs-label);
 }
 .workspace-action-form__textarea {
   min-height: 86px;
@@ -167,7 +167,7 @@ const updateField = (name: string, value: string) => emit('update-param', { name
 .workspace-action-form__error {
   margin: 0;
   color: var(--paap-danger);
-  font-size: 12px;
+  font-size: var(--paap-fs-label);
 }
 .workspace-action-form__footer {
   display: flex;

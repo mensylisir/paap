@@ -1,11 +1,12 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 
 	"paap/internal/database"
-	"paap/internal/model"
+	"paap/internal/service"
 
 	"github.com/gin-gonic/gin"
 )
@@ -13,30 +14,10 @@ import (
 // ListUsers returns all platform users.
 // Only platform_admin can call this.
 func ListUsers(c *gin.Context) {
-	var users []model.User
-	if err := database.DB.Order("id asc").Find(&users).Error; err != nil {
+	items, err := service.ListPlatformUsers(database.DB)
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
-	}
-	type userItem struct {
-		ID       uint     `json:"id"`
-		Username string   `json:"username"`
-		Email    string   `json:"email"`
-		Roles    []string `json:"roles"`
-	}
-	items := make([]userItem, 0, len(users))
-	for _, u := range users {
-		roles, err := model.UserRoleValues(database.DB, u.ID)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-		items = append(items, userItem{
-			ID:       u.ID,
-			Username: u.Username,
-			Email:    u.Email,
-			Roles:    roles,
-		})
 	}
 	c.JSON(http.StatusOK, gin.H{"data": items})
 }
@@ -57,15 +38,10 @@ func UpdateUserRole(c *gin.Context) {
 		return
 	}
 
-	var user model.User
-	if err := database.DB.First(&user, id).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
-		return
-	}
-
-	roles, err := model.ReplaceUserRoles(database.DB, id, req.Roles)
+	createdBy, _ := authenticatedUserID(c)
+	user, err := service.UpdatePlatformUserRoles(database.DB, id, req.Roles, createdBy)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondUserAdminServiceError(c, err)
 		return
 	}
 
@@ -74,20 +50,9 @@ func UpdateUserRole(c *gin.Context) {
 			"id":       user.ID,
 			"username": user.Username,
 			"email":    user.Email,
-			"roles":    roles,
+			"roles":    user.Roles,
 		},
 	})
-}
-
-// RequirePlatformAdmin is a middleware that rejects non-platform-admin requests.
-func RequirePlatformAdmin() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		if !authenticatedUserIsPlatformAdmin(c) {
-			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "platform admin access required"})
-			return
-		}
-		c.Next()
-	}
 }
 
 func parseUserID(c *gin.Context) (uint, bool) {
@@ -97,4 +62,13 @@ func parseUserID(c *gin.Context) (uint, bool) {
 		return 0, false
 	}
 	return uint(id), true
+}
+
+func respondUserAdminServiceError(c *gin.Context, err error) {
+	switch {
+	case errors.Is(err, service.ErrUserNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	}
 }

@@ -372,13 +372,13 @@ const syncBadge = (s?: string) => {
   flex: 1;
   border: none;
   background: transparent;
-  font-size: 13px;
+  font-size: var(--paap-fs-compact);
   color: var(--paap-text);
   outline: none;
   font-family: inherit;
 }
 .argocd-search input::placeholder {
-  color: var(--paap-muted-2);
+  color: var(--paap-muted);
 }
 .argocd-app-list {
   max-height: 480px;
@@ -391,7 +391,7 @@ const syncBadge = (s?: string) => {
   width: 100%;
   padding: 12px var(--paap-space-4);
   border: none;
-  border-bottom: 1px solid #f3f4f6;
+  border-bottom: 1px solid var(--paap-panel-subtle);
   background: transparent;
   cursor: pointer;
   text-align: left;
@@ -408,7 +408,7 @@ const syncBadge = (s?: string) => {
   gap: var(--paap-space-2);
 }
 .argocd-app-name {
-  font-size: 13px;
+  font-size: var(--paap-fs-compact);
   font-weight: 600;
   color: var(--paap-text);
   overflow: hidden;
@@ -422,7 +422,7 @@ const syncBadge = (s?: string) => {
   gap: var(--paap-space-2);
 }
 .argocd-app-path {
-  font-size: 11px;
+  font-size: var(--paap-fs-small);
   color: var(--paap-muted);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -466,25 +466,25 @@ const syncBadge = (s?: string) => {
   gap: var(--paap-space-2);
   flex-wrap: wrap;
   min-width: 0;
-  font-size: 12px;
+  font-size: var(--paap-fs-label);
   color: var(--paap-muted);
 }
 .argocd-app-repo {
   max-width: 100%;
   color: var(--paap-accent);
   font-family: var(--paap-mono);
-  font-size: 11px;
+  font-size: var(--paap-fs-small);
   word-break: break-all;
 }
 .argocd-app-revision {
   font-family: var(--paap-mono);
-  font-size: 11px;
+  font-size: var(--paap-fs-small);
 }
 .argocd-app-commit {
   background: var(--paap-panel-subtle);
   border-radius: var(--paap-radius-xs);
   padding: 1px 6px;
-  font-size: 11px;
+  font-size: var(--paap-fs-small);
   font-family: var(--paap-mono);
 }
 .argocd-app-status {
@@ -501,17 +501,18 @@ const syncBadge = (s?: string) => {
   align-items: center;
   height: 28px;
   padding: 0 10px;
-  border: 1px solid #bfdbfe;
+  border: 1px solid var(--paap-info-border, #bfdbfe);
   border-radius: var(--paap-radius-full);
   background: var(--paap-accent-soft);
   color: var(--paap-accent);
-  font-size: 12px;
+  font-size: var(--paap-fs-label);
   font-weight: 600;
   text-decoration: none;
   white-space: nowrap;
+  transition: all var(--paap-transition-fast);
 }
 .argocd-open-link:hover {
-  background: #dbeafe;
+  background: var(--paap-accent-soft);
 }
 
 /* Actions */
@@ -529,7 +530,7 @@ const syncBadge = (s?: string) => {
 }
 
 .argocd-topology {
-  background: #f3f4f6;
+  background: var(--paap-panel-subtle);
   border: 1px solid var(--paap-border);
   border-radius: var(--paap-radius);
   overflow: hidden;
@@ -539,7 +540,7 @@ const syncBadge = (s?: string) => {
   min-height: 460px;
   max-height: 680px;
   overflow: auto;
-  background: #eef0f3;
+  background: var(--paap-panel-subtle, #f3f4f6);
 }
 .argocd-tree-stage {
   position: relative;
@@ -555,17 +556,17 @@ const syncBadge = (s?: string) => {
 }
 .argocd-tree-link {
   fill: none;
-  stroke: #8aa0ad;
+  stroke: var(--paap-muted, #8aa0ad);
   stroke-width: 1.75;
   stroke-dasharray: 4 3;
   marker-end: url(#argocd-tree-arrow);
 }
 .argocd-tree-link.active {
-  stroke: #0f62fe;
+  stroke: var(--paap-accent, #0f62fe);
   stroke-width: 2;
 }
 .argocd-tree-arrow-head {
-  fill: #8aa0ad;
+  fill: var(--paap-muted, #8aa0ad);
 }
 .argocd-resource-node {
   position: absolute;
@@ -574,10 +575,10 @@ const syncBadge = (s?: string) => {
   gap: var(--paap-space-2);
   align-items: center;
   padding: 8px 10px;
-  border: 1px solid #d1d5db;
-  border-radius: 3px;
-  background: #ffffff;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+  border: 1px solid var(--paap-border);
+  border-radius: var(--paap-radius-sm, 6px);
+  background: var(--paap-panel);
+  box-shadow: var(--paap-shadow-sm);
   color: var(--paap-text);
   text-align: left;
   font-family: inherit;
@@ -586,12 +587,12 @@ const syncBadge = (s?: string) => {
 }
 .argocd-resource-node:hover,
 .argocd-resource-node.selected {
-  border-color: #0f62fe;
-  box-shadow: 0 0 0 3px rgba(15, 98, 254, 0.12);
+  border-color: var(--paap-accent, #0f62fe);
+  box-shadow: var(--paap-focus-ring);
   z-index: 2;
 }
 .argocd-resource-node.root {
-  border-color: #0f62fe;
+  border-color: var(--paap-accent, #0f62fe);
 }
 .argocd-kind-chip {
   display: inline-flex;
@@ -600,9 +601,9 @@ const syncBadge = (s?: string) => {
   min-width: 34px;
   height: 24px;
   padding: 0 5px;
-  border-radius: 3px;
-  background: #eef2ff;
-  color: #1d4ed8;
+  border-radius: var(--paap-radius-xs, 4px);
+  background: var(--paap-accent-soft);
+  color: var(--paap-accent);
   font-size: 10px;
   font-weight: 700;
   text-transform: uppercase;
@@ -615,7 +616,7 @@ const syncBadge = (s?: string) => {
   min-width: 0;
   overflow: hidden;
   color: var(--paap-text);
-  font-size: 12px;
+  font-size: var(--paap-fs-label);
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -632,7 +633,7 @@ const syncBadge = (s?: string) => {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--paap-muted-2);
+  background: var(--paap-muted);
 }
 .argocd-node-health.green { background: var(--paap-success); }
 .argocd-node-health.red { background: var(--paap-danger); }
@@ -653,7 +654,7 @@ const syncBadge = (s?: string) => {
   padding: var(--paap-space-3) var(--paap-space-4);
   border-bottom: 1px solid var(--paap-border);
   background: var(--paap-panel-subtle);
-  font-size: 12px;
+  font-size: var(--paap-fs-label);
   font-weight: 600;
   color: var(--paap-muted);
 }
@@ -685,7 +686,7 @@ const syncBadge = (s?: string) => {
 .argocd-tree-node:hover,
 .argocd-tree-node.selected {
   background: var(--paap-accent-soft);
-  border-color: #bfdbfe;
+  border-color: var(--paap-info-border, #bfdbfe);
 }
 .argocd-tree-node.root {
   background: var(--paap-panel-subtle);
@@ -700,7 +701,7 @@ const syncBadge = (s?: string) => {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--paap-muted-2);
+  background: var(--paap-muted);
 }
 .argocd-tree-node.green .argocd-tree-dot { background: var(--paap-success); }
 .argocd-tree-node.red .argocd-tree-dot { background: var(--paap-danger); }
@@ -715,13 +716,13 @@ const syncBadge = (s?: string) => {
   text-transform: uppercase;
 }
 .argocd-tree-name {
-  font-size: 13px;
+  font-size: var(--paap-fs-compact);
   color: var(--paap-text);
   word-break: break-all;
 }
 .argocd-tree-sync,
 .argocd-tree-health {
-  font-size: 11px;
+  font-size: var(--paap-fs-small);
   font-weight: 500;
   color: var(--paap-muted);
   background: var(--paap-panel-subtle);
@@ -759,7 +760,7 @@ const syncBadge = (s?: string) => {
 }
 .argocd-detail-desc {
   color: var(--paap-muted);
-  font-size: 12px;
+  font-size: var(--paap-fs-label);
   line-height: 1.5;
   margin: 0;
 }
@@ -778,13 +779,13 @@ const syncBadge = (s?: string) => {
   border-radius: var(--paap-radius-xs);
 }
 .argocd-detail-prop span {
-  font-size: 12px;
+  font-size: var(--paap-fs-label);
   color: var(--paap-muted);
   flex-shrink: 0;
 }
 .argocd-detail-prop em {
   font-style: normal;
-  font-size: 12px;
+  font-size: var(--paap-fs-label);
   color: var(--paap-text);
   word-break: break-all;
   text-align: right;
@@ -816,12 +817,12 @@ const syncBadge = (s?: string) => {
   .argocd-tree-health { display: none; }
 }
 
-@media (max-width: 640px) {
+@media (max-width: 672px) {
   .argocd-app-header {
     padding: var(--paap-space-4);
   }
   .argocd-app-title {
-    font-size: 16px;
+    font-size: var(--paap-fs-heading-lg);
   }
   .argocd-open-link {
     max-width: 100%;

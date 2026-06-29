@@ -1,0 +1,32 @@
+{
+  "key": "springboot-mysql-jpa",
+  "name": "Spring Boot + MySQL + JPA",
+  "version": "v1",
+  "description": "适用于使用 Spring Data JPA 和 MySQL 的常规业务后端。",
+  "framework": "springboot",
+  "componentTypes": ["backend"],
+  "sortOrder": 32,
+  "nativeConfigs": [
+    { "name": "application.yml", "path": "files/application.yml" }
+  ],
+  "files": [
+    {
+      "name": "Spring Boot application.yml",
+      "configMapName": "{{configMapName}}",
+      "key": "application.yml",
+      "recommendedMountPath": "/etc/paap/application.yml"
+    }
+  ],
+  "env": [
+    { "name": "SPRING_CONFIG_ADDITIONAL_LOCATION", "source": "value", "value": "file:/etc/paap/application.yml" },
+    { "name": "MYSQL_PASSWORD", "source": "secret", "refName": "{{secretName}}", "refKey": "MYSQL_PASSWORD" }
+  ],
+  "secrets": [
+    {
+      "name": "{{secretName}}",
+      "data": {
+        "MYSQL_PASSWORD": "__TEMPLATE__MYSQL_PASSWORD__MySQL 密码__"
+      }
+    }
+  ]
+}

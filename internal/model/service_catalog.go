@@ -6,6 +6,11 @@ import (
 	"gorm.io/gorm"
 )
 
+const (
+	ServiceProvisionModeManaged  = "managed"
+	ServiceProvisionModeKubeVirt = "kubevirt"
+)
+
 // ServiceTemplate defines HOW to install a specific tool or infrastructure service.
 // This is the implementation layer - it specifies the helm chart, default values,
 // configurable parameters, install/uninstall steps, etc.
@@ -17,7 +22,7 @@ type ServiceTemplate struct {
 
 	Type        string `gorm:"index;size:30;not null" json:"type"` // e.g. "postgresql", "deploy", "ci" (not unique — multiple versions per type)
 	Name        string `gorm:"size:50;not null" json:"name"`       // e.g. "PostgreSQL", "部署服务"
-	Category    string `gorm:"size:20;not null" json:"category"`   // "tool" | "infra" | "middleware"
+	Category    string `gorm:"size:20;not null" json:"category"`   // "ci" | "cd" | "monitor" | "log" | "database" | "middleware" | "environment" | "virtualMachine" | "other"
 	Description string `gorm:"size:500" json:"description"`
 	Icon        string `gorm:"size:50" json:"icon"`
 
@@ -34,6 +39,15 @@ type ServiceTemplate struct {
 	// Configurable parameters (JSON array of param definitions)
 	// e.g. [{"key":"auth.username","label":"用户名","type":"string","required":true}, ...]
 	ConfigurableParams string `gorm:"type:text" json:"configurableParams"`
+
+	// Feature matrix (JSON array) declares supported consumption modes for catalog/product pages.
+	// Example: [{"key":"external","label":"外部连接","enabled":true}]
+	SupportedFeatures string `gorm:"type:text" json:"features,omitempty"`
+
+	// ProvisionMode declares the runtime implementation for this template.
+	// service Type remains the product identity (postgresql/redis/etc.).
+	ProvisionMode string `gorm:"size:20;default:managed;index" json:"provisionMode,omitempty"`
+	RuntimeSpec   string `gorm:"type:text" json:"runtimeSpec,omitempty"`
 
 	// Raw YAML template for kubectl apply mode
 	RawYamlTemplate string `gorm:"type:text" json:"rawYamlTemplate"`
@@ -109,10 +123,12 @@ type ServiceInstallation struct {
 	UpdatedAt time.Time      `json:"updatedAt"`
 	DeletedAt gorm.DeletedAt `gorm:"index" json:"deletedAt"`
 
-	EnvironmentID uint   `gorm:"not null;uniqueIndex:idx_service_installation_env_type" json:"environmentId"`
-	ServiceType   string `gorm:"size:30;not null;uniqueIndex:idx_service_installation_env_type" json:"serviceType"` // references ServiceTemplate.Type
-	ServiceName   string `gorm:"size:50" json:"serviceName"`                                                        // instance name
-	ReleaseName   string `gorm:"size:50" json:"releaseName"`                                                        // helm release name
+	EnvironmentID uint   `gorm:"not null;uniqueIndex:idx_service_installation_env_type_mode" json:"environmentId"`
+	ServiceType   string `gorm:"size:30;not null;uniqueIndex:idx_service_installation_env_type_mode" json:"serviceType"` // references ServiceTemplate.Type
+	ServiceName   string `gorm:"size:50" json:"serviceName"`                                                             // instance name
+	ReleaseName   string `gorm:"size:50" json:"releaseName"`                                                             // helm release name
+	ProvisionMode string `gorm:"size:20;default:managed;uniqueIndex:idx_service_installation_env_type_mode" json:"provisionMode,omitempty"`
+	RuntimeSpec   string `gorm:"type:text" json:"runtimeSpec,omitempty"`
 
 	Status       string `gorm:"size:20;default:pending" json:"status"` // pending, installing, running, failed, deleting
 	ErrorMessage string `gorm:"type:text" json:"errorMessage"`

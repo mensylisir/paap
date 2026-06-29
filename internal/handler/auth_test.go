@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"paap/internal/authz"
 	"paap/internal/database"
 	"paap/internal/model"
 
@@ -24,10 +25,11 @@ func TestLoginReturnsSignedJWTAndMeAcceptsBearerToken(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := db.AutoMigrate(&model.User{}, &model.UserRole{}); err != nil {
+	if err := db.AutoMigrate(&model.User{}, &model.Permission{}, &model.Role{}, &model.RolePermission{}, &model.RoleBinding{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	database.DB = db
+	seedApplicationRBACForTest(t, db)
 
 	passwordHash, err := hashPassword("Def@u1tpwd")
 	if err != nil {
@@ -40,9 +42,8 @@ func TestLoginReturnsSignedJWTAndMeAcceptsBearerToken(t *testing.T) {
 	if err := db.Where("username = ?", "admin").First(&admin).Error; err != nil {
 		t.Fatalf("find admin: %v", err)
 	}
-	if _, err := model.ReplaceUserRoles(db, admin.ID, []string{model.RolePlatformAdmin, model.RoleAppAdmin}); err != nil {
-		t.Fatalf("create roles: %v", err)
-	}
+	bindSystemRoleForTest(t, db, admin.ID, model.RolePlatformAdmin)
+	bindSystemRoleForTest(t, db, admin.ID, model.RoleAppAdmin)
 
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
@@ -119,7 +120,7 @@ func TestPlatformAdminMigrationSeedsPlatformAdminWithHardenedPassword(t *testing
 	if err := db.Where("username = ?", "admin").First(&admin).Error; err != nil {
 		t.Fatalf("find admin: %v", err)
 	}
-	roles, err := model.UserRoleValues(db, admin.ID)
+	roles, err := authz.SystemRoleCodes(db, admin.ID)
 	if err != nil {
 		t.Fatalf("load admin roles: %v", err)
 	}

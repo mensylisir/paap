@@ -1,0 +1,79 @@
+server:
+  port: __TEMPLATE__SERVER_PORT__服务端口__DEFAULT__8081__
+  http2:
+    enabled: true
+
+http:
+  port: 8082
+
+https:
+  enabled: false
+
+cross-origin:
+  domain: "*"
+
+spring:
+  main:
+    banner-mode: off
+  servlet:
+    multipart:
+      enabled: true
+      max-file-size: 50MB
+      max-request-size: 100MB
+  datasource:
+    driver-class-name: org.mariadb.jdbc.Driver
+    url: jdbc:mariadb://__TEMPLATE__MARIADB_HOST__MariaDB 地址__DEFAULT__mariadb__:__TEMPLATE__MARIADB_PORT__MariaDB 端口__DEFAULT__3306__/__TEMPLATE__MARIADB_DATABASE__MariaDB 数据库__DEFAULT__blog__?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai
+    username: __TEMPLATE__MARIADB_USERNAME__MariaDB 用户__DEFAULT__root__
+    password: ${MARIADB_PASSWORD}
+    type: com.zaxxer.hikari.HikariDataSource
+    hikari:
+      minimum-idle: 5
+      maximum-pool-size: 10
+      idle-timeout: 180000
+      auto-commit: true
+      pool-name: DatebookHikariCP
+      max-lifetime: 1800000
+      connection-timeout: 30000
+      connection-test-query: SELECT 1
+
+  redis:
+    host: __TEMPLATE__REDIS_HOST__Redis 地址__DEFAULT__redis-master__
+    port: __TEMPLATE__REDIS_PORT__Redis 端口__DEFAULT__6379__
+    password: ${REDIS_PASSWORD:}
+    database: 0
+    connect-timeout: 10000ms
+    lettuce:
+      pool:
+        max-active: 1024
+        max-wait: 10000ms
+        max-idle: 200
+        min-idle: 5
+
+  rabbitmq:
+    host: __TEMPLATE__RABBITMQ_HOST__RabbitMQ 地址__DEFAULT__rabbitmq__
+    port: __TEMPLATE__RABBITMQ_PORT__RabbitMQ 端口__DEFAULT__5672__
+    username: __TEMPLATE__RABBITMQ_USERNAME__RabbitMQ 用户__DEFAULT__admin__
+    password: ${RABBITMQ_PASSWORD}
+    listener:
+      simple:
+        acknowledge-mode: manual
+        prefetch: 1
+    publisher-confirm-type: correlated
+    publisher-returns: true
+
+jwt:
+  tokenHeader: Authorization
+  secret: ${JWT_SECRET}
+  expiration: 86400
+  tokenHead: Bearer
+
+upload:
+  mode: local
+  local:
+    url: __TEMPLATE__UPLOAD_PUBLIC_URL__上传文件访问地址__DEFAULT__http://127.0.0.1__
+    staticAccessPath: /api/file/
+    uploadFolder: __TEMPLATE__UPLOAD_FOLDER__上传文件目录__DEFAULT__/usr/local/upload/__
+
+aj:
+  captcha:
+    cache-type: redis

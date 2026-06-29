@@ -1,0 +1,20 @@
+{
+  "key": "fastapi-postgres-redis",
+  "name": "FastAPI + PostgreSQL + Redis",
+  "version": "v1",
+  "description": "FastAPI 生产级 YAML 配置。",
+  "framework": "python",
+  "componentTypes": ["backend"],
+  "sortOrder": 120,
+  "nativeConfigs": [{ "name": "config.yaml", "path": "files/config.yaml" }],
+  "files": [{ "name": "FastAPI config.yaml", "configMapName": "{{configMapName}}", "key": "config.yaml", "recommendedMountPath": "/etc/paap/config.yaml" }],
+  "env": [
+    { "name": "APP_CONFIG", "source": "value", "value": "/etc/paap/config.yaml" },
+    { "name": "DATABASE_PASSWORD", "source": "secret", "refName": "{{secretName}}", "refKey": "DATABASE_PASSWORD" },
+    { "name": "REDIS_PASSWORD", "source": "secret", "refName": "{{secretName}}", "refKey": "REDIS_PASSWORD" },
+    { "name": "SECRET_KEY", "source": "secret", "refName": "{{secretName}}", "refKey": "SECRET_KEY" }
+  ],
+  "secrets": [
+    { "name": "{{secretName}}", "data": { "DATABASE_PASSWORD": "__TEMPLATE__DATABASE_PASSWORD__数据库密码__", "REDIS_PASSWORD": "__TEMPLATE__REDIS_PASSWORD__Redis 密码__", "SECRET_KEY": "__TEMPLATE__SECRET_KEY__应用密钥__" } }
+  ]
+}

@@ -1,0 +1,22 @@
+server:
+  port: __TEMPLATE__SERVER_PORT__服务端口__DEFAULT__8080__
+
+spring:
+  application:
+    name: __TEMPLATE__APP_NAME__应用名称__DEFAULT__springboot-postgres-druid__
+  datasource:
+    type: com.alibaba.druid.pool.DruidDataSource
+    druid:
+      driver-class-name: org.postgresql.Driver
+      url: jdbc:postgresql://__TEMPLATE__POSTGRES_HOST__PostgreSQL 地址__DEFAULT__postgresql__:__TEMPLATE__POSTGRES_PORT__PostgreSQL 端口__DEFAULT__5432__/__TEMPLATE__POSTGRES_DATABASE__数据库名__DEFAULT__mydb__
+      username: __TEMPLATE__POSTGRES_USERNAME__数据库用户__DEFAULT__postgres__
+      password: ${POSTGRES_PASSWORD}
+      initial-size: 5
+      min-idle: 5
+      max-active: 30
+      validation-query: SELECT 1
+      stat-view-servlet:
+        enabled: true
+        url-pattern: /druid/*
+        login-username: __TEMPLATE__DRUID_ADMIN_USERNAME__Druid 控制台用户__DEFAULT__admin__
+        login-password: ${DRUID_ADMIN_PASSWORD}

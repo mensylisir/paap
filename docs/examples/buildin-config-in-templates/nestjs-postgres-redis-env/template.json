@@ -1,0 +1,19 @@
+{
+  "key": "nestjs-postgres-redis-env",
+  "name": "NestJS + PostgreSQL + Redis 环境变量",
+  "version": "v1",
+  "description": "NestJS 服务常见 .env 配置。",
+  "framework": "node",
+  "componentTypes": ["backend"],
+  "sortOrder": 130,
+  "nativeConfigs": [{ "name": ".env", "path": "files/.env" }],
+  "files": [{ "name": "NestJS .env", "configMapName": "{{configMapName}}", "key": ".env", "recommendedMountPath": "/etc/paap/.env" }],
+  "env": [
+    { "name": "DOTENV_CONFIG_PATH", "source": "value", "value": "/etc/paap/.env" },
+    { "name": "DB_PASSWORD", "source": "secret", "refName": "{{secretName}}", "refKey": "DB_PASSWORD" },
+    { "name": "JWT_SECRET", "source": "secret", "refName": "{{secretName}}", "refKey": "JWT_SECRET" }
+  ],
+  "secrets": [
+    { "name": "{{secretName}}", "data": { "DB_PASSWORD": "__TEMPLATE__DB_PASSWORD__数据库密码__", "JWT_SECRET": "__TEMPLATE__JWT_SECRET__JWT 密钥__" } }
+  ]
+}

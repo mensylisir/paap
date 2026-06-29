@@ -38,14 +38,6 @@ import (
 
 var k8sClient = k8s.NewClient()
 
-type harborProjectEnsurer interface {
-	EnsureProject(ctx context.Context, name string) error
-}
-
-var newHarborProjectEnsurer = func(namespace string) harborProjectEnsurer {
-	return k8s.NewHarborClient(namespace)
-}
-
 type giteaWorkspaceClient interface {
 	Repositories(ctx context.Context) ([]k8s.GiteaRepository, error)
 	RepositoryContents(ctx context.Context, repo, path, ref string) ([]k8s.GiteaContent, error)
@@ -95,55 +87,30 @@ type CreateEnvRequest struct {
 	Capabilities         []EnvironmentCapabilityRequest `json:"capabilities"`
 }
 
-type EnvironmentExternalAccess struct {
-	Name        string `json:"name"`
-	Kind        string `json:"kind"`
-	URL         string `json:"url"`
-	Namespace   string `json:"namespace"`
-	Scope       string `json:"scope"`
-	ServiceID   uint   `json:"serviceId,omitempty"`
-	ServiceType string `json:"serviceType,omitempty"`
-}
+type EnvironmentExternalAccess = service.EnvironmentExternalAccess
 
-type ServiceCredential struct {
-	Secret string `json:"secret"`
-	Key    string `json:"key"`
-	Value  string `json:"value"`
-	Kind   string `json:"kind"`
-}
+type ServiceCredential = service.ServiceCredential
 
-type ComponentView struct {
-	model.Component
-	RuntimeConfig *k8s.RuntimeConfig `json:"runtimeConfig,omitempty"`
-	ExternalURL   string             `json:"externalUrl,omitempty"`
-	IngressURL    string             `json:"ingressUrl"`
-	NodePortURL   string             `json:"nodePortUrl"`
-}
+type ComponentView = service.ComponentView
 
-type ServiceInstallationView struct {
-	model.ServiceInstallation
-	RuntimeConfig      *k8s.RuntimeConfig `json:"runtimeConfig,omitempty"`
-	ExternalURL        string             `json:"externalUrl,omitempty"`
-	RuntimeServiceName string             `json:"runtimeServiceName,omitempty"`
-	RuntimeServiceType string             `json:"runtimeServiceType,omitempty"`
-	ClusterIP          string             `json:"clusterIP,omitempty"`
-	LoadBalancerIP     string             `json:"loadBalancerIP,omitempty"`
-}
+type ServiceInstallationView = service.ServiceInstallationView
 
 type CreateComponentRequest struct {
-	Name           string `json:"name" binding:"required"`
-	Type           string `json:"type" binding:"required"`
-	Image          string `json:"image"`
-	Version        string `json:"version"`
-	Replicas       int    `json:"replicas"`
-	CPU            string `json:"cpu"`
-	Memory         string `json:"memory"`
-	DeliveryMode   string `json:"deliveryMode"`
-	DraftOnly      bool   `json:"draftOnly"`
-	SourceRepoURL  string `json:"sourceRepoUrl"`
-	SourceBranch   string `json:"sourceBranch"`
-	BuildContext   string `json:"buildContext"`
-	DockerfilePath string `json:"dockerfilePath"`
+	Name           string                 `json:"name" binding:"required"`
+	Type           string                 `json:"type" binding:"required"`
+	Image          string                 `json:"image"`
+	Version        string                 `json:"version"`
+	Replicas       int                    `json:"replicas"`
+	CPU            string                 `json:"cpu"`
+	Memory         string                 `json:"memory"`
+	DeliveryMode   string                 `json:"deliveryMode"`
+	DraftOnly      bool                   `json:"draftOnly"`
+	SourceRepoURL  string                 `json:"sourceRepoUrl"`
+	SourceBranch   string                 `json:"sourceBranch"`
+	BuildContext   string                 `json:"buildContext"`
+	BuildModule    string                 `json:"buildModule"`
+	DockerfilePath string                 `json:"dockerfilePath"`
+	Config         *model.ComponentConfig `json:"config"`
 }
 
 type UpdateComponentRequest struct {
@@ -158,21 +125,14 @@ type UpdateComponentRequest struct {
 	SourceRepoURL  string                 `json:"sourceRepoUrl"`
 	SourceBranch   string                 `json:"sourceBranch"`
 	BuildContext   string                 `json:"buildContext"`
+	BuildModule    string                 `json:"buildModule"`
 	DockerfilePath string                 `json:"dockerfilePath"`
 	Config         *model.ComponentConfig `json:"config"`
 }
 
-type CanvasNodePosition struct {
-	X      float64 `json:"x"`
-	Y      float64 `json:"y"`
-	Width  float64 `json:"width,omitempty"`
-	Height float64 `json:"height,omitempty"`
-}
+type CanvasNodePosition = service.CanvasNodePosition
 
-type CanvasManualEdge struct {
-	FromKey string `json:"fromKey"`
-	ToKey   string `json:"toKey"`
-}
+type CanvasManualEdge = service.CanvasManualEdge
 
 type EnvironmentCanvasStateRequest struct {
 	Positions map[string]CanvasNodePosition `json:"positions"`
@@ -185,10 +145,11 @@ type AdoptResourceRequest struct {
 }
 
 type InstallServiceRequest struct {
-	ServiceType  string            `json:"serviceType" binding:"required"`
-	AppVersion   string            `json:"appVersion"`
-	ChartVersion string            `json:"chartVersion"`
-	Values       map[string]string `json:"values"`
+	ServiceType   string            `json:"serviceType" binding:"required"`
+	AppVersion    string            `json:"appVersion"`
+	ChartVersion  string            `json:"chartVersion"`
+	ProvisionMode string            `json:"provisionMode"`
+	Values        map[string]string `json:"values"`
 }
 
 type UpdateServiceRequest struct {
@@ -668,100 +629,6 @@ func serviceTemplateWithBuiltInChart(svcTmpl model.ServiceTemplate, chartName st
 	return next
 }
 
-// getWorkloadRole returns the RBAC whitelist for a given service type,
-// read from the ServiceTemplate's WorkloadRolePolicy field.
-// Falls back to no workload permissions so services cannot escape their own namespace
-// unless the template explicitly declares workload namespace permissions.
-func getWorkloadRole(svcType string) paapv1.RoleSpec {
-	var tmpl model.ServiceTemplate
-	if err := database.DB.Where("type = ?", svcType).First(&tmpl).Error; err != nil {
-		return noWorkloadRole()
-	}
-	if tmpl.WorkloadRolePolicy == "" {
-		return noWorkloadRole()
-	}
-	var rules []paapv1.PolicyRule
-	if err := json.Unmarshal([]byte(tmpl.WorkloadRolePolicy), &rules); err != nil {
-		return noWorkloadRole()
-	}
-	return paapv1.RoleSpec{Rules: rules}
-}
-
-// getEnvironmentRole returns RBAC rules projected into other namespaces owned
-// by the same environment, such as middleware and tool namespaces.
-func getEnvironmentRole(svcType string) *paapv1.RoleSpec {
-	var tmpl model.ServiceTemplate
-	if err := database.DB.Where("type = ?", svcType).First(&tmpl).Error; err != nil {
-		return nil
-	}
-	if tmpl.EnvironmentRolePolicy == "" {
-		return nil
-	}
-	var rules []paapv1.PolicyRule
-	if err := json.Unmarshal([]byte(tmpl.EnvironmentRolePolicy), &rules); err != nil || len(rules) == 0 {
-		return nil
-	}
-	return &paapv1.RoleSpec{Rules: rules}
-}
-
-// getToolNamespaceRole returns the RBAC rules for the tool's own namespace
-// (for example, access to CRDs or config resources used by the tool itself).
-func getToolNamespaceRole(svcType string) paapv1.RoleSpec {
-	var tmpl model.ServiceTemplate
-	if err := database.DB.Where("type = ?", svcType).First(&tmpl).Error; err != nil {
-		return defaultSafeRole()
-	}
-
-	if tmpl.PlatformManifestJSON != "" {
-		var manifest model.PlatformManifest
-		if err := json.Unmarshal([]byte(tmpl.PlatformManifestJSON), &manifest); err == nil {
-			var rules []paapv1.PolicyRule
-			if err := json.Unmarshal([]byte(manifest.ToToolNamespaceRoleJSON()), &rules); err == nil && len(rules) > 0 {
-				return paapv1.RoleSpec{Rules: rules}
-			}
-		}
-	}
-
-	return defaultSafeRole()
-}
-
-// getClusterRole returns the cluster-scoped read-only permissions declared by a template.
-func getClusterRole(svcType string) *paapv1.RoleSpec {
-	var tmpl model.ServiceTemplate
-	if err := database.DB.Where("type = ?", svcType).First(&tmpl).Error; err != nil {
-		return nil
-	}
-	if tmpl.PlatformManifestJSON == "" {
-		return nil
-	}
-	var manifest model.PlatformManifest
-	if err := json.Unmarshal([]byte(tmpl.PlatformManifestJSON), &manifest); err != nil {
-		return nil
-	}
-	var rules []paapv1.PolicyRule
-	if err := json.Unmarshal([]byte(manifest.ToClusterRoleJSON()), &rules); err != nil || len(rules) == 0 {
-		return nil
-	}
-	return &paapv1.RoleSpec{Rules: rules}
-}
-
-// defaultSafeRole returns a minimal read-only role as a safe fallback.
-func defaultSafeRole() paapv1.RoleSpec {
-	return paapv1.RoleSpec{
-		Rules: []paapv1.PolicyRule{
-			{
-				APIGroups: []string{""},
-				Resources: []string{"pods", "services", "endpoints"},
-				Verbs:     []string{"get", "list", "watch"},
-			},
-		},
-	}
-}
-
-func noWorkloadRole() paapv1.RoleSpec {
-	return paapv1.RoleSpec{Rules: []paapv1.PolicyRule{}}
-}
-
 // mergeDefaultValues parses the template's DefaultValues JSON and merges with user overrides.
 func mergeDefaultValues(defaultsJSON string, overrides map[string]string) map[string]string {
 	result := make(map[string]string)
@@ -999,21 +866,21 @@ func ListApplicationEnvironments(c *gin.Context) {
 	syncClusterStateIfPossible()
 
 	appID, _ := strconv.Atoi(c.Param("id"))
-	var app model.Application
-	if err := database.DB.First(&app, appID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "application not found"})
-		return
-	}
-	if !requireApplicationAccess(c, app.ID) {
-		return
-	}
-
-	var envs []model.Environment
-	if err := database.DB.Where("application_id = ?", app.ID).Find(&envs).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	envs, err := service.ListApplicationEnvironments(database.DB, uint(appID))
+	if err != nil {
+		respondApplicationEnvironmentServiceError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"data": envs})
+}
+
+func respondApplicationEnvironmentServiceError(c *gin.Context, err error) {
+	switch {
+	case errors.Is(err, service.ErrApplicationNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"error": "application not found"})
+	default:
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	}
 }
 
 // CreateEnvironment creates a new environment for an application.
@@ -1027,79 +894,68 @@ func CreateEnvironment(c *gin.Context) {
 		return
 	}
 
-	// 查出应用信息
-	var app model.Application
-	if err := database.DB.First(&app, appID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "application not found"})
-		return
-	}
-	if app.IsSystem {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "system applications cannot create additional environments"})
-		return
-	}
-	if !requireApplicationAccess(c, app.ID) {
-		return
-	}
-	identifier, err := uniqueIdentifierWithFallback(database.DB, firstNonEmpty(req.Identifier, req.Name), "env", 50, func(db *gorm.DB, candidate string) (bool, error) {
-		var count int64
-		if err := db.Model(&model.Environment{}).Where("application_id = ? AND identifier = ?", appID, candidate).Count(&count).Error; err != nil {
-			return false, err
-		}
-		return count > 0, nil
+	createdBy, _ := authenticatedUserID(c)
+	created, err := service.CreateEnvironment(c.Request.Context(), database.DB, uint(appID), service.CreateEnvironmentInput{
+		Name:         req.Name,
+		Identifier:   req.Identifier,
+		TemplateID:   req.TemplateID,
+		FromEmpty:    req.FromEmpty,
+		Blank:        req.Blank,
+		Capabilities: req.Capabilities,
+		CreatedBy:    createdBy,
 	})
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondCreateEnvironmentError(c, err)
 		return
 	}
-	env := model.Environment{
-		ApplicationID: uint(appID),
-		Name:          req.Name,
-		Identifier:    identifier,
-		TemplateID:    req.TemplateID,
-		Status:        "creating",
-		Namespace:     app.Identifier + "-" + identifier,
-	}
-
-	if req.FromEmpty || req.Blank {
-		env.TemplateID = 0
-	}
-	resourceQuota := environmentTemplateResourceQuota(env.TemplateID)
-
-	if err := database.DB.Create(&env).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	if len(req.Capabilities) > 0 {
-		createdBy, _ := authenticatedUserID(c)
-		if err := CreateInitialEnvironmentCapabilities(env, req.Capabilities, createdBy); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
-		}
-	}
+	app := created.Application
+	env := created.Environment
 
 	// 1) 创建 K8s Environment CR（Operator 会自动创建 namespace + NetworkPolicy + Quota）
 	ctx := context.Background()
-	primaryNS := app.Identifier + "-" + identifier
+	primaryNS := env.Namespace
 	additionalNS := environmentAdditionalNamespaces(req.AdditionalNamespaces)
-	if err := k8s.CreateEnvironmentCR(ctx, app.Identifier, req.Name, identifier, primaryNS, additionalNS, resourceQuota); err != nil {
-		database.DB.Model(&env).Update("status", "error").Update("error_message", err.Error())
+	if err := k8s.CreateEnvironmentCR(ctx, app.Identifier, req.Name, env.Identifier, primaryNS, additionalNS, created.ResourceQuota); err != nil {
+		updated, updateErr := service.UpdateEnvironmentStatus(database.DB, env.ID, "error", err.Error())
+		if updateErr == nil {
+			env = updated
+		}
 		c.JSON(http.StatusCreated, gin.H{"data": env, "warning": "Environment CR creation failed: " + err.Error()})
 		return
 	}
 
 	if req.Blank {
-		env.Status = "running"
-		database.DB.Model(&env).Update("status", "running")
+		updated, err := service.UpdateEnvironmentStatus(database.DB, env.ID, "running", "")
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		env = updated
 		c.JSON(http.StatusCreated, gin.H{"data": env})
 		return
 	}
 
 	// 2) 安装环境基座；模板只是在基座之外追加数据库、中间件等。
-	go installEnvironmentServices(&env, &app, identifier, env.TemplateID)
-	env.Status = "creating"
-	database.DB.Model(&env).Update("status", "creating")
+	go installEnvironmentServices(&env, &app, env.Identifier, env.TemplateID)
+	if updated, err := service.UpdateEnvironmentStatus(database.DB, env.ID, "creating", ""); err == nil {
+		env = updated
+	}
 
 	c.JSON(http.StatusCreated, gin.H{"data": env})
+}
+
+func respondCreateEnvironmentError(c *gin.Context, err error) {
+	var validationErr service.ValidationError
+	switch {
+	case errors.Is(err, service.ErrApplicationNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"error": "application not found"})
+	case errors.Is(err, service.ErrSystemApplicationEnvironmentCreate):
+		c.JSON(http.StatusBadRequest, gin.H{"error": "system applications cannot create additional environments"})
+	case errors.As(err, &validationErr):
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	default:
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	}
 }
 
 func environmentAdditionalNamespaces(requested []paapv1.AdditionalNamespace) []paapv1.AdditionalNamespace {
@@ -1121,46 +977,19 @@ func environmentAdditionalNamespaces(requested []paapv1.AdditionalNamespace) []p
 	return result
 }
 
-func environmentTemplateResourceQuota(templateID uint) *paapv1.ResourceQuotaSpec {
-	if templateID == 0 {
-		return nil
-	}
-	var tmpl model.EnvTemplate
-	if err := database.DB.First(&tmpl, templateID).Error; err != nil {
-		log.Printf("[CreateEnvironment] Template %d not found while resolving resource quota: %v", templateID, err)
-		return nil
-	}
-	cpu := strings.TrimSpace(tmpl.ResourceCPU)
-	memory := strings.TrimSpace(tmpl.ResourceMem)
-	storage := strings.TrimSpace(tmpl.ResourceDisk)
-	if cpu == "" && memory == "" && storage == "" {
-		return nil
-	}
-	return &paapv1.ResourceQuotaSpec{
-		CPU:     cpu,
-		Memory:  memory,
-		Storage: storage,
-	}
-}
-
 func foundationServiceTypes() []string {
 	return []string{"git", "registry", "deploy", "monitor", "log"}
 }
 
 func installEnvironmentServices(env *model.Environment, app *model.Application, envIdentifier string, templateID uint) {
 	log.Printf("[installEnvironmentServices] Starting for env=%s templateID=%d", envIdentifier, templateID)
-	services := foundationServiceTypes()
-	if templateID > 0 {
-		var tmpl model.EnvTemplate
-		if err := database.DB.First(&tmpl, templateID).Error; err != nil {
-			log.Printf("[installEnvironmentServices] Template %d not found: %v", templateID, err)
-			database.DB.Model(env).Update("status", "error").Update("error_message", "template not found")
-			return
-		}
-		log.Printf("[installEnvironmentServices] Found template: name=%s services=%s infra=%s", tmpl.Name, tmpl.Services, tmpl.Infra)
-		services = appendServiceTypes(services, templateInstallServiceTypes(tmpl)...)
+	plan, err := service.BuildEnvironmentServiceInstallPlan(database.DB, templateID, foundationServiceTypes())
+	if err != nil {
+		log.Printf("[installEnvironmentServices] Template %d not found: %v", templateID, err)
+		_, _ = service.UpdateEnvironmentStatus(database.DB, env.ID, "error", "template not found")
+		return
 	}
-	installServiceTypes(env, app, envIdentifier, services)
+	installServiceTypes(env, app, envIdentifier, plan.Services)
 }
 
 // installTemplateServices creates ServiceInstance CRs for foundation and template services.
@@ -1168,166 +997,53 @@ func installTemplateServices(env *model.Environment, app *model.Application, env
 	installEnvironmentServices(env, app, envIdentifier, templateID)
 }
 
-func appendServiceTypes(base []string, extra ...string) []string {
-	seen := map[string]bool{}
-	out := make([]string, 0, len(base)+len(extra))
-	for _, value := range append(base, extra...) {
-		value = strings.TrimSpace(value)
-		if value == "" || seen[value] {
-			continue
-		}
-		seen[value] = true
-		out = append(out, value)
-	}
-	return out
-}
-
 func installServiceTypes(env *model.Environment, app *model.Application, envIdentifier string, services []string) {
 	ctx := context.Background()
-	services = appendServiceTypes(nil, services...)
 	log.Printf("[installServiceTypes] Will install %d services: %v", len(services), services)
 	for _, svc := range services {
-		// 查找模板获取安装方式
-		var svcTmpl model.ServiceTemplate
-		if err := database.DB.Where("type = ?", svc).First(&svcTmpl).Error; err != nil {
+		svcTmpl, err := service.LoadServiceTemplateForInstall(database.DB, svc)
+		if err != nil {
 			log.Printf("[installServiceTypes] template for service %s not found: %v", svc, err)
 			continue
 		}
 		toolNS := serviceToolNamespace(*app, *env, &svcTmpl, svc)
-		inst := model.ServiceInstallation{
-			EnvironmentID: env.ID,
-			ServiceType:   svc,
+		inst, err := service.SaveServiceInstalling(database.DB, *env, svc, service.ServiceInstallationRuntimeInput{
 			ServiceName:   serviceToolIdentity(&svcTmpl, svc),
-			Status:        "installing",
 			Namespace:     toolNS,
 			ReleaseName:   toolNS,
+			ProvisionMode: svcTmpl.ProvisionMode,
+			RuntimeSpec:   svcTmpl.RuntimeSpec,
+			Values:        "{}",
+			ErrorMessage:  "",
+		})
+		if err != nil {
+			log.Printf("[installServiceTypes] failed to save service installation for %s: %v", svc, err)
+			continue
 		}
-		database.DB.Create(&inst)
 		log.Printf("[installServiceTypes] Service %s: installer=%s s3Bucket=%s s3Key=%s chartRepo=%s",
 			svc, svcTmpl.Installer, svcTmpl.S3Bucket, svcTmpl.S3Key, svcTmpl.ChartRepo)
 
 		if svcTmpl.Installer != "helm" {
-			inst.Status = "failed"
-			inst.ErrorMessage = "only helm service templates are supported"
-			database.DB.Save(&inst)
+			_, _ = service.MarkServiceInstallationFailed(database.DB, inst, "only helm service templates are supported")
 			continue
 		}
 
-		workloadRole := getWorkloadRole(svc)
-		toolNamespaceRole := getToolNamespaceRole(svc)
-		environmentRole := getEnvironmentRole(svc)
-		clusterRole := getClusterRole(svc)
+		workloadRole := service.ServiceWorkloadRoleFromTemplate(&svcTmpl)
+		toolNamespaceRole := service.ServiceToolNamespaceRoleFromTemplate(&svcTmpl)
+		environmentRole := service.ServiceEnvironmentRoleFromTemplate(&svcTmpl)
+		clusterRole := service.ServiceClusterRoleFromTemplate(&svcTmpl)
 		helmSpec := buildHelmInstallSpec(app, env, &svcTmpl, svc)
 		resourceLabels := serviceResourceLabels(app.Identifier, envIdentifier, &svcTmpl, svc)
 		resourceAnnotations := serviceResourceAnnotations(app.Identifier, envIdentifier, &svcTmpl, svc)
 
 		if err := k8s.CreateServiceInstanceCR(ctx, app.Identifier, envIdentifier, svc, workloadRole, toolNamespaceRole, environmentRole, clusterRole, nil, helmSpec, resourceLabels, resourceAnnotations); err != nil {
-			inst.Status = "failed"
-			inst.ErrorMessage = err.Error()
-			database.DB.Save(&inst)
+			_, _ = service.MarkServiceInstallationFailed(database.DB, inst, err.Error())
 		} else {
-			inst.Status = "installing"
-			database.DB.Save(&inst)
+			_, _ = service.MarkServiceInstallationInstalling(database.DB, inst)
 		}
 	}
 
-	database.DB.Model(env).Update("status", "running")
-}
-
-func templateInstallServiceTypes(tmpl model.EnvTemplate) []string {
-	seen := map[string]bool{}
-	result := make([]string, 0)
-	appendList := func(raw, field string) {
-		var values []string
-		if strings.TrimSpace(raw) == "" {
-			return
-		}
-		if err := json.Unmarshal([]byte(raw), &values); err != nil {
-			log.Printf("[installTemplateServices] Failed to unmarshal %s: %v", field, err)
-			return
-		}
-		for _, value := range values {
-			value = strings.TrimSpace(value)
-			if value == "" || seen[value] {
-				continue
-			}
-			seen[value] = true
-			result = append(result, value)
-		}
-	}
-	appendList(tmpl.Services, "services")
-	appendList(tmpl.Infra, "infra")
-	return result
-}
-
-// renderAndStoreManifests renders a service template and stores it in a ConfigMap
-func renderAndStoreManifests(ctx context.Context, crNS, svcType string, app *model.Application, env *model.Environment, envIdentifier, toolNS string, parameters map[string]string) *paapv1.ConfigMapReference {
-	// 查找 ServiceTemplate
-	var svcTmpl model.ServiceTemplate
-	if err := database.DB.Where("type = ?", svcType).First(&svcTmpl).Error; err != nil {
-		log.Printf("[renderAndStoreManifests] template not found for type %s: %v", svcType, err)
-		return nil
-	}
-
-	if svcTmpl.RawYamlTemplate == "" {
-		log.Printf("[renderAndStoreManifests] template %s has no rawYamlTemplate", svcType)
-		return nil
-	}
-
-	// 合并默认参数
-	defaultParams := make(map[string]string)
-	if svcTmpl.DefaultValues != "" {
-		json.Unmarshal([]byte(svcTmpl.DefaultValues), &defaultParams)
-	}
-	for k, v := range parameters {
-		defaultParams[k] = v
-	}
-
-	// 构建 namespace 列表（主空间 + 附加空间）
-	primaryNS := app.Identifier + "-" + envIdentifier
-	namespaces := []string{primaryNS}
-	// 默认附加 namespace: {primaryNS}-app (工作负载空间)
-	additionalNS := primaryNS + "-app"
-	namespaces = append(namespaces, additionalNS)
-
-	// 渲染模板
-	renderer := service.NewTemplateRenderer()
-	vars := service.BuildVariables(
-		app.ID, app.Name, app.Identifier,
-		env.ID, env.Name, envIdentifier,
-		primaryNS, toolNS, namespaces,
-		fmt.Sprintf("%s-%s-%s", app.Identifier, envIdentifier, svcType),
-		toolNS,
-		defaultParams,
-		service.RoleRules{},
-	)
-
-	rendered, err := renderer.RenderServiceTemplate(svcTmpl.RawYamlTemplate, vars)
-	if err != nil {
-		log.Printf("[renderAndStoreManifests] render error for %s: %v", svcType, err)
-		return nil
-	}
-
-	log.Printf("[renderAndStoreManifests] rendered %d bytes for %s", len(rendered), svcType)
-
-	// 创建 ConfigMap 存储渲染后的 manifests
-	cmName := fmt.Sprintf("%s-%s-manifests", envIdentifier, svcType)
-	cmLabels := map[string]string{
-		"paap.io/app":  app.Identifier,
-		"paap.io/env":  envIdentifier,
-		"paap.io/tool": svcType,
-		"paap.io/type": "manifests",
-	}
-	if err := k8s.CreateConfigMap(ctx, crNS, cmName, map[string]string{"manifests.yaml": rendered}, cmLabels); err != nil {
-		log.Printf("[renderAndStoreManifests] create configmap error: %v", err)
-		return nil
-	}
-
-	log.Printf("[renderAndStoreManifests] created ConfigMap %s/%s", crNS, cmName)
-	return &paapv1.ConfigMapReference{
-		Name:      cmName,
-		Namespace: crNS,
-	}
+	_, _ = service.UpdateEnvironmentStatus(database.DB, env.ID, "running", "")
 }
 
 // GetEnvironment returns environment details with components, services, infra
@@ -1335,34 +1051,21 @@ func GetEnvironment(c *gin.Context) {
 	syncClusterStateNow()
 
 	id, _ := strconv.Atoi(c.Param("id"))
-	var env model.Environment
-	if err := database.DB.First(&env, id).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			c.JSON(http.StatusNotFound, gin.H{"error": "environment not found"})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	if !requireApplicationAccess(c, env.ApplicationID) {
+	state, err := service.GetEnvironmentState(database.DB, uint(id))
+	if err != nil {
+		respondEnvironmentServiceError(c, err)
 		return
 	}
 
-	var components []model.Component
-	database.DB.Where("environment_id = ?", env.ID).Find(&components)
-	var services []model.ServiceInstallation
-	database.DB.Where("environment_id = ?", env.ID).Find(&services)
-	var infra []model.InfraInstallation
-	database.DB.Where("environment_id = ?", env.ID).Find(&infra)
 	ctx := context.Background()
-	access := collectEnvironmentExternalAccess(ctx, env)
+	access := service.CollectEnvironmentExternalAccess(ctx, database.DB, state.Environment)
 
 	c.JSON(http.StatusOK, gin.H{
 		"data": gin.H{
-			"environment":    env,
-			"components":     enrichComponentViews(ctx, env, components, access),
-			"services":       enrichServiceInstallationViews(ctx, services, access),
-			"infra":          infra,
+			"environment":    state.Environment,
+			"components":     enrichComponentViews(ctx, state.Environment, state.Components, access),
+			"services":       service.BuildServiceInstallationViews(ctx, state.Services, access),
+			"infra":          state.Infra,
 			"externalAccess": access,
 		},
 	})
@@ -1374,33 +1077,15 @@ func GetEnvironmentCanvasState(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid environment id"})
 		return
 	}
-	var env model.Environment
-	if err := database.DB.First(&env, envID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "environment not found"})
+	state, err := service.GetEnvironmentCanvasState(database.DB, uint(envID))
+	if err != nil {
+		respondEnvironmentServiceError(c, err)
 		return
-	}
-	if !requireApplicationAccess(c, env.ApplicationID) {
-		return
-	}
-	var state model.EnvironmentCanvasState
-	if err := database.DB.Where("environment_id = ?", env.ID).First(&state).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.JSON(http.StatusOK, gin.H{"data": gin.H{"positions": gin.H{}, "edges": []CanvasManualEdge{}, "names": gin.H{}}})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	positions, edges := cleanCanvasStateForEnvironment(env.ID, valueOrDefaultString(state.Positions, "{}"), valueOrDefaultString(state.Edges, "[]"))
-	if positions != state.Positions || edges != state.Edges {
-		state.Positions = positions
-		state.Edges = edges
-		_ = database.DB.Save(&state).Error
 	}
 	c.JSON(http.StatusOK, gin.H{"data": gin.H{
-		"positions": json.RawMessage(positions),
-		"edges":     json.RawMessage(edges),
-		"names":     json.RawMessage(valueOrDefaultString(state.Names, "{}")),
+		"positions": state.Positions,
+		"edges":     state.Edges,
+		"names":     state.Names,
 	}})
 }
 
@@ -1410,257 +1095,33 @@ func SaveEnvironmentCanvasState(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid environment id"})
 		return
 	}
-	var env model.Environment
-	if err := database.DB.First(&env, envID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "environment not found"})
-		return
-	}
-	if !requireApplicationAccess(c, env.ApplicationID) {
-		return
-	}
 	var req EnvironmentCanvasStateRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	positionsJSON, err := json.Marshal(normalizeCanvasPositions(req.Positions))
+	state, err := service.SaveEnvironmentCanvasState(database.DB, uint(envID), service.EnvironmentCanvasStateInput(req))
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid canvas positions"})
-		return
-	}
-	edgesJSON, err := json.Marshal(normalizeCanvasEdges(req.Edges))
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid canvas edges"})
-		return
-	}
-	namesJSON, err := json.Marshal(normalizeCanvasNames(req.Names))
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid canvas names"})
-		return
-	}
-	var state model.EnvironmentCanvasState
-	err = database.DB.Where("environment_id = ?", env.ID).First(&state).Error
-	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	state.EnvironmentID = env.ID
-	state.Positions = string(positionsJSON)
-	state.Edges = string(edgesJSON)
-	state.Names = string(namesJSON)
-	if state.ID == 0 {
-		err = database.DB.Create(&state).Error
-	} else {
-		err = database.DB.Save(&state).Error
-	}
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondEnvironmentServiceError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"data": gin.H{
-		"positions": json.RawMessage(state.Positions),
-		"edges":     json.RawMessage(state.Edges),
-		"names":     json.RawMessage(state.Names),
+		"positions": state.Positions,
+		"edges":     state.Edges,
+		"names":     state.Names,
 	}})
 }
 
-func normalizeCanvasPositions(input map[string]CanvasNodePosition) map[string]CanvasNodePosition {
-	out := map[string]CanvasNodePosition{}
-	for key, pos := range input {
-		key = strings.TrimSpace(key)
-		if key == "" {
-			continue
-		}
-		normalized := CanvasNodePosition{X: pos.X, Y: pos.Y}
-		if pos.Width > 0 {
-			normalized.Width = pos.Width
-		}
-		if pos.Height > 0 {
-			normalized.Height = pos.Height
-		}
-		out[key] = normalized
+func respondEnvironmentServiceError(c *gin.Context, err error) {
+	var validationErr service.ValidationError
+	switch {
+	case errors.As(err, &validationErr):
+		c.JSON(http.StatusBadRequest, gin.H{"error": validationErr.Error()})
+	case errors.Is(err, service.ErrEnvironmentNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"error": "environment not found"})
+	default:
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 	}
-	return out
-}
-
-func cleanCanvasStateForEnvironment(envID uint, positionsJSON, edgesJSON string) (string, string) {
-	validKeys := currentCanvasNodeKeys(envID)
-	var positions map[string]CanvasNodePosition
-	if err := json.Unmarshal([]byte(valueOrDefaultString(positionsJSON, "{}")), &positions); err != nil {
-		positions = map[string]CanvasNodePosition{}
-	}
-	cleanPositions := map[string]CanvasNodePosition{}
-	for key, pos := range normalizeCanvasPositions(positions) {
-		if validKeys[key] {
-			cleanPositions[key] = pos
-		}
-	}
-
-	var edges []CanvasManualEdge
-	if err := json.Unmarshal([]byte(valueOrDefaultString(edgesJSON, "[]")), &edges); err != nil {
-		edges = nil
-	}
-	cleanEdges := make([]CanvasManualEdge, 0, len(edges))
-	for _, edge := range normalizeCanvasEdges(edges) {
-		if validKeys[edge.FromKey] && validKeys[edge.ToKey] {
-			cleanEdges = append(cleanEdges, edge)
-		}
-	}
-
-	positionsBytes, err := json.Marshal(cleanPositions)
-	if err != nil {
-		positionsBytes = []byte("{}")
-	}
-	edgesBytes, err := json.Marshal(cleanEdges)
-	if err != nil {
-		edgesBytes = []byte("[]")
-	}
-	return string(positionsBytes), string(edgesBytes)
-}
-
-func currentCanvasNodeKeys(envID uint) map[string]bool {
-	keys := map[string]bool{
-		"zone:environment":             true,
-		"zone:shared":                  true,
-		"zone:external":                true,
-		"environment:zone:environment": true,
-		"environment:zone:shared":      true,
-		"environment:zone:external":    true,
-	}
-	var components []model.Component
-	if err := database.DB.Where("environment_id = ?", envID).Find(&components).Error; err == nil {
-		for _, comp := range components {
-			key := fmt.Sprintf("component:%d", comp.ID)
-			keys[key] = true
-			keys["component:"+key] = true
-			keys["environment:"+key] = true
-		}
-	}
-	var services []model.ServiceInstallation
-	if err := database.DB.Where("environment_id = ?", envID).Find(&services).Error; err == nil {
-		for _, svc := range services {
-			key := fmt.Sprintf("service:%d", svc.ID)
-			keys[key] = true
-			keys["component:"+key] = true
-			keys["environment:"+key] = true
-		}
-	}
-	var infra []model.InfraInstallation
-	if err := database.DB.Where("environment_id = ?", envID).Find(&infra).Error; err == nil {
-		for _, item := range infra {
-			key := fmt.Sprintf("infra:%d", item.ID)
-			keys[key] = true
-			keys["component:"+key] = true
-			keys["environment:"+key] = true
-		}
-	}
-	var capabilities []model.EnvironmentCapability
-	if err := database.DB.Where("environment_id = ?", envID).Find(&capabilities).Error; err == nil {
-		for _, capability := range capabilities {
-			key := fmt.Sprintf("capability:%d", capability.ID)
-			keys[key] = true
-			keys["component:"+key] = true
-			keys["environment:"+key] = true
-		}
-	}
-	return keys
-}
-
-func normalizeCanvasEdges(input []CanvasManualEdge) []CanvasManualEdge {
-	seen := map[string]struct{}{}
-	out := make([]CanvasManualEdge, 0, len(input))
-	for _, edge := range input {
-		from := strings.TrimSpace(edge.FromKey)
-		to := strings.TrimSpace(edge.ToKey)
-		if from == "" || to == "" || from == to {
-			continue
-		}
-		key := from + "\x00" + to
-		if _, ok := seen[key]; ok {
-			continue
-		}
-		seen[key] = struct{}{}
-		out = append(out, CanvasManualEdge{FromKey: from, ToKey: to})
-	}
-	return out
-}
-
-func normalizeCanvasNames(input map[string]string) map[string]string {
-	out := map[string]string{}
-	for key, value := range input {
-		key = strings.TrimSpace(key)
-		value = strings.TrimSpace(value)
-		if key == "" || value == "" {
-			continue
-		}
-		out[key] = value
-	}
-	return out
-}
-
-func collectEnvironmentExternalAccess(ctx context.Context, env model.Environment) []EnvironmentExternalAccess {
-	access := make([]EnvironmentExternalAccess, 0)
-	seenURLs := map[string]struct{}{}
-
-	appendNamespace := func(namespace, scope string) {
-		namespace = strings.TrimSpace(namespace)
-		if namespace == "" {
-			return
-		}
-		endpoints, err := k8s.ListNamespaceExternalEndpoints(ctx, namespace)
-		if err != nil {
-			log.Printf("[GetEnvironment] list external access failed namespace=%s: %v", namespace, err)
-			return
-		}
-		for _, endpoint := range endpoints {
-			url := strings.TrimSpace(endpoint.URL)
-			if url == "" {
-				continue
-			}
-			key := namespace + "\x00" + url
-			if _, ok := seenURLs[key]; ok {
-				continue
-			}
-			seenURLs[key] = struct{}{}
-			item := EnvironmentExternalAccess{
-				Name:      endpoint.Name,
-				Kind:      endpoint.Kind,
-				URL:       url,
-				Namespace: namespace,
-				Scope:     scope,
-			}
-			access = append(access, item)
-		}
-	}
-
-	appendNamespace(env.Namespace, "environment")
-	var services []model.ServiceInstallation
-	_ = database.DB.Where("environment_id = ?", env.ID).Find(&services).Error
-	for _, svc := range services {
-		before := len(access)
-		appendNamespace(svc.Namespace, "service")
-		for i := before; i < len(access); i++ {
-			access[i].ServiceID = svc.ID
-			access[i].ServiceType = svc.ServiceType
-		}
-	}
-
-	sort.Slice(access, func(i, j int) bool {
-		if access[i].Scope != access[j].Scope {
-			return access[i].Scope < access[j].Scope
-		}
-		if access[i].Namespace != access[j].Namespace {
-			return access[i].Namespace < access[j].Namespace
-		}
-		if access[i].ServiceType != access[j].ServiceType {
-			return access[i].ServiceType < access[j].ServiceType
-		}
-		if access[i].Name != access[j].Name {
-			return access[i].Name < access[j].Name
-		}
-		return access[i].URL < access[j].URL
-	})
-	return access
 }
 
 func enrichComponentViews(ctx context.Context, env model.Environment, components []model.Component, access []EnvironmentExternalAccess) []ComponentView {
@@ -1676,29 +1137,6 @@ func enrichComponentViews(ctx context.Context, env model.Environment, components
 		view.ExternalURL = componentExternalURL(env.ID, comp, identifier, access, view.RuntimeConfig)
 		view.IngressURL = componentIngressURL(identifier, access)
 		view.NodePortURL = componentNodePortURL(identifier, access)
-		views = append(views, view)
-	}
-	return views
-}
-
-func enrichServiceInstallationViews(ctx context.Context, services []model.ServiceInstallation, access []EnvironmentExternalAccess) []ServiceInstallationView {
-	views := make([]ServiceInstallationView, 0, len(services))
-	for _, inst := range services {
-		view := ServiceInstallationView{ServiceInstallation: inst}
-		if cfg, err := k8s.DiscoverNamespaceRuntimeConfig(ctx, inst.Namespace); err == nil {
-			view.RuntimeConfig = cfg
-		} else if err != nil {
-			log.Printf("[GetEnvironment] discover service runtime config failed service=%s namespace=%s: %v", inst.ServiceType, inst.Namespace, err)
-		}
-		if network, err := k8s.DiscoverNamespaceServiceNetwork(ctx, inst.Namespace, inst.ServiceType); err == nil && network != nil {
-			view.RuntimeServiceName = network.ServiceName
-			view.RuntimeServiceType = network.ServiceType
-			view.ClusterIP = network.ClusterIP
-			view.LoadBalancerIP = network.LoadBalancerIP
-		} else if err != nil {
-			log.Printf("[GetEnvironment] discover service network failed service=%s namespace=%s: %v", inst.ServiceType, inst.Namespace, err)
-		}
-		view.ExternalURL = serviceExternalURL(inst, access)
 		views = append(views, view)
 	}
 	return views
@@ -1799,239 +1237,33 @@ func serviceExternalURL(inst model.ServiceInstallation, access []EnvironmentExte
 	return ""
 }
 
-func loadEnvironmentAndApp(c *gin.Context, envID uint) (model.Environment, model.Application, bool) {
-	var env model.Environment
-	if err := database.DB.First(&env, envID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "environment not found"})
-		return model.Environment{}, model.Application{}, false
-	}
-	var app model.Application
-	if err := database.DB.First(&app, env.ApplicationID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "application not found"})
-		return model.Environment{}, model.Application{}, false
-	}
-	if !requireApplicationAccess(c, app.ID) {
-		return model.Environment{}, model.Application{}, false
-	}
-	return env, app, true
-}
-
-func discoverAdoptableResourcesForEnvironment(ctx context.Context, app model.Application, env model.Environment) ([]k8s.AdoptableResource, error) {
-	namespaces := adoptableEnvironmentNamespaces(env)
-	var services []model.ServiceInstallation
-	_ = database.DB.Where("environment_id = ?", env.ID).Find(&services).Error
-
-	managed := managedAdoptableResourceKeys(env, services)
-	out := make([]k8s.AdoptableResource, 0)
-	seen := map[string]struct{}{}
-	for _, namespace := range uniqueStrings(namespaces) {
-		items, err := k8s.ListNamespaceAdoptableResources(ctx, namespace)
-		if err != nil {
-			return nil, err
-		}
-		for _, item := range items {
-			if !adoptableResourceBelongsToEnvironment(item, app, env) {
-				continue
-			}
-			if _, exists := managed[item.Key]; exists {
-				continue
-			}
-			if _, exists := seen[item.Key]; exists {
-				continue
-			}
-			seen[item.Key] = struct{}{}
-			out = append(out, item)
-		}
-	}
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].Namespace != out[j].Namespace {
-			return out[i].Namespace < out[j].Namespace
-		}
-		if out[i].Kind != out[j].Kind {
-			return out[i].Kind < out[j].Kind
-		}
-		return out[i].Name < out[j].Name
-	})
-	return out, nil
-}
-
-func adoptableEnvironmentNamespaces(env model.Environment) []string {
-	base := strings.TrimSpace(env.Namespace)
-	if base == "" {
-		return nil
-	}
-	return []string{base, base + "-app"}
-}
-
-func managedAdoptableResourceKeys(env model.Environment, services []model.ServiceInstallation) map[string]struct{} {
-	managed := map[string]struct{}{}
-	var components []model.Component
-	_ = database.DB.Where("environment_id = ?", env.ID).Find(&components).Error
-	for _, comp := range components {
-		identifier := service.ComponentIdentifier(comp.Name, comp.Type, comp.ID)
-		for _, kind := range []string{"Deployment", "StatefulSet", "DaemonSet"} {
-			managed[strings.ToLower(env.Namespace+"/"+kind+"/"+identifier)] = struct{}{}
-			managed[strings.ToLower(env.Namespace+"/"+kind+"/"+comp.Name)] = struct{}{}
-		}
-	}
-	for _, inst := range services {
-		name := strings.TrimSpace(inst.ReleaseName)
-		if name == "" {
-			name = strings.TrimSpace(inst.ServiceName)
-		}
-		if name == "" {
-			name = strings.TrimSpace(inst.ServiceType)
-		}
-		for _, kind := range []string{"Deployment", "StatefulSet", "DaemonSet"} {
-			managed[strings.ToLower(inst.Namespace+"/"+kind+"/"+name)] = struct{}{}
-			managed[strings.ToLower(inst.Namespace+"/"+kind+"/"+inst.ServiceType)] = struct{}{}
-		}
-	}
-	return managed
-}
-
-func adoptableResourceBelongsToEnvironment(item k8s.AdoptableResource, app model.Application, env model.Environment) bool {
-	namespace := strings.TrimSpace(item.Namespace)
-	if namespace == "" {
-		return false
-	}
-	base := strings.TrimSpace(env.Namespace)
-	if base != "" && (namespace == base || strings.HasPrefix(namespace, base+"-")) {
-		return true
-	}
-	prefix := strings.Trim(strings.TrimSpace(app.Identifier)+"-"+strings.TrimSpace(env.Identifier), "-")
-	return prefix != "" && (namespace == prefix || strings.HasPrefix(namespace, prefix+"-"))
-}
-
-func componentFromAdoptableResource(env model.Environment, item k8s.AdoptableResource) (model.Component, error) {
-	cfg := componentConfigFromRuntimeConfig(item.RuntimeConfig)
-	configJSON, err := cfg.JSON()
-	if err != nil {
-		return model.Component{}, err
-	}
-	replicas := int32(1)
-	if item.RuntimeConfig != nil && item.RuntimeConfig.Replicas != nil {
-		replicas = *item.RuntimeConfig.Replicas
-	}
-	if replicas < 0 {
-		replicas = 0
-	}
-	comp := model.Component{
-		EnvironmentID: env.ID,
-		Name:          item.Name,
-		Type:          valueOrDefaultString(item.ComponentType, "backend"),
-		Image:         runtimeImageOrDescription(item),
-		Version:       imageReferenceTag(runtimeImageOrDescription(item)),
-		Replicas:      int(replicas),
-		Status:        "draft",
-		DeliveryMode:  "image",
-		Config:        configJSON,
-	}
-	if comp.Replicas == 0 && !strings.EqualFold(item.Status, "stopped") {
-		comp.Replicas = 1
-	}
-	if item.RuntimeConfig != nil {
-		comp.CPU = item.RuntimeConfig.Resources.Requests["cpu"]
-		comp.Memory = item.RuntimeConfig.Resources.Requests["memory"]
-	}
-	return comp, nil
-}
-
-func componentConfigFromRuntimeConfig(cfg *k8s.RuntimeConfig) model.ComponentConfig {
-	if cfg == nil {
-		return model.ComponentConfig{}
-	}
-	out := model.ComponentConfig{
-		Command: append([]string{}, cfg.Command...),
-		Args:    append([]string{}, cfg.Args...),
-		Env:     make([]model.ComponentEnvVar, 0, len(cfg.Env)),
-		Files:   make([]model.ComponentConfigFile, 0, len(cfg.Files)),
-	}
-	if len(cfg.Ports) > 0 {
-		out.ContainerPort = cfg.Ports[0]
-	}
-	for _, env := range cfg.Env {
-		out.Env = append(out.Env, model.ComponentEnvVar{
-			Name:          env.Name,
-			Value:         env.Value,
-			SecretName:    env.SecretName,
-			SecretKey:     env.SecretKey,
-			ConfigMapName: env.ConfigMapName,
-			ConfigMapKey:  env.ConfigMapKey,
-		})
-	}
-	for _, file := range cfg.Files {
-		if file.Kind != "configMap" || strings.TrimSpace(file.ObjectName) == "" || strings.TrimSpace(file.Key) == "" || strings.TrimSpace(file.MountPath) == "" {
-			continue
-		}
-		out.Files = append(out.Files, model.ComponentConfigFile{
-			Name:          strings.Trim(strings.TrimSpace(file.ObjectName)+"-"+strings.TrimSpace(file.Key), "-"),
-			ConfigMapName: strings.TrimSpace(file.ObjectName),
-			Key:           strings.TrimSpace(file.Key),
-			MountPath:     strings.TrimSpace(file.MountPath),
-			ReadOnly:      true,
-		})
-	}
-	return out
-}
-
-func runtimeImageOrDescription(item k8s.AdoptableResource) string {
-	if item.RuntimeConfig != nil && strings.TrimSpace(item.RuntimeConfig.Image) != "" {
-		return strings.TrimSpace(item.RuntimeConfig.Image)
-	}
-	return strings.TrimSpace(item.Description)
-}
-
-func uniqueStrings(items []string) []string {
-	seen := map[string]struct{}{}
-	out := make([]string, 0, len(items))
-	for _, item := range items {
-		item = strings.TrimSpace(item)
-		if item == "" {
-			continue
-		}
-		if _, exists := seen[item]; exists {
-			continue
-		}
-		seen[item] = struct{}{}
-		out = append(out, item)
-	}
-	return out
-}
-
 // DeleteEnvironment deletes an environment and its K8s CR
 func DeleteEnvironment(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
 
-	var env model.Environment
-	if err := database.DB.First(&env, id).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "environment not found"})
+	warning, err := service.DeleteEnvironment(c.Request.Context(), database.DB, uint(id))
+	if err != nil {
+		respondEnvironmentDeleteServiceError(c, err)
 		return
 	}
-	if env.IsSystem {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "system environments cannot be deleted"})
-		return
+	if warning != "" {
+		c.Header("X-CR-Warning", warning)
 	}
-	if !requireApplicationAccess(c, env.ApplicationID) {
-		return
-	}
-
-	var app model.Application
-	if err := database.DB.First(&app, env.ApplicationID).Error; err == nil {
-		ctx := context.Background()
-		if err := k8s.DeleteEnvironmentScopedResources(ctx, app.Identifier, env.Identifier); err != nil {
-			c.Header("X-CR-Warning", "Environment cluster cleanup failed: "+err.Error())
-		}
-	}
-
-	// 删除数据库记录（硬删除，避免唯一约束冲突）
-	database.DB.Unscoped().Where("environment_id = ?", env.ID).Delete(&model.ServiceInstallation{})
-	database.DB.Unscoped().Where("environment_id = ?", env.ID).Delete(&model.InfraInstallation{})
-	database.DB.Unscoped().Where("environment_id = ?", env.ID).Delete(&model.Component{})
-	database.DB.Unscoped().Where("environment_id = ?", env.ID).Delete(&model.EnvironmentCanvasState{})
-	database.DB.Unscoped().Delete(&env)
 
 	c.JSON(http.StatusOK, gin.H{"message": "deleted"})
+}
+
+func respondEnvironmentDeleteServiceError(c *gin.Context, err error) {
+	switch {
+	case errors.Is(err, service.ErrEnvironmentNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"error": "environment not found"})
+	case errors.Is(err, service.ErrApplicationNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"error": "application not found"})
+	case errors.Is(err, service.ErrSystemEnvironmentDelete):
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	default:
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	}
 }
 
 // ListEnvironmentComponents returns components in an environment
@@ -2039,32 +1271,20 @@ func ListEnvironmentComponents(c *gin.Context) {
 	syncClusterStateNow()
 
 	envID, _ := strconv.Atoi(c.Param("id"))
-	var env model.Environment
-	if err := database.DB.First(&env, envID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "environment not found"})
-		return
-	}
-	if !requireApplicationAccess(c, env.ApplicationID) {
-		return
-	}
-	var components []model.Component
-	if err := database.DB.Where("environment_id = ?", env.ID).Find(&components).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	env, components, err := service.ListEnvironmentComponents(database.DB, uint(envID))
+	if err != nil {
+		respondEnvironmentServiceError(c, err)
 		return
 	}
 	ctx := context.Background()
-	c.JSON(http.StatusOK, gin.H{"data": enrichComponentViews(ctx, env, components, collectEnvironmentExternalAccess(ctx, env))})
+	c.JSON(http.StatusOK, gin.H{"data": enrichComponentViews(ctx, env, components, service.CollectEnvironmentExternalAccess(ctx, database.DB, env))})
 }
 
 func ListAdoptableResources(c *gin.Context) {
 	envID, _ := strconv.Atoi(c.Param("id"))
-	env, app, ok := loadEnvironmentAndApp(c, uint(envID))
-	if !ok {
-		return
-	}
-	resources, err := discoverAdoptableResourcesForEnvironment(context.Background(), app, env)
+	resources, err := service.ListAdoptableResources(c.Request.Context(), database.DB, uint(envID))
 	if err != nil {
-		c.JSON(http.StatusFailedDependency, gin.H{"error": err.Error()})
+		respondAdoptableResourceServiceError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"data": resources})
@@ -2072,245 +1292,64 @@ func ListAdoptableResources(c *gin.Context) {
 
 func AdoptResource(c *gin.Context) {
 	envID, _ := strconv.Atoi(c.Param("id"))
-	env, app, ok := loadEnvironmentAndApp(c, uint(envID))
-	if !ok {
-		return
-	}
-	if rejectSystemSharedEnvironmentMutation(c, env, "system shared environments cannot adopt workload resources") {
-		return
-	}
 	var req AdoptResourceRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	resources, err := discoverAdoptableResourcesForEnvironment(context.Background(), app, env)
+	result, err := service.AdoptResourceAsComponent(c.Request.Context(), database.DB, uint(envID), req.Key)
 	if err != nil {
-		c.JSON(http.StatusFailedDependency, gin.H{"error": err.Error()})
+		respondAdoptableResourceServiceError(c, err)
 		return
 	}
-	var selected *k8s.AdoptableResource
-	for i := range resources {
-		if resources[i].Key == req.Key {
-			selected = &resources[i]
-			break
-		}
-	}
-	if selected == nil {
+	c.JSON(http.StatusCreated, gin.H{"data": ComponentView{Component: result.Component, RuntimeConfig: result.RuntimeConfig}})
+}
+
+func respondAdoptableResourceServiceError(c *gin.Context, err error) {
+	var validationErr service.ComponentValidationError
+	switch {
+	case errors.Is(err, service.ErrEnvironmentNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"error": "environment not found"})
+	case errors.Is(err, service.ErrApplicationNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"error": "application not found"})
+	case errors.Is(err, service.ErrAdoptableResourceNotFound):
 		c.JSON(http.StatusNotFound, gin.H{"error": "adoptable resource not found"})
-		return
-	}
-	comp, err := componentFromAdoptableResource(env, *selected)
-	if err != nil {
+	case errors.Is(err, service.ErrSystemSharedEnvironmentAdopt):
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
+	case errors.As(err, &validationErr):
+		c.JSON(http.StatusBadRequest, gin.H{"error": validationErr.Error()})
+	default:
+		c.JSON(http.StatusFailedDependency, gin.H{"error": err.Error()})
 	}
-	if err := database.DB.Create(&comp).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(http.StatusCreated, gin.H{"data": ComponentView{Component: comp, RuntimeConfig: selected.RuntimeConfig}})
-}
-
-func componentDeliveryMode(req CreateComponentRequest) string {
-	mode := strings.ToLower(strings.TrimSpace(req.DeliveryMode))
-	if mode == "source" {
-		return "source"
-	}
-	return "image"
-}
-
-func validateComponentDeliveryRequest(req CreateComponentRequest) error {
-	if req.DraftOnly {
-		if strings.TrimSpace(req.Name) == "" {
-			return fmt.Errorf("component name is required")
-		}
-		if strings.TrimSpace(req.Type) == "" {
-			return fmt.Errorf("component type is required")
-		}
-		if strings.EqualFold(strings.TrimSpace(req.Version), "latest") {
-			return fmt.Errorf("component image tag must be explicit; latest is not allowed")
-		}
-		if strings.HasSuffix(strings.ToLower(strings.TrimSpace(req.Image)), ":latest") {
-			return fmt.Errorf("component image tag must be explicit; latest is not allowed")
-		}
-		return nil
-	}
-	mode := componentDeliveryMode(req)
-	version := strings.TrimSpace(req.Version)
-	if strings.EqualFold(version, "latest") {
-		return fmt.Errorf("component image tag must be explicit; latest is not allowed")
-	}
-	if mode == "source" {
-		if strings.TrimSpace(req.SourceRepoURL) == "" {
-			return fmt.Errorf("source repository URL is required")
-		}
-		return nil
-	}
-
-	if strings.TrimSpace(req.Image) == "" {
-		return fmt.Errorf("component image is required")
-	}
-	if strings.HasSuffix(strings.ToLower(strings.TrimSpace(req.Image)), ":latest") {
-		return fmt.Errorf("component image tag must be explicit; latest is not allowed")
-	}
-	if version == "" && !imageReferenceHasTag(req.Image) {
-		return fmt.Errorf("component version is required when image has no tag")
-	}
-	return nil
-}
-
-func planComponentDelivery(app model.Application, env model.Environment, req CreateComponentRequest, comp model.Component, primaryNS string, registryServiceTypes ...string) (model.Component, error) {
-	mode := componentDeliveryMode(req)
-	identifier := service.ComponentIdentifier(comp.Name, comp.Type, comp.ID)
-	registryServiceType := "registry"
-	if len(registryServiceTypes) > 0 && strings.TrimSpace(registryServiceTypes[0]) != "" {
-		registryServiceType = strings.TrimSpace(registryServiceTypes[0])
-	}
-	version := strings.TrimSpace(comp.Version)
-	if version == "" {
-		version = strings.TrimSpace(req.Version)
-	}
-	if version == "" {
-		version = imageReferenceTag(req.Image)
-	}
-	if mode == "source" && version == "" {
-		version = "manual"
-	}
-	comp.Version = version
-	comp.DeliveryMode = mode
-
-	repoName := fmt.Sprintf("%s-%s-components", app.Identifier, env.Identifier)
-	comp.GitRepoURL = fmt.Sprintf("http://%s-%s-git.%s-%s-git.svc.cluster.local:3000/paap/%s.git", app.Identifier, env.Identifier, app.Identifier, env.Identifier, repoName)
-	comp.GitPath = fmt.Sprintf("components/%s", identifier)
-	comp.ArgoCDApp = fmt.Sprintf("%s-%s-%s", app.Identifier, env.Identifier, identifier)
-
-	if mode == "image" {
-		if comp.Image == "" {
-			comp.Image = strings.TrimSpace(req.Image)
-		}
-		return comp, nil
-	}
-
-	comp.SourceRepoURL = strings.TrimSpace(req.SourceRepoURL)
-	comp.SourceMirrorRepoURL = fmt.Sprintf("http://%s-%s-git.%s-%s-git.svc.cluster.local:3000/paap/%s-%s-%s-source.git", app.Identifier, env.Identifier, app.Identifier, env.Identifier, app.Identifier, env.Identifier, identifier)
-	comp.SourceBranch = valueOrDefaultString(req.SourceBranch, "main")
-	comp.BuildContext = valueOrDefaultString(req.BuildContext, ".")
-	comp.DockerfilePath = strings.TrimSpace(req.DockerfilePath)
-	comp.JenkinsJob = fmt.Sprintf("%s-%s-%s-build", app.Identifier, env.Identifier, identifier)
-	comp.RegistryImage = service.RuntimeRegistryImage(app, env, registryServiceType, fmt.Sprintf("%s-%s/%s", app.Identifier, env.Identifier, identifier), version)
-	comp.Image = comp.RegistryImage
-	comp.PipelineStatus = "planned"
-	return comp, nil
-}
-
-func preferredSourceRegistryServiceType(services []model.ServiceInstallation) string {
-	serviceType, _, _ := preferredSourceRegistrySelection(services)
-	return serviceType
-}
-
-func preferredSourceRegistrySelection(services []model.ServiceInstallation) (string, model.ServiceInstallation, bool) {
-	for _, status := range []string{"running", ""} {
-		for _, serviceType := range []string{"harbor", "registry"} {
-			for _, inst := range services {
-				if inst.ServiceType != serviceType {
-					continue
-				}
-				if status == "" || strings.EqualFold(inst.Status, status) {
-					return serviceType, inst, true
-				}
-			}
-		}
-	}
-	return "registry", model.ServiceInstallation{}, false
-}
-
-func valueOrDefaultString(value, fallback string) string {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return fallback
-	}
-	return value
-}
-
-func ensureSourceHarborProject(ctx context.Context, comp model.Component, primaryNS string, services []model.ServiceInstallation) error {
-	if comp.DeliveryMode != "source" {
-		return nil
-	}
-	serviceType, inst, found := preferredSourceRegistrySelection(services)
-	if serviceType != "harbor" || !found {
-		return nil
-	}
-	if strings.TrimSpace(inst.Namespace) == "" {
-		return fmt.Errorf("harbor namespace is required before preparing project %s", primaryNS)
-	}
-	return newHarborProjectEnsurer(inst.Namespace).EnsureProject(ctx, primaryNS)
 }
 
 // CreateComponent creates a draft component. Deployment is an explicit action.
 func CreateComponent(c *gin.Context) {
 	envID, _ := strconv.Atoi(c.Param("id"))
-
-	var env model.Environment
-	if err := database.DB.First(&env, envID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "environment not found"})
-		return
-	}
-	if rejectSystemSharedEnvironmentMutation(c, env, "system shared environments only support installing tools and middleware") {
-		return
-	}
-	if !requireApplicationAccess(c, env.ApplicationID) {
-		return
-	}
-
-	var app model.Application
-	if err := database.DB.First(&app, env.ApplicationID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "application not found"})
-		return
-	}
-
 	var req CreateComponentRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if err := validateComponentDeliveryRequest(req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	version := strings.TrimSpace(req.Version)
-	if version == "" {
-		version = imageReferenceTag(req.Image)
-	}
-
-	comp := model.Component{
-		EnvironmentID: uint(envID),
-		Name:          req.Name,
-		Type:          req.Type,
-		Image:         req.Image,
-		Version:       version,
-		Replicas:      req.Replicas,
-		CPU:           req.CPU,
-		Memory:        req.Memory,
-		Status:        "draft",
-		DeliveryMode:  componentDeliveryMode(req),
-	}
-
-	if comp.Replicas == 0 {
-		comp.Replicas = 1
-	}
-	if comp.DeliveryMode == "source" {
-		comp.SourceRepoURL = strings.TrimSpace(req.SourceRepoURL)
-		comp.SourceBranch = valueOrDefaultString(req.SourceBranch, "main")
-		comp.BuildContext = valueOrDefaultString(req.BuildContext, ".")
-		comp.DockerfilePath = strings.TrimSpace(req.DockerfilePath)
-		comp.Image = ""
-		comp.RegistryImage = ""
-		comp.PipelineStatus = "draft"
-	}
-
-	if err := database.DB.Create(&comp).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	comp, err := service.CreateComponent(database.DB, uint(envID), service.CreateComponentInput{
+		Name:           req.Name,
+		Type:           req.Type,
+		Image:          req.Image,
+		Version:        req.Version,
+		Replicas:       req.Replicas,
+		CPU:            req.CPU,
+		Memory:         req.Memory,
+		DeliveryMode:   req.DeliveryMode,
+		DraftOnly:      req.DraftOnly,
+		SourceRepoURL:  req.SourceRepoURL,
+		SourceBranch:   req.SourceBranch,
+		BuildContext:   req.BuildContext,
+		BuildModule:    req.BuildModule,
+		DockerfilePath: req.DockerfilePath,
+		Config:         req.Config,
+	})
+	if err != nil {
+		respondComponentDeliveryServiceError(c, err)
 		return
 	}
 	c.JSON(http.StatusCreated, gin.H{"data": comp})
@@ -2319,264 +1358,41 @@ func CreateComponent(c *gin.Context) {
 // UpdateComponent updates draft/runtime configuration. Deployment remains explicit.
 func UpdateComponent(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
-	var comp model.Component
-	if err := database.DB.First(&comp, id).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "component not found"})
-		return
-	}
-
-	var env model.Environment
-	if err := database.DB.First(&env, comp.EnvironmentID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "environment not found"})
-		return
-	}
-	if !requireApplicationAccess(c, env.ApplicationID) {
-		return
-	}
-	var app model.Application
-	if err := database.DB.First(&app, env.ApplicationID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "application not found"})
-		return
-	}
-
 	var req UpdateComponentRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if strings.TrimSpace(req.Name) != "" {
-		comp.Name = strings.TrimSpace(req.Name)
-	}
-	if strings.TrimSpace(req.Type) != "" {
-		comp.Type = strings.TrimSpace(req.Type)
-	}
-	if strings.TrimSpace(req.DeliveryMode) != "" {
-		mode := strings.ToLower(strings.TrimSpace(req.DeliveryMode))
-		switch mode {
-		case "source":
-			if strings.TrimSpace(req.SourceRepoURL) == "" && strings.TrimSpace(comp.SourceRepoURL) == "" {
-				c.JSON(http.StatusBadRequest, gin.H{"error": "source repository URL is required"})
-				return
-			}
-			comp.DeliveryMode = "source"
-			if strings.TrimSpace(req.SourceRepoURL) != "" {
-				comp.SourceRepoURL = strings.TrimSpace(req.SourceRepoURL)
-			}
-			comp.SourceBranch = valueOrDefaultString(req.SourceBranch, valueOrDefaultString(comp.SourceBranch, "main"))
-			comp.BuildContext = valueOrDefaultString(req.BuildContext, valueOrDefaultString(comp.BuildContext, "."))
-			comp.DockerfilePath = strings.TrimSpace(req.DockerfilePath)
-			identifier := service.ComponentIdentifier(comp.Name, comp.Type, comp.ID)
-			comp.JenkinsJob = fmt.Sprintf("%s-%s-%s-build", app.Identifier, env.Identifier, identifier)
-			comp.Image = ""
-			comp.RegistryImage = ""
-			comp.PipelineStatus = "planned"
-		case "image":
-			comp.DeliveryMode = "image"
-			comp.SourceRepoURL = ""
-			comp.SourceMirrorRepoURL = ""
-			comp.SourceBranch = ""
-			comp.BuildContext = ""
-			comp.DockerfilePath = ""
-			comp.JenkinsJob = ""
-			if comp.PipelineStatus == "planned" || comp.PipelineStatus == "pending" {
-				comp.PipelineStatus = ""
-			}
-		default:
-			c.JSON(http.StatusBadRequest, gin.H{"error": "deliveryMode must be image or source"})
-			return
-		}
-	}
-	if strings.TrimSpace(req.Image) != "" {
-		if strings.HasSuffix(strings.ToLower(strings.TrimSpace(req.Image)), ":latest") {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "component image tag must be explicit; latest is not allowed"})
-			return
-		}
-		comp.Image = strings.TrimSpace(req.Image)
-		if componentUsesDirectImageReference(comp) {
-			comp.RegistryImage = comp.Image
-		}
-		if tag := imageReferenceTag(comp.Image); tag != "" {
-			comp.Version = tag
-		}
-	}
-	if strings.TrimSpace(req.Version) != "" {
-		if strings.EqualFold(req.Version, "latest") {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "component image tag must be explicit; latest is not allowed"})
-			return
-		}
-		comp.Version = strings.TrimSpace(req.Version)
-		if componentUsesDirectImageReference(comp) {
-			if strings.TrimSpace(comp.RegistryImage) != "" {
-				comp.RegistryImage = service.ImageWithTag(comp.RegistryImage, comp.Version)
-				comp.Image = comp.RegistryImage
-			} else if strings.TrimSpace(comp.Image) != "" {
-				comp.Image = service.ImageWithTag(comp.Image, comp.Version)
-			}
-		}
-	}
-	if req.Replicas > 0 {
-		comp.Replicas = req.Replicas
-	}
-	if strings.TrimSpace(req.CPU) != "" {
-		comp.CPU = strings.TrimSpace(req.CPU)
-	}
-	if strings.TrimSpace(req.Memory) != "" {
-		comp.Memory = strings.TrimSpace(req.Memory)
-	}
-	if req.Config != nil {
-		configJSON, err := req.Config.JSON()
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
-		}
-		comp.Config = configJSON
-	}
-
-	if err := database.DB.Save(&comp).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	comp, err := service.UpdateComponent(database.DB, uint(id), service.UpdateComponentInput{
+		Name:           req.Name,
+		Type:           req.Type,
+		Image:          req.Image,
+		Version:        req.Version,
+		Replicas:       req.Replicas,
+		CPU:            req.CPU,
+		Memory:         req.Memory,
+		DeliveryMode:   req.DeliveryMode,
+		SourceRepoURL:  req.SourceRepoURL,
+		SourceBranch:   req.SourceBranch,
+		BuildContext:   req.BuildContext,
+		BuildModule:    req.BuildModule,
+		DockerfilePath: req.DockerfilePath,
+		Config:         req.Config,
+	})
+	if err != nil {
+		respondComponentDeliveryServiceError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"data": comp})
 }
 
-func componentUsesDirectImageReference(comp model.Component) bool {
-	return strings.TrimSpace(comp.DeliveryMode) != "source" && strings.TrimSpace(comp.JenkinsJob) == ""
-}
-
-func imageReferenceHasTag(image string) bool {
-	return imageReferenceTag(image) != ""
-}
-
-func imageReferenceTag(image string) string {
-	image = strings.TrimSpace(image)
-	if image == "" {
-		return ""
-	}
-	parts := strings.Split(image, "/")
-	last := parts[len(parts)-1]
-	colon := strings.LastIndex(last, ":")
-	if colon < 0 || colon == len(last)-1 {
-		return ""
-	}
-	return last[colon+1:]
-}
-
 func componentDeleteIdentifier(app model.Application, env model.Environment, comp model.Component) string {
-	if identifier := componentIdentifierFromArgoCDApp(app, env, comp.ArgoCDApp); identifier != "" {
-		return identifier
-	}
-	if identifier := componentIdentifierFromGitPath(comp.GitPath); identifier != "" {
-		return identifier
-	}
-	return service.ComponentIdentifier(comp.Name, comp.Type, comp.ID)
-}
-
-func componentIdentifierFromArgoCDApp(app model.Application, env model.Environment, appName string) string {
-	appName = strings.TrimSpace(appName)
-	if appName == "" {
-		return ""
-	}
-	prefix := strings.Trim(strings.TrimSpace(app.Identifier)+"-"+strings.TrimSpace(env.Identifier)+"-", "-")
-	if prefix == "" || !strings.HasPrefix(appName, prefix) {
-		return ""
-	}
-	return strings.Trim(strings.TrimPrefix(appName, prefix), "-")
-}
-
-func componentIdentifierFromGitPath(gitPath string) string {
-	gitPath = strings.Trim(strings.TrimSpace(gitPath), "/")
-	if gitPath == "" {
-		return ""
-	}
-	if strings.HasPrefix(gitPath, "components/") {
-		gitPath = strings.TrimPrefix(gitPath, "components/")
-	}
-	if slash := strings.Index(gitPath, "/"); slash >= 0 {
-		gitPath = gitPath[:slash]
-	}
-	return strings.Trim(gitPath, "-")
-}
-
-func componentArgoCDApplicationName(app model.Application, env model.Environment, comp model.Component, identifier string) string {
-	if strings.TrimSpace(comp.ArgoCDApp) != "" {
-		return strings.TrimSpace(comp.ArgoCDApp)
-	}
-	return fmt.Sprintf("%s-%s-%s", app.Identifier, env.Identifier, identifier)
-}
-
-func componentArgoCDNamespace(envID uint, app model.Application, env model.Environment) string {
-	var inst model.ServiceInstallation
-	if err := database.DB.
-		Where("environment_id = ? AND service_type = ?", envID, "deploy").
-		First(&inst).Error; err == nil && strings.TrimSpace(inst.Namespace) != "" {
-		return strings.TrimSpace(inst.Namespace)
-	}
-	return fmt.Sprintf("%s-%s-argocd", app.Identifier, env.Identifier)
-}
-
-func removeComponentFromCanvasState(envID uint, componentID uint) {
-	componentKey := fmt.Sprintf("component:%d", componentID)
-	var state model.EnvironmentCanvasState
-	if err := database.DB.First(&state, "environment_id = ?", envID).Error; err != nil {
-		return
-	}
-
-	var positions map[string]json.RawMessage
-	if err := json.Unmarshal([]byte(valueOrDefaultString(state.Positions, "{}")), &positions); err == nil {
-		delete(positions, componentKey)
-		if data, err := json.Marshal(positions); err == nil {
-			state.Positions = string(data)
-		}
-	}
-
-	var edges []map[string]interface{}
-	if err := json.Unmarshal([]byte(valueOrDefaultString(state.Edges, "[]")), &edges); err == nil {
-		filtered := edges[:0]
-		for _, edge := range edges {
-			if edge["fromKey"] == componentKey || edge["toKey"] == componentKey {
-				continue
-			}
-			filtered = append(filtered, edge)
-		}
-		if data, err := json.Marshal(filtered); err == nil {
-			state.Edges = string(data)
-		}
-	}
-
-	var names map[string]string
-	if err := json.Unmarshal([]byte(valueOrDefaultString(state.Names, "{}")), &names); err == nil {
-		delete(names, componentKey)
-		if data, err := json.Marshal(names); err == nil {
-			state.Names = string(data)
-		}
-	}
-
-	_ = database.DB.Save(&state).Error
+	return service.ComponentDeleteIdentifier(app, env, comp)
 }
 
 // DeployComponent updates a component version and re-runs GitOps
 func DeployComponent(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
-	var comp model.Component
-	if err := database.DB.First(&comp, id).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "component not found"})
-		return
-	}
-
-	var env model.Environment
-	if err := database.DB.First(&env, comp.EnvironmentID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "environment not found"})
-		return
-	}
-	if !requireApplicationAccess(c, env.ApplicationID) {
-		return
-	}
-	var app model.Application
-	if err := database.DB.First(&app, env.ApplicationID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "application not found"})
-		return
-	}
-
 	var req struct {
 		Version string `json:"version"`
 	}
@@ -2584,228 +1400,58 @@ func DeployComponent(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	req.Version = strings.TrimSpace(req.Version)
-	if req.Version == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "version is required"})
-		return
-	}
-
-	identifier := service.ComponentIdentifier(comp.Name, comp.Type, comp.ID)
-	comp.Version = req.Version
-	if comp.DeliveryMode == "source" {
-		var registryInstallations []model.ServiceInstallation
-		_ = database.DB.
-			Where("environment_id = ? AND service_type IN ?", env.ID, []string{"registry", "harbor"}).
-			Find(&registryInstallations).Error
-		comp = applyComponentDeployVersionForRuntimeRegistry(
-			app,
-			env,
-			comp,
-			identifier,
-			req.Version,
-			preferredSourceRegistryServiceType(registryInstallations),
-		)
-	} else {
-		comp = applyComponentDeployVersion(comp, req.Version)
-	}
-
-	ctx := context.Background()
-	primaryNS := fmt.Sprintf("%s-%s", app.Identifier, env.Identifier)
-	cfg, err := model.ParseComponentConfig(comp.Config)
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 45*time.Second)
+	defer cancel()
+	comp, err := service.DeployComponent(ctx, database.DB, k8s.GetClient(), uint(id), req.Version)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "component config invalid: " + err.Error()})
+		respondComponentDeliveryServiceError(c, err)
 		return
 	}
-	if detected := detectComponentContainerPort(ctx, env, identifier, comp.Image, cfg); detected > 0 {
-		cfg.ContainerPort = detected
-		configJSON, err := cfg.JSON()
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "component config invalid: " + err.Error()})
-			return
-		}
-		comp.Config = configJSON
-	}
-	database.DB.Save(&comp)
-
-	result, err := service.EnsureComponentGitOps(ctx, k8s.GetClient(), app, env, comp, identifier, primaryNS)
-	if err != nil {
-		c.JSON(http.StatusFailedDependency, gin.H{"error": "GitOps update failed: " + err.Error()})
-		return
-	}
-	comp.GitRepoURL = result.RepositoryURL
-	if result.SourceMirrorURL != "" {
-		comp.SourceMirrorRepoURL = result.SourceMirrorURL
-	}
-	comp.GitPath = result.RepositoryPath
-	comp.ArgoCDApp = result.ArgoCDApplication
-	if result.CIStatus != "" {
-		comp.PipelineStatus = result.CIStatus
-	}
-	if result.CIWarning != "" {
-		comp.ErrorMessage = result.CIWarning
-	} else {
-		comp.ErrorMessage = ""
-	}
-
-	envVars, err := model.ComponentEnvVars(comp.Config)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "component config invalid: " + err.Error()})
-		return
-	}
-	if err := k8s.UpsertComponentCR(ctx, app.Identifier, env.Identifier, comp.Name, identifier, comp.Type, comp.Image, comp.Version, int32(comp.Replicas), primaryNS, "argocd", cfg, envVars); err != nil {
-		c.JSON(http.StatusFailedDependency, gin.H{"error": "Component CR upsert failed: " + err.Error()})
-		return
-	}
-
-	comp.Status = "syncing"
-	database.DB.Save(&comp)
 	c.JSON(http.StatusOK, gin.H{"data": comp})
 }
 
-func applyComponentDeployVersion(comp model.Component, version string) model.Component {
-	version = strings.TrimSpace(version)
-	if version == "" {
-		return comp
+func respondComponentDeliveryServiceError(c *gin.Context, err error) {
+	var validationErr service.ComponentValidationError
+	switch {
+	case errors.As(err, &validationErr):
+		c.JSON(http.StatusBadRequest, gin.H{"error": validationErr.Error()})
+	case errors.Is(err, service.ErrApplicationNotFound),
+		errors.Is(err, service.ErrEnvironmentNotFound),
+		errors.Is(err, service.ErrComponentNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+	case errors.Is(err, service.ErrComponentDeliveryFailed):
+		c.JSON(http.StatusFailedDependency, gin.H{"error": "GitOps update failed: " + err.Error()})
+	case errors.Is(err, service.ErrComponentCRUpsertFailed):
+		c.JSON(http.StatusFailedDependency, gin.H{"error": "Component CR upsert failed: " + err.Error()})
+	default:
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 	}
-	comp.Version = version
-	if strings.TrimSpace(comp.RegistryImage) != "" {
-		comp.RegistryImage = service.ImageWithTag(comp.RegistryImage, version)
-		comp.Image = comp.RegistryImage
-	} else if strings.TrimSpace(comp.Image) != "" {
-		comp.Image = service.ImageWithTag(comp.Image, version)
-	}
-	if comp.DeliveryMode == "source" || comp.JenkinsJob != "" || comp.RegistryImage != "" {
-		comp.PipelineStatus = "built"
-	}
-	return comp
-}
-
-func detectComponentContainerPort(ctx context.Context, env model.Environment, identifier, image string, cfg model.ComponentConfig) int32 {
-	if cfg.ContainerPort > 0 {
-		return 0
-	}
-	if detected := detectComponentImageContainerPort(ctx, env.ID, image); detected > 0 {
-		return detected
-	}
-	if runtime, err := k8s.DiscoverComponentRuntimeConfig(ctx, env.Namespace, identifier); err == nil && runtime != nil && len(runtime.Ports) > 0 {
-		return runtime.Ports[0]
-	}
-	return 0
-}
-
-func detectComponentImageContainerPort(ctx context.Context, envID uint, image string) int32 {
-	repository, reference := imageRepositoryAndReference(image)
-	if repository == "" || reference == "" {
-		return 0
-	}
-	var registries []model.ServiceInstallation
-	if err := database.DB.
-		Where("environment_id = ? AND service_type IN ?", envID, []string{"registry", "harbor"}).
-		Find(&registries).Error; err != nil {
-		return 0
-	}
-	for _, inst := range registries {
-		ports, err := k8s.NewRegistryClient(inst.Namespace).ExposedPorts(ctx, repository, reference)
-		if err != nil || len(ports) == 0 {
-			continue
-		}
-		return ports[0]
-	}
-	return 0
-}
-
-func imageRepositoryAndReference(image string) (string, string) {
-	image = strings.TrimSpace(image)
-	if image == "" {
-		return "", ""
-	}
-	if digestAt := strings.Index(image, "@"); digestAt >= 0 {
-		repository := strings.Trim(strings.TrimSpace(image[:digestAt]), "/")
-		reference := strings.TrimSpace(image[digestAt+1:])
-		if slash := strings.Index(repository, "/"); slash >= 0 && imageReferenceFirstSegmentIsRegistry(repository[:slash]) {
-			repository = repository[slash+1:]
-		}
-		return repository, reference
-	}
-	parts := strings.Split(image, "/")
-	last := parts[len(parts)-1]
-	colon := strings.LastIndex(last, ":")
-	if colon < 0 || colon == len(last)-1 {
-		return "", ""
-	}
-	reference := last[colon+1:]
-	parts[len(parts)-1] = last[:colon]
-	if len(parts) > 1 && imageReferenceFirstSegmentIsRegistry(parts[0]) {
-		parts = parts[1:]
-	}
-	return strings.Trim(strings.Join(parts, "/"), "/"), reference
-}
-
-func imageReferenceFirstSegmentIsRegistry(segment string) bool {
-	segment = strings.ToLower(strings.TrimSpace(segment))
-	return segment == "localhost" || strings.Contains(segment, ".") || strings.Contains(segment, ":")
-}
-
-func applyComponentDeployVersionForRuntimeRegistry(app model.Application, env model.Environment, comp model.Component, identifier, version, registryServiceType string) model.Component {
-	version = strings.TrimSpace(version)
-	if version == "" {
-		return comp
-	}
-	if strings.TrimSpace(registryServiceType) == "" {
-		registryServiceType = "registry"
-	}
-	repository := fmt.Sprintf("%s-%s/%s", app.Identifier, env.Identifier, identifier)
-	comp.Version = version
-	comp.RegistryImage = service.RuntimeRegistryImage(app, env, registryServiceType, repository, version)
-	comp.Image = comp.RegistryImage
-	if comp.DeliveryMode == "source" || comp.JenkinsJob != "" || comp.RegistryImage != "" {
-		comp.PipelineStatus = "built"
-	}
-	return comp
 }
 
 // DeleteComponent deletes a component and its K8s resources
 func DeleteComponent(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
-	var comp model.Component
-	if err := database.DB.First(&comp, id).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "component not found"})
+	if err := service.DeleteComponent(c.Request.Context(), database.DB, uint(id)); err != nil {
+		respondComponentDeleteServiceError(c, err)
 		return
 	}
-
-	var env model.Environment
-	var app model.Application
-	if err := database.DB.First(&env, comp.EnvironmentID).Error; err == nil {
-		if !requireApplicationAccess(c, env.ApplicationID) {
-			return
-		}
-		if err := database.DB.First(&app, env.ApplicationID).Error; err == nil {
-			ctx := context.Background()
-			identifier := componentDeleteIdentifier(app, env, comp)
-			argocdNamespace := componentArgoCDNamespace(env.ID, app, env)
-			argocdApp := componentArgoCDApplicationName(app, env, comp, identifier)
-			if err := k8s.DeleteArgoCDApplication(ctx, argocdNamespace, argocdApp); err != nil {
-				c.JSON(http.StatusFailedDependency, gin.H{"error": "ArgoCD Application delete failed: " + err.Error()})
-				return
-			}
-			if err := k8s.DeleteComponentCR(ctx, app.Identifier, env.Identifier, identifier); err != nil {
-				c.JSON(http.StatusFailedDependency, gin.H{"error": "Component CR delete failed: " + err.Error()})
-				return
-			}
-			generatedIdentifier := service.ComponentIdentifier(comp.Name, comp.Type, comp.ID)
-			if err := k8s.DeleteComponentRuntimeResources(ctx, env.Namespace, identifier, generatedIdentifier, comp.Name, comp.GitPath); err != nil {
-				c.JSON(http.StatusFailedDependency, gin.H{"error": "Component runtime resources delete failed: " + err.Error()})
-				return
-			}
-		}
-	}
-
-	if err := database.DB.Delete(&comp).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	removeComponentFromCanvasState(comp.EnvironmentID, comp.ID)
 	c.JSON(http.StatusOK, gin.H{"message": "deleted"})
+}
+
+func respondComponentDeleteServiceError(c *gin.Context, err error) {
+	switch {
+	case errors.Is(err, service.ErrComponentNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"error": "component not found"})
+	case errors.Is(err, service.ErrEnvironmentNotFound),
+		errors.Is(err, service.ErrApplicationNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+	case strings.Contains(err.Error(), "ArgoCD Application delete failed"),
+		strings.Contains(err.Error(), "Component CR delete failed"),
+		strings.Contains(err.Error(), "Component runtime resources delete failed"):
+		c.JSON(http.StatusFailedDependency, gin.H{"error": err.Error()})
+	default:
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	}
 }
 
 // ListServiceInstances returns service installations for an environment
@@ -2813,81 +1459,12 @@ func ListServiceInstances(c *gin.Context) {
 	syncClusterStateIfPossible()
 
 	envID, _ := strconv.Atoi(c.Param("id"))
-	var env model.Environment
-	if err := database.DB.First(&env, envID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "environment not found"})
+	services, err := service.ListServiceInstances(c.Request.Context(), database.DB, uint(envID))
+	if err != nil {
+		respondServiceInstanceError(c, err, "environment not found")
 		return
 	}
-	if !requireApplicationAccess(c, env.ApplicationID) {
-		return
-	}
-
-	var services []model.ServiceInstallation
-	if err := database.DB.Where("environment_id = ?", env.ID).Find(&services).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	ctx := c.Request.Context()
-	enrichServiceInstallationsWithCRStatus(ctx, envID, services)
-	access := collectEnvironmentExternalAccess(ctx, env)
-	c.JSON(http.StatusOK, gin.H{"data": enrichServiceInstallationViews(ctx, services, access)})
-}
-
-func enrichServiceInstallationsWithCRStatus(ctx context.Context, envID int, services []model.ServiceInstallation) {
-	if len(services) == 0 {
-		return
-	}
-
-	var env model.Environment
-	if err := database.DB.First(&env, envID).Error; err != nil {
-		log.Printf("[ListServiceInstances] environment lookup warning: %v", err)
-		return
-	}
-	var app model.Application
-	if err := database.DB.First(&app, env.ApplicationID).Error; err != nil {
-		log.Printf("[ListServiceInstances] application lookup warning: %v", err)
-		return
-	}
-
-	for i := range services {
-		crStatus, err := k8s.GetServiceInstanceCRStatus(ctx, app.Identifier, env.Identifier, services[i].ServiceType)
-		if err != nil {
-			log.Printf("[ListServiceInstances] CR status query warning for %s: %v", services[i].ServiceType, err)
-			continue
-		}
-		if crStatus == nil {
-			continue
-		}
-		if status := normalizeServicePhase(crStatus.Phase, services[i].Status); status != "" {
-			services[i].Status = status
-		}
-		services[i].ErrorMessage = serviceStatusErrorMessage(crStatus)
-	}
-}
-
-func normalizeServicePhase(phase, fallback string) string {
-	phase = strings.ToLower(strings.TrimSpace(phase))
-	if phase == "" {
-		return fallback
-	}
-	return phase
-}
-
-func serviceStatusErrorMessage(status *paapv1.ServiceInstanceStatus) string {
-	if status == nil {
-		return ""
-	}
-	for _, cond := range status.Conditions {
-		if strings.EqualFold(cond.Type, "Ready") && cond.Status == "False" {
-			if strings.TrimSpace(cond.Message) != "" {
-				return cond.Message
-			}
-			if strings.TrimSpace(cond.Reason) != "" {
-				return cond.Reason
-			}
-		}
-	}
-	return ""
+	c.JSON(http.StatusOK, gin.H{"data": services})
 }
 
 // GetServiceInstance returns a single service installation enriched with K8s CR status.
@@ -2897,44 +1474,30 @@ func GetServiceInstance(c *gin.Context) {
 	envID, _ := strconv.Atoi(c.Param("id"))
 	serviceID, _ := strconv.Atoi(c.Param("serviceId"))
 
-	var env model.Environment
-	if err := database.DB.First(&env, envID).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "environment not found"})
-		return
-	}
-	if !requireApplicationAccess(c, env.ApplicationID) {
-		return
-	}
-
-	var inst model.ServiceInstallation
-	if err := database.DB.Where("id = ? AND environment_id = ?", serviceID, envID).First(&inst).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			c.JSON(http.StatusNotFound, gin.H{"error": "service not found"})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	var app model.Application
-	if err := database.DB.First(&app, env.ApplicationID).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "application not found"})
-		return
-	}
-
-	crStatus, err := k8s.GetServiceInstanceCRStatus(context.Background(), app.Identifier, env.Identifier, inst.ServiceType)
+	detail, err := service.GetServiceInstance(c.Request.Context(), database.DB, uint(envID), uint(serviceID))
 	if err != nil {
-		log.Printf("[GetServiceInstance] CR status query warning: %v", err)
+		respondServiceInstanceError(c, err, "service not found")
+		return
 	}
-	access := collectEnvironmentExternalAccess(context.Background(), env)
-	view := enrichServiceInstallationViews(context.Background(), []model.ServiceInstallation{inst}, access)[0]
 
 	c.JSON(http.StatusOK, gin.H{
 		"data": gin.H{
-			"installation": view,
-			"crStatus":     crStatus,
+			"installation": detail.Installation,
+			"crStatus":     detail.CRStatus,
 		},
 	})
+}
+
+func respondServiceInstanceError(c *gin.Context, err error, notFoundMessage string) {
+	switch {
+	case errors.Is(err, service.ErrEnvironmentNotFound),
+		errors.Is(err, service.ErrServiceInstallationNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"error": notFoundMessage})
+	case errors.Is(err, service.ErrApplicationNotFound):
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "application not found"})
+	default:
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	}
 }
 
 // GetServiceCredentials returns credential-like values from real Kubernetes Secrets
@@ -2945,116 +1508,16 @@ func GetServiceCredentials(c *gin.Context) {
 	envID, _ := strconv.Atoi(c.Param("id"))
 	serviceID, _ := strconv.Atoi(c.Param("serviceId"))
 
-	var env model.Environment
-	if err := database.DB.First(&env, envID).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "environment not found"})
-		return
-	}
-	if !requireApplicationAccess(c, env.ApplicationID) {
-		return
-	}
-
-	var inst model.ServiceInstallation
-	if err := database.DB.Where("id = ? AND environment_id = ?", serviceID, envID).First(&inst).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
+	credentials, err := service.GetServiceCredentials(c.Request.Context(), database.DB, uint(envID), uint(serviceID))
+	if err != nil {
+		if errors.Is(err, service.ErrEnvironmentNotFound) || errors.Is(err, service.ErrServiceInstallationNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "service not found"})
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	credentials, err := discoverServiceCredentials(context.Background(), inst.Namespace)
-	if err != nil {
 		c.JSON(http.StatusFailedDependency, gin.H{"error": err.Error()})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"data": gin.H{"credentials": credentials}})
-}
-
-func discoverServiceCredentials(ctx context.Context, namespace string) ([]ServiceCredential, error) {
-	namespace = strings.TrimSpace(namespace)
-	if namespace == "" {
-		return nil, fmt.Errorf("service namespace is empty")
-	}
-	cl := k8s.GetClient()
-	if cl == nil {
-		return nil, fmt.Errorf("kubernetes client is not initialized")
-	}
-	secrets := &corev1.SecretList{}
-	if err := cl.List(ctx, secrets, ctrlclient.InNamespace(namespace)); err != nil {
-		return nil, fmt.Errorf("list secrets: %w", err)
-	}
-	credentials := make([]ServiceCredential, 0)
-	for _, secret := range secrets.Items {
-		if shouldSkipCredentialSecret(secret) {
-			continue
-		}
-		for key, raw := range secret.Data {
-			kind, ok := credentialKeyKind(key)
-			if !ok || len(raw) == 0 {
-				continue
-			}
-			credentials = append(credentials, ServiceCredential{
-				Secret: secret.Name,
-				Key:    key,
-				Value:  string(raw),
-				Kind:   kind,
-			})
-		}
-	}
-	sort.Slice(credentials, func(i, j int) bool {
-		if credentials[i].Secret != credentials[j].Secret {
-			return credentials[i].Secret < credentials[j].Secret
-		}
-		return credentials[i].Key < credentials[j].Key
-	})
-	return credentials, nil
-}
-
-func shouldSkipCredentialSecret(secret corev1.Secret) bool {
-	switch secret.Type {
-	case corev1.SecretTypeServiceAccountToken, corev1.SecretTypeTLS, corev1.SecretTypeDockerConfigJson, corev1.SecretTypeDockercfg:
-		return true
-	default:
-		return false
-	}
-}
-
-func credentialKeyKind(key string) (string, bool) {
-	normalized := strings.ToLower(strings.TrimSpace(key))
-	switch {
-	case normalized == "username", normalized == "user", strings.HasSuffix(normalized, "-username"):
-		return "username", true
-	case normalized == "password", normalized == "passwd", normalized == "root-password", strings.Contains(normalized, "password"):
-		return "password", true
-	case normalized == "accesskey", normalized == "access-key", normalized == "access_key", strings.Contains(normalized, "accesskey"):
-		return "accessKey", true
-	case normalized == "secretkey", normalized == "secret-key", normalized == "secret_key", strings.Contains(normalized, "secretkey"):
-		return "secretKey", true
-	default:
-		return "", false
-	}
-}
-
-func loadServiceWorkspaceContext(envID, serviceID int) (model.Application, model.Environment, model.ServiceInstallation, []model.Component, error) {
-	var inst model.ServiceInstallation
-	if err := database.DB.Where("id = ? AND environment_id = ?", serviceID, envID).First(&inst).Error; err != nil {
-		return model.Application{}, model.Environment{}, model.ServiceInstallation{}, nil, err
-	}
-
-	var env model.Environment
-	if err := database.DB.First(&env, envID).Error; err != nil {
-		return model.Application{}, model.Environment{}, model.ServiceInstallation{}, nil, err
-	}
-	var app model.Application
-	if err := database.DB.First(&app, env.ApplicationID).Error; err != nil {
-		return model.Application{}, model.Environment{}, model.ServiceInstallation{}, nil, err
-	}
-	var components []model.Component
-	if err := database.DB.Where("environment_id = ?", env.ID).Find(&components).Error; err != nil {
-		return model.Application{}, model.Environment{}, model.ServiceInstallation{}, nil, err
-	}
-	return app, env, inst, components, nil
 }
 
 func environmentArgoCDProjectName(app model.Application, env model.Environment) string {
@@ -3116,30 +1579,25 @@ func GetServiceWorkspace(c *gin.Context) {
 	envID, _ := strconv.Atoi(c.Param("id"))
 	serviceID, _ := strconv.Atoi(c.Param("serviceId"))
 
-	var env model.Environment
-	if err := database.DB.First(&env, envID).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			c.JSON(http.StatusNotFound, gin.H{"error": "service workspace not found"})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	if !requireApplicationAccess(c, env.ApplicationID) {
-		return
-	}
-
-	app, env, inst, components, err := loadServiceWorkspaceContext(envID, serviceID)
+	workspaceContext, err := service.LoadServiceWorkspaceContext(database.DB, uint(envID), uint(serviceID))
 	if err != nil {
-		if err == gorm.ErrRecordNotFound {
-			c.JSON(http.StatusNotFound, gin.H{"error": "service workspace not found"})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondServiceWorkspaceContextError(c, err, "service workspace not found")
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"data": buildLiveToolWorkspace(app, env, inst, components)})
+	c.JSON(http.StatusOK, gin.H{"data": buildLiveToolWorkspace(workspaceContext.App, workspaceContext.Env, workspaceContext.Instance, workspaceContext.Components)})
+}
+
+func respondServiceWorkspaceContextError(c *gin.Context, err error, notFoundMessage string) {
+	switch {
+	case errors.Is(err, service.ErrEnvironmentNotFound),
+		errors.Is(err, service.ErrServiceInstallationNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"error": notFoundMessage})
+	case errors.Is(err, service.ErrApplicationNotFound):
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "application not found"})
+	default:
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	}
 }
 
 func GetServiceRuntimeMetrics(c *gin.Context) {
@@ -3148,28 +1606,13 @@ func GetServiceRuntimeMetrics(c *gin.Context) {
 	envID, _ := strconv.Atoi(c.Param("id"))
 	serviceID, _ := strconv.Atoi(c.Param("serviceId"))
 
-	var accessEnv model.Environment
-	if err := database.DB.First(&accessEnv, envID).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			c.JSON(http.StatusNotFound, gin.H{"error": "service not found"})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	if !requireApplicationAccess(c, accessEnv.ApplicationID) {
-		return
-	}
-
-	_, env, inst, _, err := loadServiceWorkspaceContext(envID, serviceID)
+	workspaceContext, err := service.LoadServiceWorkspaceContext(database.DB, uint(envID), uint(serviceID))
 	if err != nil {
-		if err == gorm.ErrRecordNotFound {
-			c.JSON(http.StatusNotFound, gin.H{"error": "service not found"})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondServiceWorkspaceContextError(c, err, "service not found")
 		return
 	}
+	env := workspaceContext.Env
+	inst := workspaceContext.Instance
 	if strings.TrimSpace(inst.Namespace) == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "service namespace is not available"})
 		return
@@ -3183,7 +1626,7 @@ func GetServiceRuntimeMetrics(c *gin.Context) {
 		return
 	}
 	if !metrics.Available {
-		metrics = k8s.EnrichRuntimeMetricsFromPrometheus(ctx, metrics, monitorNamespaceForEnvironment(env.ID))
+		metrics = k8s.EnrichRuntimeMetricsFromPrometheus(ctx, metrics, service.MonitorNamespaceForEnvironment(database.DB, env.ID))
 	}
 	c.JSON(http.StatusOK, gin.H{"data": metrics})
 }
@@ -3194,28 +1637,12 @@ func GetServiceRuntimeLogs(c *gin.Context) {
 	envID, _ := strconv.Atoi(c.Param("id"))
 	serviceID, _ := strconv.Atoi(c.Param("serviceId"))
 
-	var accessEnv model.Environment
-	if err := database.DB.First(&accessEnv, envID).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			c.JSON(http.StatusNotFound, gin.H{"error": "service not found"})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	if !requireApplicationAccess(c, accessEnv.ApplicationID) {
-		return
-	}
-
-	_, _, inst, _, err := loadServiceWorkspaceContext(envID, serviceID)
+	workspaceContext, err := service.LoadServiceWorkspaceContext(database.DB, uint(envID), uint(serviceID))
 	if err != nil {
-		if err == gorm.ErrRecordNotFound {
-			c.JSON(http.StatusNotFound, gin.H{"error": "service not found"})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondServiceWorkspaceContextError(c, err, "service not found")
 		return
 	}
+	inst := workspaceContext.Instance
 	if strings.TrimSpace(inst.Namespace) == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "service namespace is not available"})
 		return
@@ -3235,27 +1662,15 @@ func GetComponentRuntimeMetrics(c *gin.Context) {
 	envID, _ := strconv.Atoi(c.Param("id"))
 	componentID, _ := strconv.Atoi(c.Param("componentId"))
 
-	var env model.Environment
-	if err := database.DB.First(&env, envID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "environment not found"})
-		return
-	}
-	if !requireApplicationAccess(c, env.ApplicationID) {
-		return
-	}
-
 	syncClusterStateIfPossible()
 
-	var comp model.Component
-	if err := database.DB.Where("id = ? AND environment_id = ?", componentID, envID).First(&comp).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			c.JSON(http.StatusNotFound, gin.H{"error": "component not found"})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	runtimeContext, err := service.LoadComponentRuntimeContext(database.DB, uint(envID), uint(componentID))
+	if err != nil {
+		respondComponentRuntimeContextError(c, err)
 		return
 	}
-	identifier := service.ComponentIdentifier(comp.Name, comp.Type, comp.ID)
+	env := runtimeContext.Env
+	identifier := runtimeContext.Identifier
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 8*time.Second)
 	defer cancel()
 	cfg, _ := k8s.DiscoverComponentRuntimeConfig(ctx, env.Namespace, identifier)
@@ -3268,36 +1683,35 @@ func GetComponentRuntimeMetrics(c *gin.Context) {
 		return
 	}
 	if !metrics.Available {
-		metrics = k8s.EnrichRuntimeMetricsFromPrometheus(ctx, metrics, monitorNamespaceForEnvironment(env.ID))
+		metrics = k8s.EnrichRuntimeMetricsFromPrometheus(ctx, metrics, service.MonitorNamespaceForEnvironment(database.DB, env.ID))
 	}
 	c.JSON(http.StatusOK, gin.H{"data": metrics})
+}
+
+func respondComponentRuntimeContextError(c *gin.Context, err error) {
+	switch {
+	case errors.Is(err, service.ErrEnvironmentNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"error": "environment not found"})
+	case errors.Is(err, service.ErrComponentNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"error": "component not found"})
+	default:
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	}
 }
 
 func GetComponentRuntimeLogs(c *gin.Context) {
 	envID, _ := strconv.Atoi(c.Param("id"))
 	componentID, _ := strconv.Atoi(c.Param("componentId"))
 
-	var env model.Environment
-	if err := database.DB.First(&env, envID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "environment not found"})
-		return
-	}
-	if !requireApplicationAccess(c, env.ApplicationID) {
-		return
-	}
-
 	syncClusterStateIfPossible()
 
-	var comp model.Component
-	if err := database.DB.Where("id = ? AND environment_id = ?", componentID, envID).First(&comp).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			c.JSON(http.StatusNotFound, gin.H{"error": "component not found"})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	runtimeContext, err := service.LoadComponentRuntimeContext(database.DB, uint(envID), uint(componentID))
+	if err != nil {
+		respondComponentRuntimeContextError(c, err)
 		return
 	}
-	identifier := service.ComponentIdentifier(comp.Name, comp.Type, comp.ID)
+	env := runtimeContext.Env
+	identifier := runtimeContext.Identifier
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 8*time.Second)
 	defer cancel()
 	cfg, _ := k8s.DiscoverComponentRuntimeConfig(ctx, env.Namespace, identifier)
@@ -3327,43 +1741,16 @@ func runtimeLogTailLines(c *gin.Context) int64 {
 	return value
 }
 
-func monitorNamespaceForEnvironment(envID uint) string {
-	var inst model.ServiceInstallation
-	if err := database.DB.
-		Where("environment_id = ? AND service_type = ?", envID, "monitor").
-		Order("id DESC").
-		First(&inst).Error; err != nil {
-		return ""
-	}
-	return strings.TrimSpace(inst.Namespace)
-}
-
 func ProxyServiceInstance(c *gin.Context) {
 	envID, _ := strconv.Atoi(c.Param("id"))
 	serviceID, _ := strconv.Atoi(c.Param("serviceId"))
 
-	var accessEnv model.Environment
-	if err := database.DB.First(&accessEnv, envID).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			c.JSON(http.StatusNotFound, gin.H{"error": "service not found"})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	if !requireApplicationAccess(c, accessEnv.ApplicationID) {
-		return
-	}
-
-	_, _, inst, _, err := loadServiceWorkspaceContext(envID, serviceID)
+	workspaceContext, err := service.LoadServiceWorkspaceContext(database.DB, uint(envID), uint(serviceID))
 	if err != nil {
-		if err == gorm.ErrRecordNotFound {
-			c.JSON(http.StatusNotFound, gin.H{"error": "service not found"})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondServiceWorkspaceContextError(c, err, "service not found")
 		return
 	}
+	inst := workspaceContext.Instance
 	baseURL := toolHTTPBaseURL(inst)
 	if baseURL == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "service does not expose a browser proxy"})
@@ -3420,22 +1807,13 @@ func ProxyComponent(c *gin.Context) {
 	envID, _ := strconv.Atoi(c.Param("id"))
 	componentID, _ := strconv.Atoi(c.Param("componentId"))
 
-	var env model.Environment
-	if err := database.DB.First(&env, envID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "environment not found"})
-		return
-	}
-	if !requireApplicationAccess(c, env.ApplicationID) {
+	runtimeContext, err := service.LoadComponentRuntimeContext(database.DB, uint(envID), uint(componentID))
+	if err != nil {
+		respondComponentRuntimeContextError(c, err)
 		return
 	}
 
-	var comp model.Component
-	if err := database.DB.Where("id = ? AND environment_id = ?", componentID, envID).First(&comp).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "component not found"})
-		return
-	}
-
-	target, err := componentProxyTarget(c.Request.Context(), env, comp)
+	target, err := componentProxyTarget(c.Request.Context(), runtimeContext.Env, runtimeContext.Component)
 	if err != nil {
 		c.JSON(http.StatusFailedDependency, gin.H{"error": err.Error()})
 		return
@@ -3795,28 +2173,12 @@ func DownloadRegistryCACertificate(c *gin.Context) {
 	envID, _ := strconv.Atoi(c.Param("id"))
 	serviceID, _ := strconv.Atoi(c.Param("serviceId"))
 
-	var accessEnv model.Environment
-	if err := database.DB.First(&accessEnv, envID).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			c.JSON(http.StatusNotFound, gin.H{"error": "service not found"})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	if !requireApplicationAccess(c, accessEnv.ApplicationID) {
-		return
-	}
-
-	_, _, inst, _, err := loadServiceWorkspaceContext(envID, serviceID)
+	workspaceContext, err := service.LoadServiceWorkspaceContext(database.DB, uint(envID), uint(serviceID))
 	if err != nil {
-		if err == gorm.ErrRecordNotFound {
-			c.JSON(http.StatusNotFound, gin.H{"error": "service not found"})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondServiceWorkspaceContextError(c, err, "service not found")
 		return
 	}
+	inst := workspaceContext.Instance
 	if inst.ServiceType != "registry" && inst.ServiceType != "harbor" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "certificate download is only supported for registry and harbor services"})
 		return
@@ -3854,28 +2216,15 @@ func RunServiceWorkspaceAction(c *gin.Context) {
 		return
 	}
 
-	var accessEnv model.Environment
-	if err := database.DB.First(&accessEnv, envID).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			c.JSON(http.StatusNotFound, gin.H{"error": "service workspace not found"})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	if !requireApplicationAccess(c, accessEnv.ApplicationID) {
-		return
-	}
-
-	app, env, inst, components, err := loadServiceWorkspaceContext(envID, serviceID)
+	workspaceContext, err := service.LoadServiceWorkspaceContext(database.DB, uint(envID), uint(serviceID))
 	if err != nil {
-		if err == gorm.ErrRecordNotFound {
-			c.JSON(http.StatusNotFound, gin.H{"error": "service workspace not found"})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondServiceWorkspaceContextError(c, err, "service workspace not found")
 		return
 	}
+	app := workspaceContext.App
+	env := workspaceContext.Env
+	inst := workspaceContext.Instance
+	components := workspaceContext.Components
 
 	switch req.Action {
 	case "refresh":
@@ -3916,9 +2265,9 @@ func RunServiceWorkspaceAction(c *gin.Context) {
 			c.JSON(http.StatusFailedDependency, gin.H{"error": err.Error(), "data": buildLiveToolWorkspace(app, env, inst, components)})
 			return
 		}
-		inst.Status = "running"
-		inst.ErrorMessage = ""
-		_ = database.DB.Save(&inst).Error
+		if updated, err := service.MarkServiceInstallationRunning(database.DB, inst); err == nil {
+			inst = updated
+		}
 		c.JSON(http.StatusOK, gin.H{"data": buildLiveToolWorkspace(app, env, inst, components)})
 		return
 	case "provision_grafana_dashboard":
@@ -4096,9 +2445,9 @@ func RunServiceWorkspaceAction(c *gin.Context) {
 			c.JSON(http.StatusFailedDependency, gin.H{"error": err.Error(), "data": buildLiveToolWorkspace(app, env, inst, components)})
 			return
 		}
-		inst.Status = "running"
-		inst.ErrorMessage = ""
-		_ = database.DB.Save(&inst).Error
+		if updated, err := service.MarkServiceInstallationRunning(database.DB, inst); err == nil {
+			inst = updated
+		}
 		c.JSON(http.StatusOK, gin.H{"data": buildLiveToolWorkspace(app, env, inst, components)})
 		return
 	case "query_loki_streams":
@@ -4124,9 +2473,9 @@ func RunServiceWorkspaceAction(c *gin.Context) {
 			c.JSON(http.StatusFailedDependency, gin.H{"error": err.Error(), "data": buildLiveToolWorkspace(app, env, inst, components)})
 			return
 		}
-		inst.Status = "running"
-		inst.ErrorMessage = ""
-		_ = database.DB.Save(&inst).Error
+		if updated, err := service.MarkServiceInstallationRunning(database.DB, inst); err == nil {
+			inst = updated
+		}
 		c.JSON(http.StatusOK, gin.H{"data": buildLiveToolWorkspace(app, env, inst, components)})
 		return
 	case "trigger_jenkins_build":
@@ -4166,9 +2515,9 @@ func RunServiceWorkspaceAction(c *gin.Context) {
 			c.JSON(http.StatusFailedDependency, gin.H{"error": err.Error(), "data": buildLiveToolWorkspace(app, env, inst, components)})
 			return
 		}
-		inst.Status = "running"
-		inst.ErrorMessage = ""
-		_ = database.DB.Save(&inst).Error
+		if updated, err := service.MarkServiceInstallationRunning(database.DB, inst); err == nil {
+			inst = updated
+		}
 		c.JSON(http.StatusOK, gin.H{"data": buildLiveToolWorkspace(app, env, inst, components)})
 		return
 	case "delete_registry_tag":
@@ -4209,9 +2558,9 @@ func RunServiceWorkspaceAction(c *gin.Context) {
 			c.JSON(http.StatusFailedDependency, gin.H{"error": err.Error(), "data": buildLiveToolWorkspace(app, env, inst, components)})
 			return
 		}
-		inst.Status = "running"
-		inst.ErrorMessage = ""
-		_ = database.DB.Save(&inst).Error
+		if updated, err := service.MarkServiceInstallationRunning(database.DB, inst); err == nil {
+			inst = updated
+		}
 		c.JSON(http.StatusOK, gin.H{"data": buildLiveToolWorkspace(app, env, inst, components)})
 		return
 	case "list_databases":
@@ -4694,7 +3043,7 @@ func RunServiceWorkspaceAction(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "action is only supported for git and deploy services"})
 			return
 		}
-		workspace, reconcileErrs := reconcileEnvironmentGitOps(app, env, inst, components)
+		workspace, reconcileErrs := service.ReconcileEnvironmentGitOps(c.Request.Context(), database.DB, k8s.GetClient(), app, env, inst, components)
 		if len(reconcileErrs) > 0 {
 			c.JSON(http.StatusFailedDependency, gin.H{"error": strings.Join(reconcileErrs, "; "), "data": workspace})
 			return
@@ -6009,8 +4358,8 @@ func kubernetesPodMonitorSubjectsForNamespaces(ctx context.Context, monitorNames
 }
 
 func installedServiceMonitorSubjects(app model.Application, env model.Environment, monitorInst model.ServiceInstallation) []service.ToolWorkspaceResource {
-	var installations []model.ServiceInstallation
-	if err := database.DB.Where("environment_id = ?", env.ID).Find(&installations).Error; err != nil {
+	installations, err := service.ListEnvironmentServiceInstallations(database.DB, env.ID)
+	if err != nil {
 		return nil
 	}
 	subjects := make([]service.ToolWorkspaceResource, 0, len(installations))
@@ -6826,8 +5175,8 @@ func logSubjectNamespaces(app model.Application, env model.Environment) []string
 		namespaces = append(namespaces, namespace)
 	}
 	add(prefix)
-	var services []model.ServiceInstallation
-	if err := database.DB.Where("environment_id = ?", env.ID).Find(&services).Error; err == nil {
+	services, err := service.ListEnvironmentServiceInstallations(database.DB, env.ID)
+	if err == nil {
 		for _, inst := range services {
 			add(inst.Namespace)
 		}
@@ -7108,45 +5457,6 @@ func lokiSeriesDescription(stream map[string]string) string {
 		parts = append(parts[:8], fmt.Sprintf("+%d more", len(parts)-8))
 	}
 	return strings.Join(parts, ", ")
-}
-
-func reconcileEnvironmentGitOps(app model.Application, env model.Environment, inst model.ServiceInstallation, components []model.Component) (service.ToolWorkspace, []string) {
-	ctx := context.Background()
-	primaryNS := app.Identifier + "-" + env.Identifier
-	var errs []string
-
-	for i := range components {
-		comp := components[i]
-		identifier := service.ComponentIdentifier(comp.Name, comp.Type, comp.ID)
-		result, err := service.EnsureComponentGitOps(ctx, k8s.GetClient(), app, env, comp, identifier, primaryNS)
-		if err != nil {
-			errs = append(errs, fmt.Sprintf("%s: %v", comp.Name, err))
-			continue
-		}
-		comp.GitRepoURL = result.RepositoryURL
-		if result.SourceMirrorURL != "" {
-			comp.SourceMirrorRepoURL = result.SourceMirrorURL
-		}
-		comp.GitPath = result.RepositoryPath
-		comp.ArgoCDApp = result.ArgoCDApplication
-		if result.CIStatus != "" {
-			comp.PipelineStatus = result.CIStatus
-		}
-		if result.CIWarning != "" {
-			comp.ErrorMessage = result.CIWarning
-		}
-		comp.Status = "syncing"
-		if result.CIWarning == "" {
-			comp.ErrorMessage = ""
-		}
-		if err := database.DB.Save(&comp).Error; err != nil {
-			errs = append(errs, fmt.Sprintf("%s: %v", comp.Name, err))
-			continue
-		}
-		components[i] = comp
-	}
-
-	return service.BuildToolWorkspace(app, env, inst, components), errs
 }
 
 func enrichRedisWorkspace(ctx context.Context, workspace service.ToolWorkspace, inst model.ServiceInstallation) service.ToolWorkspace {
@@ -7631,11 +5941,11 @@ func componentProxyURL(envID uint, comp model.Component, path string) string {
 }
 
 func environmentServiceByType(environmentID uint, serviceType string) (model.ServiceInstallation, bool) {
-	var inst model.ServiceInstallation
-	if err := database.DB.Where("environment_id = ? AND service_type = ?", environmentID, serviceType).First(&inst).Error; err != nil {
+	inst, ok, err := service.FindEnvironmentServiceByType(database.DB, environmentID, serviceType)
+	if err != nil {
 		return model.ServiceInstallation{}, false
 	}
-	return inst, true
+	return inst, ok
 }
 
 func grafanaExploreLokiPath(query string) string {
@@ -8014,76 +6324,61 @@ func CreateServiceDraft(c *gin.Context) {
 		return
 	}
 
-	var env model.Environment
-	if err := database.DB.First(&env, envID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "environment not found"})
+	installContext, err := service.LoadServiceInstallTemplateContext(database.DB, uint(envID), req.ServiceType, service.ServiceInstallTemplateQuery{
+		ProvisionMode: req.ProvisionMode,
+	})
+	if err != nil {
+		respondServiceInstallLifecycleError(c, err)
 		return
 	}
-	if !requireApplicationAccess(c, env.ApplicationID) {
-		return
-	}
+	app := installContext.App
+	env := installContext.Env
+	svcTmpl := installContext.Template
 
-	var app model.Application
-	if err := database.DB.First(&app, env.ApplicationID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "application not found"})
-		return
-	}
-
-	var svcTmpl model.ServiceTemplate
-	if err := database.DB.Where("type = ?", req.ServiceType).First(&svcTmpl).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "service template not found"})
+	if service.NormalizeServiceProvisionMode(svcTmpl.ProvisionMode) == model.ServiceProvisionModeKubeVirt {
+		namespace := serviceToolNamespace(app, env, &svcTmpl, req.ServiceType)
+		inst, created, err := service.SaveServiceDraft(database.DB, env, req.ServiceType, service.ServiceInstallationRuntimeInput{
+			ServiceName:   serviceToolIdentity(&svcTmpl, req.ServiceType),
+			Namespace:     namespace,
+			ReleaseName:   namespace,
+			ProvisionMode: svcTmpl.ProvisionMode,
+			RuntimeSpec:   svcTmpl.RuntimeSpec,
+			Values:        "{}",
+			ErrorMessage:  "",
+		})
+		if err != nil {
+			respondServiceInstallLifecycleError(c, err)
+			return
+		}
+		statusCode := http.StatusOK
+		if created {
+			statusCode = http.StatusCreated
+		}
+		c.JSON(statusCode, gin.H{"data": inst})
 		return
 	}
 
 	toolNS := serviceToolNamespace(app, env, &svcTmpl, req.ServiceType)
 	helmSpec := buildHelmInstallSpec(&app, &env, &svcTmpl, req.ServiceType, req.Values)
-
-	var inst model.ServiceInstallation
-	err := database.DB.Unscoped().
-		Where("environment_id = ? AND service_type = ?", env.ID, req.ServiceType).
-		Order("CASE WHEN deleted_at IS NULL THEN 0 ELSE 1 END, id").
-		First(&inst).Error
-	if err != nil && err != gorm.ErrRecordNotFound {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	statusCode := http.StatusCreated
-	if err == nil {
-		statusCode = http.StatusOK
-		if inst.DeletedAt.Valid {
-			inst.DeletedAt = gorm.DeletedAt{}
-			statusCode = http.StatusCreated
-		}
-		switch strings.ToLower(strings.TrimSpace(inst.Status)) {
-		case "running", "installing", "deleting":
-			database.DB.Save(&inst)
-			c.JSON(http.StatusOK, gin.H{"data": inst})
-			return
-		}
-	} else {
-		inst = model.ServiceInstallation{
-			EnvironmentID: env.ID,
-			ServiceType:   req.ServiceType,
-		}
-	}
-
-	inst.Status = "draft"
-	inst.ServiceName = serviceToolIdentity(&svcTmpl, req.ServiceType)
-	inst.Namespace = valueOrFallback(helmSpec.Namespace, toolNS)
-	inst.ReleaseName = valueOrFallback(helmSpec.ReleaseName, inst.Namespace)
-	inst.ErrorMessage = ""
-	inst.Values = serviceValuesJSON(helmSpec.Values)
-	if err := database.DB.Save(&inst).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	if err := database.DB.Unscoped().
-		Where("environment_id = ? AND service_type = ? AND id <> ?", env.ID, req.ServiceType, inst.ID).
-		Delete(&model.ServiceInstallation{}).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	namespace := valueOrFallback(helmSpec.Namespace, toolNS)
+	inst, created, err := service.SaveServiceDraft(database.DB, env, req.ServiceType, service.ServiceInstallationRuntimeInput{
+		ServiceName:   serviceToolIdentity(&svcTmpl, req.ServiceType),
+		Namespace:     namespace,
+		ReleaseName:   valueOrFallback(helmSpec.ReleaseName, namespace),
+		ProvisionMode: svcTmpl.ProvisionMode,
+		RuntimeSpec:   svcTmpl.RuntimeSpec,
+		Values:        serviceValuesJSON(helmSpec.Values),
+		ErrorMessage:  "",
+	})
+	if err != nil {
+		respondServiceInstallLifecycleError(c, err)
 		return
 	}
 
+	statusCode := http.StatusOK
+	if created {
+		statusCode = http.StatusCreated
+	}
 	c.JSON(statusCode, gin.H{"data": inst})
 }
 
@@ -8097,101 +6392,105 @@ func InstallService(c *gin.Context) {
 		return
 	}
 
-	var env model.Environment
-	if err := database.DB.First(&env, envID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "environment not found"})
-		return
-	}
-	if !requireApplicationAccess(c, env.ApplicationID) {
-		return
-	}
-
 	syncClusterStateIfPossible()
 
-	var app model.Application
-	if err := database.DB.First(&app, env.ApplicationID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "application not found"})
+	installContext, err := service.LoadServiceInstallTemplateContext(database.DB, uint(envID), req.ServiceType, service.ServiceInstallTemplateQuery{
+		ChartVersion:  req.ChartVersion,
+		AppVersion:    req.AppVersion,
+		ProvisionMode: req.ProvisionMode,
+		EnabledOnly:   true,
+	})
+	if err != nil {
+		respondServiceInstallLifecycleError(c, err)
 		return
 	}
-
-	// 查找模板获取安装方式
-	var svcTmpl model.ServiceTemplate
-	query := database.DB.Where("type = ? AND enabled = ?", req.ServiceType, true)
-	if strings.TrimSpace(req.ChartVersion) != "" {
-		query = query.Where("chart_version = ?", strings.TrimSpace(req.ChartVersion))
-	}
-	if req.AppVersion != "" {
-		query = query.Where("app_version = ?", req.AppVersion)
-	}
-	if err := query.Order("install_order").First(&svcTmpl).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "service template not found"})
-		return
-	}
+	app := installContext.App
+	env := installContext.Env
+	svcTmpl := installContext.Template
 	toolNS := serviceToolNamespace(app, env, &svcTmpl, req.ServiceType)
-	var inst model.ServiceInstallation
-	err := database.DB.Unscoped().
-		Where("environment_id = ? AND service_type = ?", env.ID, req.ServiceType).
-		Order("CASE WHEN deleted_at IS NULL THEN 0 ELSE 1 END, id").
-		First(&inst).Error
-	if err != nil && err != gorm.ErrRecordNotFound {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+
+	if service.NormalizeServiceProvisionMode(svcTmpl.ProvisionMode) == model.ServiceProvisionModeKubeVirt {
+		installKubeVirtService(c, app, env, svcTmpl, req.ServiceType, toolNS)
 		return
 	}
-	if err == nil {
-		if inst.DeletedAt.Valid {
-			inst.DeletedAt = gorm.DeletedAt{}
-		}
-		if len(req.Values) == 0 && (inst.Status == "running" || inst.Status == "installing") {
-			database.DB.Save(&inst)
-			c.JSON(http.StatusOK, gin.H{"data": inst})
-			return
-		}
-	} else {
-		inst = model.ServiceInstallation{
-			EnvironmentID: env.ID,
-			ServiceType:   req.ServiceType,
-		}
-	}
-
-	inst.Status = "installing"
-	inst.ServiceName = serviceToolIdentity(&svcTmpl, req.ServiceType)
-	inst.Namespace = toolNS
-	inst.ReleaseName = toolNS
-	inst.ErrorMessage = ""
 
 	ctx := context.Background()
 	var manifestsRef *paapv1.ConfigMapReference
 	// 统一走 Operator：Helm chart 交给 ServiceInstance spec 记录，operator 负责安装
 	helmSpec := buildHelmInstallSpec(&app, &env, &svcTmpl, req.ServiceType, req.Values)
-	inst.Values = serviceValuesJSON(helmSpec.Values)
-	if err := database.DB.Save(&inst).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	if err := database.DB.Unscoped().
-		Where("environment_id = ? AND service_type = ? AND id <> ?", env.ID, req.ServiceType, inst.ID).
-		Delete(&model.ServiceInstallation{}).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	inst, err := service.SaveServiceInstalling(database.DB, env, req.ServiceType, service.ServiceInstallationRuntimeInput{
+		ServiceName:   serviceToolIdentity(&svcTmpl, req.ServiceType),
+		Namespace:     toolNS,
+		ReleaseName:   toolNS,
+		ProvisionMode: svcTmpl.ProvisionMode,
+		RuntimeSpec:   svcTmpl.RuntimeSpec,
+		Values:        serviceValuesJSON(helmSpec.Values),
+		ErrorMessage:  "",
+	})
+	if err != nil {
+		respondServiceInstallLifecycleError(c, err)
 		return
 	}
 
-	workloadRole := getWorkloadRole(req.ServiceType)
-	toolNamespaceRole := getToolNamespaceRole(req.ServiceType)
-	environmentRole := getEnvironmentRole(req.ServiceType)
-	clusterRole := getClusterRole(req.ServiceType)
+	workloadRole := service.ServiceWorkloadRoleFromTemplate(&svcTmpl)
+	toolNamespaceRole := service.ServiceToolNamespaceRoleFromTemplate(&svcTmpl)
+	environmentRole := service.ServiceEnvironmentRoleFromTemplate(&svcTmpl)
+	clusterRole := service.ServiceClusterRoleFromTemplate(&svcTmpl)
 	resourceLabels := serviceResourceLabels(app.Identifier, env.Identifier, &svcTmpl, req.ServiceType)
 	resourceAnnotations := serviceResourceAnnotations(app.Identifier, env.Identifier, &svcTmpl, req.ServiceType)
 
 	if err := k8s.CreateServiceInstanceCR(ctx, app.Identifier, env.Identifier, req.ServiceType, workloadRole, toolNamespaceRole, environmentRole, clusterRole, manifestsRef, helmSpec, resourceLabels, resourceAnnotations); err != nil {
-		inst.Status = "failed"
-		inst.ErrorMessage = err.Error()
-		database.DB.Save(&inst)
+		if failed, saveErr := service.MarkServiceInstallationFailed(database.DB, inst, err.Error()); saveErr == nil {
+			inst = failed
+		}
 		c.JSON(http.StatusCreated, gin.H{"data": inst, "warning": "ServiceInstance CR creation failed: " + err.Error()})
 		return
 	}
 
-	inst.Status = "installing"
-	database.DB.Save(&inst)
+	if installing, err := service.MarkServiceInstallationInstalling(database.DB, inst); err == nil {
+		inst = installing
+	}
+	c.JSON(http.StatusCreated, gin.H{"data": inst})
+}
+
+func installKubeVirtService(c *gin.Context, app model.Application, env model.Environment, svcTmpl model.ServiceTemplate, serviceType string, namespace string) {
+	inst, err := service.SaveServiceInstalling(database.DB, env, serviceType, service.ServiceInstallationRuntimeInput{
+		ServiceName:   serviceToolIdentity(&svcTmpl, serviceType),
+		Namespace:     namespace,
+		ReleaseName:   namespace,
+		ProvisionMode: svcTmpl.ProvisionMode,
+		RuntimeSpec:   svcTmpl.RuntimeSpec,
+		Values:        "{}",
+		ErrorMessage:  "",
+	})
+	if err != nil {
+		respondServiceInstallLifecycleError(c, err)
+		return
+	}
+
+	resources, err := service.BuildKubeVirtServiceRuntimeResources(service.KubeVirtServiceRuntimeContext{
+		App:          app,
+		Env:          env,
+		Installation: inst,
+		Template:     svcTmpl,
+	})
+	if err != nil {
+		if failed, saveErr := service.MarkServiceInstallationFailed(database.DB, inst, err.Error()); saveErr == nil {
+			inst = failed
+		}
+		c.JSON(http.StatusCreated, gin.H{"data": inst, "warning": "KubeVirt resource generation failed: " + err.Error()})
+		return
+	}
+	if err := k8s.UpsertKubeVirtServiceResources(context.Background(), resources); err != nil {
+		if failed, saveErr := service.MarkServiceInstallationFailed(database.DB, inst, err.Error()); saveErr == nil {
+			inst = failed
+		}
+		c.JSON(http.StatusCreated, gin.H{"data": inst, "warning": "KubeVirt resource creation failed: " + err.Error()})
+		return
+	}
+	if installing, err := service.MarkServiceInstallationInstalling(database.DB, inst); err == nil {
+		inst = installing
+	}
 	c.JSON(http.StatusCreated, gin.H{"data": inst})
 }
 
@@ -8208,46 +6507,25 @@ func UpdateService(c *gin.Context) {
 		return
 	}
 
-	var env model.Environment
-	if err := database.DB.First(&env, envID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "environment not found"})
-		return
-	}
-	if !requireApplicationAccess(c, env.ApplicationID) {
-		return
-	}
-
 	syncClusterStateIfPossible()
 
-	var inst model.ServiceInstallation
-	if err := database.DB.Where("id = ? AND environment_id = ?", serviceID, envID).First(&inst).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			c.JSON(http.StatusNotFound, gin.H{"error": "service installation not found"})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	updateContext, err := service.LoadServiceInstallationUpdateContext(database.DB, uint(envID), uint(serviceID))
+	if err != nil {
+		respondServiceInstallLifecycleError(c, err)
 		return
 	}
-
-	var app model.Application
-	if err := database.DB.First(&app, env.ApplicationID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "application not found"})
-		return
-	}
-
-	var svcTmpl model.ServiceTemplate
-	if err := database.DB.Where("type = ?", inst.ServiceType).First(&svcTmpl).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "service template not found"})
-		return
-	}
+	app := updateContext.App
+	env := updateContext.Env
+	inst := updateContext.Installation
+	svcTmpl := updateContext.Template
 
 	helmSpec := buildHelmInstallSpec(&app, &env, &svcTmpl, inst.ServiceType, req.Values)
 	applyStoredServiceRuntimeIdentity(&inst, helmSpec)
 	if serviceStatusShouldReconcile(inst.Status) {
-		workloadRole := getWorkloadRole(inst.ServiceType)
-		toolNamespaceRole := getToolNamespaceRole(inst.ServiceType)
-		environmentRole := getEnvironmentRole(inst.ServiceType)
-		clusterRole := getClusterRole(inst.ServiceType)
+		workloadRole := service.ServiceWorkloadRoleFromTemplate(&svcTmpl)
+		toolNamespaceRole := service.ServiceToolNamespaceRoleFromTemplate(&svcTmpl)
+		environmentRole := service.ServiceEnvironmentRoleFromTemplate(&svcTmpl)
+		clusterRole := service.ServiceClusterRoleFromTemplate(&svcTmpl)
 		resourceLabels := serviceResourceLabels(app.Identifier, env.Identifier, &svcTmpl, inst.ServiceType)
 		resourceAnnotations := serviceResourceAnnotations(app.Identifier, env.Identifier, &svcTmpl, inst.ServiceType)
 		if err := k8s.UpsertServiceInstanceCR(context.Background(), app.Identifier, env.Identifier, inst.ServiceType, workloadRole, toolNamespaceRole, environmentRole, clusterRole, nil, helmSpec, resourceLabels, resourceAnnotations); err != nil {
@@ -8255,22 +6533,36 @@ func UpdateService(c *gin.Context) {
 			return
 		}
 	}
-	inst.ServiceName = serviceToolIdentity(&svcTmpl, inst.ServiceType)
-	inst.Namespace = helmSpec.Namespace
-	inst.ReleaseName = helmSpec.ReleaseName
-	inst.Values = serviceValuesJSON(helmSpec.Values)
-	if strings.TrimSpace(inst.Status) == "" || strings.EqualFold(inst.Status, "pending") {
-		inst.Status = "draft"
-	}
-	if strings.EqualFold(inst.Status, "draft") {
-		inst.ErrorMessage = ""
-	}
-	if err := database.DB.Save(&inst).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	inst, err = service.SaveServiceInstallationRuntime(database.DB, inst, service.ServiceInstallationRuntimeInput{
+		ServiceName:   serviceToolIdentity(&svcTmpl, inst.ServiceType),
+		Namespace:     helmSpec.Namespace,
+		ReleaseName:   helmSpec.ReleaseName,
+		ProvisionMode: svcTmpl.ProvisionMode,
+		RuntimeSpec:   svcTmpl.RuntimeSpec,
+		Values:        serviceValuesJSON(helmSpec.Values),
+		ErrorMessage:  inst.ErrorMessage,
+	})
+	if err != nil {
+		respondServiceInstallLifecycleError(c, err)
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{"data": inst})
+}
+
+func respondServiceInstallLifecycleError(c *gin.Context, err error) {
+	switch {
+	case errors.Is(err, service.ErrEnvironmentNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"error": "environment not found"})
+	case errors.Is(err, service.ErrApplicationNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"error": "application not found"})
+	case errors.Is(err, service.ErrServiceInstallationNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"error": "service installation not found"})
+	case errors.Is(err, service.ErrTemplateNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"error": "service template not found"})
+	default:
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	}
 }
 
 func serviceStatusShouldReconcile(status string) bool {
@@ -8313,28 +6605,13 @@ func SetServiceExternalAccess(c *gin.Context) {
 		return
 	}
 
-	var env model.Environment
-	if err := database.DB.First(&env, envID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "environment not found"})
+	accessContext, err := service.LoadServiceExternalAccessContext(database.DB, uint(envID), uint(serviceID))
+	if err != nil {
+		respondSetServiceExternalAccessError(c, err)
 		return
 	}
-	if !requireApplicationAccess(c, env.ApplicationID) {
-		return
-	}
-
-	var inst model.ServiceInstallation
-	if err := database.DB.Where("id = ? AND environment_id = ?", serviceID, envID).First(&inst).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			c.JSON(http.StatusNotFound, gin.H{"error": "service installation not found"})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	if strings.TrimSpace(inst.Namespace) == "" {
-		c.JSON(http.StatusConflict, gin.H{"error": "service namespace is not ready"})
-		return
-	}
+	env := accessContext.Env
+	inst := accessContext.Installation
 
 	ctx := context.Background()
 	if _, err := k8s.SetNamespaceServiceExternalAccess(ctx, inst.Namespace, inst.ServiceType, req.Enabled); err != nil {
@@ -8342,9 +6619,22 @@ func SetServiceExternalAccess(c *gin.Context) {
 		return
 	}
 
-	access := collectEnvironmentExternalAccess(ctx, env)
-	view := enrichServiceInstallationViews(ctx, []model.ServiceInstallation{inst}, access)[0]
+	access := service.CollectEnvironmentExternalAccess(ctx, database.DB, env)
+	view := service.BuildServiceInstallationViews(ctx, []model.ServiceInstallation{inst}, access)[0]
 	c.JSON(http.StatusOK, gin.H{"data": view, "externalAccess": access})
+}
+
+func respondSetServiceExternalAccessError(c *gin.Context, err error) {
+	switch {
+	case errors.Is(err, service.ErrEnvironmentNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"error": "environment not found"})
+	case errors.Is(err, service.ErrServiceInstallationNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"error": "service installation not found"})
+	case errors.Is(err, service.ErrServiceNamespaceNotReady):
+		c.JSON(http.StatusConflict, gin.H{"error": "service namespace is not ready"})
+	default:
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	}
 }
 
 // InstallInfra installs infrastructure in an environment
@@ -8359,18 +6649,15 @@ func InstallInfra(c *gin.Context) {
 		return
 	}
 
-	var env model.Environment
-	if err := database.DB.First(&env, envID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "environment not found"})
+	env, inst, err := service.CreateInfraInstallation(database.DB, uint(envID), req.InfraType)
+	if err != nil {
+		if errors.Is(err, service.ErrEnvironmentNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "environment not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-
-	inst := model.InfraInstallation{
-		EnvironmentID: env.ID,
-		InfraType:     req.InfraType,
-		Status:        "installing",
-	}
-	database.DB.Create(&inst)
 
 	go func() {
 		var err error
@@ -8390,12 +6677,10 @@ func InstallInfra(c *gin.Context) {
 		}
 
 		if err != nil {
-			inst.Status = "failed"
-			inst.ErrorMessage = err.Error()
+			_ = service.SaveInfraInstallationStatus(database.DB, inst, "failed", err.Error())
 		} else {
-			inst.Status = "running"
+			_ = service.SaveInfraInstallationStatus(database.DB, inst, "running", "")
 		}
-		database.DB.Save(&inst)
 	}()
 
 	c.JSON(http.StatusCreated, gin.H{"data": inst})
@@ -8406,46 +6691,33 @@ func UninstallService(c *gin.Context) {
 	envID, _ := strconv.Atoi(c.Param("id"))
 	serviceID, _ := strconv.Atoi(c.Param("serviceId"))
 
-	var env model.Environment
-	if err := database.DB.First(&env, envID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "environment not found"})
+	if err := service.UninstallService(c.Request.Context(), database.DB, uint(envID), uint(serviceID)); err != nil {
+		respondUninstallServiceError(c, err)
 		return
 	}
-	if !requireApplicationAccess(c, env.ApplicationID) {
-		return
-	}
-
-	var inst model.ServiceInstallation
-	if err := database.DB.Where("id = ? AND environment_id = ?", serviceID, envID).First(&inst).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			c.JSON(http.StatusNotFound, gin.H{"error": "service installation not found"})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	var app model.Application
-	if err := database.DB.First(&app, env.ApplicationID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "application not found"})
-		return
-	}
-
-	ctx := context.Background()
-
-	// Delete ServiceInstance CR and namespace. Tool resources, including Helm release
-	// secrets, are scoped to the tool namespace and are removed with it.
-	if err := k8s.DeleteServiceInstanceCR(ctx, app.Identifier, env.Identifier, inst.ServiceType); err != nil {
-		log.Printf("[UninstallService] CR delete warning: %v", err)
-	}
-
-	// Delete the namespace
-	if err := k8sClient.DeleteNamespace(inst.Namespace); err != nil {
-		log.Printf("[UninstallService] namespace delete warning: %v", err)
-	}
-
-	// Delete from database
-	database.DB.Delete(&inst)
 
 	c.JSON(http.StatusOK, gin.H{"message": "service uninstalled successfully"})
+}
+
+func serviceInstallationRequiresRuntimeDelete(inst model.ServiceInstallation) bool {
+	return service.ServiceInstallationRequiresRuntimeDelete(inst)
+}
+
+func markEnvironmentEmptyWhenNoResources(db *gorm.DB, environmentID uint) error {
+	return service.MarkEnvironmentEmptyWhenNoResources(db, environmentID)
+}
+
+func respondUninstallServiceError(c *gin.Context, err error) {
+	switch {
+	case errors.Is(err, service.ErrEnvironmentNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"error": "environment not found"})
+	case errors.Is(err, service.ErrApplicationNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"error": "application not found"})
+	case errors.Is(err, service.ErrServiceInstallationNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"error": "service installation not found"})
+	case errors.Is(err, service.ErrServiceInstanceCRDelete):
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	default:
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	}
 }

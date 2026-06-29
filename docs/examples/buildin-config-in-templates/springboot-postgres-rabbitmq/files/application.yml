@@ -1,0 +1,26 @@
+server:
+  port: __TEMPLATE__SERVER_PORT__服务端口__DEFAULT__8080__
+
+spring:
+  application:
+    name: __TEMPLATE__APP_NAME__应用名称__DEFAULT__springboot-rabbitmq-service__
+  datasource:
+    url: jdbc:postgresql://__TEMPLATE__POSTGRES_HOST__PostgreSQL 地址__DEFAULT__postgresql__:__TEMPLATE__POSTGRES_PORT__PostgreSQL 端口__DEFAULT__5432__/__TEMPLATE__POSTGRES_DATABASE__数据库名__DEFAULT__orders_db__
+    username: __TEMPLATE__POSTGRES_USERNAME__数据库用户__DEFAULT__postgres__
+    password: ${POSTGRES_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+  rabbitmq:
+    host: __TEMPLATE__RABBITMQ_HOST__RabbitMQ 地址__DEFAULT__rabbitmq__
+    port: __TEMPLATE__RABBITMQ_PORT__RabbitMQ 端口__DEFAULT__5672__
+    username: __TEMPLATE__RABBITMQ_USERNAME__RabbitMQ 用户__DEFAULT__admin__
+    password: ${RABBITMQ_PASSWORD}
+    virtual-host: __TEMPLATE__RABBITMQ_VHOST__RabbitMQ vhost__DEFAULT__/__
+    connection-timeout: 5000ms
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    listener:
+      simple:
+        acknowledge-mode: manual
+        concurrency: 5
+        max-concurrency: 10
+        prefetch: 1

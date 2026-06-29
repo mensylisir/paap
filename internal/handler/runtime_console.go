@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -13,40 +14,34 @@ import (
 
 	"paap/internal/database"
 	"paap/internal/k8s"
-	"paap/internal/model"
 	"paap/internal/service"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
-	"gorm.io/gorm"
 )
 
 func HandleComponentConsole(c *gin.Context) {
 	envID, _ := strconv.Atoi(c.Param("id"))
 	componentID, _ := strconv.Atoi(c.Param("componentId"))
 
-	var env model.Environment
-	if err := database.DB.First(&env, envID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "environment not found"})
-		return
-	}
-	if !requireApplicationAccess(c, env.ApplicationID) {
-		return
-	}
-
-	var comp model.Component
-	if err := database.DB.Where("id = ? AND environment_id = ?", componentID, envID).First(&comp).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
+	runtimeContext, err := service.LoadComponentRuntimeContext(database.DB, uint(envID), uint(componentID))
+	if err != nil {
+		if errors.Is(err, service.ErrEnvironmentNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "environment not found"})
+			return
+		}
+		if errors.Is(err, service.ErrComponentNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "component not found"})
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	env := runtimeContext.Env
+	identifier := runtimeContext.Identifier
 
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
 	defer cancel()
-	identifier := service.ComponentIdentifier(comp.Name, comp.Type, comp.ID)
 	cfg, _ := k8s.DiscoverComponentRuntimeConfig(ctx, env.Namespace, identifier)
 	if cfg == nil {
 		cfg = &k8s.RuntimeConfig{Namespace: env.Namespace, WorkloadName: identifier}
@@ -63,28 +58,16 @@ func HandleServiceConsole(c *gin.Context) {
 	envID, _ := strconv.Atoi(c.Param("id"))
 	serviceID, _ := strconv.Atoi(c.Param("serviceId"))
 
-	var accessEnv model.Environment
-	if err := database.DB.First(&accessEnv, envID).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			c.JSON(http.StatusNotFound, gin.H{"error": "service not found"})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	if !requireApplicationAccess(c, accessEnv.ApplicationID) {
-		return
-	}
-
-	_, _, inst, _, err := loadServiceWorkspaceContext(envID, serviceID)
+	workspaceContext, err := service.LoadServiceWorkspaceContext(database.DB, uint(envID), uint(serviceID))
 	if err != nil {
-		if err == gorm.ErrRecordNotFound {
+		if errors.Is(err, service.ErrEnvironmentNotFound) || errors.Is(err, service.ErrServiceInstallationNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "service not found"})
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	inst := workspaceContext.Instance
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
 	defer cancel()
 	cfg, _ := k8s.DiscoverNamespaceRuntimeConfig(ctx, inst.Namespace)

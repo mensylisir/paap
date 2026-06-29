@@ -130,7 +130,7 @@ func (j *JenkinsClient) ConsoleText(ctx context.Context, jobName string) (string
 }
 
 func (j *JenkinsClient) BuildJob(ctx context.Context, jobName string) error {
-	path := jenkinsJobPath(jobName) + "/build"
+	path := jenkinsJobPath(jobName) + "/buildWithParameters?token=paap-source-build"
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(j.BaseURL, "/")+path, nil)
 	if err != nil {
 		return err

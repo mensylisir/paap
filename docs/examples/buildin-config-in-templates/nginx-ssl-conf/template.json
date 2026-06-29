@@ -1,0 +1,11 @@
+{
+  "key": "nginx-ssl-conf",
+  "name": "Nginx SSL/HTTPS default.conf",
+  "version": "v1",
+  "description": "生产门户常用的 HTTP 跳转 HTTPS 和后端反代配置。",
+  "framework": "nginx",
+  "componentTypes": ["frontend", "backend"],
+  "sortOrder": 12,
+  "nativeConfigs": [{ "name": "default.conf", "path": "files/default.conf" }],
+  "files": [{ "name": "Nginx SSL default.conf", "configMapName": "{{configMapName}}", "key": "default.conf", "recommendedMountPath": "/etc/nginx/conf.d/default.conf" }]
+}

@@ -43,7 +43,10 @@ func TestAPIRoutesRequireAuthExceptLogin(t *testing.T) {
 	}
 	if err := db.AutoMigrate(
 		&model.User{},
-		&model.UserRole{},
+		&model.Permission{},
+		&model.Role{},
+		&model.RolePermission{},
+		&model.RoleBinding{},
 		&model.Application{},
 		&model.Environment{},
 		&model.ServiceInstallation{},
@@ -52,6 +55,7 @@ func TestAPIRoutesRequireAuthExceptLogin(t *testing.T) {
 		t.Fatalf("migrate: %v", err)
 	}
 	database.DB = db
+	seedApplicationRBACForTest(t, db)
 
 	passwordHash, err := hashPassword("Def@u1tpwd")
 	if err != nil {
@@ -61,9 +65,8 @@ func TestAPIRoutesRequireAuthExceptLogin(t *testing.T) {
 	if err := db.Create(&user).Error; err != nil {
 		t.Fatalf("create user: %v", err)
 	}
-	if _, err := model.ReplaceUserRoles(db, user.ID, []string{model.RolePlatformAdmin, model.RoleAppAdmin}); err != nil {
-		t.Fatalf("create roles: %v", err)
-	}
+	bindSystemRoleForTest(t, db, user.ID, model.RolePlatformAdmin)
+	bindSystemRoleForTest(t, db, user.ID, model.RoleAppAdmin)
 
 	gin.SetMode(gin.TestMode)
 	router := gin.New()

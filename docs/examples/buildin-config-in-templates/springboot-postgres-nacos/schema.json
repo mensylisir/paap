@@ -1,0 +1,20 @@
+{
+  "fields": [
+    { "key": "SERVER_PORT", "label": "服务端口", "type": "number", "default": "8080" },
+    { "key": "APP_NAME", "label": "应用名称", "type": "text", "default": "user-service" },
+    { "key": "NACOS_SERVER_ADDR", "label": "Nacos 地址", "type": "serviceRef", "target": "nacos", "format": "hostPort", "required": true, "default": "nacos:8848" },
+    { "key": "NACOS_NAMESPACE", "label": "Nacos 命名空间", "type": "text", "default": "dev" },
+    { "key": "NACOS_GROUP", "label": "Nacos 分组", "type": "text", "default": "DEFAULT_GROUP" },
+    { "key": "NACOS_FILE_EXTENSION", "label": "配置格式", "type": "text", "default": "yaml" },
+    {
+      "key": "NACOS_SHARED_CONFIGS",
+      "label": "共享配置",
+      "type": "list",
+      "itemFields": [
+        { "key": "DATA_ID", "label": "Data ID", "type": "text", "default": "common-db.yaml" },
+        { "key": "GROUP", "label": "分组", "type": "text", "default": "DEFAULT_GROUP" },
+        { "key": "REFRESH", "label": "自动刷新", "type": "text", "default": "true" }
+      ]
+    }
+  ]
+}

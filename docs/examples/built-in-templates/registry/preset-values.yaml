@@ -16,7 +16,7 @@ service:
   port: 5000
 
 tls:
-  enabled: true
+  enabled: false
   secretName: ""
   autoGenerate: true
   commonName: "registry.paap.local"
@@ -26,7 +26,7 @@ ingress:
   className: ""
   host: "registry.paap.local"
   annotations:
-    nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
     nginx.ingress.kubernetes.io/proxy-body-size: "0"
 
 persistence:

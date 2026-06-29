@@ -1,0 +1,11 @@
+{
+  "key": "nginx-static-cache-conf",
+  "name": "Nginx 静态资源分离缓存",
+  "version": "v1",
+  "description": "静态资源独立缓存、API 请求反代到后端的 Nginx default.conf。",
+  "framework": "nginx",
+  "componentTypes": ["frontend"],
+  "sortOrder": 13,
+  "nativeConfigs": [{ "name": "default.conf", "path": "files/default.conf" }],
+  "files": [{ "name": "Nginx static cache default.conf", "configMapName": "{{configMapName}}", "key": "default.conf", "recommendedMountPath": "/etc/nginx/conf.d/default.conf" }]
+}

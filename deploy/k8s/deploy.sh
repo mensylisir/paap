@@ -4,8 +4,9 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 KIND_CLUSTER="${KIND_CLUSTER:-kind}"
-SERVER_IMAGE="${SERVER_IMAGE:-paap-server:v0.1.534}"
+SERVER_IMAGE="${SERVER_IMAGE:-paap-server:v0.1.537}"
 OPERATOR_IMAGE="${OPERATOR_IMAGE:-paap-operator:v0.1.54}"
+CONTAINER_CLI="${CONTAINER_CLI:-docker}"
 
 echo "=== PAAP Deploy to Kind ==="
 
@@ -17,15 +18,47 @@ inspect_namespace() {
   kubectl get events -n "$namespace" --sort-by=.lastTimestamp | tail -20 || true
 }
 
+apply_crds_from_manifest() {
+  manifest="$1"
+  tmp_file="$(mktemp)"
+  awk '
+    BEGIN { doc = ""; is_crd = 0 }
+    /^---[[:space:]]*$/ {
+      if (doc != "" && is_crd) {
+        printf "%s---\n", doc
+      }
+      doc = ""
+      is_crd = 0
+      next
+    }
+    {
+      doc = doc $0 "\n"
+      if ($0 ~ /^kind:[[:space:]]*CustomResourceDefinition[[:space:]]*$/) {
+        is_crd = 1
+      }
+    }
+    END {
+      if (doc != "" && is_crd) {
+        printf "%s", doc
+      }
+    }
+  ' "$manifest" > "$tmp_file"
+
+  if [ -s "$tmp_file" ]; then
+    kubectl apply -f "$tmp_file"
+  fi
+  rm -f "$tmp_file"
+}
+
 "$PROJECT_DIR/scripts/check-disk-space.sh" before-paap-kind-deploy
 
 # 1. 构建内置模板包和 PAAP 本地镜像
 echo "1. Packaging templates and building PAAP images..."
 cd "$PROJECT_DIR"
 ./scripts/package-built-in-templates.sh
-docker build --build-arg FRONTEND_CACHE_BUST="$(date +%s)" -t "$SERVER_IMAGE" -f Dockerfile.server .
-docker run --rm --entrypoint sh "$SERVER_IMAGE" -c 'test -x /paap-server && ls -l /paap-server'
-docker build -t "$OPERATOR_IMAGE" -f Dockerfile.operator .
+"$CONTAINER_CLI" build --build-arg FRONTEND_CACHE_BUST="$(date +%s)" -t "$SERVER_IMAGE" -f Dockerfile.server .
+"$CONTAINER_CLI" run --rm --entrypoint sh "$SERVER_IMAGE" -c 'test -x /paap-server && ls -l /paap-server'
+"$CONTAINER_CLI" build -t "$OPERATOR_IMAGE" -f Dockerfile.operator .
 
 # 2. 在创建任何 Pod 之前，把所有镜像导入 kind。kind 集群不能访问外网时，这一步必须先完成。
 echo "2. Preloading images into kind cluster '$KIND_CLUSTER'..."
@@ -37,6 +70,18 @@ kubectl apply -f "$SCRIPT_DIR/namespace.yaml"
 
 # 4. 安装 kpack。source 组件默认走 Buildpacks/kpack，必须先有 CRD/controller/webhook。
 echo "4. Installing kpack v0.17.0..."
+apply_crds_from_manifest "$SCRIPT_DIR/kpack-v0.17.0.yaml"
+kubectl wait --for=condition=Established --timeout=120s \
+  crd/builds.kpack.io \
+  crd/builders.kpack.io \
+  crd/buildpacks.kpack.io \
+  crd/clusterbuilders.kpack.io \
+  crd/clusterbuildpacks.kpack.io \
+  crd/clusterlifecycles.kpack.io \
+  crd/clusterstacks.kpack.io \
+  crd/clusterstores.kpack.io \
+  crd/images.kpack.io \
+  crd/sourceresolvers.kpack.io
 kubectl apply -f "$SCRIPT_DIR/kpack-v0.17.0.yaml"
 inspect_namespace kpack
 
@@ -61,7 +106,7 @@ inspect_namespace paap-system
 
 # 8. 初始化模板（data/charts/*.tar.gz 已进入 paap-server 镜像 /charts，再上传到 MinIO）
 echo "8. Initializing templates..."
-kubectl apply -f "$SCRIPT_DIR/init-templates.yaml"
+sed "s#image: paap-server:.*#image: $SERVER_IMAGE#g" "$SCRIPT_DIR/init-templates.yaml" | kubectl apply -f -
 echo "   Template initialization log:"
 kubectl get job,pod -n paap-system -l job-name=init-templates -o wide || true
 kubectl logs -n paap-system job/init-templates --tail=20 || true
@@ -69,6 +114,7 @@ kubectl logs -n paap-system job/init-templates --tail=20 || true
 # 9. 部署 Operator
 echo "9. Deploying Operator..."
 kubectl apply -f "$SCRIPT_DIR/paap-operator.yaml"
+kubectl -n paap-system set image deployment/paap-operator "operator=$OPERATOR_IMAGE"
 
 # 10. 内置共享资源池 CR
 echo "10. Seeding shared resource pool..."
@@ -77,9 +123,15 @@ kubectl apply -f "$SCRIPT_DIR/shared-resource-pool.yaml"
 # 11. 部署 Server
 echo "11. Deploying Server..."
 kubectl apply -f "$SCRIPT_DIR/paap-server.yaml"
+kubectl -n paap-system set image deployment/paap-server "paap-server=$SERVER_IMAGE"
 
-# 12. 直接检查当前状态，不做被动等待
-echo "12. Inspecting current pod status..."
+# 12. 自动配置 PAAP/Keycloak 的浏览器可访问地址。
+# 优先使用 PAAP_PUBLIC_URL / KEYCLOAK_PUBLIC_URL；否则从当前集群 NodePort 自动发现。
+echo "12. Configuring auth endpoints..."
+"$SCRIPT_DIR/configure-auth-endpoints.sh"
+
+# 13. 直接检查当前状态，不做被动等待
+echo "13. Inspecting current pod status..."
 inspect_namespace paap-system
 inspect_namespace kpack
 
@@ -87,8 +139,8 @@ echo ""
 echo "=== PAAP Deployed Successfully ==="
 echo ""
 echo "Services:"
-echo "  PAAP Server:    http://localhost:30091"
-echo "  Keycloak:       http://localhost:30080 (admin/admin)"
+echo "  PAAP Server / Keycloak URLs were configured by configure-auth-endpoints.sh."
+echo "  Override with PAAP_PUBLIC_URL and KEYCLOAK_PUBLIC_URL when using DNS/Ingress."
 echo "  MinIO Console:  http://localhost:30901 (minioadmin/minioadmin123)"
 echo "  PostgreSQL:     paap-postgres.paap-system.svc.cluster.local:5432"
 echo ""

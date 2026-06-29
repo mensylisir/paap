@@ -54,6 +54,11 @@ export function imageTagVersion(imageTag: string) {
   return splitImageRepositoryAndTag(stripRegistryHost(imageTag)).tag
 }
 
+export function hasExplicitNonLatestImageTag(imageTag: string) {
+  const tag = imageTagVersion(imageTag)
+  return Boolean(tag) && tag.toLowerCase() !== 'latest'
+}
+
 export function imageRefFromRegistryFields(registryHost: string, imageTag: string) {
   const trimmedImageTag = String(imageTag || '').trim().replace(/^\/+/, '')
   if (!trimmedImageTag) return ''

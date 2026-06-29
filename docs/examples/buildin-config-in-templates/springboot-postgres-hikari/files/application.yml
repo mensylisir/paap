@@ -1,0 +1,20 @@
+server:
+  port: __TEMPLATE__SERVER_PORT__服务端口__DEFAULT__8080__
+
+spring:
+  application:
+    name: __TEMPLATE__APP_NAME__应用名称__DEFAULT__springboot-postgres-hikari__
+  datasource:
+    driver-class-name: org.postgresql.Driver
+    url: jdbc:postgresql://__TEMPLATE__POSTGRES_HOST__PostgreSQL 地址__DEFAULT__postgresql__:__TEMPLATE__POSTGRES_PORT__PostgreSQL 端口__DEFAULT__5432__/__TEMPLATE__POSTGRES_DATABASE__数据库名__DEFAULT__mydb__?reWriteBatchedInserts=true
+    username: __TEMPLATE__POSTGRES_USERNAME__数据库用户__DEFAULT__postgres__
+    password: ${POSTGRES_PASSWORD}
+    hikari:
+      minimum-idle: 5
+      maximum-pool-size: 20
+      pool-name: HikariPool-Postgres
+  jpa:
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+    show-sql: __TEMPLATE__SHOW_SQL__显示 SQL__DEFAULT__false__
+    hibernate:
+      ddl-auto: __TEMPLATE__JPA_DDL_AUTO__表结构策略__DEFAULT__validate__

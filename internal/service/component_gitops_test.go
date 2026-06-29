@@ -2,10 +2,13 @@ package service
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -16,11 +19,13 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/yaml"
 
+	paapv1 "paap/api/v1"
 	"paap/internal/k8s"
 	"paap/internal/model"
 )
@@ -119,6 +124,28 @@ func TestBuildComponentManifestUsesConfiguredContainerPort(t *testing.T) {
 		t.Fatalf("deployment should expose configured container port:\n%s", deployment)
 	}
 	if !strings.Contains(service, "targetPort: 8000") {
+		t.Fatalf("service should target configured container port:\n%s", service)
+	}
+	if !strings.Contains(service, "port: 80") {
+		t.Fatalf("service should keep default service port:\n%s", service)
+	}
+}
+
+func TestBuildComponentManifestUsesConfiguredServicePort(t *testing.T) {
+	app := model.Application{Name: "测试应用", Identifier: "myapp"}
+	env := model.Environment{Name: "开发", Identifier: "dev"}
+	cfg, err := model.ComponentConfig{ContainerPort: 8888, ServicePort: 8888}.JSON()
+	if err != nil {
+		t.Fatalf("config json: %v", err)
+	}
+	comp := model.Component{Name: "Config", Type: "backend", Image: "registry.local/config", Version: "v1", Replicas: 1, Config: cfg}
+
+	service := BuildComponentServiceManifest(app, env, comp, "config", "myapp-dev")
+
+	if !strings.Contains(service, "port: 8888") {
+		t.Fatalf("service should expose configured service port:\n%s", service)
+	}
+	if !strings.Contains(service, "targetPort: 8888") {
 		t.Fatalf("service should target configured container port:\n%s", service)
 	}
 }
@@ -228,6 +255,26 @@ func TestBuildComponentManifestKeepsExplicitImageTag(t *testing.T) {
 	manifest := BuildComponentManifest(app, env, comp, "backend-1", "myapp-dev")
 	if !strings.Contains(manifest, "image: registry.local:5000/order:v1.2.3") {
 		t.Fatalf("manifest should keep explicit image tag:\n%s", manifest)
+	}
+}
+
+func TestBuildComponentManifestUsesRegistryImageAsDeploymentSource(t *testing.T) {
+	app := model.Application{Name: "测试应用", Identifier: "myapp"}
+	env := model.Environment{Name: "开发", Identifier: "dev"}
+	comp := model.Component{
+		Name:          "订单服务",
+		Type:          "backend",
+		Image:         "docker.io/library/order:v1.2.3",
+		RegistryImage: "10.96.190.247:5000/myapp-dev/order:v1.2.3",
+		Replicas:      1,
+	}
+
+	manifest := BuildComponentManifest(app, env, comp, "backend-1", "myapp-dev")
+	if !strings.Contains(manifest, "image: 10.96.190.247:5000/myapp-dev/order:v1.2.3") {
+		t.Fatalf("manifest should use the image selected from the environment registry:\n%s", manifest)
+	}
+	if strings.Contains(manifest, "image: docker.io/library/order:v1.2.3") {
+		t.Fatalf("manifest must not use stale component image when registryImage is set:\n%s", manifest)
 	}
 }
 
@@ -384,6 +431,47 @@ func TestBuildComponentManifestIncludesGeneratedConfigObjectsAndFileMounts(t *te
 		if !strings.Contains(manifest, want) {
 			t.Fatalf("manifest missing %q:\n%s", want, manifest)
 		}
+	}
+}
+
+func TestBuildComponentManifestRendersPaapTemplateDefaultsInConfigObjects(t *testing.T) {
+	app := model.Application{Name: "测试应用", Identifier: "myapp"}
+	env := model.Environment{Name: "开发", Identifier: "dev"}
+	cfg := model.ComponentConfig{
+		ConfigMaps: []model.ComponentConfigMap{{
+			Name: "orders-api-config",
+			Data: map[string]string{
+				"application.yml": "server:\n  port: [[paap:APP_PORT default=8081]]\n",
+			},
+		}},
+		Secrets: []model.ComponentSecret{{
+			Name: "orders-api-secret",
+			Data: map[string]string{
+				"CONFIG_SERVICE_PASSWORD": "[[paap:CONFIG_SERVICE_PASSWORD default=cfg-pwd-2026]]",
+				"EMPTY_REQUIRED":          "[[paap:EMPTY_REQUIRED]]",
+			},
+		}},
+	}
+	configJSON, err := cfg.JSON()
+	if err != nil {
+		t.Fatalf("encode config: %v", err)
+	}
+	comp := model.Component{Name: "订单服务", Type: "backend", Image: "registry.local/orders", Version: "v1", Replicas: 1, Config: configJSON}
+
+	manifest := BuildComponentManifest(app, env, comp, "orders-api", "myapp-dev")
+
+	expected := []string{
+		"port: 8081",
+		"CONFIG_SERVICE_PASSWORD: cfg-pwd-2026",
+		"EMPTY_REQUIRED: \"\"",
+	}
+	for _, want := range expected {
+		if !strings.Contains(manifest, want) {
+			t.Fatalf("manifest missing %q:\n%s", want, manifest)
+		}
+	}
+	if strings.Contains(manifest, "[[paap:") {
+		t.Fatalf("manifest must not leak PAAP template placeholders:\n%s", manifest)
 	}
 }
 
@@ -706,10 +794,10 @@ func TestDiscoverComponentToolNamespacesPreferLabeledToolNamespaces(t *testing.T
 	}
 }
 
-func TestDiscoverComponentToolNamespacesDefaultToToolIdentityNamespaces(t *testing.T) {
+func TestDiscoverComponentToolNamespacesDoesNotInventMissingTools(t *testing.T) {
 	namespaces := discoverComponentToolNamespaces(t.Context(), nil, "billing", "dev")
-	if namespaces.ArgoCD != "billing-dev-argocd" || namespaces.Gitea != "billing-dev-gitea" || namespaces.Jenkins != "billing-dev-jenkins" {
-		t.Fatalf("unexpected default tool namespaces: %#v", namespaces)
+	if namespaces.ArgoCD != "" || namespaces.Gitea != "" || namespaces.Jenkins != "" {
+		t.Fatalf("tool namespaces must come from real discovered namespaces, got %#v", namespaces)
 	}
 }
 
@@ -814,9 +902,13 @@ func TestBuildComponentJenkinsfileDefaultsToKpackBuildpacks(t *testing.T) {
 	for _, want := range []string{
 		"apiVersion: kpack.io/v1alpha2",
 		"kind: Image",
+		"READY_STATUS=\\$(kubectl get image.kpack.io/${KPACK_IMAGE}",
+		"[ \"\\${READY_STATUS}\" != \"True\" ] && [ -z \"\\${LATEST_IMAGE}\" ]",
+		"kubectl delete image.kpack.io/${KPACK_IMAGE} --wait=true",
+		"kubectl delete builds.kpack.io -l image.kpack.io/image=${KPACK_IMAGE} --ignore-not-found=true --wait=true",
 		"kubectl apply -f kpack-image.yaml",
 		"http://gitea/paap/shop-dev-orders-api-source.git",
-		"GITOPS_DEPLOYMENT = \"components/orders-api/deployment.yaml\"",
+		"IMAGE_TAG = \"v1.2.3\"",
 	} {
 		if !strings.Contains(jenkinsfile, want) {
 			t.Fatalf("Jenkinsfile missing %q:\n%s", want, jenkinsfile)
@@ -830,7 +922,7 @@ func TestBuildComponentJenkinsfileDefaultsToKpackBuildpacks(t *testing.T) {
 	}
 }
 
-func TestBuildComponentJenkinsfileFallsBackToExternalSourceWhenMirrorMissing(t *testing.T) {
+func TestBuildComponentJenkinsfileDoesNotUseExternalSourceWhenMirrorMissing(t *testing.T) {
 	comp := model.Component{
 		ID:            42,
 		Name:          "Orders API",
@@ -842,8 +934,11 @@ func TestBuildComponentJenkinsfileFallsBackToExternalSourceWhenMirrorMissing(t *
 
 	jenkinsfile := buildComponentJenkinsfile(comp, "orders-api", "http://gitea/paap/shop-dev-components.git", false)
 
-	if !strings.Contains(jenkinsfile, `SOURCE_REPO = "https://git.example.com/team/orders.git"`) {
-		t.Fatalf("Jenkinsfile should fall back to external source when mirror is missing:\n%s", jenkinsfile)
+	if strings.Contains(jenkinsfile, `SOURCE_REPO = "https://git.example.com/team/orders.git"`) {
+		t.Fatalf("Jenkinsfile must not use external source when mirror is missing:\n%s", jenkinsfile)
+	}
+	if !strings.Contains(jenkinsfile, `SOURCE_REPO = "http://gitea/paap/shop-dev-components.git"`) {
+		t.Fatalf("Jenkinsfile should fall back to the internal component repository when mirror is missing:\n%s", jenkinsfile)
 	}
 }
 
@@ -879,7 +974,7 @@ func TestBuildComponentJenkinsfileRunsOnKubernetesKubectlAgent(t *testing.T) {
 	}
 }
 
-func TestBuildComponentJenkinsfileUsesUntaggedImageNameForBuildNumberTag(t *testing.T) {
+func TestBuildComponentJenkinsfileUsesPAAPDeployVersionAsBuildTag(t *testing.T) {
 	comp := model.Component{
 		ID:            42,
 		Name:          "Orders API",
@@ -891,15 +986,18 @@ func TestBuildComponentJenkinsfileUsesUntaggedImageNameForBuildNumberTag(t *test
 
 	jenkinsfile := buildComponentJenkinsfile(comp, "orders-api", "http://gitea/paap/shop-dev-components.git", false)
 
-	if strings.Contains(jenkinsfile, `IMAGE_NAME = "registry.shop-dev.corp.example.com:5443/shop-dev/orders-api:v1.2.3"`) {
-		t.Fatalf("IMAGE_NAME must not include a tag when Jenkins appends BUILD_NUMBER:\n%s", jenkinsfile)
+	if strings.Contains(jenkinsfile, "BUILD_NUMBER") {
+		t.Fatalf("Jenkinsfile must use the PAAP deploy version rather than Jenkins build number:\n%s", jenkinsfile)
 	}
 	if !strings.Contains(jenkinsfile, `IMAGE_NAME = "registry.shop-dev.corp.example.com:5443/shop-dev/orders-api"`) {
 		t.Fatalf("Jenkinsfile missing untagged IMAGE_NAME:\n%s", jenkinsfile)
 	}
+	if !strings.Contains(jenkinsfile, `IMAGE_TAG = "v1.2.3"`) || !strings.Contains(jenkinsfile, `tag: ${IMAGE_NAME}:${IMAGE_TAG}`) {
+		t.Fatalf("Jenkinsfile should build the image tag selected by PAAP deploy:\n%s", jenkinsfile)
+	}
 }
 
-func TestBuildComponentJenkinsfileUpdatesGitOpsManifestInsteadOfCallingDeployAPI(t *testing.T) {
+func TestBuildComponentJenkinsfileDoesNotWriteGitOpsManifests(t *testing.T) {
 	comp := model.Component{
 		ID:            42,
 		Name:          "Orders API",
@@ -917,28 +1015,31 @@ func TestBuildComponentJenkinsfileUpdatesGitOpsManifestInsteadOfCallingDeployAPI
 		"source-webhook",
 		"PAAP_SERVER",
 		"curl -sf -X POST",
+		"stage('Update GitOps Manifest')",
+		"GITOPS_DEPLOYMENT",
+		"GITOPS_REPO_PUSH_URL",
+		"sed -i -E",
+		"git remote set-url",
+		"git add",
+		"git commit",
+		"git push",
 	} {
 		if strings.Contains(jenkinsfile, forbidden) {
-			t.Fatalf("Jenkinsfile must not call PAAP deploy APIs (%q):\n%s", forbidden, jenkinsfile)
+			t.Fatalf("Jenkinsfile must not own PAAP/GitOps deployment work (%q):\n%s", forbidden, jenkinsfile)
 		}
 	}
 	for _, want := range []string{
-		"stage('Update GitOps Manifest')",
-		"GITOPS_DEPLOYMENT = \"components/orders-api/deployment.yaml\"",
-		"GITOPS_REPO_PUSH_URL = \"http://paap:paap123456@gitea/paap/shop-dev-components.git\"",
-		"sed -i -E",
-		"git remote set-url origin ${GITOPS_REPO_PUSH_URL}",
-		"git add ${GITOPS_DEPLOYMENT}",
-		"git commit -m \"build orders-api:${tag}\"",
-		"git push origin HEAD:${GITOPS_BRANCH}",
+		"stage('Submit Buildpacks Image')",
+		"kubectl apply -f kpack-image.yaml",
+		"kubectl wait image.kpack.io/${KPACK_IMAGE}",
 	} {
 		if !strings.Contains(jenkinsfile, want) {
-			t.Fatalf("Jenkinsfile missing GitOps update step %q:\n%s", want, jenkinsfile)
+			t.Fatalf("Jenkinsfile missing build step %q:\n%s", want, jenkinsfile)
 		}
 	}
 }
 
-func TestBuildComponentJenkinsfileEscapesGitOpsPushCredentials(t *testing.T) {
+func TestBuildComponentJenkinsfileOmitsGitOpsPushCredentials(t *testing.T) {
 	comp := model.Component{
 		ID:            42,
 		Name:          "Orders API",
@@ -950,8 +1051,8 @@ func TestBuildComponentJenkinsfileEscapesGitOpsPushCredentials(t *testing.T) {
 
 	jenkinsfile := buildComponentJenkinsfile(comp, "orders-api", "http://gitea.internal:3000/paap/shop-dev-components.git", false)
 
-	if !strings.Contains(jenkinsfile, `GITOPS_REPO_PUSH_URL = "http://paap:paap123456@gitea.internal:3000/paap/shop-dev-components.git"`) {
-		t.Fatalf("Jenkinsfile missing authenticated GitOps push URL:\n%s", jenkinsfile)
+	if strings.Contains(jenkinsfile, "paap123456") || strings.Contains(jenkinsfile, "GITOPS_REPO_PUSH_URL") {
+		t.Fatalf("Jenkinsfile must not contain GitOps push credentials:\n%s", jenkinsfile)
 	}
 }
 
@@ -976,7 +1077,43 @@ func TestBuildComponentJenkinsfilePassesBuildContextToKpackSource(t *testing.T) 
 	}
 }
 
-func TestBuildComponentJenkinsfilePinsGoBuildpackVersion(t *testing.T) {
+func TestBuildComponentJenkinsfileSupportsMavenBuildModule(t *testing.T) {
+	comp := model.Component{
+		ID:            42,
+		Name:          "Gateway",
+		Type:          "backend",
+		Image:         "registry.shop-dev.corp.example.com:5443/shop-dev/gateway:v1.2.3",
+		SourceRepoURL: "https://git.example.com/team/piggymetrics.git",
+		SourceBranch:  "master",
+		BuildContext:  ".",
+		BuildModule:   "gateway",
+	}
+
+	jenkinsfile := buildComponentJenkinsfile(comp, "gateway", "http://gitea/paap/shop-dev-components.git", false)
+
+	for _, want := range []string{
+		`BUILD_CONTEXT = "."`,
+		`BUILD_MODULE = "gateway"`,
+		"- name: BP_MAVEN_BUILT_MODULE",
+		`value: "${BUILD_MODULE}"`,
+		"- name: BP_MAVEN_BUILD_ARGUMENTS",
+		`value: "-pl ${BUILD_MODULE} -am -Dmaven.test.skip=true --no-transfer-progress package"`,
+		"- name: BP_JVM_VERSION",
+		`value: "8.*"`,
+	} {
+		if !strings.Contains(jenkinsfile, want) {
+			t.Fatalf("Jenkinsfile missing Maven module setting %q:\n%s", want, jenkinsfile)
+		}
+	}
+	if strings.Contains(jenkinsfile, "BP_GO_VERSION") {
+		t.Fatalf("Maven build must not inherit Go buildpack settings:\n%s", jenkinsfile)
+	}
+	if strings.Contains(jenkinsfile, "subPath: ${BUILD_CONTEXT}") {
+		t.Fatalf("Maven module builds from repository root and must not force source subPath:\n%s", jenkinsfile)
+	}
+}
+
+func TestBuildComponentJenkinsfileDoesNotGuessBuildpackLanguage(t *testing.T) {
 	comp := model.Component{
 		ID:            42,
 		Name:          "Orders API",
@@ -988,13 +1125,46 @@ func TestBuildComponentJenkinsfilePinsGoBuildpackVersion(t *testing.T) {
 
 	jenkinsfile := buildComponentJenkinsfile(comp, "orders-api", "http://gitea/paap/shop-dev-components.git", false)
 
+	for _, unwanted := range []string{"BP_GO_VERSION", "BP_MAVEN_BUILT_MODULE", "BP_JVM_VERSION"} {
+		if strings.Contains(jenkinsfile, unwanted) {
+			t.Fatalf("Jenkinsfile must not inject language-specific buildpack env %q without explicit component build metadata:\n%s", unwanted, jenkinsfile)
+		}
+	}
+}
+
+func TestBuildComponentJenkinsfileInjectsOptionalBuildpackProxy(t *testing.T) {
+	t.Setenv("PAAP_BUILDPACK_HTTP_PROXY", "http://172.20.0.1:10808")
+	t.Setenv("PAAP_BUILDPACK_HTTPS_PROXY", "http://172.20.0.1:10808")
+	t.Setenv("PAAP_BUILDPACK_NO_PROXY", ".svc,.cluster.local,10.0.0.0/8")
+	t.Setenv("PAAP_BUILDPACK_JVM_TYPE", "JDK")
+	t.Setenv("PAAP_BUILDPACK_LOG_LEVEL", "DEBUG")
+
+	comp := model.Component{
+		ID:            42,
+		Name:          "Gateway",
+		Type:          "backend",
+		Image:         "registry.shop-dev.corp.example.com:5443/shop-dev/gateway:v1.2.3",
+		SourceRepoURL: "https://git.example.com/team/piggymetrics.git",
+		SourceBranch:  "master",
+		BuildContext:  ".",
+		BuildModule:   "gateway",
+	}
+
+	jenkinsfile := buildComponentJenkinsfile(comp, "gateway", "http://gitea/paap/shop-dev-components.git", false)
+
 	for _, want := range []string{
-		"env:",
-		"- name: BP_GO_VERSION",
-		"value: \"1.25.*\"",
+		"- name: http_proxy",
+		`value: "http://172.20.0.1:10808"`,
+		"- name: https_proxy",
+		"- name: no_proxy",
+		`value: ".svc,.cluster.local,10.0.0.0/8"`,
+		"- name: BP_JVM_TYPE",
+		`value: "JDK"`,
+		"- name: BP_LOG_LEVEL",
+		`value: "DEBUG"`,
 	} {
 		if !strings.Contains(jenkinsfile, want) {
-			t.Fatalf("Jenkinsfile must pin Go buildpack version with %q:\n%s", want, jenkinsfile)
+			t.Fatalf("Jenkinsfile missing buildpack proxy setting %q:\n%s", want, jenkinsfile)
 		}
 	}
 }
@@ -1046,6 +1216,171 @@ func TestBuildComponentJenkinsfileSkipsKpackRegistryCABindingWhenUnavailable(t *
 	}
 }
 
+func TestComponentSourceInternalBuildImageUsesClusterIPForManagedRegistry(t *testing.T) {
+	previous := k8s.GetClient()
+	t.Cleanup(func() { k8s.SetClient(previous) })
+	k8s.SetClient(fake.NewClientBuilder().WithObjects(&corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "shop-dev-registry",
+			Namespace: "shop-dev-registry",
+			Labels: map[string]string{
+				"app.kubernetes.io/instance": "shop-dev-registry",
+				"app.kubernetes.io/name":     "registry",
+				"paap.io/service-type":       "registry",
+			},
+		},
+		Spec: corev1.ServiceSpec{
+			Type:      corev1.ServiceTypeClusterIP,
+			ClusterIP: "10.96.190.247",
+			Ports:     []corev1.ServicePort{{Name: "registry", Port: 5000}},
+		},
+	}).Build())
+
+	flow := componentFlowContext{
+		App:        model.Application{Identifier: "shop"},
+		Env:        model.Environment{Identifier: "dev"},
+		Identifier: "orders-api",
+		Component: model.Component{
+			DeliveryMode:  "source",
+			Image:         "registry.shop-dev.paap.local/shop-dev/orders-api:v1.2.3",
+			RegistryImage: "registry.shop-dev.paap.local/shop-dev/orders-api:v1.2.3",
+			Version:       "v1.2.3",
+		},
+		Services: []model.ServiceInstallation{{
+			ServiceType: "registry",
+			Status:      "running",
+			Namespace:   "shop-dev-registry",
+			ReleaseName: "shop-dev-registry",
+		}},
+	}
+
+	image := componentSourceInternalBuildImage(t.Context(), flow)
+
+	want := "10.96.190.247:5000/shop-dev/orders-api:v1.2.3"
+	if image != want {
+		t.Fatalf("internal build image = %q, want %q", image, want)
+	}
+	if flow.Component.Image != "registry.shop-dev.paap.local/shop-dev/orders-api:v1.2.3" {
+		t.Fatalf("source helper must not mutate persisted runtime image, got %q", flow.Component.Image)
+	}
+}
+
+func TestComponentSourceInternalBuildImageBuildsRepositoryWhenSourceImageIsEmpty(t *testing.T) {
+	previous := k8s.GetClient()
+	t.Cleanup(func() { k8s.SetClient(previous) })
+	k8s.SetClient(fake.NewClientBuilder().WithObjects(&corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "shop-dev-registry",
+			Namespace: "shop-dev-registry",
+			Labels: map[string]string{
+				"app.kubernetes.io/instance": "shop-dev-registry",
+				"app.kubernetes.io/name":     "registry",
+				"paap.io/service-type":       "registry",
+			},
+		},
+		Spec: corev1.ServiceSpec{
+			Type:      corev1.ServiceTypeClusterIP,
+			ClusterIP: "10.96.190.247",
+			Ports:     []corev1.ServicePort{{Name: "registry", Port: 5000}},
+		},
+	}).Build())
+
+	flow := componentFlowContext{
+		App:        model.Application{Identifier: "shop"},
+		Env:        model.Environment{Identifier: "dev"},
+		Identifier: "gateway",
+		Component: model.Component{
+			DeliveryMode: "source",
+			Version:      "6bb2cf9",
+		},
+		Services: []model.ServiceInstallation{{
+			ServiceType: "registry",
+			Status:      "running",
+			Namespace:   "shop-dev-registry",
+			ReleaseName: "shop-dev-registry",
+		}},
+	}
+
+	image := componentSourceInternalBuildImage(t.Context(), flow)
+
+	want := "10.96.190.247:5000/shop-dev/gateway:6bb2cf9"
+	if image != want {
+		t.Fatalf("internal build image = %q, want %q", image, want)
+	}
+}
+
+func TestComponentSourceInternalBuildImageUsesSelectedSharedRegistry(t *testing.T) {
+	previous := k8s.GetClient()
+	t.Cleanup(func() { k8s.SetClient(previous) })
+	k8s.SetClient(fake.NewClientBuilder().WithObjects(&corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "shared-registry",
+			Namespace: "shared-registry",
+			Labels: map[string]string{
+				"app.kubernetes.io/instance": "shared-registry",
+				"app.kubernetes.io/name":     "registry",
+				"paap.io/service-type":       "registry",
+			},
+		},
+		Spec: corev1.ServiceSpec{
+			Type:      corev1.ServiceTypeClusterIP,
+			ClusterIP: "10.96.10.20",
+			Ports:     []corev1.ServicePort{{Name: "registry", Port: 5000}},
+		},
+	}).Build())
+
+	cfg, err := model.ComponentConfig{
+		RegistryTarget: &model.ComponentRegistryTarget{Key: "capability:9", CapabilityID: 9, Source: model.CapabilitySourceShared},
+	}.JSON()
+	if err != nil {
+		t.Fatalf("encode component config: %v", err)
+	}
+	local := model.ServiceInstallation{ID: 1, ServiceType: "registry", Status: "running", Namespace: "shop-dev-registry", ReleaseName: "shop-dev-registry"}
+	shared := model.ServiceInstallation{ID: 2, ServiceType: "registry", Status: "running", Namespace: "shared-registry", ReleaseName: "shared-registry"}
+	flow := componentFlowContext{
+		App:        model.Application{Identifier: "shop"},
+		Env:        model.Environment{Identifier: "dev"},
+		Identifier: "orders-api",
+		Component: model.Component{
+			DeliveryMode:  "source",
+			Image:         "registry.shared.paap.local/shop-dev/orders-api:v1.2.3",
+			RegistryImage: "registry.shared.paap.local/shop-dev/orders-api:v1.2.3",
+			Version:       "v1.2.3",
+			Config:        cfg,
+		},
+		Targets: []componentDeliveryTarget{
+			{Capability: "registry", Source: model.CapabilitySourceManaged, ServiceType: "registry", Service: &local},
+			{Capability: "registry", CapabilityID: 9, Source: model.CapabilitySourceShared, ServiceType: "registry", Service: &shared},
+		},
+	}
+
+	image := componentSourceInternalBuildImage(t.Context(), flow)
+
+	want := "10.96.10.20:5000/shop-dev/orders-api:v1.2.3"
+	if image != want {
+		t.Fatalf("internal build image = %q, want selected shared registry %q", image, want)
+	}
+}
+
+func TestComponentSourceInternalBuildImageKeepsExternalRegistryEndpoint(t *testing.T) {
+	flow := componentFlowContext{
+		App:        model.Application{Identifier: "shop"},
+		Env:        model.Environment{Identifier: "dev"},
+		Identifier: "orders-api",
+		Component: model.Component{
+			DeliveryMode: "source",
+			Image:        "registry.external.example.com/team/orders-api:v1.2.3",
+			Version:      "v1.2.3",
+		},
+	}
+
+	image := componentSourceInternalBuildImage(t.Context(), flow)
+
+	if image != "registry.external.example.com/team/orders-api:v1.2.3" {
+		t.Fatalf("external registry image must stay user-configured, got %q", image)
+	}
+}
+
 func TestBuildComponentJenkinsJobSpecUsesComponentJenkinsfile(t *testing.T) {
 	app := model.Application{Identifier: "shop"}
 	env := model.Environment{Identifier: "dev"}
@@ -1074,7 +1409,7 @@ func TestBuildComponentKpackSpecUsesEnvironmentRegistry(t *testing.T) {
 		"orders-api",
 	)
 
-	if spec.Namespace != "shop-dev-jenkins" {
+	if spec.Namespace != "" {
 		t.Fatalf("namespace = %q", spec.Namespace)
 	}
 	if spec.RegistryServer != "registry.shop-dev.corp.example.com:5443" {
@@ -1083,7 +1418,7 @@ func TestBuildComponentKpackSpecUsesEnvironmentRegistry(t *testing.T) {
 	if spec.BuilderImage != "registry.shop-dev.corp.example.com:5443/shop-dev/paap-builder:latest" {
 		t.Fatalf("builder image = %q", spec.BuilderImage)
 	}
-	if spec.GitServer != "http://shop-dev-gitea.shop-dev-gitea.svc.cluster.local:3000" {
+	if spec.GitServer != "" {
 		t.Fatalf("git server = %q", spec.GitServer)
 	}
 	if spec.GitUsername != "paap" || spec.GitPassword != "paap123456" {
@@ -1098,6 +1433,170 @@ func TestBuildComponentKpackSpecUsesEnvironmentRegistry(t *testing.T) {
 		spec.BuildpackSources[2] != k8s.PaketoGoBuildpackImage ||
 		spec.BuildpackSources[3] != k8s.PaketoPythonBuildpackImage {
 		t.Fatalf("unexpected buildpack sources: %#v", spec.BuildpackSources)
+	}
+}
+
+func TestBuildComponentKpackSpecMirrorsStackAndBuildpacksForInternalRegistry(t *testing.T) {
+	spec, warning := buildComponentKpackSpecWithRegistryCAMirrors(
+		t.Context(),
+		nil,
+		model.Application{Identifier: "shop"},
+		model.Environment{Identifier: "dev"},
+		"orders-api",
+		true,
+		"10.96.190.247:5000/shop-dev/orders-api:v1",
+	)
+
+	if warning != "" {
+		t.Fatalf("warning = %q", warning)
+	}
+	if spec.RegistryServer != "10.96.190.247:5000" {
+		t.Fatalf("registry server = %q", spec.RegistryServer)
+	}
+	if spec.BuilderImage != "10.96.190.247:5000/shop-dev/paap-builder:latest" {
+		t.Fatalf("builder image = %q", spec.BuilderImage)
+	}
+	if spec.StackBuildImage != "10.96.190.247:5000/shop-dev/paap-build-jammy-base:0.1.233" {
+		t.Fatalf("stack build image = %q", spec.StackBuildImage)
+	}
+	if spec.StackRunImage != "10.96.190.247:5000/shop-dev/paap-run-jammy-base:0.1.233" {
+		t.Fatalf("stack run image = %q", spec.StackRunImage)
+	}
+	wantBuildpacks := []string{
+		"10.96.190.247:5000/shop-dev/paap-buildpack-java:22.0.0",
+		"10.96.190.247:5000/shop-dev/paap-buildpack-nodejs:10.3.2",
+		"10.96.190.247:5000/shop-dev/paap-buildpack-go:4.19.14",
+		"10.96.190.247:5000/shop-dev/paap-buildpack-python:2.49.0",
+	}
+	if !reflect.DeepEqual(spec.BuildpackSources, wantBuildpacks) {
+		t.Fatalf("buildpack sources = %#v", spec.BuildpackSources)
+	}
+}
+
+func TestActionEnsureKpackMirrorImagesCopiesPaketoImagesForInternalRegistry(t *testing.T) {
+	calls := make([]struct {
+		pair componentKpackMirrorImagePair
+		opts k8s.ContainerImageCopyOptions
+	}, 0)
+	previousExists := componentKpackMirrorImageExists
+	previousStart := startComponentKpackMirrorImage
+	componentKpackMirrorImageExists = func(_ context.Context, target string, opts k8s.ContainerImageCopyOptions) (bool, error) {
+		return false, nil
+	}
+	startComponentKpackMirrorImage = func(pair componentKpackMirrorImagePair, opts k8s.ContainerImageCopyOptions) {
+		calls = append(calls, struct {
+			pair componentKpackMirrorImagePair
+			opts k8s.ContainerImageCopyOptions
+		}{pair: pair, opts: opts})
+	}
+	t.Cleanup(func() {
+		componentKpackMirrorImageExists = previousExists
+		startComponentKpackMirrorImage = previousStart
+	})
+
+	flow := componentFlowContext{
+		App:       model.Application{Identifier: "shop"},
+		Env:       model.Environment{Identifier: "dev"},
+		Component: model.Component{Name: "Orders API", Type: "backend", DeliveryMode: "source"},
+		Targets: []componentDeliveryTarget{{
+			Capability:  "registry",
+			ServiceType: "registry",
+			Source:      model.CapabilitySourceManaged,
+			Service:     &model.ServiceInstallation{ID: 7, ServiceType: "registry", Namespace: "shop-dev-registry"},
+		}},
+	}
+	spec := k8s.KpackBuildEnvironmentSpec{
+		StackBuildImage: "10.96.190.247:5000/shop-dev/paap-build-jammy-base:0.1.233",
+		StackRunImage:   "10.96.190.247:5000/shop-dev/paap-run-jammy-base:0.1.233",
+		BuildpackSources: []string{
+			"10.96.190.247:5000/shop-dev/paap-buildpack-java:22.0.0",
+			"10.96.190.247:5000/shop-dev/paap-buildpack-nodejs:10.3.2",
+			"10.96.190.247:5000/shop-dev/paap-buildpack-go:4.19.14",
+			"10.96.190.247:5000/shop-dev/paap-buildpack-python:2.49.0",
+		},
+	}
+
+	warning := actionEnsureKpackMirrorImages(t.Context(), flow, spec)
+	if !strings.Contains(warning, "kpack base images are being mirrored") {
+		t.Fatalf("warning = %q", warning)
+	}
+	if len(calls) != 6 {
+		t.Fatalf("copy calls = %d, want 6: %#v", len(calls), calls)
+	}
+	if calls[0].pair.source != k8s.PaketoBuildJammyBaseImage || calls[0].pair.target != spec.StackBuildImage {
+		t.Fatalf("first copy call = %#v", calls[0])
+	}
+	if !calls[0].opts.TargetInsecure {
+		t.Fatalf("docker registry mirror should use insecure HTTP target: %#v", calls[0].opts)
+	}
+}
+
+func TestActionEnsureKpackMirrorImagesSkipsExternalRegistry(t *testing.T) {
+	calls := 0
+	previousStart := startComponentKpackMirrorImage
+	startComponentKpackMirrorImage = func(pair componentKpackMirrorImagePair, opts k8s.ContainerImageCopyOptions) {
+		calls++
+	}
+	t.Cleanup(func() { startComponentKpackMirrorImage = previousStart })
+
+	flow := componentFlowContext{
+		App:       model.Application{Identifier: "shop"},
+		Env:       model.Environment{Identifier: "dev"},
+		Component: model.Component{Name: "Orders API", Type: "backend", DeliveryMode: "source"},
+		Targets: []componentDeliveryTarget{{
+			Capability:       "registry",
+			ServiceType:      "registry",
+			Source:           model.CapabilitySourceExternal,
+			ExternalEndpoint: "registry.example.com:5000",
+		}},
+	}
+
+	warning := actionEnsureKpackMirrorImages(t.Context(), flow, k8s.KpackBuildEnvironmentSpec{
+		StackBuildImage: "registry.example.com/shop-dev/paap-build-jammy-base:0.1.233",
+	})
+	if warning != "" {
+		t.Fatalf("warning = %q", warning)
+	}
+	if calls != 0 {
+		t.Fatalf("external registry should not be mirrored by PAAP, calls=%d", calls)
+	}
+}
+
+func TestActionEnsureKpackMirrorImagesSkipsExistingImages(t *testing.T) {
+	calls := 0
+	previousExists := componentKpackMirrorImageExists
+	previousStart := startComponentKpackMirrorImage
+	componentKpackMirrorImageExists = func(_ context.Context, target string, opts k8s.ContainerImageCopyOptions) (bool, error) {
+		return true, nil
+	}
+	startComponentKpackMirrorImage = func(pair componentKpackMirrorImagePair, opts k8s.ContainerImageCopyOptions) {
+		calls++
+	}
+	t.Cleanup(func() {
+		componentKpackMirrorImageExists = previousExists
+		startComponentKpackMirrorImage = previousStart
+	})
+
+	flow := componentFlowContext{
+		App:       model.Application{Identifier: "shop"},
+		Env:       model.Environment{Identifier: "dev"},
+		Component: model.Component{Name: "Orders API", Type: "backend", DeliveryMode: "source"},
+		Targets: []componentDeliveryTarget{{
+			Capability:  "registry",
+			ServiceType: "registry",
+			Source:      model.CapabilitySourceManaged,
+			Service:     &model.ServiceInstallation{ID: 7, ServiceType: "registry", Namespace: "shop-dev-registry"},
+		}},
+	}
+
+	warning := actionEnsureKpackMirrorImages(t.Context(), flow, k8s.KpackBuildEnvironmentSpec{
+		StackBuildImage: "10.96.190.247:5000/shop-dev/paap-build-jammy-base:0.1.233",
+	})
+	if warning != "" {
+		t.Fatalf("warning = %q", warning)
+	}
+	if calls != 0 {
+		t.Fatalf("existing images should not be scheduled, calls=%d", calls)
 	}
 }
 
@@ -1130,6 +1629,15 @@ func TestBuildComponentKpackSpecReadsRegistryCAFromPassedClient(t *testing.T) {
 	}
 	if spec.StackRunImage != "registry.shop-dev.corp.example.com:5443/shop-dev/paap-run-jammy-base:registry-ca" {
 		t.Fatalf("stack run image should use PAAP registry CA image, got %q", spec.StackRunImage)
+	}
+	wantBuildpacks := []string{
+		"registry.shop-dev.corp.example.com:5443/shop-dev/paap-buildpack-java:22.0.0",
+		"registry.shop-dev.corp.example.com:5443/shop-dev/paap-buildpack-nodejs:10.3.2",
+		"registry.shop-dev.corp.example.com:5443/shop-dev/paap-buildpack-go:4.19.14",
+		"registry.shop-dev.corp.example.com:5443/shop-dev/paap-buildpack-python:2.49.0",
+	}
+	if !reflect.DeepEqual(spec.BuildpackSources, wantBuildpacks) {
+		t.Fatalf("buildpacks should use PAAP registry mirrors, got %#v", spec.BuildpackSources)
 	}
 }
 
@@ -1250,27 +1758,15 @@ func TestBuildComponentReadmeDescribesAutomaticJenkinsSync(t *testing.T) {
 }
 
 func TestEnsureGiteaSourceMirrorMigratesExternalRepository(t *testing.T) {
-	var createRepoCalled bool
-	var migrateCalled bool
-	var migratedCloneAddr string
-	var migratedRepoName string
+	var payload map[string]interface{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/user/repos":
-			createRepoCalled = true
-			w.WriteHeader(http.StatusCreated)
-		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/repos/migrate":
-			migrateCalled = true
-			var body map[string]interface{}
-			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-				t.Fatalf("decode migrate body: %v", err)
-			}
-			migratedCloneAddr = body["clone_addr"].(string)
-			migratedRepoName = body["repo_name"].(string)
-			w.WriteHeader(http.StatusCreated)
-		default:
+		if r.Method != http.MethodPost || r.URL.Path != "/api/v1/repos/migrate" {
 			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
 		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode payload: %v", err)
+		}
+		w.WriteHeader(http.StatusCreated)
 	}))
 	defer server.Close()
 
@@ -1279,22 +1775,15 @@ func TestEnsureGiteaSourceMirrorMigratesExternalRepository(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ensure source mirror: %v", err)
 	}
-
-	if createRepoCalled {
-		t.Fatalf("source mirror should use Gitea migrate instead of creating an empty repository")
-	}
-	if !migrateCalled {
-		t.Fatalf("expected Gitea migrate API to be called")
-	}
-	if migratedCloneAddr != comp.SourceRepoURL || migratedRepoName != "shop-dev-orders-api-source" {
-		t.Fatalf("unexpected migrate payload: clone=%q repo=%q", migratedCloneAddr, migratedRepoName)
-	}
 	if mirrorURL != server.URL+"/paap/shop-dev-orders-api-source.git" {
 		t.Fatalf("mirror URL = %q", mirrorURL)
 	}
+	if payload["clone_addr"] != comp.SourceRepoURL || payload["repo_name"] != "shop-dev-orders-api-source" || payload["repo_owner"] != "paap" || payload["mirror"] != true {
+		t.Fatalf("unexpected migrate payload: %#v", payload)
+	}
 }
 
-func TestEnsureGiteaSourceMirrorTreatsExistingMirrorAsReady(t *testing.T) {
+func TestEnsureGiteaSourceMirrorReturnsMirrorURLWhenExternalMirrorAlreadyExists(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || r.URL.Path != "/api/v1/repos/migrate" {
 			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
@@ -1308,7 +1797,7 @@ func TestEnsureGiteaSourceMirrorTreatsExistingMirrorAsReady(t *testing.T) {
 		SourceRepoURL: "https://git.example.com/team/orders.git",
 	})
 	if err != nil {
-		t.Fatalf("existing source mirror should be accepted: %v", err)
+		t.Fatalf("ensure source mirror: %v", err)
 	}
 	if mirrorURL != server.URL+"/paap/shop-dev-orders-api-source.git" {
 		t.Fatalf("mirror URL = %q", mirrorURL)
@@ -1334,22 +1823,24 @@ func TestEnsureGiteaSourceMirrorUsesEnvironmentLocalRepoDirectly(t *testing.T) {
 	}
 }
 
-func TestEnsureGiteaSourceMirrorDoesNotTreatUnprocessableMigrateAsReady(t *testing.T) {
+func TestEnsureGiteaSourceMirrorReturnsErrorWhenExternalMigrationFails(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || r.URL.Path != "/api/v1/repos/migrate" {
 			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
 		}
-		w.WriteHeader(http.StatusUnprocessableEntity)
-		_, _ = w.Write([]byte(`{"message":"clone failed"}`))
+		http.Error(w, "clone failed", http.StatusBadGateway)
 	}))
 	defer server.Close()
 
-	_, err := ensureGiteaSourceMirror(t.Context(), server.URL, "shop-dev-orders-api-source", model.Component{
+	mirrorURL, err := ensureGiteaSourceMirror(t.Context(), server.URL, "shop-dev-orders-api-source", model.Component{
 		DeliveryMode:  "source",
 		SourceRepoURL: "https://git.example.com/team/orders.git",
 	})
-	if err == nil || !strings.Contains(err.Error(), "status=422") {
-		t.Fatalf("expected migrate failure to be returned, got %v", err)
+	if err == nil {
+		t.Fatalf("expected migration error")
+	}
+	if mirrorURL != "" {
+		t.Fatalf("mirror URL = %q", mirrorURL)
 	}
 }
 
@@ -1523,6 +2014,907 @@ func TestEnsureComponentJenkinsAutomationCreatesSourceRepositoryWebhook(t *testi
 	}
 }
 
+func TestRunComponentSourceBuildFlowDoesNotPublishGitOpsManifests(t *testing.T) {
+	jenkins := &fakeComponentJenkinsClient{baseURL: "http://jenkins.shop-dev-ci.svc.cluster.local:8080"}
+	previousFactory := newComponentJenkinsClient
+	newComponentJenkinsClient = func(_ string) componentJenkinsClient {
+		return jenkins
+	}
+	t.Cleanup(func() { newComponentJenkinsClient = previousFactory })
+
+	writtenPaths := map[string]bool{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		user, pass, ok := r.BasicAuth()
+		if !ok || user != "paap" || pass != "paap123456" {
+			t.Fatalf("missing gitea basic auth")
+		}
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/user/repos":
+			w.WriteHeader(http.StatusCreated)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/repos/migrate":
+			w.WriteHeader(http.StatusCreated)
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/api/v1/repos/paap/shop-dev-components/contents/components/orders-api/"):
+			http.NotFound(w, r)
+		case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/api/v1/repos/paap/shop-dev-components/contents/components/orders-api/"):
+			writtenPaths[strings.TrimPrefix(r.URL.Path, "/api/v1/repos/paap/shop-dev-components/contents/")] = true
+			w.WriteHeader(http.StatusCreated)
+		case r.Method == http.MethodGet && (r.URL.Path == "/api/v1/repos/paap/shop-dev-components/hooks" || r.URL.Path == "/api/v1/repos/paap/shop-dev-orders-api-source/hooks"):
+			_, _ = w.Write([]byte(`[]`))
+		case r.Method == http.MethodPost && (r.URL.Path == "/api/v1/repos/paap/shop-dev-components/hooks" || r.URL.Path == "/api/v1/repos/paap/shop-dev-orders-api-source/hooks"):
+			w.WriteHeader(http.StatusCreated)
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	flow := componentFlowContext{
+		App:                  model.Application{Identifier: "shop"},
+		Env:                  model.Environment{Identifier: "dev"},
+		Component:            model.Component{Name: "Orders API", Type: "backend", DeliveryMode: "source", Image: "registry.shop-dev.corp.example.com:5443/shop-dev/orders-api:v1", Version: "v1", SourceRepoURL: "https://git.example.com/shop/orders.git", SourceBranch: "main", JenkinsJob: "shop-dev-orders-api-build", PipelineStatus: "planned"},
+		Identifier:           "orders-api",
+		Namespace:            "shop-dev",
+		K8sClient:            kpackReadyClient(t),
+		ToolNamespaces:       componentToolNamespaces{ArgoCD: "shop-dev-deploy", Gitea: "shop-dev-git", Jenkins: "shop-dev-ci"},
+		ProjectName:          "shop-dev",
+		RepositoryName:       "shop-dev-components",
+		RepositoryPath:       "components/orders-api",
+		ManifestPath:         "components/orders-api/deployment.yaml",
+		GiteaBaseURL:         server.URL,
+		RepositoryURL:        server.URL + "/paap/shop-dev-components.git",
+		SourceMirrorName:     "shop-dev-orders-api-source",
+		ArgoCDApplication:    "shop-dev-orders-api",
+		DestinationNamespace: "shop-dev",
+	}
+
+	result, err := RunComponentSourceBuildFlow(t.Context(), flow)
+	if err != nil {
+		t.Fatalf("run source build flow: %v", err)
+	}
+	if result.ArgoCDApplication != "" {
+		t.Fatalf("source build flow must not create ArgoCD application metadata before image exists: %#v", result)
+	}
+	for _, forbidden := range []string{
+		"components/orders-api/deployment.yaml",
+		"components/orders-api/service.yaml",
+		"components/orders-api/config.yaml",
+	} {
+		if writtenPaths[forbidden] {
+			t.Fatalf("source build flow must not write GitOps manifest %s; written=%#v", forbidden, writtenPaths)
+		}
+	}
+	for _, required := range []string{
+		"components/orders-api/Jenkinsfile",
+		"components/orders-api/README.md",
+	} {
+		if !writtenPaths[required] {
+			t.Fatalf("source build flow should write %s; written=%#v", required, writtenPaths)
+		}
+	}
+	if jenkins.ensureCalls != 1 || jenkins.buildCalls != 1 {
+		t.Fatalf("source build flow should configure and trigger Jenkins once, ensure=%d build=%d", jenkins.ensureCalls, jenkins.buildCalls)
+	}
+	if result.CIStatus != "running" {
+		t.Fatalf("ci status = %q, want running", result.CIStatus)
+	}
+}
+
+func TestRunComponentSourceDeliveryFlowRetriesPlannedBuildDespiteStaleKpackFailure(t *testing.T) {
+	jenkins := &fakeComponentJenkinsClient{baseURL: "http://jenkins.shop-dev-ci.svc.cluster.local:8080"}
+	previousFactory := newComponentJenkinsClient
+	newComponentJenkinsClient = func(_ string) componentJenkinsClient {
+		return jenkins
+	}
+	t.Cleanup(func() { newComponentJenkinsClient = previousFactory })
+
+	writtenPaths := map[string]bool{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		user, pass, ok := r.BasicAuth()
+		if !ok || user != "paap" || pass != "paap123456" {
+			t.Fatalf("missing gitea basic auth")
+		}
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/user/repos":
+			w.WriteHeader(http.StatusCreated)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/repos/migrate":
+			w.WriteHeader(http.StatusCreated)
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/api/v1/repos/paap/shop-dev-components/contents/components/orders-api/"):
+			http.NotFound(w, r)
+		case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/api/v1/repos/paap/shop-dev-components/contents/components/orders-api/"):
+			writtenPaths[strings.TrimPrefix(r.URL.Path, "/api/v1/repos/paap/shop-dev-components/contents/")] = true
+			w.WriteHeader(http.StatusCreated)
+		case r.Method == http.MethodGet && (r.URL.Path == "/api/v1/repos/paap/shop-dev-components/hooks" || r.URL.Path == "/api/v1/repos/paap/shop-dev-orders-api-source/hooks"):
+			_, _ = w.Write([]byte(`[]`))
+		case r.Method == http.MethodPost && (r.URL.Path == "/api/v1/repos/paap/shop-dev-components/hooks" || r.URL.Path == "/api/v1/repos/paap/shop-dev-orders-api-source/hooks"):
+			w.WriteHeader(http.StatusCreated)
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+	redirectHTTPHostForTest(t, "shop-dev-git.shop-dev-git.svc.cluster.local:3000", server.URL)
+
+	k8sClient := kpackReadyClient(t)
+	if err := k8sClient.Create(t.Context(), kpackFailedImage("shop-dev-ci", "orders-api", "BuildFailed: failed to build")); err != nil {
+		t.Fatalf("seed failed kpack image: %v", err)
+	}
+	flow := componentFlowContext{
+		App:                  model.Application{Identifier: "shop"},
+		Env:                  model.Environment{Identifier: "dev"},
+		Component:            model.Component{Name: "Orders API", Type: "backend", DeliveryMode: "source", Image: "registry.shop-dev.corp.example.com:5443/shop-dev/orders-api:v1", Version: "v1", SourceRepoURL: "https://git.example.com/shop/orders.git", SourceBranch: "main", JenkinsJob: "shop-dev-orders-api-build", PipelineStatus: "planned"},
+		Identifier:           "orders-api",
+		Namespace:            "shop-dev",
+		K8sClient:            k8sClient,
+		ToolNamespaces:       componentToolNamespaces{ArgoCD: "shop-dev-deploy", Gitea: "shop-dev-git", Jenkins: "shop-dev-ci"},
+		ProjectName:          "shop-dev",
+		RepositoryName:       "shop-dev-components",
+		RepositoryPath:       "components/orders-api",
+		ManifestPath:         "components/orders-api/deployment.yaml",
+		GiteaBaseURL:         server.URL,
+		RepositoryURL:        server.URL + "/paap/shop-dev-components.git",
+		SourceMirrorName:     "shop-dev-orders-api-source",
+		ArgoCDApplication:    "shop-dev-orders-api",
+		DestinationNamespace: "shop-dev",
+	}
+	targets := []componentDeliveryTarget{
+		{ServiceType: "git", Source: model.CapabilitySourceManaged, Service: &model.ServiceInstallation{ID: 1, ServiceType: "git", Status: "running", Namespace: "shop-dev-git"}},
+		{ServiceType: "ci", Source: model.CapabilitySourceManaged, Service: &model.ServiceInstallation{ID: 2, ServiceType: "ci", Status: "running", Namespace: "shop-dev-ci"}},
+	}
+
+	result, err := RunComponentSourceDeliveryFlow(t.Context(), k8sClient, flow.App, flow.Env, flow.Component, flow.Identifier, flow.Namespace, targets)
+	if err != nil {
+		t.Fatalf("run source delivery retry: %v", err)
+	}
+	if result.CIStatus != "running" {
+		t.Fatalf("planned source retry should resubmit build, status=%q warning=%q", result.CIStatus, result.CIWarning)
+	}
+	if jenkins.ensureCalls != 1 || jenkins.buildCalls != 1 {
+		t.Fatalf("source retry should configure and trigger Jenkins once, ensure=%d build=%d", jenkins.ensureCalls, jenkins.buildCalls)
+	}
+	if !writtenPaths["components/orders-api/Jenkinsfile"] || !writtenPaths["components/orders-api/README.md"] {
+		t.Fatalf("source retry should rewrite build files; written=%#v", writtenPaths)
+	}
+	if writtenPaths["components/orders-api/deployment.yaml"] || writtenPaths["components/orders-api/service.yaml"] {
+		t.Fatalf("source retry must not publish GitOps manifests before image is built; written=%#v", writtenPaths)
+	}
+}
+
+func TestRunComponentSourceDeliveryFlowKeepsRunningKpackWarningVisible(t *testing.T) {
+	jenkins := &fakeComponentJenkinsClient{baseURL: "http://jenkins.shop-dev-ci.svc.cluster.local:8080"}
+	previousFactory := newComponentJenkinsClient
+	newComponentJenkinsClient = func(_ string) componentJenkinsClient {
+		return jenkins
+	}
+	t.Cleanup(func() { newComponentJenkinsClient = previousFactory })
+
+	k8sClient := kpackReadyClient(t)
+	if err := k8sClient.Create(t.Context(), kpackRunningImage("shop-dev-ci", "orders-api", "Container export waiting")); err != nil {
+		t.Fatalf("seed running kpack image: %v", err)
+	}
+	targets := []componentDeliveryTarget{
+		{ServiceType: "git", Source: model.CapabilitySourceManaged, Service: &model.ServiceInstallation{ID: 1, ServiceType: "git", Status: "running", Namespace: "shop-dev-git"}},
+		{ServiceType: "ci", Source: model.CapabilitySourceManaged, Service: &model.ServiceInstallation{ID: 2, ServiceType: "ci", Status: "running", Namespace: "shop-dev-ci"}},
+	}
+
+	result, err := RunComponentSourceDeliveryFlow(
+		t.Context(),
+		k8sClient,
+		model.Application{Identifier: "shop"},
+		model.Environment{Identifier: "dev"},
+		model.Component{
+			Name:                "Orders API",
+			Type:                "backend",
+			DeliveryMode:        "source",
+			Image:               "registry.shop-dev.corp.example.com:5443/shop-dev/orders-api:v1",
+			Version:             "v1",
+			SourceRepoURL:       "https://git.example.com/shop/orders.git",
+			SourceMirrorRepoURL: "http://gitea/paap/shop-dev-orders-api-source.git",
+			SourceBranch:        "main",
+			JenkinsJob:          "shop-dev-orders-api-build",
+			PipelineStatus:      "running",
+		},
+		"orders-api",
+		"shop-dev",
+		targets,
+	)
+	if err != nil {
+		t.Fatalf("run source delivery: %v", err)
+	}
+	if result.CIStatus != "running" || !strings.Contains(result.CIWarning, "Container export waiting") {
+		t.Fatalf("running kpack warning should be surfaced, got status=%q warning=%q", result.CIStatus, result.CIWarning)
+	}
+	if jenkins.ensureCalls != 0 || jenkins.buildCalls != 0 {
+		t.Fatalf("running kpack build must not reconfigure Jenkins, ensure=%d build=%d", jenkins.ensureCalls, jenkins.buildCalls)
+	}
+	if result.ArgoCDApplication != "" {
+		t.Fatalf("running source build must not publish GitOps deployment yet: %#v", result)
+	}
+}
+
+func TestRunComponentSourceBuildFlowRequiresGitAndCI(t *testing.T) {
+	flow := componentFlowContext{
+		App:                  model.Application{Identifier: "shop"},
+		Env:                  model.Environment{Identifier: "dev"},
+		Component:            model.Component{Name: "Orders API", Type: "backend", DeliveryMode: "source", Image: "registry.example.com/shop/orders-api:v1", Version: "v1", SourceRepoURL: "https://git.example.com/shop/orders.git"},
+		Identifier:           "orders-api",
+		Namespace:            "shop-dev",
+		RepositoryName:       "shop-dev-components",
+		RepositoryPath:       "components/orders-api",
+		ManifestPath:         "components/orders-api/deployment.yaml",
+		DestinationNamespace: "shop-dev",
+	}
+
+	_, err := RunComponentSourceBuildFlow(t.Context(), flow)
+	if err == nil || !strings.Contains(err.Error(), "environment git service is required before source delivery") {
+		t.Fatalf("source build without git service error = %v", err)
+	}
+
+	flow.ToolNamespaces.Gitea = "shop-dev-git"
+	flow.GiteaBaseURL = "http://gitea"
+	flow.RepositoryURL = "http://gitea/paap/shop-dev-components.git"
+	_, err = RunComponentSourceBuildFlow(t.Context(), flow)
+	if err == nil || !strings.Contains(err.Error(), "environment ci service is required before source delivery") {
+		t.Fatalf("source build without ci service error = %v", err)
+	}
+}
+
+func TestRunComponentImageDeliveryFlowPublishesGitOpsAndConfiguresArgoCD(t *testing.T) {
+	writtenPaths := map[string]string{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		user, pass, ok := r.BasicAuth()
+		if !ok || user != "paap" || pass != "paap123456" {
+			t.Fatalf("missing gitea basic auth")
+		}
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/user/repos":
+			w.WriteHeader(http.StatusCreated)
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/api/v1/repos/paap/shop-dev-components/contents/components/orders-api/"):
+			http.NotFound(w, r)
+		case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/api/v1/repos/paap/shop-dev-components/contents/components/orders-api/"):
+			var body struct {
+				Content string `json:"content"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatalf("decode gitea file body: %v", err)
+			}
+			data, err := base64.StdEncoding.DecodeString(body.Content)
+			if err != nil {
+				t.Fatalf("decode gitea content: %v", err)
+			}
+			writtenPaths[strings.TrimPrefix(r.URL.Path, "/api/v1/repos/paap/shop-dev-components/contents/")] = string(data)
+			w.WriteHeader(http.StatusCreated)
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	k8sClient := gitOpsFlowClient(t)
+	app := model.Application{Identifier: "shop"}
+	env := model.Environment{Identifier: "dev"}
+	comp := model.Component{Name: "Orders API", Type: "backend", DeliveryMode: "image", Image: "registry.shop-dev.svc.cluster.local:5000/shop-dev/orders-api:v1", Version: "v1", Replicas: 2}
+	flow := componentFlowContext{
+		App:                  app,
+		Env:                  env,
+		Component:            comp,
+		Identifier:           "orders-api",
+		Namespace:            "shop-dev",
+		K8sClient:            k8sClient,
+		ToolNamespaces:       componentToolNamespaces{ArgoCD: "shop-dev-deploy", Gitea: "shop-dev-git", Jenkins: "shop-dev-ci"},
+		ProjectName:          "shop-dev",
+		RepositoryName:       "shop-dev-components",
+		RepositoryPath:       "components/orders-api",
+		ManifestPath:         "components/orders-api/deployment.yaml",
+		GiteaBaseURL:         server.URL,
+		RepositoryURL:        server.URL + "/paap/shop-dev-components.git",
+		ArgoCDApplication:    "shop-dev-orders-api",
+		DestinationNamespace: "shop-dev",
+	}
+
+	result, err := RunComponentGitOpsDeploymentFlow(t.Context(), flow)
+	if err != nil {
+		t.Fatalf("run image delivery flow: %v", err)
+	}
+	if result.ArgoCDApplication != "shop-dev-orders-api" || result.RepositoryPath != "components/orders-api" {
+		t.Fatalf("unexpected result: %#v", result)
+	}
+	for _, required := range []string{
+		"components/orders-api/deployment.yaml",
+		"components/orders-api/service.yaml",
+	} {
+		if strings.TrimSpace(writtenPaths[required]) == "" {
+			t.Fatalf("image delivery should write %s; written=%#v", required, writtenPaths)
+		}
+	}
+	if writtenPaths["components/orders-api/Jenkinsfile"] != "" {
+		t.Fatalf("image delivery must not write Jenkinsfile; written=%#v", writtenPaths)
+	}
+	if !strings.Contains(writtenPaths["components/orders-api/deployment.yaml"], "image: registry.shop-dev.svc.cluster.local:5000/shop-dev/orders-api:v1") {
+		t.Fatalf("deployment manifest should use selected image:\n%s", writtenPaths["components/orders-api/deployment.yaml"])
+	}
+	assertGitOpsConfigured(t, k8sClient, "shop-dev-deploy", "shop-dev", "shop-dev-orders-api")
+}
+
+func TestReconcileEnvironmentGitOpsPersistsImageDeliveryMetadata(t *testing.T) {
+	writtenPaths := map[string]string{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		user, pass, ok := r.BasicAuth()
+		if !ok || user != "paap" || pass != "paap123456" {
+			t.Fatalf("missing gitea basic auth")
+		}
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/user/repos":
+			w.WriteHeader(http.StatusCreated)
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/api/v1/repos/paap/shop-dev-components/contents/components/orders-api/"):
+			http.NotFound(w, r)
+		case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/api/v1/repos/paap/shop-dev-components/contents/components/orders-api/"):
+			var body struct {
+				Content string `json:"content"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatalf("decode gitea file body: %v", err)
+			}
+			data, err := base64.StdEncoding.DecodeString(body.Content)
+			if err != nil {
+				t.Fatalf("decode gitea content: %v", err)
+			}
+			writtenPaths[strings.TrimPrefix(r.URL.Path, "/api/v1/repos/paap/shop-dev-components/contents/")] = string(data)
+			w.WriteHeader(http.StatusCreated)
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+	redirectHTTPHostForTest(t, "shop-dev-git.shop-dev-git.svc.cluster.local:3000", server.URL)
+
+	db, err := openTestDB(t)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := db.AutoMigrate(&model.Application{}, &model.Environment{}, &model.ServiceInstallation{}, &model.Component{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	app := model.Application{Name: "Shop", Identifier: "shop"}
+	if err := db.Create(&app).Error; err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	env := model.Environment{ApplicationID: app.ID, Name: "Dev", Identifier: "dev", Namespace: "shop-dev"}
+	if err := db.Create(&env).Error; err != nil {
+		t.Fatalf("create env: %v", err)
+	}
+	inst := model.ServiceInstallation{EnvironmentID: env.ID, ServiceType: "deploy", Status: "running", Namespace: "shop-dev-deploy"}
+	if err := db.Create(&inst).Error; err != nil {
+		t.Fatalf("create service installation: %v", err)
+	}
+	comp := model.Component{EnvironmentID: env.ID, Name: "Orders API", Type: "backend", DeliveryMode: "image", Image: "registry.shop-dev.svc.cluster.local:5000/shop-dev/orders-api:v1", Version: "v1", Replicas: 2, Status: "draft"}
+	if err := db.Create(&comp).Error; err != nil {
+		t.Fatalf("create component: %v", err)
+	}
+
+	k8sClient := gitOpsFlowClient(t)
+	workspace, errs := ReconcileEnvironmentGitOps(t.Context(), db, k8sClient, app, env, inst, []model.Component{comp})
+	if len(errs) > 0 {
+		t.Fatalf("reconcile errors: %#v", errs)
+	}
+	if workspace.Kind != "gitops" || len(workspace.Resources) != 1 {
+		t.Fatalf("workspace should be rebuilt from persisted components, got %#v", workspace)
+	}
+	if strings.TrimSpace(writtenPaths["components/orders-api/deployment.yaml"]) == "" || strings.TrimSpace(writtenPaths["components/orders-api/service.yaml"]) == "" {
+		t.Fatalf("reconcile should publish GitOps manifests; written=%#v", writtenPaths)
+	}
+
+	var saved model.Component
+	if err := db.First(&saved, comp.ID).Error; err != nil {
+		t.Fatalf("load saved component: %v", err)
+	}
+	if saved.GitRepoURL != "http://shop-dev-git.shop-dev-git.svc.cluster.local:3000/paap/shop-dev-components.git" ||
+		saved.GitPath != "components/orders-api" ||
+		saved.ArgoCDApp != "shop-dev-orders-api" ||
+		saved.Status != "syncing" {
+		t.Fatalf("component GitOps metadata was not persisted: %#v", saved)
+	}
+	assertGitOpsConfigured(t, k8sClient, "shop-dev-deploy", "shop-dev", "shop-dev-orders-api")
+}
+
+func TestReconcileEnvironmentGitOpsDeploysSourceComponentAfterKpackImageReady(t *testing.T) {
+	jenkins := &fakeComponentJenkinsClient{baseURL: "http://jenkins.shop-dev-ci.svc.cluster.local:8080"}
+	previousFactory := newComponentJenkinsClient
+	newComponentJenkinsClient = func(_ string) componentJenkinsClient {
+		return jenkins
+	}
+	t.Cleanup(func() { newComponentJenkinsClient = previousFactory })
+
+	writtenPaths := map[string]string{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		user, pass, ok := r.BasicAuth()
+		if !ok || user != "paap" || pass != "paap123456" {
+			t.Fatalf("missing gitea basic auth")
+		}
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/user/repos":
+			w.WriteHeader(http.StatusCreated)
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/api/v1/repos/paap/shop-dev-components/contents/components/orders-api/"):
+			http.NotFound(w, r)
+		case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/api/v1/repos/paap/shop-dev-components/contents/components/orders-api/"):
+			var body struct {
+				Content string `json:"content"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatalf("decode gitea file body: %v", err)
+			}
+			data, err := base64.StdEncoding.DecodeString(body.Content)
+			if err != nil {
+				t.Fatalf("decode gitea content: %v", err)
+			}
+			writtenPaths[strings.TrimPrefix(r.URL.Path, "/api/v1/repos/paap/shop-dev-components/contents/")] = string(data)
+			w.WriteHeader(http.StatusCreated)
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+	redirectHTTPHostForTest(t, "shop-dev-git.shop-dev-git.svc.cluster.local:3000", server.URL)
+
+	db, err := openTestDB(t)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := db.AutoMigrate(&model.Application{}, &model.Environment{}, &model.ServiceInstallation{}, &model.Component{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	app := model.Application{Name: "Shop", Identifier: "shop"}
+	if err := db.Create(&app).Error; err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	env := model.Environment{ApplicationID: app.ID, Name: "Dev", Identifier: "dev", Namespace: "shop-dev"}
+	if err := db.Create(&env).Error; err != nil {
+		t.Fatalf("create env: %v", err)
+	}
+	inst := model.ServiceInstallation{EnvironmentID: env.ID, ServiceType: "deploy", Status: "running", Namespace: "shop-dev-deploy"}
+	if err := db.Create(&inst).Error; err != nil {
+		t.Fatalf("create service installation: %v", err)
+	}
+	comp := model.Component{
+		EnvironmentID:       env.ID,
+		Name:                "Orders API",
+		Type:                "backend",
+		DeliveryMode:        "source",
+		Image:               "registry.shop-dev.svc.cluster.local:5000/shop-dev/orders-api:v2",
+		RegistryImage:       "registry.shop-dev.svc.cluster.local:5000/shop-dev/orders-api:v2",
+		Version:             "v2",
+		Replicas:            2,
+		Status:              "building",
+		PipelineStatus:      "running",
+		SourceMirrorRepoURL: server.URL + "/paap/shop-dev-orders-api-source.git",
+	}
+	if err := db.Create(&comp).Error; err != nil {
+		t.Fatalf("create component: %v", err)
+	}
+
+	k8sClient := gitOpsFlowClient(t)
+	if err := k8sClient.Create(t.Context(), kpackReadyImage("shop-dev-ci", "orders-api", comp.Image)); err != nil {
+		t.Fatalf("create kpack image: %v", err)
+	}
+	workspace, errs := ReconcileEnvironmentGitOps(t.Context(), db, k8sClient, app, env, inst, []model.Component{comp})
+	if len(errs) > 0 {
+		t.Fatalf("reconcile errors: %#v", errs)
+	}
+	if workspace.Kind != "gitops" || len(workspace.Resources) != 1 {
+		t.Fatalf("workspace should be rebuilt from persisted components, got %#v", workspace)
+	}
+	if jenkins.ensureCalls != 0 || jenkins.buildCalls != 0 {
+		t.Fatalf("ready source build must not reconfigure Jenkins, ensure=%d build=%d", jenkins.ensureCalls, jenkins.buildCalls)
+	}
+	if strings.TrimSpace(writtenPaths["components/orders-api/deployment.yaml"]) == "" || strings.TrimSpace(writtenPaths["components/orders-api/service.yaml"]) == "" {
+		t.Fatalf("ready source build should publish GitOps manifests; written=%#v", writtenPaths)
+	}
+	if writtenPaths["components/orders-api/Jenkinsfile"] != "" {
+		t.Fatalf("ready source build must not rewrite Jenkinsfile; written=%#v", writtenPaths)
+	}
+
+	var saved model.Component
+	if err := db.First(&saved, comp.ID).Error; err != nil {
+		t.Fatalf("load saved component: %v", err)
+	}
+	if saved.PipelineStatus != "built" || saved.Status != "syncing" || saved.ArgoCDApp != "shop-dev-orders-api" {
+		t.Fatalf("source component was not advanced to GitOps deployment: %#v", saved)
+	}
+	if saved.SourceMirrorRepoURL != comp.SourceMirrorRepoURL {
+		t.Fatalf("source mirror should be retained, got %q", saved.SourceMirrorRepoURL)
+	}
+	assertGitOpsConfigured(t, k8sClient, "shop-dev-deploy", "shop-dev", "shop-dev-orders-api")
+}
+
+func TestCompletePendingComponentSourceDeliveryPublishesGitOpsAfterKpackReady(t *testing.T) {
+	t.Setenv(RegistryHostTemplateEnv, "registry.{app}-{env}.paap.local")
+
+	writtenPaths := map[string]string{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		user, pass, ok := r.BasicAuth()
+		if !ok || user != "paap" || pass != "paap123456" {
+			t.Fatalf("missing gitea basic auth")
+		}
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/user/repos":
+			w.WriteHeader(http.StatusCreated)
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/api/v1/repos/paap/shop-dev-components/contents/components/orders-api/"):
+			http.NotFound(w, r)
+		case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/api/v1/repos/paap/shop-dev-components/contents/components/orders-api/"):
+			var body struct {
+				Content string `json:"content"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatalf("decode gitea file body: %v", err)
+			}
+			data, err := base64.StdEncoding.DecodeString(body.Content)
+			if err != nil {
+				t.Fatalf("decode gitea content: %v", err)
+			}
+			writtenPaths[strings.TrimPrefix(r.URL.Path, "/api/v1/repos/paap/shop-dev-components/contents/")] = string(data)
+			w.WriteHeader(http.StatusCreated)
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+	redirectHTTPHostForTest(t, "shop-dev-git.shop-dev-git.svc.cluster.local:3000", server.URL)
+
+	db, err := openTestDB(t)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := db.AutoMigrate(&model.Application{}, &model.Environment{}, &model.ServiceInstallation{}, &model.Component{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	app := model.Application{Name: "Shop", Identifier: "shop"}
+	if err := db.Create(&app).Error; err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	env := model.Environment{ApplicationID: app.ID, Name: "Dev", Identifier: "dev", Namespace: "shop-dev"}
+	if err := db.Create(&env).Error; err != nil {
+		t.Fatalf("create env: %v", err)
+	}
+	for _, inst := range []model.ServiceInstallation{
+		{EnvironmentID: env.ID, ServiceName: "dev-git", ServiceType: "git", Status: "running", Namespace: "shop-dev-git", ReleaseName: "shop-dev-git"},
+		{EnvironmentID: env.ID, ServiceName: "dev-ci", ServiceType: "ci", Status: "running", Namespace: "shop-dev-ci", ReleaseName: "shop-dev-ci"},
+		{EnvironmentID: env.ID, ServiceName: "dev-deploy", ServiceType: "deploy", Status: "running", Namespace: "shop-dev-deploy", ReleaseName: "shop-dev-deploy"},
+		{EnvironmentID: env.ID, ServiceName: "dev-registry", ServiceType: "registry", Status: "running", Namespace: "shop-dev-registry", ReleaseName: "shop-dev-registry"},
+	} {
+		if err := db.Create(&inst).Error; err != nil {
+			t.Fatalf("create service installation: %v", err)
+		}
+	}
+	comp := model.Component{
+		EnvironmentID:       env.ID,
+		Name:                "Orders API",
+		Type:                "backend",
+		DeliveryMode:        "source",
+		Image:               "registry.shop-dev.paap.local/shop-dev/orders-api:v2",
+		RegistryImage:       "registry.shop-dev.paap.local/shop-dev/orders-api:v2",
+		Version:             "v2",
+		Replicas:            2,
+		Status:              "building",
+		PipelineStatus:      "running",
+		SourceMirrorRepoURL: server.URL + "/paap/shop-dev-orders-api-source.git",
+	}
+	if err := db.Create(&comp).Error; err != nil {
+		t.Fatalf("create component: %v", err)
+	}
+
+	k8sClient := gitOpsFlowClient(t)
+	if err := k8sClient.Create(t.Context(), kpackReadyImage("shop-dev-ci", "orders-api", "10.96.190.247:5000/shop-dev/orders-api@sha256:abc")); err != nil {
+		t.Fatalf("create kpack image: %v", err)
+	}
+	previous := k8s.GetClient()
+	k8s.SetClient(k8sClient)
+	t.Cleanup(func() { k8s.SetClient(previous) })
+
+	done, err := completePendingComponentSourceDelivery(t.Context(), db, k8sClient, comp.ID)
+	if err != nil {
+		t.Fatalf("complete pending source delivery: %v", err)
+	}
+	if !done {
+		t.Fatalf("ready kpack image should complete source delivery")
+	}
+	deployment := writtenPaths["components/orders-api/deployment.yaml"]
+	if !strings.Contains(deployment, "image: registry.shop-dev.paap.local/shop-dev/orders-api:v2") {
+		t.Fatalf("deployment should use runtime registry image, got:\n%s", deployment)
+	}
+	if strings.Contains(deployment, "10.96.190.247:5000") {
+		t.Fatalf("deployment must not publish internal build image, got:\n%s", deployment)
+	}
+	var saved model.Component
+	if err := db.First(&saved, comp.ID).Error; err != nil {
+		t.Fatalf("load saved component: %v", err)
+	}
+	if saved.PipelineStatus != "built" || saved.Status != "syncing" || saved.ArgoCDApp != "shop-dev-orders-api" {
+		t.Fatalf("component should be advanced to GitOps deployment: %#v", saved)
+	}
+	runtimeComp := &paapv1.Component{}
+	if err := k8sClient.Get(t.Context(), types.NamespacedName{Name: "dev-orders-api", Namespace: "paap-app-shop"}, runtimeComp); err != nil {
+		t.Fatalf("runtime component CR should be upserted: %v", err)
+	}
+	if runtimeComp.Spec.Deployment.Image != "registry.shop-dev.paap.local/shop-dev/orders-api:v2" {
+		t.Fatalf("runtime component CR image = %q", runtimeComp.Spec.Deployment.Image)
+	}
+	assertGitOpsConfigured(t, k8sClient, "shop-dev-deploy", "shop-dev", "shop-dev-orders-api")
+}
+
+func TestReconcileEnvironmentGitOpsMarksFailedKpackSourceBuild(t *testing.T) {
+	db, err := openTestDB(t)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := db.AutoMigrate(&model.Application{}, &model.Environment{}, &model.ServiceInstallation{}, &model.Component{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	app := model.Application{Name: "Shop", Identifier: "shop"}
+	if err := db.Create(&app).Error; err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	env := model.Environment{ApplicationID: app.ID, Name: "Dev", Identifier: "dev", Namespace: "shop-dev"}
+	if err := db.Create(&env).Error; err != nil {
+		t.Fatalf("create env: %v", err)
+	}
+	inst := model.ServiceInstallation{EnvironmentID: env.ID, ServiceType: "deploy", Status: "running", Namespace: "shop-dev-deploy"}
+	ci := model.ServiceInstallation{EnvironmentID: env.ID, ServiceType: "ci", Status: "running", Namespace: "shop-dev-ci"}
+	if err := db.Create(&inst).Error; err != nil {
+		t.Fatalf("create deploy service: %v", err)
+	}
+	if err := db.Create(&ci).Error; err != nil {
+		t.Fatalf("create ci service: %v", err)
+	}
+	comp := model.Component{
+		EnvironmentID:       env.ID,
+		Name:                "Orders API",
+		Type:                "backend",
+		DeliveryMode:        "source",
+		Image:               "registry.shop-dev.paap.local/shop-dev/orders-api:v2",
+		RegistryImage:       "registry.shop-dev.paap.local/shop-dev/orders-api:v2",
+		Version:             "v2",
+		Replicas:            1,
+		Status:              "building",
+		PipelineStatus:      "running",
+		SourceMirrorRepoURL: "http://gitea/paap/shop-dev-orders-api-source.git",
+	}
+	if err := db.Create(&comp).Error; err != nil {
+		t.Fatalf("create component: %v", err)
+	}
+
+	k8sClient := gitOpsFlowClient(t)
+	if err := k8sClient.Create(t.Context(), kpackFailedImage("shop-dev-ci", "orders-api", "BuildFailed: failed to build: exit status 1")); err != nil {
+		t.Fatalf("create failed kpack image: %v", err)
+	}
+	_, errs := ReconcileEnvironmentGitOps(t.Context(), db, k8sClient, app, env, inst, []model.Component{comp})
+	if len(errs) > 0 {
+		t.Fatalf("reconcile errors: %#v", errs)
+	}
+
+	var saved model.Component
+	if err := db.First(&saved, comp.ID).Error; err != nil {
+		t.Fatalf("load saved component: %v", err)
+	}
+	if saved.PipelineStatus != "failed" || saved.Status != "error" {
+		t.Fatalf("failed build status not persisted: pipeline=%q status=%q", saved.PipelineStatus, saved.Status)
+	}
+	if !strings.Contains(saved.ErrorMessage, "BuildFailed") {
+		t.Fatalf("error message should include kpack failure, got %q", saved.ErrorMessage)
+	}
+	if saved.Image != comp.Image || saved.RegistryImage != comp.RegistryImage {
+		t.Fatalf("failed build must not rewrite declared image: image=%q registry=%q", saved.Image, saved.RegistryImage)
+	}
+}
+
+func TestRunComponentImageDeliveryFlowRequiresGitAndCD(t *testing.T) {
+	flow := componentFlowContext{
+		App:                  model.Application{Identifier: "shop"},
+		Env:                  model.Environment{Identifier: "dev"},
+		Component:            model.Component{Name: "Orders API", Type: "backend", DeliveryMode: "image", Image: "registry.example.com/shop/orders-api:v1", Version: "v1", Replicas: 1},
+		Identifier:           "orders-api",
+		Namespace:            "shop-dev",
+		RepositoryName:       "shop-dev-components",
+		RepositoryPath:       "components/orders-api",
+		ManifestPath:         "components/orders-api/deployment.yaml",
+		ArgoCDApplication:    "shop-dev-orders-api",
+		DestinationNamespace: "shop-dev",
+	}
+
+	_, err := RunComponentGitOpsDeploymentFlow(t.Context(), flow)
+	if err == nil || !strings.Contains(err.Error(), "environment git service is required before GitOps delivery") {
+		t.Fatalf("image delivery without git service error = %v", err)
+	}
+
+	flow.ToolNamespaces.Gitea = "shop-dev-git"
+	flow.GiteaBaseURL = "http://gitea"
+	flow.RepositoryURL = "http://gitea/paap/shop-dev-components.git"
+	_, err = RunComponentGitOpsDeploymentFlow(t.Context(), flow)
+	if err == nil || !strings.Contains(err.Error(), "environment cd service is required before GitOps delivery") {
+		t.Fatalf("image delivery without cd service error = %v", err)
+	}
+}
+
+type rewriteHostRoundTripper struct {
+	base   http.RoundTripper
+	source string
+	target *url.URL
+}
+
+func (r rewriteHostRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	if req.URL.Host == r.source {
+		clone := req.Clone(req.Context())
+		clone.URL.Scheme = r.target.Scheme
+		clone.URL.Host = r.target.Host
+		clone.Host = r.target.Host
+		req = clone
+	}
+	return r.base.RoundTrip(req)
+}
+
+func redirectHTTPHostForTest(t *testing.T, sourceHost, targetURL string) {
+	t.Helper()
+	target, err := url.Parse(targetURL)
+	if err != nil {
+		t.Fatalf("parse target url: %v", err)
+	}
+	previous := http.DefaultTransport
+	base := previous
+	if base == nil {
+		base = http.DefaultTransport
+	}
+	http.DefaultTransport = rewriteHostRoundTripper{base: base, source: sourceHost, target: target}
+	t.Cleanup(func() { http.DefaultTransport = previous })
+}
+
+func TestRunComponentSourceDeliveryFlowDeploysGitOpsAfterImageIsBuilt(t *testing.T) {
+	jenkins := &fakeComponentJenkinsClient{baseURL: "http://jenkins.shop-dev-ci.svc.cluster.local:8080"}
+	previousFactory := newComponentJenkinsClient
+	newComponentJenkinsClient = func(_ string) componentJenkinsClient {
+		return jenkins
+	}
+	t.Cleanup(func() { newComponentJenkinsClient = previousFactory })
+
+	writtenPaths := map[string]string{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		user, pass, ok := r.BasicAuth()
+		if !ok || user != "paap" || pass != "paap123456" {
+			t.Fatalf("missing gitea basic auth")
+		}
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/user/repos":
+			w.WriteHeader(http.StatusCreated)
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/api/v1/repos/paap/shop-dev-components/contents/components/orders-api/"):
+			http.NotFound(w, r)
+		case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/api/v1/repos/paap/shop-dev-components/contents/components/orders-api/"):
+			var body struct {
+				Content string `json:"content"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatalf("decode gitea file body: %v", err)
+			}
+			data, err := base64.StdEncoding.DecodeString(body.Content)
+			if err != nil {
+				t.Fatalf("decode gitea content: %v", err)
+			}
+			writtenPaths[strings.TrimPrefix(r.URL.Path, "/api/v1/repos/paap/shop-dev-components/contents/")] = string(data)
+			w.WriteHeader(http.StatusCreated)
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	k8sClient := gitOpsFlowClient(t)
+	app := model.Application{Identifier: "shop"}
+	env := model.Environment{Identifier: "dev"}
+	comp := model.Component{Name: "Orders API", Type: "backend", DeliveryMode: "source", Image: "registry.shop-dev.svc.cluster.local:5000/shop-dev/orders-api:v2", Version: "v2", Replicas: 1, PipelineStatus: "built", SourceMirrorRepoURL: server.URL + "/paap/shop-dev-orders-api-source.git"}
+	flow := componentFlowContext{
+		App:                  app,
+		Env:                  env,
+		Component:            comp,
+		Identifier:           "orders-api",
+		Namespace:            "shop-dev",
+		K8sClient:            k8sClient,
+		ToolNamespaces:       componentToolNamespaces{ArgoCD: "shop-dev-deploy", Gitea: "shop-dev-git", Jenkins: "shop-dev-ci"},
+		ProjectName:          "shop-dev",
+		RepositoryName:       "shop-dev-components",
+		RepositoryPath:       "components/orders-api",
+		ManifestPath:         "components/orders-api/deployment.yaml",
+		GiteaBaseURL:         server.URL,
+		RepositoryURL:        server.URL + "/paap/shop-dev-components.git",
+		ArgoCDApplication:    "shop-dev-orders-api",
+		DestinationNamespace: "shop-dev",
+	}
+
+	result, err := RunComponentGitOpsDeploymentFlow(t.Context(), flow)
+	if err != nil {
+		t.Fatalf("run built source gitops flow: %v", err)
+	}
+	if result.SourceMirrorURL != comp.SourceMirrorRepoURL {
+		t.Fatalf("source mirror URL should be retained, got %#v", result)
+	}
+	if jenkins.ensureCalls != 0 || jenkins.buildCalls != 0 {
+		t.Fatalf("built source deployment must not configure Jenkins again, ensure=%d build=%d", jenkins.ensureCalls, jenkins.buildCalls)
+	}
+	if strings.TrimSpace(writtenPaths["components/orders-api/deployment.yaml"]) == "" || strings.TrimSpace(writtenPaths["components/orders-api/service.yaml"]) == "" {
+		t.Fatalf("built source delivery should write deployment and service manifests; written=%#v", writtenPaths)
+	}
+	if writtenPaths["components/orders-api/Jenkinsfile"] != "" {
+		t.Fatalf("built source deployment must not rewrite Jenkinsfile; written=%#v", writtenPaths)
+	}
+	assertGitOpsConfigured(t, k8sClient, "shop-dev-deploy", "shop-dev", "shop-dev-orders-api")
+}
+
+func TestRunComponentGitOpsDeploymentFlowUsesRuntimeImageForBuiltSource(t *testing.T) {
+	t.Setenv(RegistryHostTemplateEnv, "registry.{app}-{env}.paap.local")
+
+	writtenPaths := map[string]string{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		user, pass, ok := r.BasicAuth()
+		if !ok || user != "paap" || pass != "paap123456" {
+			t.Fatalf("missing gitea basic auth")
+		}
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/user/repos":
+			w.WriteHeader(http.StatusCreated)
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/api/v1/repos/paap/shop-dev-components/contents/components/gateway/"):
+			http.NotFound(w, r)
+		case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/api/v1/repos/paap/shop-dev-components/contents/components/gateway/"):
+			var body struct {
+				Content string `json:"content"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatalf("decode gitea file body: %v", err)
+			}
+			data, err := base64.StdEncoding.DecodeString(body.Content)
+			if err != nil {
+				t.Fatalf("decode gitea content: %v", err)
+			}
+			writtenPaths[strings.TrimPrefix(r.URL.Path, "/api/v1/repos/paap/shop-dev-components/contents/")] = string(data)
+			w.WriteHeader(http.StatusCreated)
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	k8sClient := gitOpsFlowClient(t)
+	flow := componentFlowContext{
+		App:                  model.Application{Identifier: "piggymetrics"},
+		Env:                  model.Environment{Identifier: "dev"},
+		Component:            model.Component{Name: "gateway", Type: "frontend", DeliveryMode: "source", Image: "10.96.190.247:5000/piggymetrics-dev/gateway:6bb2cf9", RegistryImage: "10.96.190.247:5000/piggymetrics-dev/gateway:6bb2cf9", Version: "6bb2cf9", PipelineStatus: "built", Replicas: 1},
+		Identifier:           "gateway",
+		Namespace:            "piggymetrics-dev",
+		K8sClient:            k8sClient,
+		ToolNamespaces:       componentToolNamespaces{ArgoCD: "piggymetrics-dev-argocd", Gitea: "piggymetrics-dev-gitea"},
+		ProjectName:          "piggymetrics-dev",
+		RepositoryName:       "shop-dev-components",
+		RepositoryPath:       "components/gateway",
+		ManifestPath:         "components/gateway/deployment.yaml",
+		GiteaBaseURL:         server.URL,
+		RepositoryURL:        server.URL + "/paap/shop-dev-components.git",
+		ArgoCDApplication:    "piggymetrics-dev-gateway",
+		DestinationNamespace: "piggymetrics-dev",
+		Targets: []componentDeliveryTarget{{
+			Capability:  "registry",
+			Source:      model.CapabilitySourceManaged,
+			ServiceType: "registry",
+			App:         model.Application{Identifier: "piggymetrics"},
+			Env:         model.Environment{Identifier: "dev"},
+		}},
+	}
+
+	if _, err := RunComponentGitOpsDeploymentFlow(t.Context(), flow); err != nil {
+		t.Fatalf("run built source gitops flow: %v", err)
+	}
+	deployment := writtenPaths["components/gateway/deployment.yaml"]
+	if !strings.Contains(deployment, "image: registry.piggymetrics-dev.paap.local/piggymetrics-dev/gateway:6bb2cf9") {
+		t.Fatalf("built source deployment must use runtime registry image:\n%s", deployment)
+	}
+	if strings.Contains(deployment, "image: 10.96.190.247:5000/piggymetrics-dev/gateway:6bb2cf9") {
+		t.Fatalf("built source deployment must not publish internal build image:\n%s", deployment)
+	}
+}
+
 func TestEnsureGiteaPushWebhookDeletesLegacyPAAPSourceWebhook(t *testing.T) {
 	var deletedPath string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1644,6 +3036,182 @@ func TestEnsureGiteaPushWebhookCreatesHookWhenMissing(t *testing.T) {
 	}
 }
 
+func gitOpsFlowClient(t *testing.T) client.Client {
+	t.Helper()
+	scheme := runtime.NewScheme()
+	if err := clientgoscheme.AddToScheme(scheme); err != nil {
+		t.Fatalf("add client-go scheme: %v", err)
+	}
+	if err := paapv1.AddToScheme(scheme); err != nil {
+		t.Fatalf("add paap scheme: %v", err)
+	}
+	return fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(
+			&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{
+				Name: "paap-app-shop",
+			}},
+			&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{
+				Name: "shop-dev",
+				Labels: map[string]string{
+					"paap.io/app":  "shop",
+					"paap.io/env":  "dev",
+					"paap.io/role": "workload",
+				},
+			}},
+			&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{
+				Name: "shop-dev-deploy",
+				Labels: map[string]string{
+					"paap.io/app":          "shop",
+					"paap.io/env":          "dev",
+					"paap.io/role":         "tool",
+					"paap.io/service-type": "deploy",
+					"paap.io/tool":         "argocd",
+				},
+			}},
+			&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{
+				Name: "shop-dev-git",
+				Labels: map[string]string{
+					"paap.io/app":          "shop",
+					"paap.io/env":          "dev",
+					"paap.io/role":         "tool",
+					"paap.io/service-type": "git",
+					"paap.io/tool":         "gitea",
+				},
+			}},
+			&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{
+				Name: "shop-dev-ci",
+				Labels: map[string]string{
+					"paap.io/app":          "shop",
+					"paap.io/env":          "dev",
+					"paap.io/role":         "tool",
+					"paap.io/service-type": "ci",
+					"paap.io/tool":         "jenkins",
+				},
+			}},
+		).
+		Build()
+}
+
+func kpackReadyImage(namespace, name, latestImage string) *unstructured.Unstructured {
+	obj := &unstructured.Unstructured{Object: map[string]interface{}{
+		"apiVersion": "kpack.io/v1alpha2",
+		"kind":       "Image",
+		"metadata": map[string]interface{}{
+			"name":      name,
+			"namespace": namespace,
+		},
+		"status": map[string]interface{}{
+			"latestImage": latestImage,
+			"conditions": []interface{}{
+				map[string]interface{}{
+					"type":   "Ready",
+					"status": "True",
+				},
+			},
+		},
+	}}
+	obj.SetGroupVersionKind(schema.GroupVersionKind{Group: "kpack.io", Version: "v1alpha2", Kind: "Image"})
+	return obj
+}
+
+func kpackFailedImage(namespace, name, message string) *unstructured.Unstructured {
+	obj := &unstructured.Unstructured{Object: map[string]interface{}{
+		"apiVersion": "kpack.io/v1alpha2",
+		"kind":       "Image",
+		"metadata": map[string]interface{}{
+			"name":      name,
+			"namespace": namespace,
+		},
+		"status": map[string]interface{}{
+			"conditions": []interface{}{
+				map[string]interface{}{
+					"type":    "Ready",
+					"status":  "False",
+					"reason":  "BuildFailed",
+					"message": message,
+				},
+			},
+		},
+	}}
+	obj.SetGroupVersionKind(schema.GroupVersionKind{Group: "kpack.io", Version: "v1alpha2", Kind: "Image"})
+	return obj
+}
+
+func kpackRunningImage(namespace, name, message string) *unstructured.Unstructured {
+	obj := &unstructured.Unstructured{Object: map[string]interface{}{
+		"apiVersion": "kpack.io/v1alpha2",
+		"kind":       "Image",
+		"metadata": map[string]interface{}{
+			"name":      name,
+			"namespace": namespace,
+		},
+		"status": map[string]interface{}{
+			"conditions": []interface{}{
+				map[string]interface{}{
+					"type":    "Ready",
+					"status":  "Unknown",
+					"message": message,
+				},
+			},
+		},
+	}}
+	obj.SetGroupVersionKind(schema.GroupVersionKind{Group: "kpack.io", Version: "v1alpha2", Kind: "Image"})
+	return obj
+}
+
+func assertGitOpsConfigured(t *testing.T, k8sClient client.Client, namespace, projectName, applicationName string) {
+	t.Helper()
+
+	repoSecret := &corev1.Secret{}
+	if err := k8sClient.Get(t.Context(), client.ObjectKey{Namespace: namespace, Name: "paap-repo-shop-dev-components"}, repoSecret); err != nil {
+		t.Fatalf("get argocd repo secret: %v", err)
+	}
+	if string(repoSecret.Data["type"]) != "git" || string(repoSecret.Data["forceHttpBasicAuth"]) != "true" {
+		t.Fatalf("repo secret should use HTTP basic auth, got %#v", repoSecret.Data)
+	}
+
+	project := &unstructured.Unstructured{}
+	project.SetGroupVersionKind(schema.GroupVersionKind{Group: "argoproj.io", Version: "v1alpha1", Kind: "AppProject"})
+	if err := k8sClient.Get(t.Context(), client.ObjectKey{Namespace: namespace, Name: projectName}, project); err != nil {
+		t.Fatalf("get argocd project: %v", err)
+	}
+	destinations, _, _ := unstructured.NestedSlice(project.Object, "spec", "destinations")
+	destinationNamespaces := map[string]bool{}
+	for _, item := range destinations {
+		dest, ok := item.(map[string]interface{})
+		if !ok {
+			t.Fatalf("invalid destination item: %#v", item)
+		}
+		namespaceValue, _ := dest["namespace"].(string)
+		serverValue, _ := dest["server"].(string)
+		if namespaceValue == "*" || serverValue == "*" {
+			t.Fatalf("project must not allow wildcard destinations: %#v", destinations)
+		}
+		destinationNamespaces[namespaceValue] = true
+	}
+	if !destinationNamespaces["shop-dev"] {
+		t.Fatalf("project should target workload namespace, got %#v", destinations)
+	}
+	for _, forbidden := range []string{"shop-dev-deploy", "shop-dev-git", "shop-dev-ci"} {
+		if destinationNamespaces[forbidden] {
+			t.Fatalf("project must not target tool namespace %s: %#v", forbidden, destinations)
+		}
+	}
+
+	app := &unstructured.Unstructured{}
+	app.SetGroupVersionKind(schema.GroupVersionKind{Group: "argoproj.io", Version: "v1alpha1", Kind: "Application"})
+	if err := k8sClient.Get(t.Context(), client.ObjectKey{Namespace: namespace, Name: applicationName}, app); err != nil {
+		t.Fatalf("get argocd application: %v", err)
+	}
+	if got, _, _ := unstructured.NestedString(app.Object, "spec", "project"); got != projectName {
+		t.Fatalf("application project = %q, want %q", got, projectName)
+	}
+	if got := app.GetAnnotations()["argocd.argoproj.io/refresh"]; got != "hard" {
+		t.Fatalf("application refresh annotation = %q, want hard", got)
+	}
+}
+
 func giteaHookServer(t *testing.T) *httptest.Server {
 	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1683,6 +3251,16 @@ func kpackReadyClient(t *testing.T) client.Client {
 			kpackTestCRD("images.kpack.io"),
 			kpackTestCRD("sourceresolvers.kpack.io"),
 			kpackTestCRD("clusterlifecycles.kpack.io"),
+			&appsv1.Deployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      k8s.KpackControllerDeploymentName,
+					Namespace: k8s.KpackSystemNamespace,
+				},
+				Status: appsv1.DeploymentStatus{
+					ReadyReplicas:     1,
+					AvailableReplicas: 1,
+				},
+			},
 		).
 		Build()
 }

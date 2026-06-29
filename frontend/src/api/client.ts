@@ -73,6 +73,15 @@ export const api = {
   login: (username: string, password: string) =>
     request('/auth/login', { method: 'POST', body: JSON.stringify({ username, password }) }),
   me: () => request('/auth/me'),
+  currentPermissions: (scopeType?: string, scopeId?: number) => {
+    const params = new URLSearchParams()
+    if (scopeType) params.set('scopeType', scopeType)
+    if (scopeId) params.set('scopeId', String(scopeId))
+    const query = params.toString()
+    return request(`/auth/permissions${query ? `?${query}` : ''}`)
+  },
+  permissionTree: (scopeType?: string) => request(`/permissions/tree${scopeType ? `?scopeType=${encodeURIComponent(scopeType)}` : ''}`),
+  listAssignableRoles: (scopeType?: string) => request(`/roles${scopeType ? `?scopeType=${encodeURIComponent(scopeType)}` : ''}`),
 
   // Templates
   templates: () => request('/templates'),
@@ -80,14 +89,15 @@ export const api = {
   createTemplate: (data: any) => request('/templates', { method: 'POST', body: JSON.stringify(data) }),
   updateTemplate: (id: number | string, data: any) => request(`/templates/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteTemplate: (id: number | string) => request(`/templates/${id}`, { method: 'DELETE' }),
+  listCatalogServices: () => request('/catalog/services'),
   listServiceTemplates: () => request('/service-templates'),
   uploadServiceTemplate: (data: FormData) => request('/service-templates/upload', { method: 'POST', body: data }),
   syncBuiltinServiceTemplates: () => request('/service-templates/sync', { method: 'POST' }),
   listComponentConfigTemplates: () => request('/component-config-templates'),
+  uploadComponentConfigTemplate: (data: FormData) => request('/component-config-templates/upload', { method: 'POST', body: data }),
   createComponentConfigTemplate: (data: any) => request('/component-config-templates', { method: 'POST', body: JSON.stringify(data) }),
   updateComponentConfigTemplate: (id: number | string, data: any) => request(`/component-config-templates/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteComponentConfigTemplate: (id: number | string) => request(`/component-config-templates/${id}`, { method: 'DELETE' }),
-  syncBuiltinComponentConfigTemplates: () => request('/component-config-templates/sync', { method: 'POST' }),
 
   // Applications
   listApps: () => request('/applications'),
@@ -109,6 +119,8 @@ export const api = {
     request(`/environments/${id}/capabilities/${capability}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteEnvironmentCapability: (id: number, capability: string) =>
     request(`/environments/${id}/capabilities/${capability}`, { method: 'DELETE' }),
+  validateEnvironmentCapability: (id: number, capability: string) =>
+    request(`/environments/${id}/capabilities/${capability}/validate`, { method: 'POST' }),
   getEnvironmentCapabilityCredentials: (id: number, capability: string) =>
     request(`/environments/${id}/capabilities/${capability}/credentials`),
   listSharedCapabilityResources: () => request('/capabilities/shared-resources'),
@@ -149,5 +161,12 @@ export const api = {
   // Platform admin
   listUsers: () => request('/admin/users'),
   updateUserRoles: (userId: number, roles: string[]) => request(`/admin/users/${userId}/role`, { method: 'PUT', body: JSON.stringify({ roles }) }),
+  listRoles: (scopeType?: string) => request(`/admin/roles${scopeType ? `?scopeType=${encodeURIComponent(scopeType)}` : ''}`),
+  createRole: (data: any) => request('/admin/roles', { method: 'POST', body: JSON.stringify(data) }),
+  updateRole: (id: number, data: any) => request(`/admin/roles/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteRole: (id: number) => request(`/admin/roles/${id}`, { method: 'DELETE' }),
   getSharedResourcePool: () => request('/admin/shared-resource-pool'),
+  platformServiceStats: () => request('/platform/services/stats'),
+  platformServiceInstances: (type: string) => request(`/platform/services/${encodeURIComponent(type)}/instances`),
+  platformServiceUsage: (type: string) => request(`/platform/services/${encodeURIComponent(type)}/usage`),
 }

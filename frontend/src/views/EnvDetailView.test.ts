@@ -33,6 +33,38 @@ describe('EnvDetailView service picker', () => {
     expect(result[1].statusText).toBe('可添加')
   })
 
+  it('shows delivery foundation services even when catalog uses product categories', () => {
+    const result = buildPickerTemplates(
+      [
+        { type: 'deploy', category: 'cd', name: 'ArgoCD' },
+        { type: 'registry', category: 'middleware', name: 'Docker Registry' },
+        { type: 'harbor', category: 'middleware', name: 'Harbor' },
+        { type: 'postgresql', category: 'database', name: 'PostgreSQL' },
+        { type: 'redis', category: 'middleware', name: 'Redis' },
+      ],
+      [],
+      'tool',
+    )
+
+    expect(result.map((item) => item.type)).toEqual(['deploy', 'registry', 'harbor'])
+  })
+
+  it('shows middleware and databases in the infra picker with product categories', () => {
+    const result = buildPickerTemplates(
+      [
+        { type: 'deploy', category: 'cd', name: 'ArgoCD' },
+        { type: 'registry', category: 'middleware', name: 'Docker Registry' },
+        { type: 'postgresql', category: 'database', name: 'PostgreSQL' },
+        { type: 'redis', category: 'middleware', name: 'Redis' },
+        { type: 'eureka', category: 'middleware', name: 'Eureka' },
+      ],
+      [],
+      'infra',
+    )
+
+    expect(result.map((item) => item.type)).toEqual(['postgresql', 'redis', 'eureka'])
+  })
+
   it('keeps draft and failed canvas service cards from being added twice', () => {
     const result = buildPickerTemplates(
       [

@@ -1,0 +1,27 @@
+server:
+  port: __TEMPLATE__SERVER_PORT__服务端口__DEFAULT__8080__
+
+spring:
+  application:
+    name: __TEMPLATE__APP_NAME__应用名称__DEFAULT__springboot-postgres-redis-sentinel__
+
+  datasource:
+    url: jdbc:postgresql://__TEMPLATE__POSTGRES_HOST__PostgreSQL 地址__DEFAULT__postgresql__:__TEMPLATE__POSTGRES_PORT__PostgreSQL 端口__DEFAULT__5432__/__TEMPLATE__POSTGRES_DATABASE__数据库名__DEFAULT__mydb__
+    username: __TEMPLATE__POSTGRES_USERNAME__数据库用户__DEFAULT__postgres__
+    password: ${POSTGRES_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+
+  redis:
+    sentinel:
+      master: __TEMPLATE__REDIS_SENTINEL_MASTER__Redis Sentinel master__DEFAULT__mymaster__
+      nodes: __TEMPLATE__REDIS_SENTINEL_NODES__Redis Sentinel 节点__DEFAULT__redis-node-0:26379,redis-node-1:26379,redis-node-2:26379__
+    password: ${REDIS_PASSWORD}
+    database: __TEMPLATE__REDIS_DB__Redis 数据库__DEFAULT__0__
+    lettuce:
+      pool:
+        max-active: __TEMPLATE__REDIS_POOL_MAX_ACTIVE__Redis 最大连接数__DEFAULT__50__
+        max-idle: 10
+
+logging:
+  level:
+    root: __TEMPLATE__LOG_LEVEL__日志级别__DEFAULT__INFO__

@@ -1,4 +1,4 @@
-export const nativeConfigTemplateSyntax = '普通模式使用 __TEMPLATE__KEY__显示名__ 标记原生配置中的变量；支持 DEFAULT、IF、FOR。高级模式可导入 PAAP JSON / schema。'
+export const nativeConfigTemplateSyntax = '普通模式上传用户自己的配置文件，只把可变字段替换成 __TEMPLATE__KEY__显示名__；支持 DEFAULT、IF、FOR。template.json/schema.json 只用于高级模板包。'
 
 type ParseOptions = {
   framework?: string
@@ -156,6 +156,7 @@ function inferField({ key, label, defaultValue, item = false }: { key: string; l
 }
 
 function inferFieldType(key: string) {
+  if (/DIRECTIVES|CONFIG_BLOCK|CONTENT|BLOCK$/.test(key)) return 'textarea'
   if (/PORT$|_PORT_/.test(key)) return 'number'
   if (/(ENABLED|ENABLE|USE)_?$/.test(key)) return 'boolean'
   return 'text'

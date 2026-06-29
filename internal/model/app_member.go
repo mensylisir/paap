@@ -15,5 +15,5 @@ type AppMember struct {
 	Application   Application `gorm:"foreignKey:ApplicationID" json:"application,omitempty"`
 	UserID        uint        `gorm:"not null;index" json:"userId"`
 	User          User        `gorm:"foreignKey:UserID" json:"user,omitempty"`
-	Role          string      `gorm:"size:20;default:member" json:"role"` // admin, member, viewer
+	Role          string      `gorm:"size:80;default:member" json:"role"`
 }

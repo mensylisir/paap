@@ -43,3 +43,5 @@ for template_dir in "${template_dirs[@]}"; do
   mv "$tmp_file" "$TARGET_DIR/$name.tar.gz"
   echo "packaged $name -> data/charts/$name.tar.gz"
 done
+
+"$ROOT_DIR/scripts/package-built-in-config-templates.sh"

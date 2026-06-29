@@ -66,30 +66,65 @@
       </button>
     </div>
 
-    <!-- Tab panels -->
-    <template v-for="group in catalogGroups" :key="group.category">
-      <section v-show="activeTab === group.category" class="catalog-section">
-        <div v-if="group.items.length === 0" class="no-data">暂无数据</div>
-        <div v-else class="catalog-grid">
-          <article v-for="item in group.items" :key="item.type" class="catalog-card">
+    <div v-if="availableTabs.length" class="catalog-content">
+      <!-- Tab panels -->
+      <div class="catalog-results">
+        <template v-for="group in catalogGroups" :key="group.category">
+          <section v-show="activeTab === group.category" class="catalog-section">
+            <div v-if="group.items.length === 0" class="no-data">暂无数据</div>
+            <div v-else class="catalog-grid">
+              <article
+                v-for="item in group.items"
+                :key="item.type"
+                class="catalog-card"
+                role="link"
+                tabindex="0"
+                :aria-label="`查看 ${item.name} 服务详情`"
+                @click="navigateToDetail(item.type)"
+                @keydown.enter.prevent="navigateToDetail(item.type)"
+                @keydown.space.prevent="navigateToDetail(item.type)"
+              >
             <div class="catalog-card-header">
               <span class="catalog-card-icon">{{ group.icon }}</span>
               <div class="catalog-card-info">
                 <strong class="catalog-card-name">{{ item.name }}</strong>
-                <code class="catalog-card-type">{{ item.type }}</code>
               </div>
             </div>
             <p class="catalog-card-desc">{{ item.description }}</p>
-            <div class="catalog-card-footer">
-              <span v-if="item.versions.length" class="catalog-versions">
-                <span v-for="v in item.versions" :key="v" class="version-tag">v{{ stripV(v) }}</span>
+            <div v-if="item.features.length" class="catalog-feature-row" aria-label="支持能力">
+              <span v-if="item.preinstalled" class="catalog-feature-chip catalog-feature-chip--preinstalled">
+                平台已预装
               </span>
-              <span v-else class="catalog-versions catalog-versions--empty">暂无版本</span>
+              <span
+                v-for="feature in item.features"
+                :key="feature.key"
+                class="catalog-feature-chip"
+                :class="{ disabled: !feature.enabled }"
+              >
+                {{ feature.label }}
+              </span>
             </div>
-          </article>
-        </div>
-      </section>
-    </template>
+            <div class="catalog-card-footer">
+              <div class="catalog-versions">
+                <span v-if="item.versions.length">
+                  <span v-for="v in item.versions" :key="v" class="version-tag">v{{ stripV(v) }}</span>
+                </span>
+                <span v-else class="catalog-versions--empty">暂无版本</span>
+              </div>
+              <div class="card-stats">
+                <span class="card-stat" title="使用环境">{{ item.environmentCount }} 环境</span>
+                <span class="card-stat-dot"></span>
+                <span class="card-stat" title="运行中实例">{{ item.runningInstances }} 运行中</span>
+              </div>
+            </div>
+              </article>
+            </div>
+          </section>
+        </template>
+      </div>
+
+      <!-- Detail moved to /catalog/:type detail page -->
+    </div>
 
     <div v-if="!loading && hasCatalogItems && filterQuery.trim() && catalogGroups.length === 0" class="catalog-empty-search">
       <strong>没有匹配的服务或中间件</strong>
@@ -103,6 +138,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watchEffect, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { useRouter } from 'vue-router'
 import { api } from '../api/client'
 import { catalogGroupForTemplate, catalogTemplateMatchesQuery, compareCatalogGroupMeta, type CatalogGroupMeta } from '../utils/catalogGroups'
 import { compareCatalogVersions, stripCatalogVersionPrefix } from '../utils/catalogVersions'
@@ -111,15 +147,33 @@ interface CatalogItem {
   type: string
   name: string
   description: string
+  catalogSource?: string
   versions: string[]
+  features: CatalogFeature[]
+  preinstalled: boolean
+  managedInstances: number
+  kubevirtInstances: number
+  publicInstances: number
+  sharedReferences: number
+  externalConnections: number
+  deferredReferences: number
+  runningInstances: number
+  applicationCount: number
+  environmentCount: number
+}
+interface CatalogFeature {
+  key: string
+  label: string
+  enabled: boolean
 }
 interface CatalogGroup extends CatalogGroupMeta {
   items: CatalogItem[]
 }
 
+const router = useRouter()
 const loading = ref(false)
 const pageError = ref('')
-const templates = ref<any[]>([])
+const catalogProducts = ref<any[]>([])
 const activeTab = ref('')
 const filterQuery = ref('')
 const searchInputRef = ref<HTMLInputElement | null>(null)
@@ -137,11 +191,35 @@ const availableTabs = computed(() =>
 
 const filteredTemplates = computed(() => {
   const q = filterQuery.value.trim().toLowerCase()
-  if (!q) return templates.value
-  return templates.value.filter((t: any) => catalogTemplateMatchesQuery(t, q))
+  if (!q) return catalogProducts.value
+  return catalogProducts.value.filter((t: any) => catalogTemplateMatchesQuery(t, q))
 })
-const hasCatalogItems = computed(() => templates.value.length > 0)
+const hasCatalogItems = computed(() => catalogProducts.value.length > 0)
 const totalItems = computed(() => filteredTemplates.value.length)
+
+const catalogFeatureItems = (raw: unknown): CatalogFeature[] => {
+  const fallback = [
+    { key: 'managed', label: '环境内创建', enabled: true },
+    { key: 'shared', label: '公共服务', enabled: true },
+  ]
+  if (Array.isArray(raw)) {
+    return raw
+      .map((item: any) => ({
+        key: String(item?.key || '').trim(),
+        label: String(item?.label || item?.key || '').trim(),
+        enabled: item?.enabled !== false,
+      }))
+      .filter(item => item.key && item.label)
+  }
+  if (typeof raw === 'string' && raw.trim()) {
+    try {
+      return catalogFeatureItems(JSON.parse(raw))
+    } catch {
+      return fallback
+    }
+  }
+  return fallback
+}
 
 const catalogGroups = computed<CatalogGroup[]>(() => {
   const groups = new Map<string, CatalogGroup>()
@@ -157,11 +235,33 @@ const catalogGroups = computed<CatalogGroup[]>(() => {
         type: t.type,
         name: t.name || t.type,
         description: t.description || '',
-        versions: [],
+        catalogSource: t.catalogSource || '',
+        versions: Array.isArray(t.versions) ? t.versions.map((v: any) => String(v)).filter(Boolean) : [],
+        features: catalogFeatureItems(t.features),
+        preinstalled: Number(t.publicInstances || 0) > 0,
+        managedInstances: 0,
+        kubevirtInstances: 0,
+        publicInstances: 0,
+        sharedReferences: 0,
+        externalConnections: 0,
+        deferredReferences: 0,
+        runningInstances: 0,
+        applicationCount: 0,
+        environmentCount: 0,
       })
     }
 
     const item = items.get(key)!
+    item.preinstalled = item.preinstalled || Number(t.publicInstances || 0) > 0
+    item.managedInstances += Number(t.managedInstances || 0)
+    item.kubevirtInstances += Number(t.kubevirtInstances || 0)
+    item.publicInstances += Number(t.publicInstances || 0)
+    item.sharedReferences += Number(t.sharedReferences || 0)
+    item.externalConnections += Number(t.externalConnections || 0)
+    item.deferredReferences += Number(t.deferredReferences || 0)
+    item.runningInstances += Number(t.runningInstances || 0)
+    item.applicationCount += Number(t.applicationCount || 0)
+    item.environmentCount += Number(t.environmentCount || 0)
     if (t.appVersion && !item.versions.includes(t.appVersion)) {
       item.versions.push(t.appVersion)
     }
@@ -182,6 +282,10 @@ const catalogGroups = computed<CatalogGroup[]>(() => {
   return Array.from(groups.values()).sort(compareCatalogGroupMeta)
 })
 
+const navigateToDetail = (type: string) => {
+  router.push(`/catalog/${encodeURIComponent(type)}`)
+}
+
 // Auto-select first tab when data loads, or if current tab becomes invalid
 watchEffect(() => {
   const groups = catalogGroups.value
@@ -191,6 +295,7 @@ watchEffect(() => {
       activeTab.value = groups[0].category
     }
   }
+  // No auto-select needed — card click navigates to detail page
 })
 
 const clearCatalogSearch = () => {
@@ -198,35 +303,60 @@ const clearCatalogSearch = () => {
   void nextTick(() => searchInputRef.value?.focus())
 }
 
+const catalogSearchShortcutHandler = (e: KeyboardEvent) => {
+  if (e.key === '/' && !['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement)?.tagName)) {
+    e.preventDefault()
+    searchInputRef.value?.focus()
+  }
+}
+
 onMounted(async () => {
+  document.addEventListener('keydown', catalogSearchShortcutHandler)
   loading.value = true
   pageError.value = ''
   await nextTick() // ensure skeleton renders before api call
   try {
-    const data = await api.listServiceTemplates()
-    templates.value = Array.isArray(data) ? data : (data?.data ? (Array.isArray(data.data) ? data.data : []) : [])
+    const [catalogResult, envTemplateResult] = await Promise.all([
+      api.listCatalogServices(),
+      api.templates(),
+    ])
+    const serviceItems = Array.isArray(catalogResult) ? catalogResult : (catalogResult?.data ? (Array.isArray(catalogResult.data) ? catalogResult.data : []) : [])
+    const envTemplates = Array.isArray(envTemplateResult?.data) ? envTemplateResult.data : []
+    const environmentItems = envTemplates.map((tmpl: any) => ({
+      type: `environment-template-${tmpl.id || tmpl.name}`,
+      name: tmpl.name || '环境模板',
+      description: tmpl.description || '环境服务模板',
+      category: 'environment',
+      catalogSource: 'environment-template',
+      features: [
+        { key: 'managed', label: '从模板创建', enabled: true },
+      ],
+      managedInstances: 0,
+      kubevirtInstances: 0,
+      publicInstances: 0,
+      sharedReferences: 0,
+      externalConnections: 0,
+      deferredReferences: 0,
+      runningInstances: 0,
+      applicationCount: 0,
+      environmentCount: 0,
+      versions: [],
+    }))
+    catalogProducts.value = [...serviceItems, ...environmentItems]
   } catch (e: any) {
     pageError.value = '加载服务目录失败：' + (e?.message || '未知错误')
   } finally {
     loading.value = false
   }
-
-  // Press "/" to focus search input
-  const handler = (e: KeyboardEvent) => {
-    if (e.key === '/' && !['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement)?.tagName)) {
-      e.preventDefault()
-      searchInputRef.value?.focus()
-    }
-  }
-  document.addEventListener('keydown', handler)
-  onBeforeUnmount(() => document.removeEventListener('keydown', handler))
 })
+
+onBeforeUnmount(() => document.removeEventListener('keydown', catalogSearchShortcutHandler))
 </script>
 
 <style scoped>
 /* ===== Page layout ===== */
 .rail-page {
-  padding: 20px 20px 36px;
+  padding: var(--paap-space-5) var(--paap-space-5) var(--paap-space-10);
   max-width: none;
 }
 .page-header {
@@ -244,22 +374,22 @@ onMounted(async () => {
 .page-title {
   font-size: 24px;
   font-weight: 600;
-  color: var(--cds-text-primary, var(--paap-text));
+  color: var(--paap-text);
   letter-spacing: 0;
   line-height: 1.2;
 }
 .page-desc {
-  font-size: 14px;
-  color: var(--cds-text-secondary, var(--paap-text-soft));
+  font-size: var(--paap-fs-body);
+  color: var(--paap-muted);
   line-height: 1.4;
 }
 .page-error {
-  border: 1px solid var(--cds-red-60, #da1e28);
-  background: var(--cds-layer-01, #ffffff);
-  color: var(--cds-red-60, #da1e28);
-  border-radius: 0;
+  border: 1px solid var(--paap-danger);
+  background: var(--paap-danger-soft);
+  color: var(--paap-danger);
+  border-radius: var(--paap-radius-sm);
   padding: 10px 12px;
-  font-size: 13px;
+  font-size: var(--paap-fs-compact);
   line-height: 1.4;
   margin-bottom: 16px;
 }
@@ -275,8 +405,8 @@ onMounted(async () => {
 .catalog-skeleton-bar {
   height: 40px;
   margin-bottom: 1rem;
-  border-radius: 0;
-  background: linear-gradient(90deg, var(--paap-bg-soft) 25%, #e8e8e8 50%, var(--paap-bg-soft) 75%);
+  border-radius: var(--paap-radius);
+  background: linear-gradient(90deg, var(--paap-panel-subtle) 25%, var(--paap-border) 50%, var(--paap-panel-subtle) 75%);
   background-size: 200% 100%;
   animation: cds-skeleton-shimmer 1.5s ease-in-out infinite;
 }
@@ -286,9 +416,9 @@ onMounted(async () => {
   gap: 0.75rem;
 }
 .catalog-skeleton-card {
-  background: #fff;
-  border: 1px solid #e0e0e0;
-  border-radius: 8px;
+  background: var(--paap-panel);
+  border: 1px solid var(--paap-border);
+  border-radius: var(--paap-radius);
   padding: 1rem;
   display: flex;
   flex-direction: column;
@@ -302,9 +432,9 @@ onMounted(async () => {
 .catalog-skeleton-icon {
   width: 32px;
   height: 32px;
-  border-radius: 0;
+  border-radius: var(--paap-radius-sm);
   flex-shrink: 0;
-  background: linear-gradient(90deg, var(--paap-bg-soft) 25%, #e8e8e8 50%, var(--paap-bg-soft) 75%);
+  background: linear-gradient(90deg, var(--paap-panel-subtle) 25%, var(--paap-border) 50%, var(--paap-panel-subtle) 75%);
   background-size: 200% 100%;
   animation: cds-skeleton-shimmer 1.5s ease-in-out infinite;
 }
@@ -316,8 +446,8 @@ onMounted(async () => {
 }
 .catalog-skeleton-line {
   height: 12px;
-  border-radius: 0;
-  background: linear-gradient(90deg, var(--paap-bg-soft) 25%, #e8e8e8 50%, var(--paap-bg-soft) 75%);
+  border-radius: var(--paap-radius-xs);
+  background: linear-gradient(90deg, var(--paap-panel-subtle) 25%, var(--paap-border) 50%, var(--paap-panel-subtle) 75%);
   background-size: 200% 100%;
   animation: cds-skeleton-shimmer 1.5s ease-in-out infinite;
 }
@@ -338,8 +468,8 @@ onMounted(async () => {
 .catalog-skeleton-tag {
   width: 56px;
   height: 20px;
-  border-radius: 3px;
-  background: linear-gradient(90deg, var(--paap-bg-soft) 25%, #e8e8e8 50%, var(--paap-bg-soft) 75%);
+  border-radius: var(--paap-radius-xs, 4px);
+  background: linear-gradient(90deg, var(--paap-panel-subtle) 25%, var(--paap-border) 50%, var(--paap-panel-subtle) 75%);
   background-size: 200% 100%;
   animation: cds-skeleton-shimmer 1.5s ease-in-out infinite;
 }
@@ -350,20 +480,21 @@ onMounted(async () => {
   align-items: center;
   gap: 0;
   border: 1px solid var(--paap-border);
-  border-radius: 0;
+  border-radius: var(--paap-radius);
   padding: 0 0.75rem;
   margin-bottom: 0.75rem;
-  background: #fff;
+  background: var(--paap-panel);
   transition: border-color 0.15s;
+  overflow: hidden;
 }
 .catalog-search:focus-within {
-  border-color: #0f62fe;
-  outline: 1px solid #0f62fe;
+  border-color: var(--paap-accent);
+  outline: 1px solid var(--paap-accent);
 }
 .catalog-search-icon {
   display: flex;
   align-items: center;
-  color: var(--paap-muted-2);
+  color: var(--paap-muted);
   flex-shrink: 0;
 }
 .catalog-search-input {
@@ -377,7 +508,7 @@ onMounted(async () => {
   min-width: 0;
 }
 .catalog-search-input::placeholder {
-  color: #a8a8a8;
+  color: var(--paap-muted);
 }
 .catalog-search-clear {
   display: flex;
@@ -386,9 +517,9 @@ onMounted(async () => {
   background: none;
   border: none;
   cursor: pointer;
-  color: var(--paap-muted-2);
+  color: var(--paap-muted);
   padding: 0.25rem;
-  border-radius: 0;
+  border-radius: var(--paap-radius-sm);
   flex-shrink: 0;
 }
 .catalog-search-clear:hover {
@@ -399,7 +530,7 @@ onMounted(async () => {
 .catalog-tabs {
   display: flex;
   gap: 0;
-  border-bottom: 1px solid #e0e0e0;
+  border-bottom: 1px solid var(--paap-border);
   margin-bottom: 1.25rem;
 }
 .catalog-tab {
@@ -409,7 +540,7 @@ onMounted(async () => {
   padding: 0.625rem 1rem;
   font-size: 0.875rem;
   font-weight: 500;
-  color: var(--paap-text-soft);
+  color: var(--paap-muted);
   background: none;
   border: none;
   border-bottom: 2px solid transparent;
@@ -420,11 +551,11 @@ onMounted(async () => {
 }
 .catalog-tab:hover {
   color: var(--paap-text);
-  border-bottom-color: #a8a8a8;
+  border-bottom-color: var(--paap-muted);
 }
 .catalog-tab.active {
   color: var(--paap-text);
-  border-bottom-color: #0f62fe;
+  border-bottom-color: var(--paap-accent);
   font-weight: 600;
 }
 .catalog-tab-icon {
@@ -438,42 +569,54 @@ onMounted(async () => {
   min-width: 1.125rem;
   height: 1.125rem;
   padding: 0 0.3125rem;
-  border-radius: 0.625rem;
-  background: #e0e0e0;
+  border-radius: var(--paap-radius-full);
+  background: var(--paap-panel-subtle);
   font-size: 0.6875rem;
   font-weight: 600;
-  color: var(--paap-text-soft);
+  color: var(--paap-muted);
   line-height: 1;
 }
 .catalog-tab.active .catalog-tab-count {
-  background: #d0e2ff;
-  color: #0f62fe;
+  background: var(--paap-accent-soft);
+  color: var(--paap-accent);
 }
 
 /* ===== Section / Grid / Card ===== */
+.catalog-content {
+  display: block;
+}
+.catalog-results {
+  min-width: 0;
+}
 .catalog-section {
   margin-bottom: 2rem;
 }
 .catalog-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1rem;
 }
 .catalog-card {
-  background: #fff;
-  border: 1px solid #e0e0e0;
-  border-radius: 8px;
-  padding: 1rem;
+  background: var(--paap-panel);
+  border: 1px solid var(--paap-border);
+  border-radius: var(--paap-radius);
+  padding: 1.125rem;
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0.625rem;
   transition: box-shadow 0.2s ease, transform 0.2s ease;
   will-change: transform;
   cursor: pointer;
 }
 .catalog-card:hover {
-  box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+  box-shadow: var(--paap-shadow-lg);
   transform: translateY(-2px);
+}
+.catalog-card:focus-visible,
+.catalog-card.selected {
+  border-color: var(--paap-accent);
+  box-shadow: 0 0 0 1px var(--paap-accent);
+  outline: none;
 }
 .catalog-card-header {
   display: flex;
@@ -500,35 +643,69 @@ onMounted(async () => {
   text-overflow: ellipsis;
 }
 .catalog-card-type {
-  font-size: 0.75rem;
-  color: var(--paap-muted-2);
-  background: var(--paap-bg-soft);
-  padding: 0.125rem 0.375rem;
-  border-radius: 3px;
+  align-self: flex-start;
+  font-size: 0.6875rem;
+  color: var(--paap-muted);
+  background: var(--paap-panel-subtle);
+  padding: 0.0625rem 0.375rem;
+  border-radius: var(--paap-radius-xs, 4px);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 12rem;
-  margin-top: 0.125rem;
+  max-width: 10rem;
+  margin-top: 0.0625rem;
 }
 .catalog-card-desc {
   font-size: 0.8125rem;
-  color: var(--paap-text-soft);
+  color: var(--paap-muted);
   margin: 0;
-  line-height: 1.4;
+  line-height: 1.45;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+.catalog-feature-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+.catalog-feature-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 0.5rem;
+  border: 1px solid var(--paap-border);
+  border-radius: var(--paap-radius-xs);
+  background: var(--paap-panel-subtle);
+  color: var(--paap-muted);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  line-height: 1;
+}
+.catalog-feature-chip.disabled {
+  opacity: 0.45;
+}
+.catalog-feature-chip--preinstalled {
+  border-color: var(--paap-success-border, #24a148);
+  background: var(--paap-success-soft, #defbe6);
+  color: var(--paap-success-text, #0e6027);
+}
 .catalog-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   margin-top: auto;
-  padding-top: 0.25rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--paap-border);
 }
 .catalog-versions {
   display: flex;
   flex-wrap: wrap;
   gap: 0.375rem;
+  min-width: 0;
+  flex: 1;
 }
 .catalog-versions--empty {
   font-size: 0.75rem;
@@ -539,28 +716,47 @@ onMounted(async () => {
   display: inline-block;
   font-size: 0.6875rem;
   background: var(--paap-accent-soft);
-  color: var(--paap-accent-01);
+  color: var(--paap-accent);
   padding: 0.125rem 0.375rem;
-  border-radius: 3px;
+  border-radius: var(--paap-radius-xs, 4px);
   font-weight: 500;
 }
+.card-stats {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.card-stat {
+  font-size: 0.75rem;
+  color: var(--paap-muted);
+  white-space: nowrap;
+}
+.card-stat-dot {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--paap-border-strong);
+}
+/* Detail moved to /catalog/:type detail page */
 .no-data {
   padding: 2rem 0;
-  color: var(--paap-muted-2);
+  color: var(--paap-muted);
   font-size: 0.875rem;
 }
 .catalog-empty-search {
   display: grid;
   gap: 0.5rem;
   padding: 1.25rem;
-  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
-  background: var(--cds-layer-01, #ffffff);
-  color: var(--cds-text-secondary, var(--paap-text-soft));
+  border: 1px solid var(--paap-border);
+  border-radius: var(--paap-radius);
+  background: var(--paap-panel);
+  color: var(--paap-muted);
   font-size: 0.875rem;
   line-height: 1.45;
 }
 .catalog-empty-search strong {
-  color: var(--cds-text-primary, var(--paap-text));
+  color: var(--paap-text);
   font-size: 0.9375rem;
   font-weight: 600;
 }
@@ -568,21 +764,21 @@ onMounted(async () => {
   justify-self: start;
   min-height: 32px;
   padding: 0 12px;
-  border: 1px solid var(--cds-border-strong-01, #8d8d8d);
-  border-radius: 0;
-  background: var(--cds-layer-01, #ffffff);
-  color: var(--cds-text-primary, var(--paap-text));
+  border: 1px solid var(--paap-border-strong);
+  border-radius: var(--paap-radius);
+  background: var(--paap-panel);
+  color: var(--paap-text);
   font: inherit;
   font-size: 0.875rem;
   cursor: pointer;
 }
 .catalog-empty-clear:hover {
-  background: var(--cds-background-hover, rgba(141, 141, 141, 0.12));
+  background: var(--paap-accent-fill);
 }
 
 @media (max-width: 672px) {
   .rail-page {
-    padding: 20px 20px 32px;
+    padding: var(--paap-space-6) var(--paap-space-4) var(--paap-space-10);
   }
   .page-header {
     flex-direction: column;
@@ -592,6 +788,9 @@ onMounted(async () => {
   .catalog-tabs {
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
+  }
+  .catalog-content {
+    display: block;
   }
 }
 </style>

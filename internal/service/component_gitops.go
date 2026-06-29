@@ -8,11 +8,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -42,6 +45,10 @@ const (
 const componentConfigChecksumAnnotation = "paap.io/config-checksum"
 
 var dnsLabelInvalidChars = regexp.MustCompile(`[^a-z0-9-]+`)
+var paapTemplateScalarToken = regexp.MustCompile(`\[\[\s*paap:([^\]\s]+)([^\]]*)\]\]`)
+var paapTemplateIfBlock = regexp.MustCompile(`\[\[paap:if\s+([^\]\s]+)\]\]([\s\S]*?)\[\[paap:end\s+([^\]\s]+)\]\]`)
+var paapTemplateForBlock = regexp.MustCompile(`\[\[paap:for\s+([^\]\s]+)\]\]([\s\S]*?)\[\[paap:end\s+([^\]\s]+)\]\]`)
+var paapTemplateDefaultOption = regexp.MustCompile(`\bdefault=("[^"]*"|'[^']*'|[^\s\]]+)`)
 
 type componentJenkinsClient interface {
 	Base() string
@@ -74,6 +81,27 @@ type componentToolNamespaceMatch struct {
 	name        string
 	tool        string
 	serviceType string
+}
+
+type componentFlowContext struct {
+	App                  model.Application
+	Env                  model.Environment
+	Component            model.Component
+	Identifier           string
+	Namespace            string
+	K8sClient            client.Client
+	Services             []model.ServiceInstallation
+	Targets              []componentDeliveryTarget
+	ToolNamespaces       componentToolNamespaces
+	ProjectName          string
+	RepositoryName       string
+	RepositoryPath       string
+	ManifestPath         string
+	GiteaBaseURL         string
+	RepositoryURL        string
+	SourceMirrorName     string
+	ArgoCDApplication    string
+	DestinationNamespace string
 }
 
 func ComponentIdentifier(name, componentType string, id uint) string {
@@ -111,7 +139,7 @@ func BuildComponentDeploymentManifest(app model.Application, env model.Environme
 	if componentUsesSourcePlaceholderImage(comp) {
 		replicas = 0
 	}
-	image := comp.Image
+	image := componentDeploymentImage(comp)
 	tag := comp.Version
 	if tag == "" {
 		tag = imageTag(image)
@@ -174,11 +202,19 @@ func BuildComponentDeploymentManifest(app model.Application, env model.Environme
 	return string(deployYAML)
 }
 
+func componentDeploymentImage(comp model.Component) string {
+	if image := strings.TrimSpace(comp.RegistryImage); image != "" {
+		return image
+	}
+	return strings.TrimSpace(comp.Image)
+}
+
 func BuildComponentConfigResourceManifest(app model.Application, env model.Environment, comp model.Component, identifier, namespace string) string {
 	cfg, err := model.ParseComponentConfig(comp.Config)
 	if err != nil {
 		return ""
 	}
+	cfg = renderComponentConfigTemplatePlaceholders(cfg)
 	labels := map[string]string{
 		"app":                identifier,
 		"paap.io/app":        app.Identifier,
@@ -220,12 +256,87 @@ func BuildComponentConfigResourceManifest(app model.Application, env model.Envir
 	return strings.Join(parts, "---\n") + "---\n"
 }
 
+func renderComponentConfigTemplatePlaceholders(cfg model.ComponentConfig) model.ComponentConfig {
+	for i := range cfg.ConfigMaps {
+		for key, value := range cfg.ConfigMaps[i].Data {
+			cfg.ConfigMaps[i].Data[key] = renderPaapTemplateValue(value, nil)
+		}
+	}
+	for i := range cfg.Secrets {
+		for key, value := range cfg.Secrets[i].Data {
+			cfg.Secrets[i].Data[key] = renderPaapTemplateValue(value, nil)
+		}
+	}
+	return cfg
+}
+
+func renderPaapTemplateValue(value string, values map[string]string) string {
+	rendered := value
+	for {
+		next := paapTemplateForBlock.ReplaceAllStringFunc(rendered, func(match string) string {
+			parts := paapTemplateForBlock.FindStringSubmatch(match)
+			if len(parts) != 4 || parts[1] != parts[3] {
+				return match
+			}
+			return ""
+		})
+		next = paapTemplateIfBlock.ReplaceAllStringFunc(next, func(match string) string {
+			parts := paapTemplateIfBlock.FindStringSubmatch(match)
+			if len(parts) != 4 || parts[1] != parts[3] {
+				return match
+			}
+			if templateTruthy(values[parts[1]]) {
+				return renderPaapTemplateValue(parts[2], values)
+			}
+			return ""
+		})
+		if next == rendered {
+			break
+		}
+		rendered = next
+	}
+	return paapTemplateScalarToken.ReplaceAllStringFunc(rendered, func(match string) string {
+		parts := paapTemplateScalarToken.FindStringSubmatch(match)
+		if len(parts) != 3 {
+			return match
+		}
+		key := strings.TrimSpace(parts[1])
+		if strings.HasPrefix(key, "for") || strings.HasPrefix(key, "if") || strings.HasPrefix(key, "end") {
+			return ""
+		}
+		if values != nil {
+			if value := strings.TrimSpace(values[key]); value != "" {
+				return value
+			}
+		}
+		return paapTemplateDefaultValue(parts[2])
+	})
+}
+
+func paapTemplateDefaultValue(options string) string {
+	match := paapTemplateDefaultOption.FindStringSubmatch(options)
+	if len(match) != 2 {
+		return ""
+	}
+	return strings.Trim(match[1], `"'`)
+}
+
+func templateTruthy(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "1", "true", "yes", "y", "on", "enabled":
+		return true
+	default:
+		return false
+	}
+}
+
 func BuildComponentServiceManifest(app model.Application, env model.Environment, comp model.Component, identifier, namespace string) string {
 	cfg, err := model.ParseComponentConfig(comp.Config)
 	if err != nil {
 		cfg = model.ComponentConfig{}
 	}
 	containerPort := model.ResolveComponentContainerPort(comp.Type, cfg)
+	servicePort := componentServicePort(cfg)
 	labels := map[string]string{
 		"app":                identifier,
 		"paap.io/app":        app.Identifier,
@@ -245,13 +356,20 @@ func BuildComponentServiceManifest(app model.Application, env model.Environment,
 			Selector: map[string]string{"app": identifier},
 			Ports: []corev1.ServicePort{{
 				Name:       "http",
-				Port:       80,
+				Port:       servicePort,
 				TargetPort: intstrFromInt(int(containerPort)),
 			}},
 		},
 	}
 	serviceYAML, _ := yaml.Marshal(service)
 	return string(serviceYAML)
+}
+
+func componentServicePort(cfg model.ComponentConfig) int32 {
+	if cfg.ServicePort > 0 {
+		return cfg.ServicePort
+	}
+	return 80
 }
 
 func componentConfigPodTemplateAnnotations(cfg model.ComponentConfig) map[string]string {
@@ -441,87 +559,586 @@ func defaultResource(value, fallback string) string {
 	return value
 }
 
-func EnsureComponentGitOps(ctx context.Context, k8sClient client.Client, app model.Application, env model.Environment, comp model.Component, identifier, namespace string) (ComponentGitOpsResult, error) {
+func newComponentFlowContext(ctx context.Context, k8sClient client.Client, app model.Application, env model.Environment, comp model.Component, identifier, namespace string, targets []componentDeliveryTarget) componentFlowContext {
 	toolNamespaces := discoverComponentToolNamespaces(ctx, k8sClient, app.Identifier, env.Identifier)
-	giteaNS := toolNamespaces.Gitea
-	argocdNS := toolNamespaces.ArgoCD
+	services := componentDeliveryServicesFromTargets(targets)
+	if serviceNamespaces := componentToolNamespacesFromServices(services); !componentToolNamespacesEmpty(serviceNamespaces) {
+		toolNamespaces = mergeComponentToolNamespaces(toolNamespaces, serviceNamespaces)
+	}
 	repoName := fmt.Sprintf("%s-%s-components", app.Identifier, env.Identifier)
 	repoPath := fmt.Sprintf("components/%s", identifier)
-	manifestPath := repoPath + "/deployment.yaml"
-	baseURL := fmt.Sprintf("http://%s.%s.svc.cluster.local:3000", giteaNS, giteaNS)
-	repoURL := fmt.Sprintf("http://%s.%s.svc.cluster.local:3000/%s/%s.git", giteaNS, giteaNS, giteaAdminUser, repoName)
-	sourceMirrorName := fmt.Sprintf("%s-%s-%s-source", app.Identifier, env.Identifier, identifier)
+	giteaBaseURL := ""
+	repositoryURL := ""
+	if toolNamespaces.Gitea != "" {
+		giteaBaseURL = fmt.Sprintf("http://%s.%s.svc.cluster.local:3000", toolNamespaces.Gitea, toolNamespaces.Gitea)
+		repositoryURL = fmt.Sprintf("%s/%s/%s.git", giteaBaseURL, giteaAdminUser, repoName)
+	}
+	return componentFlowContext{
+		App:                  app,
+		Env:                  env,
+		Component:            comp,
+		Identifier:           identifier,
+		Namespace:            namespace,
+		K8sClient:            k8sClient,
+		Services:             services,
+		Targets:              targets,
+		ToolNamespaces:       toolNamespaces,
+		ProjectName:          fmt.Sprintf("%s-%s", app.Identifier, env.Identifier),
+		RepositoryName:       repoName,
+		RepositoryPath:       repoPath,
+		ManifestPath:         repoPath + "/deployment.yaml",
+		GiteaBaseURL:         giteaBaseURL,
+		RepositoryURL:        repositoryURL,
+		SourceMirrorName:     fmt.Sprintf("%s-%s-%s-source", app.Identifier, env.Identifier, identifier),
+		ArgoCDApplication:    fmt.Sprintf("%s-%s-%s", app.Identifier, env.Identifier, identifier),
+		DestinationNamespace: namespace,
+	}
+}
 
+func componentDeliveryServicesFromTargets(targets []componentDeliveryTarget) []model.ServiceInstallation {
+	services := make([]model.ServiceInstallation, 0, len(targets))
+	seen := map[uint]bool{}
+	for _, target := range targets {
+		if target.Service == nil || target.Service.ID == 0 || seen[target.Service.ID] {
+			continue
+		}
+		seen[target.Service.ID] = true
+		services = append(services, *target.Service)
+	}
+	return services
+}
+
+func componentToolNamespacesFromServices(services []model.ServiceInstallation) componentToolNamespaces {
+	result := componentToolNamespaces{}
+	for _, inst := range services {
+		if !componentDeliveryServiceIsReady(inst) {
+			continue
+		}
+		serviceType := strings.ToLower(strings.TrimSpace(inst.ServiceType))
+		switch serviceType {
+		case "deploy":
+			if result.ArgoCD == "" {
+				result.ArgoCD = strings.TrimSpace(inst.Namespace)
+			}
+		case "git":
+			if result.Gitea == "" {
+				result.Gitea = strings.TrimSpace(inst.Namespace)
+			}
+		case "ci":
+			if result.Jenkins == "" {
+				result.Jenkins = strings.TrimSpace(inst.Namespace)
+			}
+		}
+	}
+	return result
+}
+
+func componentToolNamespacesEmpty(namespaces componentToolNamespaces) bool {
+	return strings.TrimSpace(namespaces.ArgoCD) == "" &&
+		strings.TrimSpace(namespaces.Gitea) == "" &&
+		strings.TrimSpace(namespaces.Jenkins) == ""
+}
+
+func mergeComponentToolNamespaces(base, override componentToolNamespaces) componentToolNamespaces {
+	if strings.TrimSpace(override.ArgoCD) != "" {
+		base.ArgoCD = strings.TrimSpace(override.ArgoCD)
+	}
+	if strings.TrimSpace(override.Gitea) != "" {
+		base.Gitea = strings.TrimSpace(override.Gitea)
+	}
+	if strings.TrimSpace(override.Jenkins) != "" {
+		base.Jenkins = strings.TrimSpace(override.Jenkins)
+	}
+	return base
+}
+
+func componentSourceBuildIsPending(comp model.Component) bool {
+	if comp.DeliveryMode != "source" {
+		return false
+	}
+	return !strings.EqualFold(strings.TrimSpace(comp.PipelineStatus), "built")
+}
+
+func validateComponentGitOpsInput(comp model.Component) error {
 	if comp.Version == "" && imageTag(comp.Image) == "" {
-		return ComponentGitOpsResult{}, fmt.Errorf("component version is required when image tag is missing")
+		return fmt.Errorf("component version is required when image tag is missing")
 	}
+	return nil
+}
 
-	manifest := BuildComponentDeploymentManifest(app, env, comp, identifier, namespace)
-	serviceManifest := BuildComponentServiceManifest(app, env, comp, identifier, namespace)
-	configManifest := BuildComponentConfigResourceManifest(app, env, comp, identifier, namespace)
-	if err := ensureGiteaRepository(ctx, baseURL, repoName); err != nil {
-		return ComponentGitOpsResult{}, err
+func validateComponentSourceBuildTools(flow componentFlowContext) error {
+	if strings.TrimSpace(flow.ToolNamespaces.Gitea) == "" || strings.TrimSpace(flow.GiteaBaseURL) == "" || strings.TrimSpace(flow.RepositoryURL) == "" {
+		return fmt.Errorf("environment git service is required before source delivery")
 	}
-	if comp.DeliveryMode == "source" {
-		sourceMirrorURL, err := ensureGiteaSourceMirror(ctx, baseURL, sourceMirrorName, comp)
+	if strings.TrimSpace(flow.ToolNamespaces.Jenkins) == "" {
+		return fmt.Errorf("environment ci service is required before source delivery")
+	}
+	return nil
+}
+
+func validateComponentGitOpsTools(flow componentFlowContext) error {
+	if strings.TrimSpace(flow.ToolNamespaces.Gitea) == "" || strings.TrimSpace(flow.GiteaBaseURL) == "" || strings.TrimSpace(flow.RepositoryURL) == "" {
+		return fmt.Errorf("environment git service is required before GitOps delivery")
+	}
+	if strings.TrimSpace(flow.ToolNamespaces.ArgoCD) == "" {
+		return fmt.Errorf("environment cd service is required before GitOps delivery")
+	}
+	return nil
+}
+
+func RunComponentSourceDeliveryFlow(ctx context.Context, k8sClient client.Client, app model.Application, env model.Environment, comp model.Component, identifier, namespace string, targets []componentDeliveryTarget) (ComponentGitOpsResult, error) {
+	flow := newComponentFlowContext(ctx, k8sClient, app, env, comp, identifier, namespace, targets)
+	if componentSourceBuildIsPending(flow.Component) {
+		if strings.EqualFold(strings.TrimSpace(flow.Component.PipelineStatus), "planned") {
+			return RunComponentSourceBuildFlow(ctx, flow)
+		}
+		ready, warning, err := actionDetectSourceBuildCompletion(ctx, flow)
 		if err != nil {
 			return ComponentGitOpsResult{}, err
 		}
-		comp.SourceMirrorRepoURL = sourceMirrorURL
-	}
-	if err := ensureArgoCDRepositorySecret(ctx, k8sClient, argocdNS, repoName, repoURL, giteaAdminUser, giteaAdminPassword); err != nil {
-		return ComponentGitOpsResult{}, err
-	}
-	if err := putGiteaFile(ctx, baseURL, repoName, manifestPath, manifest, fmt.Sprintf("deploy %s", identifier)); err != nil {
-		return ComponentGitOpsResult{}, err
-	}
-	if strings.TrimSpace(configManifest) != "" {
-		if err := putGiteaFile(ctx, baseURL, repoName, repoPath+"/config.yaml", configManifest, fmt.Sprintf("sync config for %s", identifier)); err != nil {
-			return ComponentGitOpsResult{}, err
+		if ready {
+			flow.Component.PipelineStatus = "built"
+			result, err := RunComponentGitOpsDeploymentFlow(ctx, flow)
+			if err != nil {
+				return ComponentGitOpsResult{}, err
+			}
+			result.CIStatus = "built"
+			result.CIWarning = warning
+			return result, nil
 		}
+		if sourceBuildWarningIsFailed(warning) {
+			return ComponentGitOpsResult{
+				RepositoryURL:       flow.RepositoryURL,
+				SourceMirrorURL:     flow.Component.SourceMirrorRepoURL,
+				RepositoryPath:      flow.RepositoryPath,
+				ArgoCDNamespace:     flow.ToolNamespaces.ArgoCD,
+				DeploymentNamespace: flow.DestinationNamespace,
+				CIStatus:            "failed",
+				CIWarning:           warning,
+			}, nil
+		}
+		if strings.TrimSpace(warning) != "" {
+			return ComponentGitOpsResult{
+				RepositoryURL:       flow.RepositoryURL,
+				SourceMirrorURL:     flow.Component.SourceMirrorRepoURL,
+				RepositoryPath:      flow.RepositoryPath,
+				ArgoCDNamespace:     flow.ToolNamespaces.ArgoCD,
+				DeploymentNamespace: flow.DestinationNamespace,
+				CIStatus:            "running",
+				CIWarning:           warning,
+			}, nil
+		}
+		return RunComponentSourceBuildFlow(ctx, flow)
 	}
-	if err := putGiteaFile(ctx, baseURL, repoName, repoPath+"/service.yaml", serviceManifest, fmt.Sprintf("sync service for %s", identifier)); err != nil {
-		return ComponentGitOpsResult{}, err
-	}
-	kpackSpec, caWarning := buildComponentKpackSpecWithRegistryCA(ctx, k8sClient, app, env, identifier, comp.Image)
-	hasRegistryCABinding := len(kpackSpec.RegistryCAPEM) > 0
+	return RunComponentGitOpsDeploymentFlow(ctx, flow)
+}
 
-	// Jenkinsfile is PAAP-managed and must be refreshed when registry trust or build inputs change.
-	jenkinsfile := buildComponentJenkinsfile(comp, identifier, repoURL, hasRegistryCABinding)
-	if err := putGiteaFile(ctx, baseURL, repoName, repoPath+"/Jenkinsfile", jenkinsfile, fmt.Sprintf("sync jenkinsfile for %s", identifier)); err != nil {
-		return ComponentGitOpsResult{}, err
-	}
-	// README is scaffold-only so user edits are not overwritten.
-	readme := buildComponentReadme(app, env, comp, identifier, repoURL, repoPath)
-	if err := putGiteaFileIfNotExists(ctx, baseURL, repoName, repoPath+"/README.md", readme, fmt.Sprintf("init readme for %s", identifier)); err != nil {
-		return ComponentGitOpsResult{}, err
-	}
-	ciStatus, ciWarning := ensureComponentJenkinsAutomation(ctx, k8sClient, app, env, comp, identifier, baseURL, repoName, repoURL, kpackSpec, caWarning)
-	projectName := fmt.Sprintf("%s-%s", app.Identifier, env.Identifier)
-	destinationNamespaces := discoverComponentGitOpsNamespaces(ctx, k8sClient, app.Identifier, env.Identifier, namespace)
-	if err := ensureArgoCDLocalClusterSecret(ctx, k8sClient, argocdNS, destinationNamespaces); err != nil {
-		return ComponentGitOpsResult{}, err
-	}
-	if err := ensureArgoCDDefaultProjectDenied(ctx, k8sClient, argocdNS); err != nil {
-		return ComponentGitOpsResult{}, err
-	}
-	if err := ensureArgoCDProject(ctx, k8sClient, argocdNS, projectName, repoURL, destinationNamespaces); err != nil {
-		return ComponentGitOpsResult{}, err
-	}
-	if err := ensureArgoCDApplication(ctx, k8sClient, argocdNS, fmt.Sprintf("%s-%s-%s", app.Identifier, env.Identifier, identifier), projectName, repoURL, repoPath, namespace, app.Identifier, env.Identifier, identifier); err != nil {
-		return ComponentGitOpsResult{}, err
-	}
+func sourceBuildWarningIsFailed(warning string) bool {
+	warning = strings.ToLower(strings.TrimSpace(warning))
+	return strings.Contains(warning, "buildfailed") || strings.Contains(warning, "failed to build")
+}
 
+func RunComponentImageDeliveryFlow(ctx context.Context, k8sClient client.Client, app model.Application, env model.Environment, comp model.Component, identifier, namespace string, targets []componentDeliveryTarget) (ComponentGitOpsResult, error) {
+	return RunComponentGitOpsDeploymentFlow(ctx, newComponentFlowContext(ctx, k8sClient, app, env, comp, identifier, namespace, targets))
+}
+
+func RunComponentSourceBuildFlow(ctx context.Context, flow componentFlowContext) (ComponentGitOpsResult, error) {
+	if err := validateComponentGitOpsInput(flow.Component); err != nil {
+		return ComponentGitOpsResult{}, err
+	}
+	if err := validateComponentSourceBuildTools(flow); err != nil {
+		return ComponentGitOpsResult{}, err
+	}
+	sourceMirrorURL, ciStatus, ciWarning, err := stepPrepareSourceBuild(ctx, flow)
+	if err != nil {
+		return ComponentGitOpsResult{}, err
+	}
 	return ComponentGitOpsResult{
-		RepositoryURL:       repoURL,
-		SourceMirrorURL:     comp.SourceMirrorRepoURL,
-		RepositoryPath:      repoPath,
-		ArgoCDApplication:   fmt.Sprintf("%s-%s-%s", app.Identifier, env.Identifier, identifier),
-		ArgoCDNamespace:     argocdNS,
-		DeploymentNamespace: namespace,
+		RepositoryURL:       flow.RepositoryURL,
+		SourceMirrorURL:     sourceMirrorURL,
+		RepositoryPath:      flow.RepositoryPath,
+		ArgoCDNamespace:     flow.ToolNamespaces.ArgoCD,
+		DeploymentNamespace: flow.DestinationNamespace,
 		CIStatus:            ciStatus,
 		CIWarning:           ciWarning,
 	}, nil
+}
+
+func RunComponentGitOpsDeploymentFlow(ctx context.Context, flow componentFlowContext) (ComponentGitOpsResult, error) {
+	if err := validateComponentGitOpsInput(flow.Component); err != nil {
+		return ComponentGitOpsResult{}, err
+	}
+	if err := validateComponentGitOpsTools(flow); err != nil {
+		return ComponentGitOpsResult{}, err
+	}
+	flow = prepareComponentGitOpsDeploymentContext(ctx, flow)
+	if err := stepPublishComponentDeploymentFiles(ctx, flow); err != nil {
+		return ComponentGitOpsResult{}, err
+	}
+	if err := stepConfigureComponentArgoCD(ctx, flow); err != nil {
+		return ComponentGitOpsResult{}, err
+	}
+	return ComponentGitOpsResult{
+		RepositoryURL:       flow.RepositoryURL,
+		SourceMirrorURL:     flow.Component.SourceMirrorRepoURL,
+		RepositoryPath:      flow.RepositoryPath,
+		ArgoCDApplication:   flow.ArgoCDApplication,
+		ArgoCDNamespace:     flow.ToolNamespaces.ArgoCD,
+		DeploymentNamespace: flow.DestinationNamespace,
+	}, nil
+}
+
+func prepareComponentGitOpsDeploymentContext(ctx context.Context, flow componentFlowContext) componentFlowContext {
+	if flow.Component.DeliveryMode != "source" || !strings.EqualFold(strings.TrimSpace(flow.Component.PipelineStatus), "built") {
+		return flow
+	}
+	version := strings.TrimSpace(flow.Component.Version)
+	if version == "" {
+		version = imageTag(componentDeploymentImage(flow.Component))
+	}
+	if version == "" {
+		return flow
+	}
+	target, ok := componentSourceRegistryDeliveryTarget(ctx, flow)
+	if !ok {
+		return flow
+	}
+	flow.Component = applyComponentDeployVersionForRuntimeRegistryTarget(flow.App, flow.Env, flow.Component, flow.Identifier, version, target)
+	return flow
+}
+
+func stepPrepareComponentRepository(ctx context.Context, flow componentFlowContext) error {
+	return actionEnsureComponentRepository(ctx, flow)
+}
+
+func stepPrepareSourceBuild(ctx context.Context, flow componentFlowContext) (string, string, string, error) {
+	if err := stepPrepareComponentRepository(ctx, flow); err != nil {
+		return "", "", "", err
+	}
+	sourceMirrorURL, err := actionEnsureSourceMirror(ctx, flow)
+	if err != nil {
+		return "", "", "", err
+	}
+	flow.Component.SourceMirrorRepoURL = sourceMirrorURL
+	internalBuildImage := componentSourceInternalBuildImage(ctx, flow)
+	internalRegistryTarget := componentSourceRegistryTargetIsInternal(ctx, flow)
+	kpackSpec, caWarning := buildComponentKpackSpecWithRegistryCAMirrors(ctx, flow.K8sClient, flow.App, flow.Env, flow.Identifier, internalRegistryTarget, internalBuildImage)
+	kpackSpec.Namespace = flow.ToolNamespaces.Jenkins
+	kpackSpec.GitServer = flow.GiteaBaseURL
+	mirrorWarning := ""
+	if internalRegistryTarget {
+		mirrorWarning = actionEnsureKpackMirrorImages(ctx, flow, kpackSpec)
+	}
+	if err := actionWriteComponentJenkinsfile(ctx, flow, internalBuildImage, len(kpackSpec.RegistryCAPEM) > 0); err != nil {
+		return "", "", "", err
+	}
+	if err := actionWriteComponentReadme(ctx, flow); err != nil {
+		return "", "", "", err
+	}
+	ciStatus, ciWarning := actionConfigureComponentJenkins(ctx, flow, kpackSpec, caWarning)
+	ciWarning = appendCIWarning(ciWarning, mirrorWarning)
+	return sourceMirrorURL, ciStatus, ciWarning, nil
+}
+
+func stepPublishComponentDeploymentFiles(ctx context.Context, flow componentFlowContext) error {
+	if err := stepPrepareComponentRepository(ctx, flow); err != nil {
+		return err
+	}
+	if err := actionWriteComponentDeploymentManifest(ctx, flow); err != nil {
+		return err
+	}
+	if err := actionWriteComponentConfigManifest(ctx, flow); err != nil {
+		return err
+	}
+	return actionWriteComponentServiceManifest(ctx, flow)
+}
+
+func stepConfigureComponentArgoCD(ctx context.Context, flow componentFlowContext) error {
+	if err := actionEnsureArgoCDRepository(ctx, flow); err != nil {
+		return err
+	}
+	destinationNamespaces := actionDiscoverArgoCDDestinationNamespaces(ctx, flow)
+	if err := actionEnsureArgoCDLocalCluster(ctx, flow, destinationNamespaces); err != nil {
+		return err
+	}
+	if err := actionDenyArgoCDDefaultProject(ctx, flow); err != nil {
+		return err
+	}
+	if err := actionEnsureArgoCDProject(ctx, flow, destinationNamespaces); err != nil {
+		return err
+	}
+	return actionEnsureArgoCDApplication(ctx, flow)
+}
+
+func actionEnsureComponentRepository(ctx context.Context, flow componentFlowContext) error {
+	return ensureGiteaRepository(ctx, flow.GiteaBaseURL, flow.RepositoryName)
+}
+
+func actionEnsureSourceMirror(ctx context.Context, flow componentFlowContext) (string, error) {
+	return ensureGiteaSourceMirror(ctx, flow.GiteaBaseURL, flow.SourceMirrorName, flow.Component)
+}
+
+var copyComponentKpackMirrorImage = k8s.CopyContainerImageIfMissing
+var componentKpackMirrorImageExists = k8s.ContainerImageExists
+var startComponentKpackMirrorImage = scheduleComponentKpackMirrorImage
+var componentKpackMirrorJobs sync.Map
+
+func actionEnsureKpackMirrorImages(ctx context.Context, flow componentFlowContext, spec k8s.KpackBuildEnvironmentSpec) string {
+	target, ok := componentSourceRegistryDeliveryTarget(ctx, flow)
+	if !ok || target.Source == model.CapabilitySourceExternal {
+		return ""
+	}
+	copyOptions := k8s.ContainerImageCopyOptions{
+		TargetInsecure: strings.EqualFold(strings.TrimSpace(target.ServiceType), "registry"),
+	}
+	if strings.EqualFold(strings.TrimSpace(target.ServiceType), "harbor") {
+		copyOptions.TargetUsername = firstNonEmpty(spec.RegistryUsername, "admin")
+		copyOptions.TargetPassword = firstNonEmpty(spec.RegistryPassword, "Harbor12345")
+	}
+
+	missing := make([]string, 0)
+	for _, pair := range componentKpackMirrorImagePairs(spec) {
+		exists, _ := componentKpackMirrorImageExists(ctx, pair.target, copyOptions)
+		if exists {
+			continue
+		}
+		missing = append(missing, pair.target)
+		startComponentKpackMirrorImage(pair, copyOptions)
+	}
+	if len(missing) == 0 {
+		return ""
+	}
+	return "kpack base images are being mirrored into the selected internal registry; source deployment will continue after mirror completes: " + strings.Join(missing, ", ")
+}
+
+func scheduleComponentKpackMirrorImage(pair componentKpackMirrorImagePair, opts k8s.ContainerImageCopyOptions) {
+	key := pair.source + "\n" + pair.target
+	if _, loaded := componentKpackMirrorJobs.LoadOrStore(key, struct{}{}); loaded {
+		return
+	}
+	go func() {
+		defer componentKpackMirrorJobs.Delete(key)
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
+		defer cancel()
+		if err := copyComponentKpackMirrorImage(ctx, pair.source, pair.target, opts); err != nil {
+			log.Printf("[kpackMirror] failed to mirror %s -> %s: %v", pair.source, pair.target, err)
+			return
+		}
+		log.Printf("[kpackMirror] mirrored %s -> %s", pair.source, pair.target)
+	}()
+}
+
+type componentKpackMirrorImagePair struct {
+	source string
+	target string
+}
+
+func componentKpackMirrorImagePairs(spec k8s.KpackBuildEnvironmentSpec) []componentKpackMirrorImagePair {
+	pairs := []componentKpackMirrorImagePair{
+		{source: k8s.PaketoBuildJammyBaseImage, target: spec.StackBuildImage},
+		{source: k8s.PaketoRunJammyBaseImage, target: spec.StackRunImage},
+	}
+	sources := []string{
+		k8s.PaketoJavaBuildpackImage,
+		k8s.PaketoNodeJSBuildpackImage,
+		k8s.PaketoGoBuildpackImage,
+		k8s.PaketoPythonBuildpackImage,
+	}
+	for i, target := range spec.BuildpackSources {
+		if i >= len(sources) {
+			break
+		}
+		pairs = append(pairs, componentKpackMirrorImagePair{source: sources[i], target: target})
+	}
+	out := make([]componentKpackMirrorImagePair, 0, len(pairs))
+	for _, pair := range pairs {
+		if strings.TrimSpace(pair.source) == "" || strings.TrimSpace(pair.target) == "" {
+			continue
+		}
+		if pair.source == pair.target {
+			continue
+		}
+		out = append(out, pair)
+	}
+	return out
+}
+
+func actionWriteComponentDeploymentManifest(ctx context.Context, flow componentFlowContext) error {
+	manifest := BuildComponentDeploymentManifest(flow.App, flow.Env, flow.Component, flow.Identifier, flow.DestinationNamespace)
+	return putGiteaFile(ctx, flow.GiteaBaseURL, flow.RepositoryName, flow.ManifestPath, manifest, fmt.Sprintf("deploy %s", flow.Identifier))
+}
+
+func actionWriteComponentConfigManifest(ctx context.Context, flow componentFlowContext) error {
+	configManifest := BuildComponentConfigResourceManifest(flow.App, flow.Env, flow.Component, flow.Identifier, flow.DestinationNamespace)
+	if strings.TrimSpace(configManifest) == "" {
+		return nil
+	}
+	return putGiteaFile(ctx, flow.GiteaBaseURL, flow.RepositoryName, flow.RepositoryPath+"/config.yaml", configManifest, fmt.Sprintf("sync config for %s", flow.Identifier))
+}
+
+func actionWriteComponentServiceManifest(ctx context.Context, flow componentFlowContext) error {
+	serviceManifest := BuildComponentServiceManifest(flow.App, flow.Env, flow.Component, flow.Identifier, flow.DestinationNamespace)
+	return putGiteaFile(ctx, flow.GiteaBaseURL, flow.RepositoryName, flow.RepositoryPath+"/service.yaml", serviceManifest, fmt.Sprintf("sync service for %s", flow.Identifier))
+}
+
+func actionWriteComponentJenkinsfile(ctx context.Context, flow componentFlowContext, buildImage string, includeRegistryCABinding bool) error {
+	componentForBuild := flow.Component
+	if strings.TrimSpace(buildImage) != "" {
+		componentForBuild.Image = strings.TrimSpace(buildImage)
+		componentForBuild.RegistryImage = strings.TrimSpace(buildImage)
+	}
+	jenkinsfile := buildComponentJenkinsfile(componentForBuild, flow.Identifier, flow.RepositoryURL, includeRegistryCABinding)
+	return putGiteaFile(ctx, flow.GiteaBaseURL, flow.RepositoryName, flow.RepositoryPath+"/Jenkinsfile", jenkinsfile, fmt.Sprintf("sync jenkinsfile for %s", flow.Identifier))
+}
+
+func actionWriteComponentReadme(ctx context.Context, flow componentFlowContext) error {
+	readme := buildComponentReadme(flow.App, flow.Env, flow.Component, flow.Identifier, flow.RepositoryURL, flow.RepositoryPath)
+	return putGiteaFileIfNotExists(ctx, flow.GiteaBaseURL, flow.RepositoryName, flow.RepositoryPath+"/README.md", readme, fmt.Sprintf("init readme for %s", flow.Identifier))
+}
+
+func actionConfigureComponentJenkins(ctx context.Context, flow componentFlowContext, kpackSpec k8s.KpackBuildEnvironmentSpec, caWarning string) (string, string) {
+	return ensureComponentJenkinsAutomation(ctx, flow.K8sClient, flow.App, flow.Env, flow.Component, flow.Identifier, flow.GiteaBaseURL, flow.RepositoryName, flow.RepositoryURL, kpackSpec, caWarning)
+}
+
+func componentSourceInternalBuildImage(ctx context.Context, flow componentFlowContext) string {
+	image := strings.TrimSpace(flow.Component.Image)
+	host := componentSourceInternalRegistryHost(ctx, flow)
+	if host == "" && image == "" {
+		host = RuntimeRegistryHost(flow.App, flow.Env, "registry")
+	}
+	if host == "" {
+		return image
+	}
+	repository := imageRepositoryPath(image)
+	if repository == "" {
+		primaryNS := fmt.Sprintf("%s-%s", flow.App.Identifier, flow.Env.Identifier)
+		repository = fmt.Sprintf("%s/%s", primaryNS, flow.Identifier)
+	}
+	tag := imageTag(image)
+	if tag == "" {
+		tag = strings.TrimSpace(flow.Component.Version)
+	}
+	if tag == "" {
+		tag = "manual"
+	}
+	return strings.TrimRight(host, "/") + "/" + strings.Trim(repository, "/") + ":" + tag
+}
+
+func componentSourceInternalRegistryHost(ctx context.Context, flow componentFlowContext) string {
+	targets := flow.Targets
+	if len(targets) == 0 {
+		targets = componentDeliveryTargetsFromServices(flow.Services)
+	}
+	cfg, _ := model.ParseComponentConfig(flow.Component.Config)
+	target, ok := preferredComponentRegistryDeliveryTarget(targets, cfg.RegistryTarget)
+	if !ok {
+		return registryServerFromImageRef(flow.Component.Image)
+	}
+	if target.Source == model.CapabilitySourceExternal {
+		return externalEndpointHost(target.ExternalEndpoint)
+	}
+	if target.Service == nil || strings.TrimSpace(target.Service.Namespace) == "" {
+		return registryServerFromImageRef(flow.Component.Image)
+	}
+	if !strings.EqualFold(target.ServiceType, "registry") && !strings.EqualFold(target.ServiceType, "harbor") {
+		return registryServerFromImageRef(flow.Component.Image)
+	}
+	return internalServiceRegistryHost(ctx, *target.Service)
+}
+
+func componentSourceRegistryTargetIsInternal(ctx context.Context, flow componentFlowContext) bool {
+	target, ok := componentSourceRegistryDeliveryTarget(ctx, flow)
+	if !ok {
+		return false
+	}
+	if target.Source == model.CapabilitySourceExternal {
+		return false
+	}
+	if target.Service == nil || strings.TrimSpace(target.Service.Namespace) == "" {
+		return false
+	}
+	return strings.EqualFold(target.ServiceType, "registry") || strings.EqualFold(target.ServiceType, "harbor")
+}
+
+func componentSourceRegistryDeliveryTarget(ctx context.Context, flow componentFlowContext) (componentDeliveryTarget, bool) {
+	targets := flow.Targets
+	if len(targets) == 0 {
+		targets = componentDeliveryTargetsFromServices(flow.Services)
+	}
+	cfg, _ := model.ParseComponentConfig(flow.Component.Config)
+	return preferredComponentRegistryDeliveryTarget(targets, cfg.RegistryTarget)
+}
+
+func internalServiceRegistryHost(ctx context.Context, inst model.ServiceInstallation) string {
+	namespace := strings.TrimSpace(inst.Namespace)
+	if namespace == "" {
+		return ""
+	}
+	releaseName := strings.TrimSpace(inst.ReleaseName)
+	if releaseName == "" {
+		releaseName = namespace
+	}
+	if network, err := k8s.DiscoverRegistryServiceNetwork(ctx, namespace, releaseName); err == nil && network != nil && strings.TrimSpace(network.ServiceName) != "" {
+		port := network.Port
+		if port <= 0 {
+			port = 5000
+		}
+		if clusterIP := strings.TrimSpace(network.ClusterIP); clusterIP != "" {
+			return fmt.Sprintf("%s:%d", clusterIP, port)
+		}
+		return fmt.Sprintf("%s.%s.svc.cluster.local:%d", network.ServiceName, namespace, port)
+	}
+	return fmt.Sprintf("%s.%s.svc.cluster.local:5000", releaseName, namespace)
+}
+
+func imageRepositoryPath(image string) string {
+	image = ImageWithoutTag(strings.TrimSpace(image))
+	if image == "" {
+		return ""
+	}
+	parts := strings.Split(image, "/")
+	if len(parts) > 1 && imageReferenceFirstSegmentIsRegistry(parts[0]) {
+		parts = parts[1:]
+	}
+	return strings.Join(parts, "/")
+}
+
+func actionDetectSourceBuildCompletion(ctx context.Context, flow componentFlowContext) (bool, string, error) {
+	if strings.TrimSpace(flow.ToolNamespaces.Jenkins) == "" {
+		return false, "", nil
+	}
+	status, err := k8s.GetKpackImageStatus(ctx, flow.K8sClient, flow.ToolNamespaces.Jenkins, flow.Identifier)
+	if err != nil {
+		return false, "", err
+	}
+	if !status.Exists || !status.Ready {
+		return false, status.Warning, nil
+	}
+	return true, "", nil
+}
+
+func actionEnsureArgoCDRepository(ctx context.Context, flow componentFlowContext) error {
+	return ensureArgoCDRepositorySecret(ctx, flow.K8sClient, flow.ToolNamespaces.ArgoCD, flow.RepositoryName, flow.RepositoryURL, giteaAdminUser, giteaAdminPassword)
+}
+
+func actionDiscoverArgoCDDestinationNamespaces(ctx context.Context, flow componentFlowContext) []string {
+	return discoverComponentGitOpsNamespaces(ctx, flow.K8sClient, flow.App.Identifier, flow.Env.Identifier, flow.DestinationNamespace)
+}
+
+func actionEnsureArgoCDLocalCluster(ctx context.Context, flow componentFlowContext, destinationNamespaces []string) error {
+	return ensureArgoCDLocalClusterSecret(ctx, flow.K8sClient, flow.ToolNamespaces.ArgoCD, destinationNamespaces)
+}
+
+func actionDenyArgoCDDefaultProject(ctx context.Context, flow componentFlowContext) error {
+	return ensureArgoCDDefaultProjectDenied(ctx, flow.K8sClient, flow.ToolNamespaces.ArgoCD)
+}
+
+func actionEnsureArgoCDProject(ctx context.Context, flow componentFlowContext, destinationNamespaces []string) error {
+	return ensureArgoCDProject(ctx, flow.K8sClient, flow.ToolNamespaces.ArgoCD, flow.ProjectName, flow.RepositoryURL, destinationNamespaces)
+}
+
+func actionEnsureArgoCDApplication(ctx context.Context, flow componentFlowContext) error {
+	return ensureArgoCDApplication(ctx, flow.K8sClient, flow.ToolNamespaces.ArgoCD, flow.ArgoCDApplication, flow.ProjectName, flow.RepositoryURL, flow.RepositoryPath, flow.DestinationNamespace, flow.App.Identifier, flow.Env.Identifier, flow.Identifier)
 }
 
 func ensureGiteaRepository(ctx context.Context, baseURL, repoName string) error {
@@ -553,24 +1170,22 @@ func ensureGiteaSourceMirror(ctx context.Context, baseURL, repoName string, comp
 	if giteaRepoURLBelongsToBase(sourceURL, baseURL) {
 		return sourceURL, nil
 	}
-
+	targetURL := giteaRepoURL(baseURL, repoName)
 	body := map[string]interface{}{
-		"clone_addr":     sourceURL,
-		"repo_name":      repoName,
-		"repo_owner":     giteaAdminUser,
-		"mirror":         true,
-		"private":        false,
-		"description":    fmt.Sprintf("PAAP source mirror for %s", comp.Name),
-		"default_branch": componentBranch(comp),
+		"clone_addr": sourceURL,
+		"repo_name":  repoName,
+		"repo_owner": giteaAdminUser,
+		"mirror":     true,
+		"private":    false,
 	}
 	status, response, err := giteaRequest(ctx, http.MethodPost, baseURL+"/api/v1/repos/migrate", body)
 	if err != nil {
 		return "", err
 	}
-	if status == http.StatusCreated || status == http.StatusOK || status == http.StatusConflict {
-		return giteaRepoURL(baseURL, repoName), nil
+	if status == http.StatusCreated || status == http.StatusConflict || status == http.StatusUnprocessableEntity {
+		return targetURL, nil
 	}
-	return "", fmt.Errorf("migrate gitea source repo failed: status=%d body=%s", status, string(response))
+	return "", fmt.Errorf("migrate gitea source mirror failed: status=%d body=%s", status, string(response))
 }
 
 func giteaRepoURLBelongsToBase(repoURL, baseURL string) bool {
@@ -656,8 +1271,7 @@ func ensureComponentJenkinsAutomation(ctx context.Context, k8sClient client.Clie
 	ciStatus, ciWarning := componentCIStatusFromKpack(kpackStatus)
 	ciWarning = appendCIWarning(ciWarning, caWarning)
 
-	jenkinsNS := discoverComponentToolNamespaces(ctx, k8sClient, app.Identifier, env.Identifier).Jenkins
-	jenkins := newComponentJenkinsClient(jenkinsNS)
+	jenkins := newComponentJenkinsClient(kpackSpec.Namespace)
 	jobSpec := buildComponentJenkinsJobSpec(app, env, identifier, repoURL)
 	if comp.JenkinsJob != "" {
 		jobSpec.Name = comp.JenkinsJob
@@ -718,6 +1332,10 @@ func buildComponentKpackSpec(app model.Application, env model.Environment, ident
 }
 
 func buildComponentKpackSpecWithRegistryCA(ctx context.Context, k8sClient client.Client, app model.Application, env model.Environment, identifier string, imageRefs ...string) (k8s.KpackBuildEnvironmentSpec, string) {
+	return buildComponentKpackSpecWithRegistryCAMirrors(ctx, k8sClient, app, env, identifier, false, imageRefs...)
+}
+
+func buildComponentKpackSpecWithRegistryCAMirrors(ctx context.Context, k8sClient client.Client, app model.Application, env model.Environment, identifier string, mirrorBuildpackImages bool, imageRefs ...string) (k8s.KpackBuildEnvironmentSpec, string) {
 	primaryNS := fmt.Sprintf("%s-%s", app.Identifier, env.Identifier)
 	toolNamespaces := discoverComponentToolNamespaces(ctx, k8sClient, app.Identifier, env.Identifier)
 	registryHost := RuntimeRegistryHost(app, env, "registry")
@@ -726,10 +1344,14 @@ func buildComponentKpackSpecWithRegistryCA(ctx context.Context, k8sClient client
 			registryHost = host
 		}
 	}
+	gitServer := ""
+	if toolNamespaces.Gitea != "" {
+		gitServer = fmt.Sprintf("http://%s.%s.svc.cluster.local:3000", toolNamespaces.Gitea, toolNamespaces.Gitea)
+	}
 	spec := k8s.KpackBuildEnvironmentSpec{
 		Namespace:       toolNamespaces.Jenkins,
 		RegistryServer:  registryHost,
-		GitServer:       fmt.Sprintf("http://%s.%s.svc.cluster.local:3000", toolNamespaces.Gitea, toolNamespaces.Gitea),
+		GitServer:       gitServer,
 		GitUsername:     giteaAdminUser,
 		GitPassword:     giteaAdminPassword,
 		BuilderImage:    fmt.Sprintf("%s/%s/paap-builder:latest", registryHost, primaryNS),
@@ -742,6 +1364,10 @@ func buildComponentKpackSpecWithRegistryCA(ctx context.Context, k8sClient client
 			k8s.PaketoPythonBuildpackImage,
 		},
 	}
+	if mirrorBuildpackImages {
+		spec.StackBuildImage, spec.StackRunImage = mirroredPaketoStackImages(registryHost, primaryNS, false)
+		spec.BuildpackSources = mirroredPaketoBuildpackSources(registryHost, primaryNS)
+	}
 	if registryServiceTypeForHost(app, env, registryHost) == "harbor" {
 		spec.RegistryUsername = "admin"
 		spec.RegistryPassword = "Harbor12345"
@@ -752,10 +1378,30 @@ func buildComponentKpackSpecWithRegistryCA(ctx context.Context, k8sClient client
 	ca, warning := readEnvironmentRegistryCAWithClient(ctx, k8sClient, app, env, registryHost)
 	spec.RegistryCAPEM = ca
 	if len(ca) > 0 {
-		spec.StackBuildImage = fmt.Sprintf("%s/%s/paap-build-jammy-base:registry-ca", registryHost, primaryNS)
-		spec.StackRunImage = fmt.Sprintf("%s/%s/paap-run-jammy-base:registry-ca", registryHost, primaryNS)
+		spec.StackBuildImage, spec.StackRunImage = mirroredPaketoStackImages(registryHost, primaryNS, true)
+		spec.BuildpackSources = mirroredPaketoBuildpackSources(registryHost, primaryNS)
 	}
 	return spec, warning
+}
+
+func mirroredPaketoStackImages(registryHost, namespace string, registryCA bool) (string, string) {
+	buildTag := "0.1.233"
+	runTag := "0.1.233"
+	if registryCA {
+		buildTag = "registry-ca"
+		runTag = "registry-ca"
+	}
+	return fmt.Sprintf("%s/%s/paap-build-jammy-base:%s", registryHost, namespace, buildTag),
+		fmt.Sprintf("%s/%s/paap-run-jammy-base:%s", registryHost, namespace, runTag)
+}
+
+func mirroredPaketoBuildpackSources(registryHost, namespace string) []string {
+	return []string{
+		fmt.Sprintf("%s/%s/paap-buildpack-java:22.0.0", registryHost, namespace),
+		fmt.Sprintf("%s/%s/paap-buildpack-nodejs:10.3.2", registryHost, namespace),
+		fmt.Sprintf("%s/%s/paap-buildpack-go:4.19.14", registryHost, namespace),
+		fmt.Sprintf("%s/%s/paap-buildpack-python:2.49.0", registryHost, namespace),
+	}
 }
 
 func registryServerFromImageRef(image string) string {
@@ -854,7 +1500,7 @@ func jenkinsNotifyCommitHookURL(baseURL, repoURL string) string {
 }
 
 func jenkinsRemoteBuildHookURL(baseURL, jobName string) string {
-	return strings.TrimRight(baseURL, "/") + k8s.JenkinsJobPath(jobName) + "/build?token=paap-source-build"
+	return strings.TrimRight(baseURL, "/") + k8s.JenkinsJobPath(jobName) + "/buildWithParameters?token=paap-source-build"
 }
 
 func sourceWebhookRepositoryName(giteaBaseURL string, comp model.Component) string {
@@ -960,52 +1606,37 @@ func buildComponentJenkinsfile(comp model.Component, identifier, fallbackRepoURL
 	if image == "" {
 		image = fmt.Sprintf("registry.local/%s", identifier)
 	}
+	buildTag := valueOrDefault(comp.Version, imageTag(comp.Image))
+	if buildTag == "" {
+		buildTag = "manual"
+	}
 	buildCtx := comp.BuildContext
 	if buildCtx == "" {
 		buildCtx = "."
 	}
+	buildModule := strings.TrimSpace(comp.BuildModule)
 	sourceSubPath := ""
 	if buildCtx != "." {
 		sourceSubPath = "    subPath: ${BUILD_CONTEXT}\n"
 	}
 	sourceRepo := strings.TrimSpace(comp.SourceMirrorRepoURL)
 	if sourceRepo == "" {
-		sourceRepo = strings.TrimSpace(comp.SourceRepoURL)
-	}
-	if sourceRepo == "" {
 		sourceRepo = strings.TrimSpace(comp.GitRepoURL)
 	}
 	if sourceRepo == "" {
 		sourceRepo = fallbackRepoURL
 	}
-	gitopsPushURL := authenticatedGiteaURL(fallbackRepoURL)
 	sourceBranch := strings.TrimSpace(comp.SourceBranch)
 	if sourceBranch == "" {
 		sourceBranch = "main"
 	}
-	gitopsPath := fmt.Sprintf("components/%s/deployment.yaml", identifier)
 	kpackAPIVersion := "kpack.io/v1alpha2"
 	kpackServiceAccountField := "serviceAccountName"
 	if includeRegistryCABinding {
 		kpackAPIVersion = "kpack.io/v1alpha1"
 		kpackServiceAccountField = "serviceAccount"
 	}
-	buildEnv := `  build:
-    env:
-    - name: BP_GO_VERSION
-      value: "1.25.*"
-`
-	if includeRegistryCABinding {
-		buildEnv = `  build:
-    env:
-    - name: BP_GO_VERSION
-      value: "1.25.*"
-    cnbBindings:
-    - name: paap-registry-ca
-      secretRef:
-        name: paap-kpack-registry-ca
-`
-	}
+	buildEnv := componentKpackBuildEnvYAML(buildModule, includeRegistryCABinding)
 	return fmt.Sprintf(`podTemplate(defaultContainer: 'kubectl', yaml: '''
 apiVersion: v1
 kind: Pod
@@ -1028,23 +1659,21 @@ spec:
             def BUILD_CONTEXT = "%s"
             def SOURCE_REPO = "%s"
             def SOURCE_REVISION = "%s"
+            def IMAGE_TAG = "%s"
             def KPACK_IMAGE = "%s"
+            def BUILD_MODULE = "%s"
             def KPACK_BUILDER = "paap-builder"
             def KPACK_SERVICE_ACCOUNT = "paap-kpack-build"
-            def GITOPS_DEPLOYMENT = "%s"
-            def GITOPS_BRANCH = "main"
-            def GITOPS_REPO_PUSH_URL = "%s"
 
             try {
         stage('Submit Buildpacks Image') {
-                    def tag = env.BUILD_NUMBER ?: "%s"
                     writeFile file: 'kpack-image.yaml', text: """
 apiVersion: %s
 kind: Image
 metadata:
   name: ${KPACK_IMAGE}
 spec:
-  tag: ${IMAGE_NAME}:${tag}
+  tag: ${IMAGE_NAME}:${IMAGE_TAG}
   %s: ${KPACK_SERVICE_ACCOUNT}
   builder:
     kind: Builder
@@ -1055,37 +1684,83 @@ spec:
       url: ${SOURCE_REPO}
       revision: ${SOURCE_REVISION}
 """
+                    sh """
+if kubectl get image.kpack.io/${KPACK_IMAGE} >/dev/null 2>&1; then
+  READY_STATUS=\$(kubectl get image.kpack.io/${KPACK_IMAGE} -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' || true)
+  LATEST_IMAGE=\$(kubectl get image.kpack.io/${KPACK_IMAGE} -o jsonpath='{.status.latestImage}' || true)
+  if [ "\${READY_STATUS}" != "True" ] && [ -z "\${LATEST_IMAGE}" ]; then
+    kubectl delete image.kpack.io/${KPACK_IMAGE} --wait=true
+    kubectl delete builds.kpack.io -l image.kpack.io/image=${KPACK_IMAGE} --ignore-not-found=true --wait=true
+  fi
+fi
+"""
                     sh "kubectl apply -f kpack-image.yaml"
                     sh "kubectl wait image.kpack.io/${KPACK_IMAGE} --for=condition=Ready=True --timeout=30m"
-        }
-        stage('Update GitOps Manifest') {
-                    def tag = env.BUILD_NUMBER ?: "%s"
-                    sh """
-git config user.email "paap@local"
-git config user.name "PAAP CI"
-sed -i -E "s#image: ${IMAGE_NAME}(:[^[:space:]]+)?#image: ${IMAGE_NAME}:${tag}#" "${GITOPS_DEPLOYMENT}"
-git remote set-url origin ${GITOPS_REPO_PUSH_URL}
-git add ${GITOPS_DEPLOYMENT}
-git diff --cached --quiet && exit 0
-git commit -m "build %s:${tag}"
-git push origin HEAD:${GITOPS_BRANCH}
-"""
         }
             } finally {
                 deleteDir()
             }
         }
     }
-}`, jenkinsKubectlImage, jenkinsInboundAgentImage, image, buildCtx, sourceRepo, sourceBranch, identifier, gitopsPath, gitopsPushURL, valueOrDefault(comp.Version, "manual"), kpackAPIVersion, kpackServiceAccountField, buildEnv, sourceSubPath, valueOrDefault(comp.Version, "manual"), identifier)
+}`, jenkinsKubectlImage, jenkinsInboundAgentImage, image, buildCtx, sourceRepo, sourceBranch, buildTag, identifier, buildModule, kpackAPIVersion, kpackServiceAccountField, buildEnv, sourceSubPath)
 }
 
-func authenticatedGiteaURL(repoURL string) string {
-	parsed, err := url.Parse(strings.TrimSpace(repoURL))
-	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
-		return repoURL
+func componentKpackBuildEnvYAML(buildModule string, includeRegistryCABinding bool) string {
+	var lines []string
+	var envLines []string
+	if strings.TrimSpace(buildModule) != "" {
+		envLines = append(envLines,
+			"    - name: BP_MAVEN_BUILT_MODULE",
+			"      value: \"${BUILD_MODULE}\"",
+			"    - name: BP_MAVEN_BUILD_ARGUMENTS",
+			"      value: \"-pl ${BUILD_MODULE} -am -Dmaven.test.skip=true --no-transfer-progress package\"",
+			"    - name: BP_JVM_VERSION",
+			"      value: \"8.*\"",
+		)
 	}
-	parsed.User = url.UserPassword(giteaAdminUser, giteaAdminPassword)
-	return parsed.String()
+	envLines = append(envLines, componentKpackProxyBuildEnvYAML()...)
+	if len(envLines) == 0 && !includeRegistryCABinding {
+		return ""
+	}
+	lines = append(lines, "  build:")
+	if len(envLines) > 0 {
+		lines = append(lines, "    env:")
+		lines = append(lines, envLines...)
+	}
+	if includeRegistryCABinding {
+		lines = append(lines,
+			"    cnbBindings:",
+			"    - name: paap-registry-ca",
+			"      secretRef:",
+			"        name: paap-kpack-registry-ca",
+		)
+	}
+	return strings.Join(lines, "\n") + "\n"
+}
+
+func componentKpackProxyBuildEnvYAML() []string {
+	pairs := []struct {
+		name string
+		env  string
+	}{
+		{name: "http_proxy", env: "PAAP_BUILDPACK_HTTP_PROXY"},
+		{name: "https_proxy", env: "PAAP_BUILDPACK_HTTPS_PROXY"},
+		{name: "no_proxy", env: "PAAP_BUILDPACK_NO_PROXY"},
+		{name: "BP_JVM_TYPE", env: "PAAP_BUILDPACK_JVM_TYPE"},
+		{name: "BP_LOG_LEVEL", env: "PAAP_BUILDPACK_LOG_LEVEL"},
+	}
+	lines := make([]string, 0, len(pairs)*2)
+	for _, pair := range pairs {
+		value := strings.TrimSpace(os.Getenv(pair.env))
+		if value == "" {
+			continue
+		}
+		lines = append(lines,
+			fmt.Sprintf("    - name: %s", pair.name),
+			fmt.Sprintf("      value: %q", value),
+		)
+	}
+	return lines
 }
 
 func buildComponentReadme(app model.Application, env model.Environment, comp model.Component, identifier, repoURL, repoPath string) string {
@@ -1148,7 +1823,8 @@ func giteaRequest(ctx context.Context, method, url string, body interface{}) (in
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	res, err := http.DefaultClient.Do(req)
+	client := &http.Client{Timeout: 15 * time.Second}
+	res, err := client.Do(req)
 	if err != nil {
 		return 0, nil, err
 	}
@@ -1204,12 +1880,7 @@ func ensureArgoCDRepositorySecret(ctx context.Context, k8sClient client.Client, 
 }
 
 func discoverComponentToolNamespaces(ctx context.Context, k8sClient client.Client, appIdentifier, envIdentifier string) componentToolNamespaces {
-	base := fmt.Sprintf("%s-%s", appIdentifier, envIdentifier)
-	result := componentToolNamespaces{
-		ArgoCD:  base + "-argocd",
-		Gitea:   base + "-gitea",
-		Jenkins: base + "-jenkins",
-	}
+	result := componentToolNamespaces{}
 	if k8sClient == nil || appIdentifier == "" || envIdentifier == "" {
 		return result
 	}

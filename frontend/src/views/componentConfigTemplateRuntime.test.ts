@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
+  componentConfigTemplateEffectiveType,
+  componentConfigTemplateMatchesSelection,
   componentConfigTemplateMatchesComponent,
+  componentConfigTemplateRecommendationScore,
+  componentConfigTemplateSelectValue,
   componentTemplateFieldDefaultValue,
   componentTemplateFieldInputType,
   componentTemplateFieldKey,
@@ -15,7 +19,12 @@ import {
   componentTemplateRenderTargetValue,
   componentTemplateRequiredFieldsComplete,
   componentTemplateServicePasswordFieldKeys,
+  componentTemplateServiceTypeGroup,
+  componentTemplateServiceTypeMatchesTargets,
+  componentTemplateServiceUsernameFieldKeys,
+  componentTemplateSplitEndpoint,
   defaultComponentTemplateListRow,
+  resolveComponentConfigTemplateSelection,
 } from './componentConfigTemplateRuntime'
 
 describe('component config template runtime helpers', () => {
@@ -28,6 +37,54 @@ describe('component config template runtime helpers', () => {
       { framework: 'springboot', componentTypes: ['backend'] },
       { componentType: 'frontend', framework: 'node' },
     )).toBe(false)
+  })
+
+  it('matches Spring Cloud gateway components to backend Spring templates even when exposed as frontend entrypoints', () => {
+    const gatewayOptions = { componentName: 'gateway', componentType: 'frontend', framework: 'springboot' }
+
+    expect(componentConfigTemplateEffectiveType(gatewayOptions)).toBe('backend')
+    expect(componentConfigTemplateMatchesComponent(
+      { framework: 'springboot', componentTypes: ['backend'], key: 'piggymetrics-gateway-runtime' },
+      gatewayOptions,
+    )).toBe(true)
+
+    const gatewayScore = componentConfigTemplateRecommendationScore(
+      { framework: 'springboot', componentTypes: ['backend'], key: 'piggymetrics-gateway-runtime', name: 'PiggyMetrics gateway 运行变量' },
+      gatewayOptions,
+    )
+    const genericScore = componentConfigTemplateRecommendationScore(
+      { framework: 'springboot', componentTypes: ['backend'], key: 'springboot-base', name: 'Spring Boot 基础配置' },
+      gatewayOptions,
+    )
+
+    expect(gatewayScore).toBeGreaterThan(genericScore)
+  })
+
+  it('keeps component-specific templates visible before the framework is explicitly selected', () => {
+    const gatewayOptions = { componentName: 'gateway', componentType: 'frontend', framework: 'auto' }
+
+    expect(componentConfigTemplateMatchesComponent(
+      { framework: 'springboot', componentTypes: ['backend'], key: 'piggymetrics-gateway-runtime' },
+      gatewayOptions,
+    )).toBe(true)
+
+    expect(componentConfigTemplateMatchesComponent(
+      { framework: 'springboot', componentTypes: ['backend'], key: 'springboot-base' },
+      gatewayOptions,
+    )).toBe(false)
+  })
+
+  it('resolves saved template metadata to the actual select option value', () => {
+    const templates = [
+      { id: 31, key: 'springboot-base', name: 'Spring Boot 基础配置' },
+      { id: 42, key: 'piggymetrics-gateway-runtime', name: 'PiggyMetrics gateway 运行变量' },
+    ]
+
+    expect(componentConfigTemplateSelectValue(templates[1])).toBe('42')
+    expect(componentConfigTemplateMatchesSelection(templates[1], 'piggymetrics-gateway-runtime')).toBe(true)
+    expect(componentConfigTemplateMatchesSelection(templates[1], 'PiggyMetrics gateway 运行变量')).toBe(true)
+    expect(resolveComponentConfigTemplateSelection(templates, 'PiggyMetrics gateway 运行变量')).toBe('42')
+    expect(resolveComponentConfigTemplateSelection(templates, 'piggymetrics-gateway-runtime')).toBe('42')
   })
 
   it('prefills password fields from existing env or secret names', () => {
@@ -46,6 +103,14 @@ describe('component config template runtime helpers', () => {
         secrets: [{ data: { REDIS_PASSWORD: 'redis-secret' } }],
       },
     )).toBe('redis-secret')
+
+    expect(componentTemplateExistingFieldValue(
+      { key: 'CONFIG_SERVICE_PASSWORD', type: 'password' },
+      {
+        env: [],
+        secrets: [{ data: { CONFIG_SERVICE_PASSWORD: '[[paap:CONFIG_SERVICE_PASSWORD default=cfg-pwd-2026]]' } }],
+      },
+    )).toBe('cfg-pwd-2026')
   })
 
   it('normalizes field metadata without depending on the component view', () => {
@@ -62,6 +127,10 @@ describe('component config template runtime helpers', () => {
     expect(componentTemplateFieldDefaultValue(field)).toBe('')
     expect(componentTemplateFieldInputType(field)).toBe('password')
     expect(componentTemplateFieldTargetTokens(field)).toEqual(['postgresql', 'mysql'])
+    expect(componentTemplateFieldDefaultValue({
+      key: 'config.password',
+      default: '[[paap:CONFIG_SERVICE_PASSWORD default=cfg-pwd-2026]]',
+    })).toBe('cfg-pwd-2026')
   })
 
   it('builds list rows from item field defaults', () => {
@@ -149,6 +218,21 @@ describe('component config template runtime helpers', () => {
     )).toBe('postgresql://app:secret%20pass@postgres.dev.svc.cluster.local:5432/postgres')
   })
 
+  it('parses external capability URI endpoints before rendering template refs', () => {
+    expect(componentTemplateSplitEndpoint('postgres://user:pass@db.example.com:5432/app', 5432))
+      .toEqual(['db.example.com', 5432])
+    expect(componentTemplateSplitEndpoint('redis://redis.example.com:6379/0', 6379))
+      .toEqual(['redis.example.com', 6379])
+    expect(componentTemplateSplitEndpoint('https://gitea.example.com/paap/repo', 3000))
+      .toEqual(['gitea.example.com', 3000])
+
+    expect(componentTemplateRenderTargetValue(
+      { key: 'DATABASE_HOST', format: 'host' },
+      { key: 'capability:9', kind: 'capability', type: 'postgresql' },
+      { endpoint: 'postgres://user:pass@db.example.com:5432/app', defaultPort: 5432 },
+    )).toBe('db.example.com')
+  })
+
   it('renders service references from ordinary template keys and inferred formats', () => {
     const target = { key: 'service:1', kind: 'service', type: 'postgresql' }
 
@@ -169,6 +253,16 @@ describe('component config template runtime helpers', () => {
     )).toBe('5432')
   })
 
+  it('renders eureka service references as Spring Cloud defaultZone URLs', () => {
+    const target = { key: 'service:5', kind: 'service', type: 'eureka' }
+
+    expect(componentTemplateRenderTargetValue(
+      { key: 'EUREKA_URL', type: 'serviceRef', target: 'eureka', format: 'eurekaUrl' },
+      target,
+      { endpoint: 'piggymetrics-dev-eureka.piggymetrics-dev-eureka.svc.cluster.local:8761', defaultPort: 8761 },
+    )).toBe('http://piggymetrics-dev-eureka.piggymetrics-dev-eureka.svc.cluster.local:8761/eureka/')
+  })
+
   it('matches ordinary password fields to selected database and redis service refs', () => {
     const fields = [
       { key: 'JDBC_URL', type: 'serviceRef', target: 'postgresql|mysql', format: 'jdbcUrl' },
@@ -183,5 +277,27 @@ describe('component config template runtime helpers', () => {
     expect(componentTemplateFieldMatchesServiceRef(fields[4], fields[0])).toBe(false)
     expect(componentTemplateServicePasswordFieldKeys(fields, 'postgresql')).toEqual(['DATABASE_PASSWORD'])
     expect(componentTemplateServicePasswordFieldKeys(fields, 'redis')).toEqual(['REDIS_PASSWORD'])
+  })
+
+  it('matches service references by logical service type aliases', () => {
+    expect(componentTemplateServiceTypeGroup('postgresql-ha')).toBe('database')
+    expect(componentTemplateServiceTypeMatchesTargets('postgresql-ha', ['postgresql'])).toBe(true)
+    expect(componentTemplateServiceTypeMatchesTargets('mysql-galera', ['database'])).toBe(true)
+    expect(componentTemplateServiceTypeMatchesTargets('redis-cluster', ['redis'])).toBe(true)
+    expect(componentTemplateServiceTypeMatchesTargets('harbor', ['registry'])).toBe(true)
+    expect(componentTemplateServiceTypeMatchesTargets('rabbitmq', ['redis'])).toBe(false)
+  })
+
+  it('finds username fields that should follow the selected service reference', () => {
+    const fields = [
+      { key: 'MONGODB_USERNAME', type: 'text' },
+      { key: 'MONGODB_PASSWORD', type: 'password' },
+      { key: 'RABBITMQ_USERNAME', type: 'text' },
+      { key: 'CONFIG_SERVICE_PASSWORD', type: 'password' },
+    ]
+
+    expect(componentTemplateServiceUsernameFieldKeys(fields, 'mongodb')).toEqual(['MONGODB_USERNAME'])
+    expect(componentTemplateServiceUsernameFieldKeys(fields, 'rabbitmq')).toEqual(['RABBITMQ_USERNAME'])
+    expect(componentTemplateServiceUsernameFieldKeys(fields, 'mongodb')).not.toContain('MONGODB_PASSWORD')
   })
 })

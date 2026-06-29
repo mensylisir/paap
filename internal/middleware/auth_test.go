@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"paap/internal/authz"
 	"paap/internal/database"
 	"paap/internal/model"
 
@@ -23,7 +24,7 @@ func TestAuthRequiredAcceptsRuntimeConsoleWebSocketSubprotocolToken(t *testing.T
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := db.AutoMigrate(&model.User{}, &model.UserRole{}); err != nil {
+	if err := db.AutoMigrate(&model.User{}, &model.Role{}, &model.RoleBinding{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	database.DB = db
@@ -32,8 +33,11 @@ func TestAuthRequiredAcceptsRuntimeConsoleWebSocketSubprotocolToken(t *testing.T
 	if err := db.Create(&user).Error; err != nil {
 		t.Fatalf("create user: %v", err)
 	}
-	if _, err := model.ReplaceUserRoles(db, user.ID, []string{model.RolePlatformAdmin}); err != nil {
-		t.Fatalf("create roles: %v", err)
+	if err := db.Create(&model.Role{Code: model.RolePlatformAdmin, Name: "平台管理员", ScopeType: model.ScopeSystem, Builtin: true, Editable: false, Enabled: true}).Error; err != nil {
+		t.Fatalf("create platform role: %v", err)
+	}
+	if err := authz.BindRole(db, user.ID, model.RolePlatformAdmin, authz.SystemScope(), user.ID); err != nil {
+		t.Fatalf("bind role: %v", err)
 	}
 	token, err := GenerateToken(user.ID)
 	if err != nil {

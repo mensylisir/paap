@@ -60,6 +60,24 @@ describe('api client', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 
+  it('uploads component config templates as multipart form data', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => ({ data: { id: 1 } }),
+    } as Response)
+    const form = new FormData()
+    form.set('file', new Blob(['{}'], { type: 'application/json' }), 'template.json')
+
+    await api.uploadComponentConfigTemplate(form)
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/v1/component-config-templates/upload', expect.objectContaining({
+      method: 'POST',
+      body: form,
+    }))
+    const options = fetchMock.mock.calls[0][1] as RequestInit
+    expect((options.headers as Record<string, string>)['Content-Type']).toBeUndefined()
+  })
+
   it('calls environment adoptable resource endpoints', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
       ok: true,
@@ -96,6 +114,17 @@ describe('api client', () => {
     expect(fetchMock).toHaveBeenNthCalledWith(3, '/api/v1/capabilities/shared-resources', expect.objectContaining({ method: 'GET' }))
     expect(fetchMock).toHaveBeenNthCalledWith(4, '/api/v1/environments/5/capabilities/git/credentials', expect.objectContaining({ method: 'GET' }))
     expect(fetchMock).toHaveBeenNthCalledWith(5, '/api/v1/environments/5/capabilities/git', expect.objectContaining({ method: 'DELETE' }))
+  })
+
+  it('calls catalog service products endpoint', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => ({ data: [] }),
+    } as Response)
+
+    await api.listCatalogServices()
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/v1/catalog/services', expect.objectContaining({ method: 'GET' }))
   })
 
   it('calls application member management endpoints', async () => {
@@ -135,6 +164,41 @@ describe('api client', () => {
     }))
   })
 
+  it('calls RBAC role management endpoints', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => ({ data: [] }),
+    } as Response)
+
+    const payload = {
+      code: 'finance.operator',
+      name: '财务操作员',
+      scopeType: 'app',
+      enabled: true,
+      permissionIds: [1, 2],
+    }
+
+    await api.listAssignableRoles('app')
+    await api.listRoles('app')
+    await api.permissionTree()
+    await api.createRole(payload)
+    await api.updateRole(9, { ...payload, name: '财务管理员' })
+    await api.deleteRole(9)
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/v1/roles?scopeType=app', expect.objectContaining({ method: 'GET' }))
+    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/v1/admin/roles?scopeType=app', expect.objectContaining({ method: 'GET' }))
+    expect(fetchMock).toHaveBeenNthCalledWith(3, '/api/v1/permissions/tree', expect.objectContaining({ method: 'GET' }))
+    expect(fetchMock).toHaveBeenNthCalledWith(4, '/api/v1/admin/roles', expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }))
+    expect(fetchMock).toHaveBeenNthCalledWith(5, '/api/v1/admin/roles/9', expect.objectContaining({
+      method: 'PUT',
+      body: JSON.stringify({ ...payload, name: '财务管理员' }),
+    }))
+    expect(fetchMock).toHaveBeenNthCalledWith(6, '/api/v1/admin/roles/9', expect.objectContaining({ method: 'DELETE' }))
+  })
+
   it('resolves the platform shared resource pool', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
       ok: true,
@@ -144,6 +208,17 @@ describe('api client', () => {
     await api.getSharedResourcePool()
 
     expect(fetchMock).toHaveBeenCalledWith('/api/v1/admin/shared-resource-pool', expect.objectContaining({ method: 'GET' }))
+  })
+
+  it('calls platform service stats endpoint', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => ({ data: [] }),
+    } as Response)
+
+    await api.platformServiceStats()
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/v1/platform/services/stats', expect.objectContaining({ method: 'GET' }))
   })
 
   it('calls environment template management endpoints', async () => {

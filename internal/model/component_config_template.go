@@ -21,6 +21,8 @@ type ComponentConfigTemplate struct {
 	Framework      string `gorm:"size:40;default:auto" json:"framework"`
 	BindingMode    string `gorm:"size:40;default:recommended" json:"bindingMode"`
 	ComponentTypes string `gorm:"type:text" json:"componentTypes"`
+	S3Bucket       string `gorm:"size:100" json:"s3Bucket,omitempty"`
+	S3Key          string `gorm:"size:500" json:"s3Key,omitempty"`
 
 	// Syntax documents the supported placeholder syntax. FieldsJSON declares the
 	// user-facing inputs generated from the template, while the remaining JSON

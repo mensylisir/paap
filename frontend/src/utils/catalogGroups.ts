@@ -13,23 +13,47 @@ export interface CatalogGroupMeta {
 }
 
 const catalogGroupMeta = {
-  tool: { category: 'tool', label: '工具类', icon: '🔧', rank: 10 },
-  database: { category: 'database', label: '数据库', icon: '🗄️', rank: 20 },
-  cache: { category: 'cache', label: '缓存', icon: '⚡', rank: 30 },
-  mq: { category: 'mq', label: '消息队列', icon: '📨', rank: 40 },
-  objectStorage: { category: 'objectStorage', label: '对象存储', icon: '🪣', rank: 50 },
-  middleware: { category: 'middleware', label: '中间件', icon: '🧩', rank: 60 },
-  other: { category: 'other', label: '其他', icon: '📦', rank: 90 },
+  ci: { category: 'ci', label: 'CI服务', icon: 'CI', rank: 10 },
+  cd: { category: 'cd', label: 'CD服务', icon: 'CD', rank: 20 },
+  monitor: { category: 'monitor', label: '监控服务', icon: 'MON', rank: 30 },
+  log: { category: 'log', label: '日志服务', icon: 'LOG', rank: 40 },
+  database: { category: 'database', label: '数据库服务', icon: 'DB', rank: 50 },
+  middleware: { category: 'middleware', label: '中间件服务', icon: 'MW', rank: 60 },
+  environment: { category: 'environment', label: '环境服务', icon: 'ENV', rank: 70 },
+  virtualMachine: { category: 'virtualMachine', label: '虚拟机服务', icon: 'VM', rank: 80 },
+  other: { category: 'other', label: '其他', icon: 'SVC', rank: 90 },
 } satisfies Record<string, CatalogGroupMeta>
 
 const catalogGroupByServiceType: Record<string, CatalogGroupMeta> = {
+  ci: catalogGroupMeta.ci,
+  jenkins: catalogGroupMeta.ci,
+  tekton: catalogGroupMeta.ci,
+  deploy: catalogGroupMeta.cd,
+  argocd: catalogGroupMeta.cd,
+  cd: catalogGroupMeta.cd,
+  monitor: catalogGroupMeta.monitor,
+  prometheus: catalogGroupMeta.monitor,
+  grafana: catalogGroupMeta.monitor,
+  log: catalogGroupMeta.log,
+  loki: catalogGroupMeta.log,
+  registry: catalogGroupMeta.middleware,
+  'docker-registry': catalogGroupMeta.middleware,
+  harbor: catalogGroupMeta.middleware,
   postgresql: catalogGroupMeta.database,
+  'postgresql-ha': catalogGroupMeta.database,
   mysql: catalogGroupMeta.database,
+  'mysql-galera': catalogGroupMeta.database,
   mongodb: catalogGroupMeta.database,
-  redis: catalogGroupMeta.cache,
-  rabbitmq: catalogGroupMeta.mq,
-  kafka: catalogGroupMeta.mq,
-  minio: catalogGroupMeta.objectStorage,
+  redis: catalogGroupMeta.middleware,
+  'redis-cluster': catalogGroupMeta.middleware,
+  rabbitmq: catalogGroupMeta.middleware,
+  kafka: catalogGroupMeta.middleware,
+  minio: catalogGroupMeta.middleware,
+  nacos: catalogGroupMeta.middleware,
+  eureka: catalogGroupMeta.middleware,
+  environment: catalogGroupMeta.environment,
+  kubevirt: catalogGroupMeta.virtualMachine,
+  vm: catalogGroupMeta.virtualMachine,
 }
 
 export const catalogGroupForTemplate = (template: CatalogTemplateLike): CatalogGroupMeta => {
@@ -37,8 +61,14 @@ export const catalogGroupForTemplate = (template: CatalogTemplateLike): CatalogG
   if (catalogGroupByServiceType[type]) return catalogGroupByServiceType[type]
 
   const category = String(template.category || '').toLowerCase()
-  if (category === 'tool') return catalogGroupMeta.tool
-  if (category === 'infra' || category === 'middleware') return catalogGroupMeta.middleware
+  if (category === 'ci') return catalogGroupMeta.ci
+  if (category === 'cd' || category === 'deploy') return catalogGroupMeta.cd
+  if (category === 'monitor' || category === 'observability') return catalogGroupMeta.monitor
+  if (category === 'log' || category === 'logging') return catalogGroupMeta.log
+  if (category === 'database') return catalogGroupMeta.database
+  if (category === 'environment') return catalogGroupMeta.environment
+  if (category === 'vm' || category === 'kubevirt' || category === 'virtualmachine') return catalogGroupMeta.virtualMachine
+  if (category === 'infra' || category === 'middleware' || category === 'tool') return catalogGroupMeta.middleware
   return catalogGroupMeta.other
 }
 

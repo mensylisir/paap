@@ -438,7 +438,7 @@ const statusBadge = (s?: string) => {
   gap: var(--paap-space-2);
   padding: var(--paap-space-3) var(--paap-space-4);
   border-bottom: 1px solid var(--paap-border);
-  font-size: 12px;
+  font-size: var(--paap-fs-label);
   font-weight: 600;
   color: var(--paap-muted);
   text-transform: uppercase;
@@ -462,8 +462,8 @@ const statusBadge = (s?: string) => {
   border: none;
   border-radius: var(--paap-radius-xs);
   background: transparent;
-  color: var(--paap-text-soft);
-  font-size: 13px;
+  color: var(--paap-muted);
+  font-size: var(--paap-fs-compact);
   cursor: pointer;
   transition: background 0.1s;
   text-align: left;
@@ -479,7 +479,7 @@ const statusBadge = (s?: string) => {
 .db-tree-chevron {
   flex-shrink: 0;
   transition: transform 0.15s;
-  color: var(--paap-muted-2);
+  color: var(--paap-muted);
 }
 .db-tree-chevron.open {
   transform: rotate(90deg);
@@ -500,8 +500,8 @@ const statusBadge = (s?: string) => {
 .db-tree-empty {
   padding: var(--paap-space-4);
   text-align: center;
-  font-size: 12px;
-  color: var(--paap-muted-2);
+  font-size: var(--paap-fs-label);
+  color: var(--paap-muted);
 }
 
 /* Main */
@@ -515,8 +515,8 @@ const statusBadge = (s?: string) => {
   align-items: center;
   margin-bottom: var(--paap-space-3);
   padding: var(--paap-space-3);
-  border: 1px solid var(--cds-border-subtle-01, var(--paap-border));
-  background: var(--cds-layer-01, var(--paap-panel));
+  border: 1px solid var(--paap-border);
+  background: var(--paap-panel);
 }
 .db-context-summary {
   display: grid;
@@ -528,8 +528,8 @@ const statusBadge = (s?: string) => {
 }
 .db-context-summary strong {
   min-width: 0;
-  color: var(--cds-text-primary, var(--paap-text));
-  font-size: 14px;
+  color: var(--paap-text);
+  font-size: var(--paap-fs-body);
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -556,8 +556,8 @@ const statusBadge = (s?: string) => {
   align-items: center;
   justify-content: center;
   padding: var(--paap-space-12);
-  color: var(--paap-muted-2);
-  font-size: 14px;
+  color: var(--paap-muted);
+  font-size: var(--paap-fs-body);
   gap: var(--paap-space-3);
 }
 .data-table tbody tr.selected td {
@@ -580,7 +580,7 @@ const statusBadge = (s?: string) => {
   margin-bottom: var(--paap-space-3);
 }
 .db-detail-name {
-  font-size: 16px;
+  font-size: var(--paap-fs-heading-lg);
   font-weight: 600;
   color: var(--paap-text);
   margin-top: 2px;
@@ -588,7 +588,7 @@ const statusBadge = (s?: string) => {
 }
 .db-detail-desc {
   color: var(--paap-muted);
-  font-size: 13px;
+  font-size: var(--paap-fs-compact);
   line-height: 1.5;
   margin-bottom: var(--paap-space-4);
 }
@@ -605,12 +605,12 @@ const statusBadge = (s?: string) => {
 }
 .db-detail-prop-key {
   display: block;
-  font-size: 11px;
+  font-size: var(--paap-fs-small);
   color: var(--paap-muted);
   margin-bottom: 2px;
 }
 .db-detail-prop-value {
-  font-size: 13px;
+  font-size: var(--paap-fs-compact);
   color: var(--paap-text);
   word-break: break-all;
 }

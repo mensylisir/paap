@@ -1,0 +1,14 @@
+{
+  "fields": [
+    { "key": "N8N_PORT", "label": "服务端口", "type": "number", "default": "5678" },
+    { "key": "N8N_HOST", "label": "访问域名", "type": "text", "default": "localhost" },
+    { "key": "N8N_PROTOCOL", "label": "访问协议", "type": "text", "default": "http" },
+    { "key": "POSTGRES_SERVICE", "label": "PostgreSQL", "type": "serviceRef", "target": "postgresql", "required": true },
+    { "key": "DB_POSTGRESDB_HOST", "label": "PostgreSQL 主机", "type": "serviceValue", "sourceKey": "POSTGRES_SERVICE", "format": "host", "hidden": true },
+    { "key": "DB_POSTGRESDB_PORT", "label": "PostgreSQL 端口", "type": "serviceValue", "sourceKey": "POSTGRES_SERVICE", "format": "port", "hidden": true },
+    { "key": "DB_POSTGRESDB_DATABASE", "label": "数据库名称", "type": "text", "default": "postgres" },
+    { "key": "DB_POSTGRESDB_USER", "label": "数据库用户", "type": "text", "default": "postgres" },
+    { "key": "DB_POSTGRESDB_PASSWORD", "label": "数据库密码", "type": "password", "output": "secret", "required": true },
+    { "key": "N8N_ENCRYPTION_KEY", "label": "加密密钥", "type": "password", "output": "secret", "required": true }
+  ]
+}

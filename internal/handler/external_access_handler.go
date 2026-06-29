@@ -1,87 +1,77 @@
 package handler
 
 import (
-	"context"
+	"errors"
 	"net/http"
 	"strconv"
 
 	"paap/internal/database"
-	"paap/internal/k8s"
-	"paap/internal/model"
+	"paap/internal/service"
 
 	"github.com/gin-gonic/gin"
 )
 
 func SetComponentExternalAccess(c *gin.Context) {
-	envID, err := strconv.Atoi(c.Param("id"))
-	if err != nil || envID <= 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid environment id"})
+	envID, componentID, ok := parseComponentAccessRoute(c)
+	if !ok {
 		return
 	}
-	componentID, err := strconv.Atoi(c.Param("componentId"))
-	if err != nil || componentID <= 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid component id"})
-		return
-	}
-	var req struct {
-		Enabled bool `json:"enabled"`
-	}
+	var req ServiceExternalAccessRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	env, app, ok := loadEnvironmentAndApp(c, uint(envID))
-	if !ok {
+	result, err := service.SetComponentExternalAccess(c.Request.Context(), database.DB, envID, componentID, req.Enabled)
+	if err != nil {
+		respondComponentAccessServiceError(c, err)
 		return
 	}
-	if !requireApplicationAdminAccess(c, app.ID) {
-		return
-	}
-	var comp model.Component
-	if err := database.DB.Where("id = ? AND environment_id = ?", componentID, envID).First(&comp).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "component not found"})
-		return
-	}
-	if err := k8s.SetComponentExternalAccess(context.Background(), env.Namespace, comp.Name, req.Enabled); err != nil {
-		c.JSON(http.StatusFailedDependency, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"data": gin.H{"enabled": req.Enabled}})
+	c.JSON(http.StatusOK, gin.H{"data": result.View, "externalAccess": result.ExternalAccess})
 }
 
 func SetComponentNodePortAccess(c *gin.Context) {
-	envID, err := strconv.Atoi(c.Param("id"))
-	if err != nil || envID <= 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid environment id"})
+	envID, componentID, ok := parseComponentAccessRoute(c)
+	if !ok {
 		return
 	}
-	componentID, err := strconv.Atoi(c.Param("componentId"))
-	if err != nil || componentID <= 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid component id"})
-		return
-	}
-	var req struct {
-		Enabled bool `json:"enabled"`
-	}
+	var req ServiceExternalAccessRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	env, app, ok := loadEnvironmentAndApp(c, uint(envID))
-	if !ok {
+	result, err := service.SetComponentNodePortAccess(c.Request.Context(), database.DB, envID, componentID, req.Enabled)
+	if err != nil {
+		respondComponentAccessServiceError(c, err)
 		return
 	}
-	if !requireApplicationAdminAccess(c, app.ID) {
-		return
+	c.JSON(http.StatusOK, gin.H{"data": result.View, "externalAccess": result.ExternalAccess})
+}
+
+func parseComponentAccessRoute(c *gin.Context) (uint, uint, bool) {
+	envID, err := strconv.Atoi(c.Param("id"))
+	if err != nil || envID <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid environment id"})
+		return 0, 0, false
 	}
-	var comp model.Component
-	if err := database.DB.Where("id = ? AND environment_id = ?", componentID, envID).First(&comp).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "component not found"})
-		return
+	componentID, err := strconv.Atoi(c.Param("componentId"))
+	if err != nil || componentID <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid component id"})
+		return 0, 0, false
 	}
-	if err := k8s.SetComponentNodePortAccess(context.Background(), env.Namespace, comp.Name, req.Enabled); err != nil {
+	return uint(envID), uint(componentID), true
+}
+
+func respondComponentAccessServiceError(c *gin.Context, err error) {
+	switch {
+	case errors.Is(err, service.ErrEnvironmentNotFound),
+		errors.Is(err, service.ErrComponentNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+	case errors.Is(err, service.ErrEnvironmentNotReady):
+		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+	case errors.Is(err, service.ErrComponentAccessPatch),
+		errors.Is(err, service.ErrComponentNodePortPatch):
 		c.JSON(http.StatusFailedDependency, gin.H{"error": err.Error()})
-		return
+	default:
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 	}
-	c.JSON(http.StatusOK, gin.H{"data": gin.H{"enabled": req.Enabled}})
 }

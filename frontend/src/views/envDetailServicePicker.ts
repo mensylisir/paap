@@ -21,6 +21,38 @@ export interface PickerSessionState {
   error: string
 }
 
+const toolServiceTypes = new Set([
+  'git',
+  'gitea',
+  'ci',
+  'jenkins',
+  'deploy',
+  'argocd',
+  'monitor',
+  'prometheus',
+  'grafana',
+  'log',
+  'loki',
+  'registry',
+  'docker-registry',
+  'harbor',
+])
+
+const infraServiceTypes = new Set([
+  'postgresql',
+  'postgresql-ha',
+  'mysql',
+  'mysql-galera',
+  'mongodb',
+  'redis',
+  'redis-cluster',
+  'rabbitmq',
+  'kafka',
+  'minio',
+  'nacos',
+  'eureka',
+])
+
 export function isServiceActive(services: PickerService[], serviceType: string) {
   return services.some((svc) => svc.serviceType === serviceType)
 }
@@ -34,9 +66,20 @@ function servicePickerStatusText(status?: string) {
   return '已安装'
 }
 
+function pickerTemplateMode(tmpl: PickerTemplate): PickerMode {
+  const type = String(tmpl.type || '').toLowerCase()
+  if (toolServiceTypes.has(type)) return 'tool'
+  if (infraServiceTypes.has(type)) return 'infra'
+
+  const category = String(tmpl.category || '').toLowerCase()
+  if (['ci', 'cd', 'deploy', 'monitor', 'log', 'logging', 'tool'].includes(category)) return 'tool'
+  if (['infra', 'database', 'middleware'].includes(category)) return 'infra'
+  return 'tool'
+}
+
 export function buildPickerTemplates(templates: PickerTemplate[], services: PickerService[], mode: PickerMode) {
   return templates
-    .filter((tmpl) => (mode === 'infra' ? tmpl.category === 'infra' : tmpl.category === 'tool'))
+    .filter((tmpl) => pickerTemplateMode(tmpl) === mode)
     .map((tmpl) => {
       const disabled = isServiceActive(services, tmpl.type)
       const active = services.find((svc) => svc.serviceType === tmpl.type)

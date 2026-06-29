@@ -1,0 +1,20 @@
+{
+  "fields": [
+    {
+      "key": "LOCATION_LIST",
+      "label": "Location 规则",
+      "type": "list",
+      "required": true,
+      "itemFields": [
+        { "key": "MATCH", "label": "匹配规则", "type": "text", "required": true, "default": "/" },
+        {
+          "key": "DIRECTIVES",
+          "label": "指令块",
+          "type": "textarea",
+          "required": true,
+          "default": "try_files $uri $uri/ /index.html;\nadd_header Cache-Control \"no-cache\";"
+        }
+      ]
+    }
+  ]
+}

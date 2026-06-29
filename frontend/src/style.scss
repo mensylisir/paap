@@ -13,26 +13,31 @@ html {
 
 /* ===== PAAP Design System — Carbon-aligned enterprise shell ===== */
 :root {
-  /* Surfaces */
-  --paap-bg: var(--cds-background, #ffffff);
-  --paap-bg-soft: var(--cds-layer-01, #f4f4f4);
-  --paap-panel: var(--cds-layer-01, #ffffff);
-  --paap-panel-subtle: var(--cds-layer-02, #f4f4f4);
+  /* Surfaces — Railway-inspired warm light palette */
+  --paap-bg: #f7f6f2;                /* warm off-white canvas (Railway: #FAFAF9) */
+  --paap-bg-soft: #eeede8;           /* warm layer for secondary surfaces */
+  --paap-panel: #ffffff;              /* card / drawer surfaces stay pure white */
+  --paap-panel-subtle: #e8e7e2;      /* hover / active / subtle depth */
+  --paap-card-bg: #ffffff;           /* topology nodes, component cards */
+  --paap-selection-bg: #eef2ff;      /* indigo-50 selected/highlight row */
 
-  /* Borders */
-  --paap-border: var(--cds-border-subtle-01, #e0e0e0);
-  --paap-border-strong: var(--cds-border-strong-01, #8d8d8d);
+  /* Borders — softer, warmer */
+  --paap-border: #e2e0db;            /* subtle warm gray */
+  --paap-border-strong: #c4c2bc;     /* stronger border (still soft) */
 
   /* Text */
   --paap-text: var(--cds-text-primary, #161616);
   --paap-text-soft: var(--cds-text-secondary, #525252);
+  --paap-text-tertiary: var(--cds-text-helper, #6f6f6f);
   --paap-muted: var(--cds-text-secondary, #525252);
   --paap-muted-2: var(--cds-text-placeholder, #8d8d8d);
 
-  /* Accent — single blue */
-  --paap-accent: var(--cds-link-primary, #0f62fe);
-  --paap-accent-soft: var(--cds-blue-10, #edf5ff);
-  --paap-accent-hover: var(--cds-link-primary-hover, #0043ce);
+  /* Accent — warmer blue with violet secondary */
+  --paap-accent: #2563eb;             /* blue-600, warmer than Carbon #0f62fe */
+  --paap-accent-soft: #eef2ff;        /* indigo-50 */
+  --paap-accent-hover: #1d4ed8;       /* blue-700 */
+  --paap-accent-secondary: #7c3aed;   /* violet-600 for decorative accents */
+  --paap-accent-secondary-soft: #f5f3ff; /* violet-50 */
 
   /* Semantic */
   --paap-success: var(--cds-support-success, #198038);
@@ -42,17 +47,23 @@ html {
   --paap-danger: var(--cds-support-error, #da1e28);
   --paap-danger-soft: var(--cds-red-10, #fff1f1);
 
-  /* Legacy palette — preserves existing view colors during Carbon migration */
-  --paap-text-01: #11181c;       /* primary text (legacy) */
-  --paap-text-02: #687076;       /* secondary / muted text (legacy) */
-  --paap-text-03: #9ba1a6;       /* table header / placeholder text (legacy) */
-  --paap-border-01: #e6e8eb;     /* subtle border (legacy) */
-  --paap-border-02: #d7dbdf;     /* strong border / button border (legacy) */
-  --paap-border-03: #d1d5db;     /* separator border (legacy) */
-  --paap-bg-01: #f1f3f5;         /* soft bg, badge bg, table row stripe (legacy) */
-  --paap-bg-02: #f7f8fa;         /* hover bg (legacy) */
-  --paap-bg-03: #f9fafb;         /* table header bg (legacy) */
-  --paap-accent-01: #3b82f6;     /* link/accent blue (legacy) */
+  /* Legacy palette — Railway-inspired warm migration */
+  --paap-text-01: #11181c;       /* primary text */
+  --paap-text-02: #5c6368;       /* secondary / muted text (warmer) */
+  --paap-text-03: #94999e;       /* table header / placeholder (warmer) */
+  --paap-border-01: #e4e2dd;     /* subtle border (warm, matches --paap-border) */
+  --paap-border-02: #d4d2cc;     /* strong border / button border (warm) */
+  --paap-border-03: #cac8c2;     /* separator border (warm) */
+  --paap-bg-01: #efeee9;         /* soft bg, badge bg, table row stripe */
+  --paap-bg-02: #e8e7e2;         /* hover bg */
+  --paap-bg-03: #f0efe9;         /* table header bg */
+  --paap-accent-01: #2563eb;     /* link/accent blue (matches --paap-accent) */
+  --paap-accent-glow: rgba(37, 99, 235, 0.25);    /* accent glow / focus ring */
+  --paap-accent-ring: rgba(37, 99, 235, 0.12);    /* accent focus ring shadow */
+  --paap-accent-glow-soft: rgba(37, 99, 235, 0.08);  /* accent soft glow */
+  --paap-accent-fill: rgba(37, 99, 235, 0.06);    /* accent subtle fill */
+  --paap-accent-fill-2: rgba(37, 99, 235, 0.10);   /* accent medium fill */
+  --paap-overlay-white: rgba(255, 255, 255, 0.90); /* frosted white overlay */
   --paap-success-text: #166534;  /* success text */
   --paap-success-bg: #f0fdf4;    /* success background */
   --paap-danger-text: #b91c1c;   /* danger text */
@@ -61,33 +72,34 @@ html {
   --paap-danger-border: #fecaca; /* danger border */
   --paap-info-text: #1d4ed8;     /* info text */
   --paap-info-bg: #eff6ff;       /* info background */
+  --paap-overlay: rgba(0, 0, 0, 0.28);  /* modal / dialog backdrop */
   --paap-white: #ffffff;         /* pure white (panel bg) */
   --paap-orange-bg: #fff7ed;     /* orange badge bg */
   --paap-orange-text: #9a3412;   /* orange badge text */
   --paap-red-bright: #ef4444;    /* bright red (count badge) */
-  --paap-success-accent: #16a34a;   /* green accent for status badges (legacy) */
-  --paap-success-border: #bbf7d0;   /* green border for success states (legacy) */
-  --paap-danger-accent: #dc2626;    /* red accent for status badges / icon hover (legacy) */
-  --paap-info-accent: #2563eb;      /* blue accent for info badges (legacy) */
-  --paap-info-border: #bfdbfe;      /* blue border for info states (legacy) */
-  --paap-info-light: #93c5fd;       /* light blue for delivery arrow (legacy) */
-  --paap-border-04: #cbd5e1;        /* slate/muted separator (legacy) */
-  --paap-service-git: #cc8888;      /* service icon: git */
-  --paap-service-ci: #c88ba8;       /* service icon: ci */
-  --paap-service-registry: #d4b072; /* service icon: registry / harbor / rabbitmq */
-  --paap-service-deploy: #8b9dc3;   /* service icon: deploy / harbor / postgresql / minio */
-  --paap-service-monitor: #7bb896;  /* service icon: monitor / mongodb */
-  --paap-service-log: #a090c8;      /* service icon: log / kafka */
-  --paap-service-mysql: #7bb8ae;    /* service icon: mysql */
-  --paap-bg-04: #f3f4f6;           /* subtle border-bottom / row bg (legacy) */
-  --paap-gray-20: #e0e0e0;         /* neutral gray-20 (Carbon) */
-  --paap-text-04: #c6c6c6;         /* placeholder / subtle text (legacy) */
+  --paap-success-accent: #16a34a;   /* green accent for status badges */
+  --paap-success-border: #bbf7d0;   /* green border for success states */
+  --paap-danger-accent: #dc2626;    /* red accent for status badges / icon hover */
+  --paap-info-accent: #2563eb;      /* blue accent for info badges */
+  --paap-info-border: #bfdbfe;      /* blue border for info states */
+  --paap-info-light: #93c5fd;       /* light blue for delivery arrow */
+  --paap-border-04: #c5c3bd;        /* slate/muted separator (warm) */
+  --paap-service-git: #b88686;      /* service icon: git (softer) */
+  --paap-service-ci: #b8849e;       /* service icon: ci (softer) */
+  --paap-service-registry: #c8a46c; /* service icon: registry / harbor / rabbitmq (softer) */
+  --paap-service-deploy: #7e94b8;   /* service icon: deploy / harbor / postgresql / minio (softer) */
+  --paap-service-monitor: #72ae8c;  /* service icon: monitor / mongodb (softer) */
+  --paap-service-log: #9488bc;      /* service icon: log / kafka (softer) */
+  --paap-service-mysql: #72aea2;    /* service icon: mysql (softer) */
+  --paap-bg-04: #efeee9;           /* subtle border-bottom / row bg */
+  --paap-gray-20: #d8d6d1;         /* neutral warm gray */
+  --paap-text-04: #c0beb8;         /* placeholder / subtle text (warm) */
   --paap-danger-dark: #ba1b23;     /* dark red for destructive buttons */
   --paap-emerald: #059669;         /* emerald-600 for tag dots */
   --paap-emerald-dark: #047857;    /* emerald-700 for success text variant */
   --paap-amber-dark: #b28600;      /* amber-700 for kafka icon */
-  --paap-purple-accent: #8a3ffc;   /* Carbon purple for mongodb icon */
-  --paap-purple-bg: #f6f2ff;       /* purple background for mongodb wrapper */
+  --paap-purple-accent: #7c3aed;   /* violet-600 (matches --paap-accent-secondary) */
+  --paap-purple-bg: #f5f3ff;       /* violet-50 (matches accent-secondary-soft) */
 
   /* Spacing (8px grid) */
   --paap-space-1: 4px;
@@ -96,6 +108,7 @@ html {
   --paap-space-4: 16px;
   --paap-space-5: 20px;
   --paap-space-6: 24px;
+  --paap-space-7: 28px;  /* page header padding */
   --paap-space-8: 32px;
   --paap-space-10: 40px;
   --paap-space-12: 48px;
@@ -107,10 +120,32 @@ html {
   --paap-radius-xs: 4px;    /* tags, badges, small elements */
   --paap-radius-full: 9999px;
 
-  /* Shadows (3-tier, Railway-inspired) */
-  --paap-shadow-sm: 0 0 1px rgba(0,0,0,0.03), 0 1px 2px rgba(0,0,0,0.06);
-  --paap-shadow-md: 0 1px 3px rgba(0,0,0,0.05);
-  --paap-shadow-lg: 0 4px 12px rgba(0,0,0,0.1);
+  /* Shadows (3-tier, refined for depth hierarchy) */
+  --paap-shadow-sm: 0 1px 2px rgba(0,0,0,0.04), 0 0 1px rgba(0,0,0,0.06);
+  --paap-shadow-md: 0 4px 8px -2px rgba(0,0,0,0.06), 0 2px 4px -1px rgba(0,0,0,0.04);
+  --paap-shadow-lg: 0 12px 24px -8px rgba(0,0,0,0.12), 0 4px 12px -2px rgba(0,0,0,0.06);
+
+  /* Terminal theme (log viewers, pipeline output, code editors) */
+  --paap-term-bg: #0f1117;
+  --paap-term-text: #e5e7eb;
+  --paap-term-muted: #9ca3af;
+  --paap-term-dim: #6b7280;
+  --paap-term-faint: #d1d5db;
+  --paap-term-fatal-bg: #7f1d1d;
+  --paap-term-fatal-text: #fecaca;
+  --paap-term-error-bg: #991b1b;
+  --paap-term-error-text: #fecaca;
+  --paap-term-warn-bg: #854d0e;
+  --paap-term-warn-text: #fef08a;
+  --paap-term-info-bg: #14532d;
+  --paap-term-info-text: #bbf7d0;
+  --paap-term-debug-bg: #374151;
+  --paap-term-debug-text: #d1d5db;
+  --paap-term-log-bg: #1f2937;
+  --paap-term-log-text: #9ca3af;
+
+  /* Focus ring — accent blue (single source of truth) */
+  --paap-focus-ring: 0 0 0 3px rgba(37, 99, 235, 0.12);
 
   /* Transitions */
   --paap-transition-fast: 150ms ease;
@@ -124,6 +159,28 @@ html {
   /* Typography */
   --paap-font: var(--cds-font-family-sans, 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif);
   --paap-mono: var(--cds-font-family-mono, 'IBM Plex Mono', 'SF Mono', 'Fira Code', monospace);
+
+  /* Font sizes — PAAP layer over Carbon type scale */
+  --paap-fs-body: var(--cds-body-01-font-size, 14px);
+  --paap-fs-body-lg: var(--cds-body-02-font-size, 16px);
+  --paap-fs-label: var(--cds-label-01-font-size, 12px);
+  --paap-fs-helper: var(--cds-helper-text-01-font-size, 12px);
+  --paap-fs-code: var(--cds-code-01-font-size, 12px);
+  --paap-fs-heading: var(--cds-heading-01-font-size, 14px);
+  --paap-fs-heading-lg: var(--cds-heading-02-font-size, 16px);
+  --paap-fs-heading-xl: var(--cds-heading-03-font-size, 20px);
+  --paap-fs-heading-2xl: var(--cds-heading-04-font-size, 28px);
+  --paap-fs-heading-3xl: var(--cds-heading-05-font-size, 32px);
+  --paap-fs-compact: 13px;  /* compact UI text — no Carbon equivalent */
+  --paap-fs-small: 11px;    /* badges, version tags — no Carbon equivalent */
+
+  /* Z-index scale */
+  --paap-z-sticky: 100;
+  --paap-z-header: 500;
+  --paap-z-dropdown: 1000;
+  --paap-z-drawer: 9400;
+  --paap-z-menu: 9500;
+  --paap-z-modal: 9000;
 }
 
 body {
@@ -131,7 +188,7 @@ body {
   background: var(--paap-bg);
   color: var(--paap-text);
   line-height: 1.5;
-  font-size: 14px;
+  font-size: var(--paap-fs-body);
 }
 
 #app {
@@ -194,7 +251,7 @@ a:hover {
   border-bottom: 2px solid transparent;
   background: transparent;
   font-family: inherit;
-  font-size: 14px;
+  font-size: var(--paap-fs-body);
   font-weight: 400;
   color: var(--paap-muted);
   cursor: pointer;
@@ -230,37 +287,41 @@ a:hover {
   color: var(--paap-accent);
 }
 
-/* ===== Card ===== */
+/* ===== Card (Railway-inspired: clean white on warm bg, subtle depth) ===== */
 .rail-card {
   background: var(--paap-panel);
   border: 1px solid var(--paap-border);
   border-radius: var(--paap-radius);
-  box-shadow: var(--paap-shadow-md);
-  transition: border-color var(--paap-transition-normal), box-shadow var(--paap-transition-normal);
+  box-shadow: var(--paap-shadow-sm);
+  transition: box-shadow var(--paap-transition-normal), border-color var(--paap-transition-normal);
 }
 .rail-card:hover {
-  border-color: var(--paap-border-strong);
-  box-shadow: var(--paap-shadow-lg);
+  border-color: var(--paap-border-02);
+  box-shadow: var(--paap-shadow-md);
 }
 
-/* ===== Buttons ===== */
+/* ===== Buttons (Railway-inspired: clean, refined, consistent) ===== */
 .rail-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   font-family: inherit;
-  font-size: 13px;
+  font-size: var(--paap-fs-compact);
   font-weight: 500;
-  letter-spacing: 0;
   cursor: pointer;
   outline: none;
   border: 1px solid transparent;
   height: 36px;
   padding: 0 16px;
   border-radius: var(--paap-radius-sm);
-  transition: all 0.15s ease;
+  transition: all var(--paap-transition-fast);
   gap: 6px;
   white-space: nowrap;
+  text-decoration: none;
+  line-height: 1;
+}
+.rail-btn:focus-visible {
+  box-shadow: var(--paap-focus-ring);
 }
 .rail-btn:disabled {
   opacity: 0.5;
@@ -308,7 +369,7 @@ a:hover {
 .rail-btn--sm {
   height: 28px;
   padding: 0 10px;
-  font-size: 12px;
+  font-size: var(--paap-fs-label);
   border-radius: var(--paap-radius-xs);
 }
 
@@ -322,7 +383,7 @@ a:hover {
 }
 
 .rail-section-desc {
-  font-size: 14px;
+  font-size: var(--paap-fs-body);
   font-weight: 400;
   color: var(--paap-muted);
   margin-top: var(--paap-space-1);
@@ -330,7 +391,7 @@ a:hover {
 }
 
 .rail-kpi-value {
-  font-size: 32px;
+  font-size: var(--paap-fs-heading-3xl);
   font-weight: 600;
   color: var(--paap-text);
   line-height: 1.2;
@@ -338,7 +399,7 @@ a:hover {
 }
 
 .rail-kpi-label {
-  font-size: 13px;
+  font-size: var(--paap-fs-compact);
   font-weight: 400;
   color: var(--paap-muted);
   line-height: 1.4;
@@ -364,7 +425,7 @@ a:hover {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 11px;
+  font-size: var(--paap-fs-small);
   font-weight: 500;
   padding: 2px 8px;
   border-radius: var(--paap-radius-full);
@@ -383,10 +444,10 @@ a:hover {
   width: 100%;
   border-collapse: separate;
   border-spacing: 0;
-  font-size: 13px;
+  font-size: var(--paap-fs-compact);
 }
 .rail-table thead th {
-  font-size: 11px;
+  font-size: var(--paap-fs-small);
   font-weight: 600;
   color: var(--paap-muted);
   text-transform: uppercase;
@@ -401,7 +462,7 @@ a:hover {
 }
 .rail-table tbody td {
   padding: var(--paap-space-3) var(--paap-space-4);
-  border-bottom: 1px solid #f3f4f6;
+  border-bottom: 1px solid var(--paap-bg-04);
   color: var(--paap-text);
   vertical-align: middle;
 }
@@ -428,28 +489,31 @@ a:hover {
   margin-bottom: var(--paap-space-2);
 }
 .rail-empty-desc {
-  font-size: 14px;
+  font-size: var(--paap-fs-body);
   color: var(--paap-muted);
   max-width: 420px;
   line-height: 1.5;
 }
 
-/* ===== Form Inputs ===== */
+/* ===== Form Inputs (Railway-inspired: clean, refined, consistent) ===== */
 .rail-input {
   width: 100%;
   padding: 9px 12px;
-  font-size: 14px;
+  font-size: var(--paap-fs-body);
   border: 1px solid var(--paap-border);
   border-radius: var(--paap-radius-sm);
   background: var(--paap-panel);
   color: var(--paap-text);
   outline: none;
   font-family: inherit;
-  transition: border-color 0.15s, box-shadow 0.15s;
+  transition: border-color var(--paap-transition-fast), box-shadow var(--paap-transition-fast);
 }
 .rail-input:focus {
   border-color: var(--paap-accent);
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+  box-shadow: var(--paap-focus-ring);
+}
+.rail-input:focus:not(:focus-visible) {
+  box-shadow: none;
 }
 .rail-input::placeholder {
   color: var(--paap-muted-2);
@@ -457,16 +521,16 @@ a:hover {
 
 .rail-label {
   display: block;
-  font-size: 12px;
+  font-size: var(--paap-fs-label);
   font-weight: 500;
-  color: var(--paap-muted);
+  color: var(--paap-text-soft);
   margin-bottom: 6px;
 }
 
 .rail-select {
   width: 100%;
   padding: 9px 36px 9px 12px;
-  font-size: 14px;
+  font-size: var(--paap-fs-body);
   border: 1px solid var(--paap-border);
   border-radius: var(--paap-radius-sm);
   background: var(--paap-panel);
@@ -478,18 +542,18 @@ a:hover {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M6 8L1 3h10z' fill='%236b7280'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 12px center;
-  transition: border-color 0.15s, box-shadow 0.15s;
+  transition: border-color var(--paap-transition-fast), box-shadow var(--paap-transition-fast);
 }
 .rail-select:focus {
   border-color: var(--paap-accent);
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+  box-shadow: var(--paap-focus-ring);
 }
 
 .rail-textarea {
   width: 100%;
   resize: vertical;
   padding: 10px 12px;
-  font-size: 14px;
+  font-size: var(--paap-fs-body);
   border: 1px solid var(--paap-border);
   border-radius: var(--paap-radius-sm);
   background: var(--paap-panel);
@@ -497,17 +561,17 @@ a:hover {
   outline: none;
   font-family: inherit;
   line-height: 1.5;
-  transition: border-color 0.15s, box-shadow 0.15s;
+  transition: border-color var(--paap-transition-fast), box-shadow var(--paap-transition-fast);
 }
 .rail-textarea:focus {
   border-color: var(--paap-accent);
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+  box-shadow: var(--paap-focus-ring);
 }
 
 /* ===== Mono Text ===== */
 .mono {
   font-family: var(--paap-mono);
-  font-size: 12px;
+  font-size: var(--paap-fs-code);
 }
 
 /* ===== Responsive ===== */
@@ -515,5 +579,471 @@ a:hover {
   .rail-page {
     width: 100%;
     padding: var(--paap-space-6) 0 var(--paap-space-10);
+  }
+}
+
+/* ===========================================================
+   Shared UI Patterns (migrated from TemplatesView.vue global)
+   These are used across multiple views and cannot be scoped.
+   =========================================================== */
+
+/* ===== Modal styles ===== */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--paap-z-modal);
+  background: rgba(0, 0, 0, 0.38);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--paap-space-6);
+}
+.modal-container {
+  background: var(--paap-panel);
+  width: 480px;
+  max-height: 90vh;
+  overflow-y: auto;
+  border: 1px solid var(--paap-border);
+  border-radius: var(--paap-radius);
+  box-shadow: var(--paap-shadow-lg);
+}
+.modal-container--wide {
+  width: min(760px, 96vw);
+}
+.modal-container--template {
+  width: min(980px, 96vw);
+}
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: var(--paap-space-5) var(--paap-space-6);
+  border-bottom: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+}
+.modal-label {
+  font-size: var(--paap-fs-small);
+  color: var(--cds-text-secondary, #525252);
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+}
+.modal-heading {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--cds-text-primary, #161616);
+  margin: 0;
+  line-height: 1.3;
+}
+.modal-close {
+  background: none;
+  border: none;
+  color: var(--cds-text-secondary, #525252);
+  cursor: pointer;
+  padding: var(--paap-space-1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--paap-radius-xs);
+  transition: background 110ms, color 110ms;
+}
+.modal-close:hover {
+  background: var(--cds-background-hover, rgba(141, 141, 141, 0.12));
+  color: var(--cds-text-primary, #161616);
+}
+.modal-body {
+  padding: var(--paap-space-6);
+}
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--paap-space-2);
+  padding: var(--paap-space-4) var(--paap-space-6);
+  border-top: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+}
+
+/* ===== Form elements ===== */
+.form-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: var(--paap-space-5);
+}
+.form-item:last-child {
+  margin-bottom: 0;
+}
+.form-label {
+  font-size: var(--paap-fs-label);
+  color: var(--cds-text-secondary, #525252);
+  font-weight: 500;
+}
+.form-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--paap-space-3);
+}
+.form-helper {
+  font-size: var(--paap-fs-helper);
+  color: var(--cds-text-helper, #6f6f6f);
+  margin-top: 2px;
+  line-height: 1.4;
+}
+.form-error {
+  border: 1px solid var(--cds-red-60, #da1e28);
+  background: var(--cds-layer-01, #ffffff);
+  color: var(--cds-red-60, #da1e28);
+  border-radius: 0;
+  padding: 10px 12px;
+  font-size: var(--paap-fs-compact);
+  line-height: 1.4;
+}
+
+/* ===== Template-specific patterns ===== */
+.config-import-shell--carbon {
+  background: var(--cds-layer-01, #ffffff);
+}
+.template-mode-switch {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  background: var(--cds-layer-01, #ffffff);
+}
+.template-mode-switch button {
+  min-height: 72px;
+  border: 0;
+  border-right: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  background: var(--cds-layer-01, #ffffff);
+  color: var(--cds-text-secondary, #525252);
+  font: inherit;
+  font-size: var(--paap-fs-compact);
+  cursor: pointer;
+  text-align: left;
+  padding: 12px 14px;
+  transition: background-color 110ms, box-shadow 110ms, color 110ms;
+}
+.template-mode-switch button:last-child {
+  border-right: 0;
+}
+.template-mode-switch button:hover {
+  background: var(--cds-background-hover, rgba(141, 141, 141, 0.12));
+  color: var(--cds-text-primary, #161616);
+}
+.template-mode-switch button.active {
+  background: var(--cds-layer-01, #ffffff);
+  color: var(--cds-text-primary, #161616);
+  box-shadow: inset 0 -3px 0 var(--cds-border-interactive, #0f62fe);
+}
+.config-import-mode-card {
+  display: grid;
+  align-content: center;
+  gap: 4px;
+}
+.config-import-mode-card span {
+  font-size: var(--cds-heading-01-font-size, 14px);
+  font-weight: var(--cds-heading-01-font-weight, 600);
+  line-height: var(--cds-heading-01-line-height, 1.42857);
+  letter-spacing: var(--cds-heading-01-letter-spacing, 0.16px);
+}
+.config-import-mode-card small {
+  color: var(--cds-text-helper, #6f6f6f);
+  font-size: var(--cds-helper-text-01-font-size, 12px);
+  line-height: var(--cds-helper-text-01-line-height, 1.33333);
+  letter-spacing: var(--cds-helper-text-01-letter-spacing, 0.32px);
+}
+.config-import-mode {
+  grid-column: 1 / -1;
+}
+.code-textarea {
+  font-family: var(--cds-font-family-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
+  font-size: var(--paap-fs-code);
+  line-height: 1.45;
+}
+.config-import-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--paap-space-3);
+}
+
+/* ===== Template preview patterns ===== */
+.template-preview {
+  display: grid;
+  gap: var(--paap-space-4);
+}
+.template-preview-desc {
+  margin: 0;
+  color: var(--cds-text-secondary, #525252);
+  line-height: 1.5;
+  font-size: var(--paap-fs-compact);
+}
+.template-preview-meta {
+  display: flex;
+  gap: var(--paap-space-2);
+  flex-wrap: wrap;
+}
+.template-preview-meta span,
+.preview-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 8px;
+  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  border-radius: var(--cds-border-radius-md, 2px);
+  background: var(--cds-layer-01, #ffffff);
+  color: var(--cds-text-secondary, #525252);
+  font-size: var(--paap-fs-label);
+}
+.template-preview-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  background: var(--cds-layer-01, #ffffff);
+}
+.template-preview-summary-item {
+  display: grid;
+  gap: 4px;
+  min-height: 64px;
+  padding: 10px 12px;
+  border-right: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  align-content: center;
+  min-width: 0;
+}
+.template-preview-summary-item:last-child {
+  border-right: 0;
+}
+.template-preview-summary-item span {
+  color: var(--cds-text-secondary, #525252);
+  font-size: var(--cds-label-01-font-size, 12px);
+  line-height: var(--cds-label-01-line-height, 1.33333);
+  letter-spacing: var(--cds-label-01-letter-spacing, 0.32px);
+}
+.template-preview-summary-item strong {
+  color: var(--cds-text-primary, #161616);
+  font-size: var(--cds-body-01-font-size, 14px);
+  font-weight: var(--cds-heading-01-font-weight, 600);
+  line-height: var(--cds-body-01-line-height, 1.42857);
+  letter-spacing: var(--cds-body-01-letter-spacing, 0.16px);
+  overflow-wrap: anywhere;
+}
+.template-preview-section {
+  display: grid;
+  gap: var(--paap-space-3);
+}
+.template-preview-fields h3,
+.template-preview-files h3,
+.template-preview-validation h3 {
+  margin: 0;
+  color: var(--cds-text-primary, #161616);
+  font-size: var(--cds-heading-01-font-size, 14px);
+  font-weight: var(--cds-heading-01-font-weight, 600);
+  line-height: var(--cds-heading-01-line-height, 1.42857);
+  letter-spacing: var(--cds-heading-01-letter-spacing, 0.16px);
+}
+.template-preview-fields .preview-row strong,
+.template-preview-files .preview-row strong {
+  display: block;
+  color: var(--cds-text-primary, #161616);
+  font-weight: var(--cds-heading-01-font-weight, 600);
+  overflow-wrap: anywhere;
+}
+.template-preview-tabs {
+  display: flex;
+  align-items: flex-end;
+  gap: 0;
+  min-height: 44px;
+  border-bottom: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  background: var(--cds-layer-01, #ffffff);
+}
+.template-preview-tabs button {
+  position: relative;
+  min-height: 44px;
+  padding: 0 18px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: var(--cds-layer-01, #ffffff);
+  color: var(--cds-text-secondary, #525252);
+  font-family: inherit;
+  font-size: var(--cds-body-01-font-size, 14px);
+  font-weight: var(--cds-body-01-font-weight, 400);
+  line-height: 44px;
+  cursor: pointer;
+}
+.template-preview-tabs button:hover {
+  color: var(--cds-text-primary, #161616);
+  background: var(--cds-field-01, #f4f4f4);
+}
+.template-preview-tabs button.active {
+  border-bottom-color: var(--cds-blue-60, #0f62fe);
+  color: var(--cds-text-primary, #161616);
+  background: var(--cds-layer-01, #ffffff);
+  font-weight: var(--cds-heading-01-font-weight, 600);
+}
+.template-preview-section h3 {
+  margin: 0;
+  font-size: var(--paap-fs-body);
+  line-height: 1.3;
+  color: var(--cds-text-primary, #161616);
+}
+.preview-table {
+  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  border-radius: 0;
+  overflow: hidden;
+}
+.preview-row {
+  display: grid;
+  grid-template-columns: 1.4fr 0.8fr 1.2fr 1.2fr;
+  gap: 10px;
+  align-items: start;
+  padding: 10px 12px;
+  border-top: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  font-size: var(--paap-fs-label);
+  color: var(--cds-text-primary, #161616);
+}
+.preview-row:first-child {
+  border-top: 0;
+}
+.preview-row--head {
+  background: var(--cds-field-01, #f4f4f4);
+  color: var(--cds-text-secondary, #525252);
+  font-weight: 600;
+}
+.preview-row--files {
+  grid-template-columns: 1.3fr 1fr 1.4fr 0.8fr;
+}
+.preview-row small {
+  display: block;
+  margin-top: 2px;
+  color: var(--cds-text-helper, #6f6f6f);
+  overflow-wrap: anywhere;
+}
+.preview-block-list {
+  display: grid;
+  gap: var(--paap-space-3);
+}
+.preview-block {
+  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  border-radius: 0;
+  overflow: hidden;
+  background: var(--cds-layer-01, #ffffff);
+}
+.preview-block-title {
+  display: flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 0 14px;
+  background: var(--cds-layer-01, #ffffff);
+  color: var(--cds-text-primary, #161616);
+  font-size: var(--cds-heading-01-font-size, 14px);
+  font-weight: var(--cds-heading-01-font-weight, 600);
+  border-bottom: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+}
+.template-preview pre,
+.preview-block pre {
+  margin: 0;
+  padding: var(--paap-space-3) var(--paap-space-4);
+  background: var(--cds-field-01, #f4f4f4);
+  color: var(--cds-text-primary, #161616);
+  overflow: auto;
+  max-height: 360px;
+  font-size: var(--paap-fs-code);
+  line-height: 1.55;
+  tab-size: 2;
+}
+.preview-block pre + pre {
+  border-top: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+}
+.template-preview code,
+.preview-block code {
+  font-family: var(--cds-font-family-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
+}
+.preview-chip-list {
+  display: flex;
+  gap: var(--paap-space-2);
+  flex-wrap: wrap;
+}
+.preview-empty {
+  padding: 10px 12px;
+  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  border-radius: 0;
+  color: var(--cds-text-helper, #6f6f6f);
+  font-size: var(--paap-fs-label);
+}
+.preview-validation-list {
+  display: grid;
+  gap: var(--paap-space-2);
+}
+.preview-validation-item {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+  padding: 10px 12px;
+  border: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  background: var(--cds-layer-01, #ffffff);
+  color: var(--cds-text-secondary, #525252);
+  font-size: var(--paap-fs-label);
+  line-height: 1.45;
+}
+.preview-validation-item strong {
+  color: var(--cds-text-primary, #161616);
+  font-weight: 600;
+}
+.preview-validation-item.warning {
+  border-left: 3px solid var(--cds-yellow-30, #f1c21b);
+}
+.preview-validation-item.danger {
+  border-left: 3px solid var(--cds-red-60, #da1e28);
+}
+.preview-validation-item.info {
+  border-left: 3px solid var(--cds-blue-60, #0f62fe);
+}
+
+@media (max-width: 672px) {
+  .config-import-grid,
+  .template-preview-summary,
+  .preview-row,
+  .preview-validation-item {
+    grid-template-columns: 1fr;
+  }
+  .template-preview-summary-item {
+    border-right: 0;
+    border-bottom: 1px solid var(--cds-border-subtle-01, #e0e0e0);
+  }
+  .template-preview-summary-item:last-child {
+    border-bottom: 0;
+  }
+}
+
+/* ===== Animations ===== */
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ===== Empty states (Railway-inspired: clean, centered, warm) ===== */
+.empty-card {
+  background: var(--paap-panel);
+  border: 1px solid var(--paap-border);
+  border-radius: var(--paap-radius);
+  padding: 64px 32px;
+  text-align: center;
+  box-shadow: var(--paap-shadow-sm);
+}
+.empty-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--paap-text);
+  margin-bottom: 8px;
+}
+.empty-desc {
+  color: var(--paap-text-soft);
+  max-width: 520px;
+  margin: 0 auto 20px;
+  line-height: 1.5;
+  font-size: var(--paap-fs-body);
+}
+
+@media (max-width: 672px) {
+  .modal-overlay {
+    align-items: stretch;
+    padding: var(--paap-space-4);
   }
 }

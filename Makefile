@@ -2,8 +2,9 @@ GO_VERSION := go1.25.7
 SHELL := /bin/bash
 GOPATH := $(shell source ~/.gvm/scripts/gvm && gvm use $(GO_VERSION) >/dev/null && go env GOPATH)
 CONTROLLER_GEN := $(GOPATH)/bin/controller-gen
-SERVER_IMAGE ?= paap-server:v0.1.536
+SERVER_IMAGE ?= paap-server:v0.1.537
 OPERATOR_IMAGE ?= paap-operator:v0.1.54
+CONTAINER_CLI ?= docker
 
 .PHONY: run run-operator build build-operator test scripts-test frontend-test frontend-build frontend-smoke frontend-verify verify clean deps fmt lint manifests generate install uninstall install-kpack uninstall-kpack package-built-in-templates preload-kind-images check-disk-space verify-server-image
 
@@ -39,6 +40,7 @@ test:
 # 运行脚本单元测试
 scripts-test:
 	bash scripts/check-disk-space.test.sh
+	bash deploy/k8s/configure-auth-endpoints.test.sh
 
 # 运行前端单元测试
 frontend-test:
@@ -117,13 +119,13 @@ check-disk-space:
 # 构建 Server 镜像
 docker-build-server: package-built-in-templates
 	./scripts/check-disk-space.sh before-server-image-build
-	docker build --build-arg FRONTEND_CACHE_BUST="$$(date +%s)" -t $(SERVER_IMAGE) -f Dockerfile.server .
+	$(CONTAINER_CLI) build --build-arg FRONTEND_CACHE_BUST="$$(date +%s)" -t $(SERVER_IMAGE) -f Dockerfile.server .
 	$(MAKE) verify-server-image SERVER_IMAGE=$(SERVER_IMAGE)
 	./scripts/check-disk-space.sh after-server-image-build
 
 verify-server-image:
-	docker run --rm --entrypoint sh $(SERVER_IMAGE) -c 'test -x /paap-server && ls -l /paap-server'
+	$(CONTAINER_CLI) run --rm --entrypoint sh $(SERVER_IMAGE) -c 'test -x /paap-server && ls -l /paap-server'
 
 # 构建 Operator 镜像
 docker-build-operator:
-	docker build -t $(OPERATOR_IMAGE) -f Dockerfile.operator .
+	$(CONTAINER_CLI) build -t $(OPERATOR_IMAGE) -f Dockerfile.operator .

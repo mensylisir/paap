@@ -1,0 +1,25 @@
+server:
+  port: __TEMPLATE__SERVER_PORT__服务端口__DEFAULT__8080__
+
+spring:
+  application:
+    name: __TEMPLATE__APP_NAME__应用名称__DEFAULT__springboot-postgres-cluster-druid__
+
+  datasource:
+    type: com.alibaba.druid.pool.DruidDataSource
+    druid:
+      url: jdbc:postgresql://__TEMPLATE__POSTGRES_CLUSTER_HOSTS__PostgreSQL 集群地址__DEFAULT__postgresql-primary:5432,postgresql-read:5432__/__TEMPLATE__POSTGRES_DATABASE__数据库名__DEFAULT__mydb__?targetServerType=master&loadBalanceHosts=true
+      driver-class-name: org.postgresql.Driver
+      username: __TEMPLATE__POSTGRES_USERNAME__数据库用户__DEFAULT__postgres__
+      password: ${POSTGRES_PASSWORD}
+      initial-size: __TEMPLATE__DRUID_INITIAL_SIZE__Druid 初始连接数__DEFAULT__10__
+      max-active: __TEMPLATE__DRUID_MAX_ACTIVE__Druid 最大连接数__DEFAULT__50__
+      min-idle: __TEMPLATE__DRUID_MIN_IDLE__Druid 最小空闲连接__DEFAULT__10__
+      keep-alive: true
+      validation-query: SELECT 1
+      test-while-idle: true
+      filters: stat,wall
+
+logging:
+  level:
+    root: __TEMPLATE__LOG_LEVEL__日志级别__DEFAULT__INFO__

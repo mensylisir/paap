@@ -1,0 +1,20 @@
+{
+  "key": "django-postgres-redis",
+  "name": "Django + PostgreSQL + Redis",
+  "version": "v1",
+  "description": "Django settings.py 中数据库和 Redis 缓存核心配置。",
+  "framework": "python",
+  "componentTypes": ["backend"],
+  "sortOrder": 121,
+  "nativeConfigs": [{ "name": "paap_settings.py", "path": "files/paap_settings.py" }],
+  "files": [{ "name": "Django paap_settings.py", "configMapName": "{{configMapName}}", "key": "paap_settings.py", "recommendedMountPath": "/etc/paap/paap_settings.py" }],
+  "env": [
+    { "name": "DJANGO_SETTINGS_MODULE", "source": "value", "value": "__TEMPLATE__DJANGO_SETTINGS_MODULE__Settings 模块__DEFAULT__project.settings__" },
+    { "name": "PAAP_SETTINGS_FILE", "source": "value", "value": "/etc/paap/paap_settings.py" },
+    { "name": "DATABASE_PASSWORD", "source": "secret", "refName": "{{secretName}}", "refKey": "DATABASE_PASSWORD" },
+    { "name": "REDIS_PASSWORD", "source": "secret", "refName": "{{secretName}}", "refKey": "REDIS_PASSWORD" }
+  ],
+  "secrets": [
+    { "name": "{{secretName}}", "data": { "DATABASE_PASSWORD": "__TEMPLATE__DATABASE_PASSWORD__数据库密码__", "REDIS_PASSWORD": "__TEMPLATE__REDIS_PASSWORD__Redis 密码__" } }
+  ]
+}

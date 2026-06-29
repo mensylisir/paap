@@ -36,6 +36,7 @@ type Component struct {
 	SourceMirrorRepoURL string `gorm:"size:500" json:"sourceMirrorRepoUrl,omitempty"`
 	SourceBranch        string `gorm:"size:100" json:"sourceBranch,omitempty"`
 	BuildContext        string `gorm:"size:200" json:"buildContext,omitempty"`
+	BuildModule         string `gorm:"size:200" json:"buildModule,omitempty"`
 	DockerfilePath      string `gorm:"size:200" json:"dockerfilePath,omitempty"`
 	JenkinsJob          string `gorm:"size:200" json:"jenkinsJob,omitempty"`
 	RegistryImage       string `gorm:"size:300" json:"registryImage,omitempty"`
@@ -49,7 +50,9 @@ type ComponentConfig struct {
 	ConfigTemplateKey  string                      `json:"configTemplateKey,omitempty"`
 	ConfigTemplateName string                      `json:"configTemplateName,omitempty"`
 	ConfigTemplate     *ComponentConfigTemplateRef `json:"configTemplate,omitempty"`
+	RegistryTarget     *ComponentRegistryTarget    `json:"registryTarget,omitempty"`
 	ContainerPort      int32                       `json:"containerPort,omitempty"`
+	ServicePort        int32                       `json:"servicePort,omitempty"`
 	Command            []string                    `json:"command,omitempty"`
 	Args               []string                    `json:"args,omitempty"`
 	Env                []ComponentEnvVar           `json:"env,omitempty"`
@@ -64,6 +67,16 @@ type ComponentConfigTemplateRef struct {
 	ID   uint   `json:"id,omitempty"`
 	Key  string `json:"key,omitempty"`
 	Name string `json:"name,omitempty"`
+}
+
+type ComponentRegistryTarget struct {
+	Key          string `json:"key,omitempty"`
+	Source       string `json:"source,omitempty"`
+	Host         string `json:"host,omitempty"`
+	ServiceID    uint   `json:"serviceId,omitempty"`
+	CapabilityID uint   `json:"capabilityId,omitempty"`
+	ServiceType  string `json:"serviceType,omitempty"`
+	Name         string `json:"name,omitempty"`
 }
 
 type ComponentEnvVar struct {
@@ -136,6 +149,7 @@ func NormalizeComponentConfig(cfg ComponentConfig) (ComponentConfig, error) {
 		ConfigTemplateKey:  strings.TrimSpace(cfg.ConfigTemplateKey),
 		ConfigTemplateName: strings.TrimSpace(cfg.ConfigTemplateName),
 		ContainerPort:      cfg.ContainerPort,
+		ServicePort:        cfg.ServicePort,
 		Command:            make([]string, 0, len(cfg.Command)),
 		Args:               make([]string, 0, len(cfg.Args)),
 		Env:                make([]ComponentEnvVar, 0, len(cfg.Env)),
@@ -161,6 +175,26 @@ func NormalizeComponentConfig(cfg ComponentConfig) (ComponentConfig, error) {
 			out.ConfigTemplateName = out.ConfigTemplate.Name
 		}
 	}
+	if cfg.RegistryTarget != nil {
+		out.RegistryTarget = &ComponentRegistryTarget{
+			Key:          strings.TrimSpace(cfg.RegistryTarget.Key),
+			Source:       strings.TrimSpace(cfg.RegistryTarget.Source),
+			Host:         strings.TrimSpace(cfg.RegistryTarget.Host),
+			ServiceID:    cfg.RegistryTarget.ServiceID,
+			CapabilityID: cfg.RegistryTarget.CapabilityID,
+			ServiceType:  strings.TrimSpace(cfg.RegistryTarget.ServiceType),
+			Name:         strings.TrimSpace(cfg.RegistryTarget.Name),
+		}
+		if out.RegistryTarget.Key == "" &&
+			out.RegistryTarget.Source == "" &&
+			out.RegistryTarget.Host == "" &&
+			out.RegistryTarget.ServiceID == 0 &&
+			out.RegistryTarget.CapabilityID == 0 &&
+			out.RegistryTarget.ServiceType == "" &&
+			out.RegistryTarget.Name == "" {
+			out.RegistryTarget = nil
+		}
+	}
 	if out.ConfigTemplateID > 0 || out.ConfigTemplateKey != "" || out.ConfigTemplateName != "" {
 		out.ConfigTemplate = &ComponentConfigTemplateRef{
 			ID:   out.ConfigTemplateID,
@@ -170,6 +204,9 @@ func NormalizeComponentConfig(cfg ComponentConfig) (ComponentConfig, error) {
 	}
 	if out.ContainerPort < 0 || out.ContainerPort > 65535 {
 		return ComponentConfig{}, fmt.Errorf("containerPort must be between 0 and 65535")
+	}
+	if out.ServicePort < 0 || out.ServicePort > 65535 {
+		return ComponentConfig{}, fmt.Errorf("servicePort must be between 0 and 65535")
 	}
 	for _, item := range cfg.Command {
 		item = strings.TrimSpace(item)

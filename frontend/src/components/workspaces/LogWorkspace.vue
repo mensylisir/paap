@@ -233,19 +233,19 @@ watch([subjects, () => props.initialSubjectKey], ([items, targetKey]) => {
   border-bottom: 1px solid var(--paap-border);
   background: var(--paap-panel-subtle);
 }
-.rail-title { font-size: 14px; font-weight: 600; color: var(--paap-text); }
-.rail-sub { font-size: 12px; color: var(--paap-muted); margin-top: 2px; }
+.rail-title { font-size: var(--paap-fs-body); font-weight: 600; color: var(--paap-text); }
+.rail-sub { font-size: var(--paap-fs-label); color: var(--paap-muted); margin-top: 2px; }
 .subject-row {
   width: 100%;
   display: grid;
   gap: 4px;
   padding: 12px var(--paap-space-4);
   border: none;
-  border-bottom: 1px solid #f3f4f6;
+  border-bottom: 1px solid var(--paap-panel-subtle);
   background: transparent;
   text-align: left;
   cursor: pointer;
-  transition: background 0.1s;
+  transition: background 0.15s;
   font-family: inherit;
 }
 .subject-row:last-child { border-bottom: none; }
@@ -260,8 +260,8 @@ watch([subjects, () => props.initialSubjectKey], ([items, targetKey]) => {
   border-radius: var(--paap-radius-full);
   padding: 1px 8px;
 }
-.subject-row strong { color: var(--paap-text); font-size: 13px; word-break: break-word; }
-.subject-row small { color: var(--paap-muted); font-size: 12px; line-height: 1.4; }
+.subject-row strong { color: var(--paap-text); font-size: var(--paap-fs-compact); word-break: break-word; }
+.subject-row small { color: var(--paap-muted); font-size: var(--paap-fs-label); line-height: 1.4; }
 .log-main { display: grid; gap: var(--paap-space-4); min-width: 0; }
 .log-head {
   display: flex;
@@ -273,8 +273,8 @@ watch([subjects, () => props.initialSubjectKey], ([items, targetKey]) => {
   border-radius: var(--paap-radius);
   padding: var(--paap-space-5);
 }
-.log-title { color: var(--paap-text); font-size: 20px; font-weight: 600; word-break: break-word; }
-.log-sub { color: var(--paap-muted); font-size: 13px; margin-top: var(--paap-space-1); }
+.log-title { color: var(--paap-text); font-size: var(--paap-fs-heading-xl); font-weight: 600; word-break: break-word; }
+.log-sub { color: var(--paap-muted); font-size: var(--paap-fs-compact); margin-top: var(--paap-space-1); }
 .loki-panel-list { display: grid; gap: var(--paap-space-3); }
 .loki-frame-shell {
   height: calc(100vh - 220px);
@@ -282,14 +282,14 @@ watch([subjects, () => props.initialSubjectKey], ([items, targetKey]) => {
   overflow: hidden;
   border: 1px solid var(--paap-border);
   border-radius: var(--paap-radius);
-  background: #fff;
+  background: var(--paap-panel);
 }
 .loki-frame {
   display: block;
   width: 100%;
   height: 100%;
   border: 0;
-  background: #fff;
+  background: var(--paap-panel);
 }
 .stream-list {
   background: var(--paap-panel);
@@ -297,7 +297,7 @@ watch([subjects, () => props.initialSubjectKey], ([items, targetKey]) => {
   border-radius: var(--paap-radius);
   padding: var(--paap-space-4);
 }
-.section-label { font-size: 11px; font-weight: 600; color: var(--paap-muted); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: var(--paap-space-2); }
+.section-label { font-size: var(--paap-fs-small); font-weight: 600; color: var(--paap-muted); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: var(--paap-space-2); }
 .stream-table { display: grid; gap: var(--paap-space-2); }
 .stream-row {
   display: grid;
@@ -311,23 +311,23 @@ watch([subjects, () => props.initialSubjectKey], ([items, targetKey]) => {
   text-align: left;
   cursor: pointer;
   font-family: inherit;
-  transition: all 0.1s;
+  transition: all 0.15s;
 }
 .stream-row:hover { border-color: var(--paap-border-strong); }
 .stream-row.selected { border-color: var(--paap-accent); background: var(--paap-accent-soft); }
-.stream-row strong { color: var(--paap-text); font-size: 12px; word-break: break-word; }
-.stream-row small { color: var(--paap-muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.log-row { display: flex; gap: var(--paap-space-3); padding: 2px 0; color: #d1d5db; }
-.log-time { color: #6b7280; white-space: nowrap; flex-shrink: 0; width: 72px; font-family: var(--paap-mono); font-size: 11px; }
+.stream-row strong { color: var(--paap-text); font-size: var(--paap-fs-label); word-break: break-word; }
+.stream-row small { color: var(--paap-muted); font-size: var(--paap-fs-label); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.log-row { display: flex; gap: var(--paap-space-3); padding: 2px 0; color: var(--paap-term-faint); }
+.log-time { color: var(--paap-term-dim); white-space: nowrap; flex-shrink: 0; width: 72px; font-family: var(--paap-mono); font-size: var(--paap-fs-small); }
 .log-level { width: 48px; flex-shrink: 0; font-weight: 600; text-align: center; border-radius: var(--paap-radius-xs); font-size: 10px; padding: 1px 0; }
-.log-level.fatal { background: #7f1d1d; color: #fecaca; }
-.log-level.error { background: #991b1b; color: #fecaca; }
-.log-level.warn { background: #854d0e; color: #fef08a; }
-.log-level.info { background: #14532d; color: #bbf7d0; }
-.log-level.debug { background: #374151; color: #d1d5db; }
-.log-level.log { background: #1f2937; color: #9ca3af; }
-.log-msg { color: #e5e7eb; word-break: break-word; font-size: 12px; }
-.terminal-empty { color: #9ca3af; padding: var(--paap-space-5) var(--paap-space-4); font-size: 12px; }
+.log-level.fatal { background: var(--paap-term-fatal-bg); color: var(--paap-term-fatal-text); }
+.log-level.error { background: var(--paap-term-error-bg); color: var(--paap-term-error-text); }
+.log-level.warn { background: var(--paap-term-warn-bg); color: var(--paap-term-warn-text); }
+.log-level.info { background: var(--paap-term-info-bg); color: var(--paap-term-info-text); }
+.log-level.debug { background: var(--paap-term-debug-bg); color: var(--paap-term-debug-text); }
+.log-level.log { background: var(--paap-term-log-bg); color: var(--paap-term-log-text); }
+.log-msg { color: var(--paap-term-text); word-break: break-word; font-size: var(--paap-fs-label); }
+.terminal-empty { color: var(--paap-term-muted); padding: var(--paap-space-5) var(--paap-space-4); font-size: var(--paap-fs-label); }
 @media (max-width: 900px) {
   .log-shell { grid-template-columns: 1fr; }
   .subject-rail { position: static; max-height: 420px; }

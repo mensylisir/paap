@@ -70,4 +70,30 @@ describe('config template native syntax', () => {
     }))
     expect(parsed.files[0]).not.toHaveProperty('mountPath')
   })
+
+  it('infers multiline directive items as textarea fields', () => {
+    const parsed = parseNativeConfigTemplate(
+      [
+        'server {',
+        '  __TEMPLATE__FOR__LOCATION_LIST__Location 规则__',
+        '  location __TEMPLATE__ITEM_MATCH__匹配规则__DEFAULT__/__ {',
+        '    __TEMPLATE__ITEM_DIRECTIVES__指令块__',
+        '  }',
+        '  __TEMPLATE__END__LOCATION_LIST__',
+        '}',
+      ].join('\n'),
+      { framework: 'nginx' },
+    )
+
+    expect(parsed.fields).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        key: 'LOCATION_LIST',
+        type: 'list',
+        itemFields: expect.arrayContaining([
+          expect.objectContaining({ key: 'MATCH', type: 'text' }),
+          expect.objectContaining({ key: 'DIRECTIVES', type: 'textarea' }),
+        ]),
+      }),
+    ]))
+  })
 })

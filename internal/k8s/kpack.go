@@ -5,7 +5,9 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"strings"
+	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -62,6 +64,13 @@ type KpackBuildEnvironmentStatus struct {
 	RegistryWarning string
 }
 
+type KpackImageStatus struct {
+	Exists      bool
+	Ready       bool
+	LatestImage string
+	Warning     string
+}
+
 func EnsureKpackBuildEnvironment(ctx context.Context, cl client.Client, spec KpackBuildEnvironmentSpec) KpackBuildEnvironmentStatus {
 	if cl == nil {
 		return KpackBuildEnvironmentStatus{Warning: "k8s client not initialized"}
@@ -92,6 +101,51 @@ func EnsureKpackBuildEnvironment(ctx context.Context, cl client.Client, spec Kpa
 		return KpackBuildEnvironmentStatus{Warning: fmt.Sprintf("kpack Builder sync failed: %v", err), RegistryWarning: registryWarning}
 	}
 	return KpackBuildEnvironmentStatus{Ready: true, RegistryWarning: registryWarning}
+}
+
+func GetKpackImageStatus(ctx context.Context, cl client.Client, namespace, name string) (KpackImageStatus, error) {
+	if cl == nil {
+		return KpackImageStatus{}, fmt.Errorf("k8s client not initialized")
+	}
+	namespace = strings.TrimSpace(namespace)
+	name = strings.TrimSpace(name)
+	if namespace == "" || name == "" {
+		return KpackImageStatus{}, fmt.Errorf("kpack image namespace and name are required")
+	}
+
+	obj := kpackObject("Image", namespace, name)
+	if err := cl.Get(ctx, types.NamespacedName{Namespace: namespace, Name: name}, obj); err != nil {
+		if apierrors.IsNotFound(err) {
+			return KpackImageStatus{}, nil
+		}
+		return KpackImageStatus{}, err
+	}
+
+	status := KpackImageStatus{Exists: true}
+	if latest, ok, _ := unstructured.NestedString(obj.Object, "status", "latestImage"); ok {
+		status.LatestImage = strings.TrimSpace(latest)
+	}
+	if conditions, ok, _ := unstructured.NestedSlice(obj.Object, "status", "conditions"); ok {
+		for _, item := range conditions {
+			condition, ok := item.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			if !strings.EqualFold(stringFromMap(condition, "type"), "Ready") {
+				continue
+			}
+			conditionStatus := stringFromMap(condition, "status")
+			status.Ready = strings.EqualFold(conditionStatus, "True")
+			if !status.Ready {
+				status.Warning = kpackConditionWarning(condition)
+			}
+			return status, nil
+		}
+	}
+	if status.LatestImage != "" {
+		status.Warning = "kpack image has a latest image but no Ready condition yet"
+	}
+	return status, nil
 }
 
 func defaultKpackBuildEnvironmentSpec(spec KpackBuildEnvironmentSpec) KpackBuildEnvironmentSpec {
@@ -336,9 +390,7 @@ func patchKpackControllerRegistryCAMount(ctx context.Context, cl client.Client) 
 }
 
 func ensureKpackRegistrySecret(ctx context.Context, cl client.Client, namespace, registryServer, username, password string) error {
-	auths := map[string]interface{}{
-		registryServer: map[string]string{},
-	}
+	auths := map[string]interface{}{}
 	if username != "" || password != "" {
 		auths[registryServer] = map[string]string{
 			"username": username,
@@ -459,9 +511,6 @@ func registryServerFromImage(image string) string {
 
 func kpackRegistryCompatibilityWarning(registryServer string) string {
 	registryServer = strings.TrimSpace(registryServer)
-	if strings.HasPrefix(registryServer, "registry.") && strings.Contains(registryServer, ".svc.cluster.local:5000") {
-		return "kpack cannot reliably push to a registry exposed only through svc.cluster.local because node runtimes cannot pull that image reference and kpack v0.17.0 does not expose a PAAP-managed insecure registry option; use a node-reachable trusted TLS registry for source builds"
-	}
 	if registryServer != "registry.paap.local:5000" && registryServer != "registry.paap.local" && (strings.HasSuffix(registryServer, ".paap.local:5000") || strings.HasSuffix(registryServer, ".paap.local")) {
 		return "PAAP placeholder registry host is not enough for source builds; set PAAP_REGISTRY_HOST_TEMPLATE to a node-reachable trusted TLS registry host"
 	}
@@ -499,6 +548,9 @@ func upsertKpackClusterStack(ctx context.Context, cl client.Client, buildImage, 
 			"image": runImage,
 		},
 	}
+	if kpackResourceNeedsRetry(ctx, cl, obj) {
+		obj.SetAnnotations(map[string]string{"paap.io/reconcile-at": time.Now().UTC().Format(time.RFC3339Nano)})
+	}
 	return upsertUnstructured(ctx, cl, obj)
 }
 
@@ -518,28 +570,60 @@ func upsertKpackClusterStore(ctx context.Context, cl client.Client, buildpackSou
 		}
 	}
 	obj.Object["spec"] = map[string]interface{}{"sources": sources}
+	if kpackResourceNeedsRetry(ctx, cl, obj) {
+		obj.SetAnnotations(map[string]string{"paap.io/reconcile-at": time.Now().UTC().Format(time.RFC3339Nano)})
+	}
 	return upsertUnstructured(ctx, cl, obj)
 }
 
+func kpackResourceNeedsRetry(ctx context.Context, cl client.Client, desired *unstructured.Unstructured) bool {
+	existing := &unstructured.Unstructured{}
+	existing.SetGroupVersionKind(desired.GroupVersionKind())
+	if err := cl.Get(ctx, types.NamespacedName{Name: desired.GetName(), Namespace: desired.GetNamespace()}, existing); err != nil {
+		return false
+	}
+	conditions, ok, _ := unstructured.NestedSlice(existing.Object, "status", "conditions")
+	if !ok {
+		return false
+	}
+	for _, item := range conditions {
+		condition, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if stringFromMap(condition, "type") == "Ready" && stringFromMap(condition, "status") == "False" {
+			return true
+		}
+	}
+	return false
+}
+
 func upsertKpackBuilder(ctx context.Context, cl client.Client, spec KpackBuildEnvironmentSpec) error {
+	if err := deleteStaleFailedKpackBuilder(ctx, cl, spec.Namespace); err != nil {
+		return err
+	}
 	obj := kpackObject("Builder", spec.Namespace, KpackBuilderName)
 	order := make([]interface{}, 0, len(spec.BuildpackSources))
 	for _, source := range spec.BuildpackSources {
-		id := kpackBuildpackIDFromSource(source)
-		if id == "" {
+		ref := kpackBuildpackRefFromSource(source)
+		if len(ref) == 0 {
 			continue
 		}
 		order = append(order, map[string]interface{}{
 			"group": []interface{}{
-				map[string]interface{}{"id": id},
+				ref,
 			},
 		})
 	}
 	if len(order) == 0 {
 		for _, source := range []string{PaketoJavaBuildpackImage, PaketoNodeJSBuildpackImage, PaketoGoBuildpackImage, PaketoPythonBuildpackImage} {
+			ref := kpackBuildpackRefFromSource(source)
+			if len(ref) == 0 {
+				continue
+			}
 			order = append(order, map[string]interface{}{
 				"group": []interface{}{
-					map[string]interface{}{"id": kpackBuildpackIDFromSource(source)},
+					ref,
 				},
 			})
 		}
@@ -564,13 +648,77 @@ func upsertKpackBuilder(ctx context.Context, cl client.Client, spec KpackBuildEn
 	return upsertUnstructured(ctx, cl, obj)
 }
 
+func deleteStaleFailedKpackBuilder(ctx context.Context, cl client.Client, namespace string) error {
+	existing := kpackObject("Builder", namespace, KpackBuilderName)
+	if err := cl.Get(ctx, types.NamespacedName{Name: KpackBuilderName, Namespace: namespace}, existing); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
+		return err
+	}
+	if !kpackBuilderNeedsRecreate(existing) {
+		return nil
+	}
+	if err := cl.Delete(ctx, existing); err != nil && !apierrors.IsNotFound(err) {
+		return err
+	}
+	for i := 0; i < 20; i++ {
+		if err := cl.Get(ctx, types.NamespacedName{Name: KpackBuilderName, Namespace: namespace}, existing); err != nil {
+			if apierrors.IsNotFound(err) {
+				return nil
+			}
+			return err
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	return fmt.Errorf("stale kpack Builder %s/%s is still deleting", namespace, KpackBuilderName)
+}
+
+func kpackBuilderNeedsRecreate(obj *unstructured.Unstructured) bool {
+	observed, ok, _ := unstructured.NestedInt64(obj.Object, "status", "observedGeneration")
+	if !ok {
+		_, conditionsOK, _ := unstructured.NestedSlice(obj.Object, "status", "conditions")
+		return !conditionsOK && time.Since(obj.GetCreationTimestamp().Time) > 2*time.Minute
+	}
+	conditions, ok, _ := unstructured.NestedSlice(obj.Object, "status", "conditions")
+	if !ok {
+		return false
+	}
+	for _, item := range conditions {
+		condition, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if stringFromMap(condition, "type") == "UpToDate" &&
+			stringFromMap(condition, "status") == "False" &&
+			stringFromMap(condition, "reason") == "ReconcileFailed" {
+			return true
+		}
+	}
+	if observed >= obj.GetGeneration() {
+		return false
+	}
+	return false
+}
+
+func kpackBuildpackRefFromSource(source string) map[string]interface{} {
+	id := kpackBuildpackIDFromSource(source)
+	if id == "" {
+		return nil
+	}
+	ref := map[string]interface{}{"id": id}
+	if version := imageReferenceTag(source); version != "" {
+		ref["version"] = version
+	}
+	return ref
+}
+
 func kpackBuildpackIDFromSource(source string) string {
 	source = strings.TrimSpace(source)
 	if source == "" {
 		return ""
 	}
-	repo := strings.Split(source, "@")[0]
-	repo = strings.Split(repo, ":")[0]
+	repo := imageReferenceRepository(source)
 	repo = strings.Trim(repo, "/")
 	segments := strings.Split(repo, "/")
 	if len(segments) < 2 {
@@ -584,6 +732,38 @@ func kpackBuildpackIDFromSource(source string) string {
 	if owner == "paketo-buildpacks" {
 		return owner + "/" + name
 	}
+	if strings.HasPrefix(name, "paap-buildpack-") {
+		return "paketo-buildpacks/" + strings.TrimPrefix(name, "paap-buildpack-")
+	}
+	return ""
+}
+
+func imageReferenceRepository(source string) string {
+	source = strings.TrimSpace(source)
+	if source == "" {
+		return ""
+	}
+	repo := strings.Split(source, "@")[0]
+	segments := strings.Split(repo, "/")
+	last := segments[len(segments)-1]
+	if colon := strings.LastIndex(last, ":"); colon > 0 {
+		segments[len(segments)-1] = last[:colon]
+	}
+	return strings.Join(segments, "/")
+}
+
+func imageReferenceTag(source string) string {
+	repo := strings.Split(strings.TrimSpace(source), "@")[0]
+	if repo == "" {
+		return ""
+	}
+	last := repo
+	if slash := strings.LastIndex(last, "/"); slash >= 0 {
+		last = last[slash+1:]
+	}
+	if colon := strings.LastIndex(last, ":"); colon > 0 && colon < len(last)-1 {
+		return last[colon+1:]
+	}
 	return ""
 }
 
@@ -596,6 +776,26 @@ func kpackObject(kind, namespace, name string) *unstructured.Unstructured {
 	return obj
 }
 
+func stringFromMap(values map[string]interface{}, key string) string {
+	value, _ := values[key].(string)
+	return strings.TrimSpace(value)
+}
+
+func kpackConditionWarning(condition map[string]interface{}) string {
+	reason := stringFromMap(condition, "reason")
+	message := stringFromMap(condition, "message")
+	switch {
+	case reason != "" && message != "":
+		return reason + ": " + message
+	case message != "":
+		return message
+	case reason != "":
+		return reason
+	default:
+		return "kpack image is not ready"
+	}
+}
+
 func upsertUnstructured(ctx context.Context, cl client.Client, desired *unstructured.Unstructured) error {
 	existing := &unstructured.Unstructured{}
 	existing.SetGroupVersionKind(desired.GroupVersionKind())
@@ -606,8 +806,17 @@ func upsertUnstructured(ctx context.Context, cl client.Client, desired *unstruct
 	if err != nil {
 		return err
 	}
-	existing.SetLabels(mergeLabels(existing.GetLabels(), desired.GetLabels()))
-	existing.Object["spec"] = desired.Object["spec"]
+	mergedLabels := mergeLabels(existing.GetLabels(), desired.GetLabels())
+	mergedAnnotations := mergeLabels(existing.GetAnnotations(), desired.GetAnnotations())
+	desiredSpec := desired.Object["spec"]
+	if reflect.DeepEqual(existing.Object["spec"], desiredSpec) &&
+		reflect.DeepEqual(existing.GetLabels(), mergedLabels) &&
+		reflect.DeepEqual(existing.GetAnnotations(), mergedAnnotations) {
+		return nil
+	}
+	existing.SetLabels(mergedLabels)
+	existing.SetAnnotations(mergedAnnotations)
+	existing.Object["spec"] = desiredSpec
 	return cl.Update(ctx, existing)
 }
 
@@ -619,11 +828,12 @@ func kpackBootstrapLabels() map[string]string {
 }
 
 func mergeLabels(current, desired map[string]string) map[string]string {
-	if current == nil {
-		current = map[string]string{}
+	merged := make(map[string]string, len(current)+len(desired))
+	for k, v := range current {
+		merged[k] = v
 	}
 	for k, v := range desired {
-		current[k] = v
+		merged[k] = v
 	}
-	return current
+	return merged
 }

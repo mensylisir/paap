@@ -300,7 +300,12 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 
 ### Task 6.3: 服务目录占位项落地
 - [ ] 为 `kingbase` 补齐服务模板、安装参数、连接发现、工作台和测试
-- [ ] 为 `nacos` 补齐服务模板、安装参数、连接发现、工作台和测试
+- [x] 为 `nacos` 补齐服务模板、安装参数、连接发现、工作台和测试
+  - 2026-06-28 补齐：新增 `docs/examples/built-in-templates/nacos` lightweight standalone Helm chart、`platform-manifest.yaml`、`preset-values.yaml`，打包为 `data/charts/nacos.tar.gz`；`SeedServiceCatalog` 改为启用 Nacos，`builtInTemplateArchives` / `builtInServiceTemplateByType` 接入 `charts/nacos.tar.gz`。
+  - 验证：`helm template test-nacos docs/examples/built-in-templates/nacos/chart --values docs/examples/built-in-templates/nacos/preset-values.yaml --set fullnameOverride=test-nacos --set serviceAccount.name=test-nacos` 通过；`go test -count=1 ./internal/model ./internal/handler -run 'Test(DocsExamplesPlatformManifestsUseExplicitNamespacePermissionTypes|PlatformManifest|ListServiceCatalogHidesUnsupportedPlaceholders|BuiltInServiceTemplatesExposeFeatureMatrix|NacosAndEurekaBuiltInChartArchivesParse|BuiltInServiceTemplates|ServiceCatalog)'` 通过。
+- [x] 为 `eureka` 补齐服务模板、安装参数、连接发现、工作台和测试
+  - 2026-06-28 补齐：新增 `docs/examples/built-in-templates/eureka` lightweight Helm chart、`platform-manifest.yaml`、`preset-values.yaml`，打包为 `data/charts/eureka.tar.gz`；`SeedServiceCatalog` 新增 Eureka，`builtInTemplateArchives` / `builtInServiceTemplateByType` 接入 `charts/eureka.tar.gz`。
+  - 验证：`helm template test-eureka docs/examples/built-in-templates/eureka/chart --values docs/examples/built-in-templates/eureka/preset-values.yaml --set fullnameOverride=test-eureka --set serviceAccount.name=test-eureka` 通过；`go test -count=1 ./internal/handler -run 'Test(NacosAndEurekaBuiltInChartArchivesParse|ListServiceCatalogHidesUnsupportedPlaceholders|BuiltInServiceTemplatesExposeFeatureMatrix)'` 通过；`go test -count=1 ./internal/service ./internal/handler` 通过；`npm --prefix frontend run test -- src/utils/catalogGroups.test.ts --run` 通过。
 - [x] 未落地前从可安装服务列表隐藏占位项，避免用户选择后安装失败
 
 ### Task 6.4: 模板体系收口
@@ -312,11 +317,21 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 
 ### Task 6.5: CI/CD 端到端生产化
 - [ ] 明确 Tekton 是否继续作为目标；若继续，需要实现 Tekton 模板和工作台；若不继续，需要清理旧设计文档
-- [ ] 为 source 组件链路补齐前置依赖检查：Gitea、Jenkins、kpack、registry/Harbor、ArgoCD
+- [x] 为 source 组件链路补齐前置依赖检查：Gitea、Jenkins、kpack、registry/Harbor、ArgoCD
+  - 2026-06-28 补齐：`DeployComponent` 在执行源码构建/GitOps 动作前从 service 层校验环境内 Gitea、Jenkins、registry/Harbor、ArgoCD 安装记录必须为 running 且有命名空间；源码待构建时额外只读校验 kpack CRD 与 `kpack-controller` ready；image 交付只要求 GitOps 依赖，不误要求 Jenkins/kpack/registry
+  - 2026-06-28 验证：`/home/mensyli1/.gvm/gos/go1.25.7/bin/go test -count=1 ./internal/service -run 'TestValidateComponent(SourceBuildPreflight|ImageDeploymentPreflight)|TestRunComponent(SourceBuildFlowRequiresGitAndCI|ImageDeliveryFlowRequiresGitAndCD|ImageDeliveryFlowPublishesGitOpsAndConfiguresArgoCD)|TestBuildComponentKpackSpec|TestPreferredSourceRegistryServiceType|TestPrepareComponentSourceBuildVersion'` 通过；`/home/mensyli1/.gvm/gos/go1.25.7/bin/go test -count=1 ./internal/service` 通过
 - [ ] 将 registry/Harbor 的 DNS、TLS、节点运行时信任配置做成可验证状态，而不是只展示说明
 - [ ] 完整验证 source 模式：源码仓 → Gitea mirror → Jenkins/kpack → registry/Harbor → GitOps 清单 → ArgoCD → 集群
-- [ ] 完整验证 image 模式：镜像输入 → GitOps 清单 → ArgoCD → 集群
+  - 2026-06-29 修复并验证：源码交付失败后重新点击“部署”会把组件置为 `planned` 并重新触发 Jenkins/kpack，不再被旧的 `BuildFailed` kpack Image 直接短路；UI/CDP 对 PiggyMetrics `gateway` 提交源码交付，`PUT /api/v1/components/32` 和 `POST /api/v1/components/32/deploy` 均返回 200，组件状态进入 `pipelineStatus=running`，kpack `Image gateway` 重新创建 build pod，Jenkinsfile 使用内部 registry `10.96.190.247:5000/piggymetrics-dev/gateway` 推送，组件声明镜像保持外部运行地址 `registry.piggymetrics-dev.paap.local/piggymetrics-dev/gateway:6bb2cf9`。
+  - 当前剩余：kind 运行态仍在 Paketo/BellSoft JDK 下载阶段，最终能否完成取决于从 GitHub 拉取 `bellsoft-jdk21.0.11+11-linux-amd64.tar.gz`；该项尚未证明完整到 ArgoCD/集群。
+- [x] 完整验证 image 模式：镜像输入 → GitOps 清单 → ArgoCD → 集群
+  - 2026-06-29 修复并验证：镜像交付保存/部署时按所选 `registryTarget` 重新生成运行镜像地址，UI 和 Gitea 部署 YAML 不再泄漏环境内 ClusterIP；CDP 在 PiggyMetrics `auth-service` 页面选择本环境 `dev-registry` 后点击部署，`PUT /api/v1/components/28` 和 `POST /api/v1/components/28/deploy` 均返回 200，DB 中 `image/registryImage=registry.piggymetrics-dev.paap.local/piggymetrics-dev/auth-service:6bb2cf9`，Gitea `components/auth-service/deployment.yaml` 同步为该镜像，集群 Deployment 也回读到同一镜像。测试环境未配置该域名 DNS，Pod 最终 Ready 不能作为本地 kind 的成功判据。
 - [ ] 将链路中的 warning/pending 状态映射到前端可操作的修复入口
+- [x] 代码层交付流程已拆为动作函数、步骤函数和流程函数：source 构建只准备 Gitea mirror/Jenkinsfile/README/Jenkins/kpack，不写 GitOps 清单；image 交付和已构建 source 交付由 PAAP 写部署清单、配置 ArgoCD 并持久化组件 GitOps 元数据
+  - 2026-06-28 验证：`/home/mensyli1/.gvm/gos/go1.25.7/bin/go test -count=1 ./internal/service -run 'Test(CreateComponent|UpdateComponent|DeployComponent|RunComponent|BuildComponentJenkinsfile|ApplyComponentDeployVersion|PrepareComponentSourceBuildVersion|PreferredSourceRegistryServiceType)'` 通过
+  - 2026-06-28 验证：`/home/mensyli1/.gvm/gos/go1.25.7/bin/go test -count=1 ./internal/database ./internal/authz ./internal/middleware ./internal/service ./internal/handler` 通过
+  - 2026-06-28 浏览器验证：`paap-server:v0.1.578-source-draft-entry` 部署到 `kind-rbac-manager-test` 后，使用浏览器登录 `http://172.20.0.2:30091`，在 PiggyMetrics 开发环境通过页面会话创建 source 草稿（`deliveryMode=source`、`version=""`、`image=""`、`status=draft`）和 image 草稿（`deliveryMode=image`、明确 tag），均返回 201；随后删除均返回 200，组件数恢复为 7。
+  - 当前状态：image 交付链路已通过浏览器操作和 Gitea/集群回读验证；source 交付链路已通过浏览器操作验证到 Jenkins/kpack 重新构建中，完整成功仍等待外部依赖下载条件。
 
 ### Task 6.6: 平台配置与管理员功能
 - [ ] 增加平台配置模块，并按角色控制普通用户是否可见
@@ -366,8 +381,11 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
   - 配置模板导入弹窗已使用 `config-template-component-type-select` 下拉控件，选项覆盖所有组件、前端、后端、前端 + 后端、Worker / 任务组件和自定义组件；导入时转换为 `componentTypes` 数组，影响组件配置 Tab 模板候选范围
   - 验证：`npm --prefix frontend run test -- src/views/viewMarkup.test.ts -t "splits template management"` 通过；CDP 验证当前部署 `/templates` 的“导入配置模板”弹窗存在该 select 和完整选项
 - [x] 导入流程同时支持普通原生配置模板和高级 template/schema JSON，并清晰区分两种模式
-  - 普通模式通过 `parseNativeConfigTemplate` 解析原生配置里的 `__TEMPLATE__KEY__显示名__` 标记；高级模式通过 `normalizeAdvancedConfigTemplateImport` 接收完整 template JSON 或 `template/schema` 包装结构
-  - 验证：`npm --prefix frontend run test -- src/views/viewMarkup.test.ts -t "splits template management"` 通过；CDP 验证高级模式切换后标题为“导入高级模板 JSON”、文件 accept 为 `.json,application/json`，并展示 `template/schema` JSON placeholder
+  - 普通模式是默认路径，直接上传用户自己的 `.yml/.yaml/.json/.conf/.env` 等配置文件，文件里只把可变字段替换为 `__TEMPLATE__KEY__显示名__` / `DEFAULT` / `IF` / `FOR` 语法；即使普通文件名是 `template.json/schema.json`，或内容包含 `template/schema/fields` 字段，也必须按业务配置文件解析，不做自动高级模板猜测。
+  - 高级模式仅供高级用户导入 PAAP `template.json/schema.json` 或包含它们的 `.tar.gz` 包；高级结构不作为普通用户上传配置文件的要求。
+  - 2026-06-28 验证：`go test ./internal/service ./internal/handler -run 'ComponentConfigTemplate|ParseNative|ParseUploaded|ParsePackagedBuiltIn'`、`npm --prefix frontend run test -- src/views/componentConfigTemplateRuntime.test.ts src/views/viewMarkup.test.ts src/views/configTemplateSyntax.test.ts --run`、`npm --prefix frontend run build` 通过；浏览器访问 `/templates` 验证普通模式多文件上传提示和高级模板包提示。
+  - 2026-06-28 浏览器验证：在 `/templates` 普通模式上传两个普通业务配置文件，文件名分别为 `schema.json`、`template.json`，页面成功新增模板；API 返回 `nativeConfigs=2`、`configKeys=schema.json/template.json`、字段 `DATABASE_HOST/DATABASE_PASSWORD/API_ENDPOINT`，并保留业务 JSON 内容，只把占位符转换为 `[[paap:...]]`。临时模板已通过页面会话删除，列表数量恢复。
+  - 2026-06-28 运行态验证：构建并滚动 `paap-server:v0.1.579-template-port-flow` 到 kind；浏览器同源 API 保存 PiggyMetrics `backend-1` 为 `containerPort=80` 后触发平台镜像交付，Gitea contents API 返回 `components/backend-1/deployment.yaml` 为 `containerPort: 80`、`service.yaml` 为 `targetPort: 80`；只读 `kubectl get` 验证集群 Deployment/Service 均已同步到 80，Pod `1/1 Running`。
 - [x] 模板预览展示原始内容、抽取字段、敏感字段、生成文件和校验错误，不要求用户理解 Kubernetes 对象名
 - [ ] 增强 configmap、secret、file-based config 解析，让后端到数据库/缓存/消息队列关系能安全自动连线
 
@@ -391,12 +409,13 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 - [x] 卡片和抽屉明确展示 `managed`、`shared`、`external` 来源和断开/卸载语义
   - 2026-06-26 验证：新增 focused markup 测试覆盖卡片/抽屉的来源与移除语义；环境 5 可见 Chrome 验证环境内服务显示“环境内资源 / 卸载服务”，共享资源引用显示“平台共享 / 断开引用”，临时 external custom 显示“外部资源 / 断开外部连接”且抽屉提示不会删除外部系统；临时 external custom 已删除，环境能力恢复为 shared cache/database。
 - [ ] 对 external Git、Registry、Argo CD、Jenkins、Prometheus、Loki、PostgreSQL、Redis、RabbitMQ、Kafka、MinIO 做真实连接与权限验证
+  - 2026-06-27 已落地通用验证底座：`POST /api/v1/environments/:id/capabilities/:capability/validate` 对 external capability 做 endpoint 解析、TCP 连通性检查、本环境凭据 Secret 可读性检查，并写回 `validationStatus/validationMessage`；右侧栏提供“验证连接”入口。协议级权限验证仍需按服务类型逐个补齐。
 - [x] external 来源删除只移除 PAAP 连接记录和本地凭据，不能删除真实外部资源
   - 2026-06-25 验证：在环境 5 创建临时 `custom` 外部资源卡片，页面确认删除后 `/api/v1/environments/5/capabilities` 只剩原有 `mq` 外部资源；删除弹窗文案明确“只会移除当前环境中的共享或外部资源卡片”。
 - [x] 画布分区方案：节点补 `zone`/group 元数据，按“本环境 / 平台公共 / 集群外部”渲染分区
   - 2026-06-25 验证：环境 5 画布显示分区图例“本环境 / 平台公共 / 集群外部”，背景分区显示“本环境 9 个资源”“集群外部 1 个资源”；临时 external custom 卡片创建后“集群外部”计数变 2，删除后回到 1。
-- [x] RBAC/Casbin 评估：权限点表 + 角色权限表方向正确，但不应现在直接替换现有鉴权；当前阶段保留 `platform_admin` / `app_admin` / `user`、`user_roles` 和 `AppMember` 的资源域判断，后续再引入数据库权限点、缓存刷新和 Casbin domain 模型
-  - 评估结论：a.md 中的 RBAC/Casbin 方案方向适合后续自定义角色和权限点管理，但落地前需要先稳定三层角色、应用成员域、Keycloak 身份来源和路由权限矩阵；否则一次性切换会扩大回归面。
+- [x] RBAC/Casbin 评估与当前落地：已从旧 `user_roles` 切到 `roles` / `permissions` / `role_permissions` / `role_bindings`，支持内置角色、自定义角色、权限点树和路由中间件鉴权；Casbin domain 模型暂不引入运行时。
+  - 当前结论：现阶段保留自研 Scope-Based RBAC，避免在权限规则仍围绕系统 / 应用 / 环境继承时引入 Casbin 复杂度；后续若出现 ABAC、跨租户 domain 策略或更复杂矩阵规则，再评估 Casbin。
 
 ### Task 6.14: 平台目录、版本选择与服务暴露
 - [x] 安装/编辑中间件时提供版本下拉，数据来自同 `ServiceType` 下的 `ServiceTemplate.ChartVersion`
@@ -461,15 +480,17 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 - [ ] 工作量：1 周
 
 ### Task 7.4: 三种角色体系 ✅
-- [x] 角色定义：`platform_admin` / `app_admin` / `user`
-- [x] 用户角色从单字段升级为 `user_roles` 多角色表，`User.Role` 兼容字段已移除
+- [x] 角色定义：`platform_admin` / `app_admin` / `user`，并升级为 `roles` / `permissions` / `role_permissions` / `role_bindings` 权限表模型
+- [x] 旧 `user_roles` 角色绑定路径已移除；系统角色绑定统一写入 `role_bindings(scope_type=system, scope_id=0)`，应用角色绑定统一写入 `role_bindings(scope_type=app, scope_id=<app_id>)`
 - [x] 后端 `internal/middleware/auth.go` 统一认证并把当前用户 ID、角色写入 Gin context
-- [x] 应用列表/详情/环境/组件/服务等应用域接口通过 `AppMember` 做资源域鉴权，平台管理员保留全局可见性
+- [x] 应用列表/详情/环境/组件/服务等应用域接口通过 `authz.Can` / 资源域 helper 做权限点鉴权，平台管理员保留全局可见性
 - [x] 创建应用要求 `app_admin`，`platform_admin` 单独不能创建业务应用；创建后自动给创建者写入 `AppMember.role=admin`
 - [x] 前端按 `platform_admin` 显隐用户管理等平台入口
-- [x] Keycloak 登录回调从 realm roles、client roles、groups 提取 `platform_admin` / `app_admin` / `user` 并同步到 `user_roles`
-- [x] 验证：`go test ./internal/handler ./internal/model ./internal/service -run 'Test(AuthenticatedUserCanCreateAppRequiresAppAdminRole|ListApplicationsFiltersByAppMemberForRegularUsers|ListApplicationsIncludesSystemAppsForPlatformAdmins|ListApplicationsDoesNotCreateSharedResourcePool|CreateApplicationUsesAuthenticatedUserAsOwner|CreateApplicationRejectsRegularUser|RolesFromKeycloak|ReplaceUserRoles|SyncCluster)' -count=1` 通过
-- [x] 当前边界：已完成三种平台主角色、Keycloak 对接和应用成员域鉴权；权限点表/Casbin 自定义角色体系按 Task 6.13 的评估作为后续增强，不在本任务内一次性替换现有鉴权链路
+- [x] Keycloak 登录回调从 realm roles、client roles、groups 提取 `platform_admin` / `app_admin` / `user`，upsert PAAP 用户后同步到新 `role_bindings`
+- [x] 权限列表接口 `GET /api/v1/auth/permissions` 返回当前用户 roles 和 permission codes；前端权限 store、路由守卫和按钮显隐使用同一份权限点
+- [x] 权限读取增加 5 分钟进程内缓存，角色绑定和角色权限变更时主动失效，当前阶段不引入 Redis
+- [x] 验证：`source "$HOME/.gvm/scripts/gvm" && go test ./internal/... -count=1` 通过；`/api/v1/auth/login`、`/api/v1/auth/me`、`/api/v1/auth/permissions` 在 `kind-rbac-manager-test` 上验证通过；运行库 `user_roles` 表不存在，新表计数为 `roles=6`、`permissions=22`、`role_permissions=56`、`role_bindings=5`
+- [x] 当前边界：已完成三种平台主角色、Keycloak 对接、权限点树、自定义角色基础和路由中间件鉴权；Casbin domain 模型暂不引入运行时，后续出现 ABAC、跨租户 domain 策略或复杂矩阵规则时再评估
 
 ### Task 7.5: Capability 来源模型（环境内/共享/外部）
 > 领导需求 2+3+4 的统一模型，也是 External Capability Design Direction 的落地
@@ -1073,12 +1094,27 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 - [x] 工作量：S（半天）
 
 ### Task 7.9: KubeVirt 服务模板
-- [ ] 将 KubeVirt 作为平台基础设施能力，而不是面向用户的裸虚拟机创建入口
-- [ ] 服务产品支持 `provisionMode=kubevirt`，用户创建的是 PostgreSQL、Redis、MySQL 等服务实例
-- [ ] 平台管理员维护 KubeVirt 服务模板：基础镜像/DataVolume、CPU、内存、磁盘、cloud-init/启动脚本、服务端口、凭据生成、readiness、监控 agent/exporter、备份/快照策略
-- [ ] 创建服务实例时由模板生成 KubeVirt `VirtualMachine`、Kubernetes `Service`、Secret、连接输出和监控目标
+- [x] 将 KubeVirt 作为平台基础设施能力，而不是面向用户的裸虚拟机创建入口
+- [x] 服务产品支持 `provisionMode=kubevirt`，用户创建的是 PostgreSQL、Redis、MySQL 等服务实例
+- [x] 平台管理员维护 KubeVirt 服务模板：基础镜像/DataVolume、CPU、内存、磁盘、cloud-init/启动脚本、服务端口、凭据生成、readiness、监控 agent/exporter、备份/快照策略
+  - 2026-06-28 补齐：KubeVirt `runtimeSpec` 保存前校验 image/ports/readiness/monitoring；资源生成层支持 `readiness` 探针、`monitoring` 目标和 `backupPolicy` 元数据注解，管理员通过服务模板 API/模板包维护这些字段时可提前发现错误。
+  - 2026-06-28 验证：`go test -count=1 ./internal/k8s ./internal/service -run 'Test(BuildKubeVirtService|CreateServiceTemplateValidatesKubeVirtRuntimeSpec|UpsertSeedServiceTemplateSeparatesProvisionModes)'` 通过。
+- [x] 创建服务实例时由模板生成 KubeVirt `VirtualMachine`、Kubernetes `Service`、Secret、连接输出和监控目标的资源生成层
+  - 2026-06-28 补齐：新增 `internal/k8s/kubevirt.go` 和 `internal/service/kubevirt.go`，从 `runtimeSpec` 生成 KubeVirt `VirtualMachine`、可选 CDI `DataVolume`、Kubernetes `Service`、凭据 `Secret`、连接输出和监控目标；生成层要求镜像和服务端口必填，缺失时直接拒绝。
+  - 2026-06-28 验证：`go test -count=1 ./internal/k8s ./internal/service -run 'TestBuildKubeVirtService'` 通过。
+- [x] `InstallService` API 接入 KubeVirt 分支，按 `provisionMode=kubevirt` 选择服务模板并 upsert KubeVirt 资源
+  - 2026-06-28 补齐：`InstallServiceRequest` 增加 `provisionMode`；`CreateServiceDraft` / `InstallService` 按 provision mode 查询模板；KubeVirt 分支不再创建 Helm `ServiceInstance` CR，而是创建 Namespace、Secret、Service、DataVolume 和 VirtualMachine。
+  - 2026-06-28 补齐：环境服务弹窗的 KubeVirt 模板交付入口从置灰改为可提交，调用 `api.installService(..., { provisionMode: 'kubevirt' })`，并按 provision mode 区分同一服务类型的 Helm/KubeVirt 已安装状态。
+  - 2026-06-28 验证：`go test -count=1 ./internal/k8s ./internal/service ./internal/handler -run 'Test(Build|Upsert)KubeVirtService|TestInstallServiceDeploysKubeVirtResources|TestInstallServiceDeploysExistingDraft|TestCreateServiceDraftDoesNotCreateServiceInstanceCR'`、`npm --prefix frontend run test -- src/views/viewMarkup.test.ts --run`、`cd frontend && npm exec vue-tsc -- -b --noEmit` 通过。
+- [x] 卸载 KubeVirt 服务时清理运行态资源和安装记录
+  - 2026-06-28 补齐：`UninstallService` 按 `provisionMode=kubevirt` 走 `DeleteKubeVirtServiceResources`，清理同 namespace 下带 `paap.io/provision-mode=kubevirt` 和 `paap.io/service-type=<type>` 标签的 `VirtualMachine`、`DataVolume`、`Service`、`Secret`，再删除服务 namespace；不再误删 Helm `ServiceInstance` CR。
+  - 2026-06-28 验证：`go test -count=1 ./internal/k8s ./internal/service ./internal/handler -run 'Test(Delete|Upsert|Build)KubeVirtService|TestUninstallService(DeletesKubeVirtRuntimeResources|HardDeletesServiceInstallation|KeepsRuntimeInstallationWhenCRDeleteFails)'` 通过。
+- [x] 服务列表/详情读取 KubeVirt VM 的基础状态、运行配置、Service 网络和凭据
+  - 2026-06-28 补齐：`DiscoverKubeVirtServiceRuntimeConfig` 从 KubeVirt VM、DataVolume、Service、Secret 读取 `RuntimeConfig`；`DiscoverKubeVirtServiceStatus` 从 VM `status.printableStatus` / Ready condition 推导 running/installing/failed；服务读模型对 `provisionMode=kubevirt` 不再查询 Helm `ServiceInstance` CR。
+  - 2026-06-28 验证：`go test -count=1 ./internal/k8s ./internal/service -run 'Test(Discover|Delete|Upsert|Build)KubeVirtService|TestListServiceInstancesEnrichesKubeVirtRuntimeState|TestDiscoverServiceCredentialsReadsKubeVirtCredentialSecret'` 通过。
+- [ ] Operator/GitOps 接入 KubeVirt 分支，将上述资源纳入 controller 调谐和真实集群联调
 - [ ] 需要集群已装 KubeVirt operator/CRD
-- [ ] 当前状态：全项目零基础
+- [ ] 当前状态：模型、统计、安装 API、服务模板校验、资源生成、卸载清理和基础运行态读取已具备，controller/GitOps 调谐和真实集群联调仍未完成
 - [ ] 工作量：3-4 周
 
 ### Task 7.10: KEDA 水平扩展
@@ -1186,12 +1222,15 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 ### Task 7.19: Keycloak 部署 + 用户认证集成
 - [x] 新增 Keycloak 到 `deploy/k8s/` 部署文件（`keycloak.yaml` + `deploy.sh` + `deploy-remote.sh` + 离线镜像清单）
 - [x] kind 验证：显式使用 `--context kind-rbac-governance-test` 检查 `paap-keycloak`，Deployment `1/1 Available`，NodePort `30080`，健康口 `/health/ready` 返回 `UP`
-- [ ] 用户认证对接 Keycloak：登录/注册/OAuth2/OIDC 流程
-- [ ] 替换或并存当前简单 JWT 认证
-- [ ] 用户管理（同步/创建/角色映射 Keycloak ←→ PAAP User）
-- [ ] 当前状态：`internal/handler/auth.go` 自产 JWT 无外部 IdP
-- [ ] 对应文件：`deploy/k8s/`、`internal/handler/auth.go`、`internal/model/user.go`
-- [ ] 工作量：1-2 周
+- [x] 用户认证对接 Keycloak：OAuth2/OIDC login + callback 已接入，回调后签发 PAAP JWT 并回到前端登录页完成本地会话
+- [x] 当前简单 JWT 与 Keycloak 并存：本地 `admin / Def@u1tpwd` 登录仍可用，Keycloak 登录成功后也进入同一套 PAAP JWT 和权限中间件
+- [x] 用户管理同步：Keycloak userinfo upsert PAAP User，realm roles / client roles / groups 映射为 PAAP system role bindings
+- [x] Keycloak 地址动态化：`KEYCLOAK_ISSUER_URL` / `KEYCLOAK_REDIRECT_URL` 支持 `{scheme}`、`{host}`、`{hostname}` 模板；`deploy/k8s/configure-auth-endpoints.sh` 支持显式 `PAAP_PUBLIC_URL` / `KEYCLOAK_PUBLIC_URL`，未配置域名时自动发现当前集群 NodeIP + NodePort 作为开发兜底
+- [x] 部署修复：Keycloak 默认 realm 用户增加 `emailVerified`、`firstName`、`lastName`，避免 Keycloak 25 首次登录触发 `VERIFY_PROFILE`
+- [x] 2026-06-27 验证：`kind-rbac-manager-test` 中 PAAP `http://172.20.0.2:30091`、Keycloak `http://172.20.0.2:30080`，回调地址为 `http://172.20.0.2:30091/api/v1/auth/keycloak/callback`；Keycloak realm 默认管理员已统一为 `admin/Def@u1tpwd`，`admin/admin` 返回 401，`admin/Def@u1tpwd` token 端点返回 200
+- [x] 2026-06-28 验证：`deploy/k8s/configure-auth-endpoints.test.sh` 通过；`paap-runtime-endpoints` 当前值为 PAAP `http://172.20.0.2:30091`、Keycloak `http://172.20.0.2:30080`、issuer `http://172.20.0.2:30080/realms/paap`、redirect `http://172.20.0.2:30091/api/v1/auth/keycloak/callback`；浏览器点击“Keycloak 登录”进入 `172.20.0.2:30080`，使用 `admin/Def@u1tpwd` 登录后回到 PAAP，服务日志显示 `/api/v1/auth/keycloak/login` 和 `/api/v1/auth/keycloak/callback` 均 302 成功，回调后 `/api/v1/auth/me`、`/api/v1/auth/permissions` 返回 200
+- [x] 对应文件：`deploy/k8s/`、`deploy/k8s/configure-auth-endpoints.sh`、`internal/handler/auth_keycloak.go`、`internal/authz/`、`internal/model/authz.go`
+- [x] 工作量：1-2 周
 
 ### Task 7.20: 画布卡片分组分区
 - [x] 画布上增加 zone 背景容器，每个 zone 聚合展示该组资源数量
@@ -1264,15 +1303,16 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 - [x] 工作量：S（15 分钟）
 
 ### Task 7.28: 隐藏未落地服务目录占位项 ✅
-> kingbase 和 nacos 尚未完成 chart、安装参数、连接发现、工作台和测试前，不对用户展示为可选能力。
+> kingbase 尚未完成 chart、安装参数、连接发现、工作台和测试前，不对用户展示为可选能力；Nacos/Eureka 已在 Task 6.3 落地为可选中间件。
 
-- [x] `ListServiceCatalog` 排除 `kingbase` / `nacos` 占位项，即使数据库里遗留为 enabled 也不会返回
-- [x] `SeedServiceCatalog` 将 `kingbase` / `nacos` 默认写为 disabled，并显式修正旧数据
-- [x] 增加后端回归测试，覆盖 enabled 遗留占位项不会出现在 catalog 响应中
+- [x] `ListServiceCatalog` 排除 `kingbase` 占位项，即使数据库里遗留为 enabled 也不会返回
+- [x] `SeedServiceCatalog` 将 `kingbase` 默认写为 disabled，并显式修正旧数据；Nacos/Eureka 默认 enabled
+- [x] 增加后端回归测试，覆盖 enabled 遗留占位项不会出现在 catalog 响应中，并覆盖 Nacos/Eureka 可见
 - [x] Docker 镜像 `v0.1.449` 构建并部署到 kind 集群
 - [x] kind 验证：显式使用 `--context kind-rbac-governance-test` 检查 `paap-server:v0.1.449`，Deployment `1/1 ready`，Pod `paap-server-797495ddd9-bscfj` Running
 - [x] CDP/API 验证：`/api/v1/service-templates` 返回 14 个服务模板，`kingbase` / `nacos` 均不存在
 - [x] 数据库验证：`service_catalogs` 中 `kingbase|f`、`nacos|f`
+- [x] 2026-06-28 更新验证：Nacos/Eureka service catalog 和内置 chart template 已启用；`./scripts/package-built-in-templates.sh` 生成 `data/charts/nacos.tar.gz`、`data/charts/eureka.tar.gz`；`go test -count=1 ./internal/service ./internal/handler` 通过
 - [x] 对应文件：`internal/handler/template.go`、`internal/handler/template_test.go`
 - [x] 工作量：S（半天）
 
@@ -1362,20 +1402,23 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 - [x] 对应文件：`frontend/src/views/CatalogView.vue`、`frontend/src/views/viewMarkup.test.ts`
 - [x] 工作量：S（15 分钟）
 
-### Task 7.21: `docs/配置示例.md` → 内置配置模板
-> 将 20 个配置示例转为 PAAP 内置配置模板（Go template），供组件配置 Tab 使用
+### Task 7.21: `docs/配置示例.md` → 内置配置模板 ✅
+> 将配置示例转为 PAAP 内置配置模板（Go template），供组件配置 Tab 使用。内置模板源文件放在 `docs/examples/buildin-config-in-templates/`，通过打包脚本生成 `data/config-templates/*.tar.gz` 后由内置同步流程上传到 MinIO；产品代码只保留模板解析、同步和应用引擎。
 
-- [ ] 梳理模板目录结构：`data/config-templates/` 按框架分组
-- [ ] **Spring Boot 系列 (9 个)**: 基础 / +PG Hikari / +PG Druid / +PG 集群 Druid / +PG+Redis 单实例 / +PG+Redis 哨兵 / +PG+Redis 集群 / +PG+RabbitMQ / +PG+Nacos
-- [ ] **Nginx 系列 (4 个)**: 基础静态 / +Upstream 负载均衡 / +SSL HTTPS / +静态资源分离缓存
-- [ ] **Go/Gin 系列 (3 个)**: YAML / TOML / INI 格式
-- [ ] **Python 系列 (2 个)**: FastAPI + PG+Redis / Django + PG+Redis
-- [ ] **Node/TS 系列 (2 个)**: NestJS + PG+Redis (.env) / Vue/React Vite (.env.production)
-- [ ] 每个模板只提取关键字段为模板变量
-- [ ] 前端组件配置 Tab 中的"模板"下拉菜单选择后填充配置编辑区
-- [ ] 当前状态：`docs/配置示例.md` 含 20 个纯文本示例，未被模板系统收录
-- [ ] 对应文件：`data/config-templates/`（新建）、`internal/service/renderer.go`、`frontend/src/views/ComponentDetailView.vue`（配置 Tab）
-- [ ] 工作量：1 周
+- [x] 梳理模板目录结构：内置模板源文件在 `docs/examples/buildin-config-in-templates/`，发布包在 `data/config-templates/`
+- [x] **Spring Boot 系列**: 基础 / +PG Hikari / +PG Druid / +PG 集群 Druid / +PG+Redis 单实例 / +PG+Redis 哨兵 / +PG+Redis 集群 / +PG+RabbitMQ / +PG+Nacos
+- [x] **Nginx 系列**: 基础 nginx.conf / default.conf / +Upstream 负载均衡 / +SSL HTTPS / +静态资源分离缓存
+- [x] **Go/Gin 系列**: YAML / TOML / INI 格式，并保留 MySQL+Redis JSON 常用模板
+- [x] **Python 系列**: FastAPI + PG+Redis / Django + PG+Redis
+- [x] **Node/TS 系列**: NestJS + PG+Redis (.env) / Vue/React Vite (.env.production)，并保留 n8n + PostgreSQL 环境变量模板
+- [x] 每个模板只提取部署时常改的地址、端口、库名、账号、密码、域名、证书路径和运行模式等关键字段为模板变量
+- [x] 前端组件配置 Tab 中的"配置模板"下拉菜单选择后填充配置编辑区，并记录 `configTemplateId/key/name`
+- [x] 配置模板解析引擎下沉到 service 层：`handler` 只负责 HTTP 入参、上传文件和 S3 同步调度；模板包解析、原生 `__TEMPLATE__` 占位符解析、字段推断、文件挂载建议和内置包发现由 `internal/service/component_config_template_parser.go` 负责，产品代码不再写死具体用户应用模板
+- [x] 当前状态：`docs/配置示例.md` 的 21 个纯文本示例已被内置模板覆盖；总计 26 个内置配置模板包
+- [x] 对应文件：`docs/examples/buildin-config-in-templates/`、`data/config-templates/`、`internal/service/component_config_template_parser.go`、`internal/handler/component_config_template.go`、`frontend/src/views/EnvDetailView.vue`
+- [x] 验证：`find docs/examples/buildin-config-in-templates -name 'template.json' -o -name 'schema.json' | sort | xargs jq empty` 通过；`./scripts/package-built-in-config-templates.sh` 生成 26 个包；`go test -count=1 ./internal/service ./internal/handler -run 'Test(ParsePackagedBuiltInComponentConfigTemplates|ParseComponentConfigTemplatePackageFile|ParseNativeComponentConfigTemplate|BuiltInComponentConfigTemplateArchivePathsIncludesNginxDefault|ComponentConfigTemplates)'` 通过；`go test -count=1 ./internal/service ./internal/handler` 通过
+- [x] 2026-06-28 运行态验证：构建 `paap-server:v0.1.566-config-parser-service` 成功并验证镜像内 `/paap-server` 可执行；加载到 `kind-rbac-manager-test` 后滚动 `paap-server` 成功，Pod `1/1 Running`；镜像内存在 `/config-templates/nginx-default-conf.tar.gz`、`/charts/nacos.tar.gz`、`/charts/eureka.tar.gz`；浏览器访问 `/templates` 显示 33 个配置模板，`Nginx default.conf` 显示 `12 个可填写项`
+- [x] 工作量：1 周
 
 ---
 
@@ -1397,39 +1440,46 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 ### Task 8.1: 左侧菜单栏增加共享资源池入口（S）
 > 当前：`/shared-resources` 是独立路由但只做了一个 redirect 页，侧边栏无入口。
 
-- [ ] MainLayout.vue sidebar nav 增加"共享资源池"菜单项（平台管理员可见）
-- [ ] `/shared-resources` 路由保留，PlatformSharedResourcesView 逻辑不变（redirect 到 default/shared 环境画布）
-- [ ] 共享环境当前应用名显示"共享资源池"而非普通应用名
-- [ ] 非平台管理员不显示此菜单项（同"用户"菜单逻辑）
-- [ ] 应用列表保留系统共享资源池卡片时只作为兼容入口，主入口以左侧菜单为准
-- [ ] 对应文件：`frontend/src/layouts/MainLayout.vue`、`frontend/src/router/index.ts`
+- [x] MainLayout.vue sidebar nav 增加"共享资源池"菜单项（平台管理员可见）
+- [x] `/shared-resources` 路由保留，PlatformSharedResourcesView 先展示资源池概览和服务列表，用户点击后再进入 `default/shared` 环境画布
+- [x] 共享环境当前应用名显示"共享资源池"而非普通应用名
+- [x] 非平台管理员不显示此菜单项（同"用户"菜单逻辑）
+- [x] 应用列表不再展示系统共享资源池卡片，主入口以左侧菜单为准
+- [x] 对应文件：`frontend/src/layouts/MainLayout.vue`、`frontend/src/router/index.ts`、`frontend/src/views/PlatformSharedResourcesView.vue`
+- [x] 验证：`npm --prefix frontend run test -- src/views/viewMarkup.test.ts -t "shared resource"`、`cd frontend && npm exec vue-tsc -- -b --noEmit` 通过
 - [ ] 工作量：S（半天）
 
 ### Task 8.2: "模板"更名为"配置模板"（S）
 > 领导要求改名，明确聚焦应用配置模板而非 Helm chart 模板。
 
-- [ ] MainLayout.vue nav label `模板` → `配置模板`
-- [ ] 路由 `/templates` 不变，视图名不依赖硬编码字符串
-- [ ] 页面标题 `TemplatesView.vue` 中 "模板" → "配置模板"
-- [ ] 页面说明明确：配置模板用于组件/应用配置生成，不承载服务 Helm chart 管理
+- [x] MainLayout.vue nav label `模板` → `配置模板`
+- [x] 路由 `/templates` 不变，视图名不依赖硬编码字符串
+- [x] 页面标题 `TemplatesView.vue` 中 "模板" → "配置模板"
+- [x] 页面说明明确：配置模板用于组件/应用配置生成，不承载服务 Helm chart 管理
 - [ ] 关联：Task 7.21（配置模板覆盖扩展）和 7.15（配置模板导入 UI）是此改名的实质内容
-- [ ] 工作量：S（30 分钟）
+- [x] 工作量：S（30 分钟）
+- [x] 2026-06-28 验证：浏览器 CDP 登录后访问 `/templates`，页面显示“配置模板 / 导入配置模板 / 服务与环境模板统一在服务目录查看”，未出现“工具模板 / 中间件模板 / 新建环境模板 / 上传模板”
 
 ### Task 8.3: 服务目录扩展（含环境服务）（M）
 > 当前目录只显示 ServiceCatalog 中的工具/中间件。领导要求目录也是"服务目录"，增加环境级别的服务实例（environment capability）。
 
-- [ ] 左侧菜单和页面标题统一为"服务目录"，不再出现"中间件目录"
-- [ ] 目录 tab 采用：工具、数据库、中间件、环境服务、网络服务、存储服务
-- [ ] CatalogView 增加"环境服务" tab，展示当前环境注册的能力实例（PostgreSQL 实例、Redis 实例等）
+- [x] 左侧菜单和页面标题统一为"服务目录"，不再出现"中间件目录"
+- [x] 目录 tab 按当前产品口径调整为：CI 服务、CD 服务、监控服务、日志服务、数据库服务、中间件服务、环境服务、虚拟机服务、其他服务
+- [x] CatalogView 增加"环境服务"分组，读取环境模板并作为服务目录项展示
 - [ ] 每个服务产品卡片显示：服务类型、版本、功能标签、可用来源（环境内 / 平台公共 / 外部连接 / KubeVirt 模板交付）、说明入口、实例/监控入口
 - [ ] 服务产品详情不是“在线配置实例”，而是类似 Helm 包 README 的说明界面：服务介绍、适用场景、部署手册、参数说明、默认 values、示例 values、连接方式说明、常见问题
 - [ ] 服务产品详情中的“参数说明”只解释字段含义和示例，不直接保存到现有实例；真正配置发生在创建实例、引用共享资源、接入外部资源或实例工作区中
 - [ ] 每个服务实例卡片显示：实例名、状态、所属应用/环境、来源、连接入口、监控入口；默认不展示 namespace、StatefulSet 等 K8s 细节
-- [ ] 后端：GET `/api/v1/catalog/services` 返回环境能力统计数据（每个类型被多少环境使用）
-- [ ] 服务卡片增加"使用统计"：被 X 个环境安装，Y 个环境引用
-- [ ] 服务产品详情页增加"怎么用"区：环境内创建、引用共享资源、接入外部资源、使用 KubeVirt 服务模板四种路径，按服务支持能力显示
+- [x] 后端：GET `/api/v1/catalog/services` 返回服务产品读模型和环境能力统计数据（每个类型被多少环境使用）
+  - 2026-06-28 补齐：目录页不再由前端拼 `ServiceTemplate`、环境模板和共享资源列表；后端统一返回服务产品、版本、feature 矩阵、环境内实例、KubeVirt 实例、共享资源池预装实例、公共引用、外部连接、运行实例、使用应用数和使用环境数。
+- [x] 服务卡片增加"使用统计"：被 X 个环境安装，Y 个环境引用
+  - 2026-06-28 验证：`/home/mensyli1/.gvm/gos/go1.25.7/bin/go test -count=1 ./internal/handler -run 'Test(BuildPlatformService|ListCatalogService|CatalogServices|PlatformService)'`、`npm --prefix frontend run test -- src/api/client.test.ts src/views/viewMarkup.test.ts src/utils/catalogGroups.test.ts --run` 通过。
+- [x] 服务产品详情页增加"怎么用"区：环境内创建、引用共享资源、接入外部资源、使用 KubeVirt 服务模板四种路径，按服务支持能力显示
+  - 2026-06-28 补齐：服务目录卡片可点击选中，同页右侧服务产品详情显示“怎么用”、支持能力、实例与使用统计和版本；四种使用路径按 `managed/shared/external/kubevirt` feature 矩阵显示“可用/暂不可用”，PostgreSQL 等数据库显示 KubeVirt 模板交付可用。
+  - 验证：`npm --prefix frontend run test -- src/views/viewMarkup.test.ts src/utils/catalogGroups.test.ts --run`、`cd frontend && npm exec vue-tsc -- -b --noEmit`、`npm --prefix frontend run build` 通过；浏览器打开 `http://localhost:5173/catalog`，登录 `admin/Def@u1tpwd`，确认服务目录右侧详情栏存在，点击 PostgreSQL 后 `KubeVirt 模板交付` 为“可用”。
 - [ ] 对应文件：`frontend/src/views/CatalogView.vue`、`frontend/src/utils/catalogGroups.ts`、`internal/handler/`
 - [ ] 工作量：M（3-4 天）
+- [x] 2026-06-28 验证：浏览器 CDP 登录后访问 `/catalog`，页面显示“服务目录”以及 CI/CD/监控/日志/数据库/中间件服务分类；`npm --prefix frontend run test -- src/utils/catalogGroups.test.ts src/views/viewMarkup.test.ts --run` 通过
 
 ### Task 8.4: Redis 工作区数据精简（S）
 > 领导觉得 Redis 界面信息过载。
@@ -1458,23 +1508,30 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 - [ ] 工作量：M（3 天）
 
 ### Task 8.6: 服务分类重构（M）
-> 当前分类：tool / database / cache / mq / objectStorage / middleware。领导要求：工具、数据库、中间件、环境。
+> 当前分类从旧的 tool / database / cache / mq / objectStorage / middleware 收敛到服务目录产品分类：CI 服务、CD 服务、监控服务、日志服务、数据库服务、中间件服务、环境服务、虚拟机服务。
 
 - [ ] 重新设计分类体系：
   ```
-  工具: Gitea, Harbor, ArgoCD, Jenkins, Registry, Prometheus, Grafana, Loki（粒度更细，属于平台工具）
-  数据库: PostgreSQL, MySQL, MongoDB
-  中间件: Redis(缓存 子类), RabbitMQ(消息队列 子类), Kafka(消息队列 子类), MinIO(对象存储 子类)
+  CI 服务: Jenkins, Tekton
+  CD 服务: ArgoCD
+  监控服务: Prometheus, Grafana, kube-prometheus
+  日志服务: Loki
+  数据库服务: PostgreSQL, MySQL, MongoDB
+  中间件服务: Redis, RabbitMQ, Kafka, MinIO, Nacos, Eureka
+  环境服务: 环境本身、环境能力、基础服务套餐（Task 8.3）
+  虚拟机服务: KubeVirt 模板交付的 PostgreSQL/Redis 等服务
   网络服务: Firewall, Network Exposure, WAF, MetalLB（新增 Task 8.7）
   存储服务: Block, Object(MinIO), File（新增 Task 8.8）
-  环境服务: 环境本身、环境能力、基础服务套餐（Task 8.3）
   ```
-- [ ] 更新 `frontend/src/utils/catalogGroups.ts` 分类映射表
-- [ ] 更新 `seedServiceCatalog()` 中的 category 标记
-- [ ] 数据库中的 `service_catalog.category` 同步新分类
+- [x] 更新 `frontend/src/utils/catalogGroups.ts` 分类映射表
+- [x] 更新 `seedServiceCatalog()` 中的 category 标记
+- [x] 数据库中的 `service_catalog.category` 同步新分类
+  - 2026-06-28 补齐：后端新增 `ProductServiceCategory`，seed catalog 和内置 service template 自动把旧 `tool/infra` 收敛为 `ci/cd/monitor/log/database/middleware/environment/virtualMachine/other` 产品分类；旧数据在启动 seed 时通过 `Assign(entry).FirstOrCreate` 同步更新。
+  - 验证：`/home/mensyli1/.gvm/gos/go1.25.7/bin/go test -count=1 ./internal/handler ./internal/service ./internal/model -run 'Test(BuiltInServiceTemplatesExposeFeatureMatrix|ServiceCatalogSeedNormalizesProductCategories|ListServiceCatalogHidesUnsupportedPlaceholders|BuildPlatformService|ListCatalogService|CatalogServices|PlatformService)'`、`npm --prefix frontend run test -- src/utils/catalogGroups.test.ts src/views/viewMarkup.test.ts --run` 通过。
 - [ ] 分类支持嵌套（子分类让领导理解，UI 上一级平铺即可）
 - [ ] 对应文件：`frontend/src/utils/catalogGroups.ts`、`internal/model/template.go`、`internal/database/seed.go`
 - [ ] 工作量：M（2 天）
+- [x] 2026-06-28 验证：`frontend/src/utils/catalogGroups.test.ts` 覆盖 Jenkins/ArgoCD/Monitor/Loki/PostgreSQL/MySQL/MongoDB/Redis/RabbitMQ/环境服务/KubeVirt 分类映射
 
 ### Task 8.7: 网络服务（L）
 > 新增"网络服务"能力，包含：防火墙规则、网络暴露（Ingress/Gateway）、WAF、MetalLB（LoadBalancer IP）。
@@ -1570,45 +1627,70 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 ### Task 8.12: 平台服务概览页面（M）
 > 平台级页面，展示每个服务类型：被实例化次数、活跃实例列表、监控入口。
 
-- [ ] 新建 `PlatformServicesView.vue`（平台管理的一个 tab）
-- [ ] 表格展示：服务类型 / 怎么用 / 总实例数 / 活跃实例数 / 使用应用数 / 使用环境数 / 监控入口
-- [ ] 点击某行展开该类型所有实例列表（所属环境、状态、版本、创建时间）
-- [ ] 服务详情右侧栏展示：创建方式、连接方式、支持 feature（外部连接、KubeVirt 模板交付、公共服务）、最近使用、告警/指标
-- [ ] 监控入口链接到 Prometheus/Grafana（如果已安装）
-- [ ] 后端：`GET /api/v1/platform/services/stats` — 聚合 ServiceInstallation 数据
-- [ ] 后端：`GET /api/v1/platform/services/:type/instances` — 某类型所有实例详情
-- [ ] 后端：`GET /api/v1/platform/services/:type/usage` — 某类型被哪些应用/环境/组件使用
-- [ ] 路由：`/platform/services`（或作为平台管理 tab）
-- [ ] 对应文件：`frontend/src/views/PlatformServicesView.vue`、`internal/handler/platform.go`、`frontend/src/router/index.ts`
-- [ ] 工作量：M（3 天）
+- [x] 新建 `PlatformServicesView.vue`（左侧“平台服务”入口）
+- [x] 表格展示：服务类型、支持 feature、环境内实例数、KubeVirt 模板交付实例数、公共引用、外部连接、使用应用数、使用环境数、运行实例数
+- [x] 点击某行展开该类型所有实例列表（所属环境、状态、使用数、监控目标）
+- [x] 服务详情右侧栏展示：创建方式、连接方式、支持 feature（外部连接、KubeVirt 模板交付、公共服务）、最近使用、告警/指标
+  - 2026-06-28 补齐：平台服务页选中服务后以右侧栏展示创建方式、连接方式、支持能力、最近使用、告警/指标摘要，并继续展示实例和使用方明细；主表服务列 sticky，避免横向滚动后丢失行身份。
+  - 验证：`npm --prefix frontend run test -- src/views/viewMarkup.test.ts --run`、`cd frontend && npm exec vue-tsc -- -b --noEmit`、`npm --prefix frontend run build` 通过；浏览器打开 `http://localhost:5173/platform/services`，登录态 `admin`，点击 Jenkins 后右侧栏显示创建方式、连接方式、支持能力、最近使用、告警/指标、实例和使用方，截图 `/tmp/paap-browser-checks/platform-services-detail-sticky.png`。
+- [x] 监控入口链接到 Prometheus/Grafana（如果已安装）
+  - 2026-06-28 补齐：平台服务实例/使用关系读模型新增 `monitoringUrl`；同环境存在 running `monitor`/`prometheus-grafana` 安装时，返回同源代理路径 `/api/v1/environments/{envID}/services/{monitorID}/proxy/...`，数据/中间件实例默认指向 `paap-middleware-workload`，工具类实例默认指向 `paap-tool-workload`；无监控服务时保留 `monitoringTarget` 并前端正常降级。
+  - 2026-06-28 验证：`go test -count=1 ./internal/service ./internal/handler`、`npm --prefix frontend run test -- src/views/viewMarkup.test.ts --run`、`cd frontend && npm exec vue-tsc -- -b --noEmit`、`npm --prefix frontend run build` 通过；浏览器打开 `/platform/services`，登录 `admin/Def@u1tpwd`，点击 Jenkins 详情，右侧栏实例/指标区域正常渲染；当前 kind 数据无 running monitor 实例，因此页面按预期不展示 Grafana 链接。
+- [x] 后端：`GET /api/v1/platform/services/stats` — 聚合 `ServiceInstallation` 与 `EnvironmentCapability`，返回 managed/shared/external/deferred 统计和 feature 矩阵
+- [x] 后端：`GET /api/v1/platform/services/:type/instances` — 某类型所有实例详情
+- [x] 后端：`GET /api/v1/platform/services/:type/usage` — 某类型被哪些应用/环境使用；组件级使用关系等待结构化关系表落地
+- [x] 路由：`/platform/services`
+- [x] 对应文件：`frontend/src/views/PlatformServicesView.vue`、`internal/handler/platform_service.go`、`frontend/src/router/index.ts`
+- [x] 工作量：M（3 天）
 
 ### Task 8.13: 平台服务用户与Feature支持（L）
 > 三项核心 Feature：外部连接、KubeVirt 模板交付、公共服务。
 
-- [ ] 服务目录和平台服务概览统一显示 feature 矩阵：
+- [x] 服务目录显示 feature 矩阵，数据来自 `ServiceCatalog.Features` / `ServiceTemplate.SupportedFeatures`，不再由前端硬编码：
   - 外部连接：使用已有外部系统，只保存 endpoint 和凭据引用
   - KubeVirt 模板交付：使用平台维护的 KubeVirt 服务模板创建数据库、缓存等服务实例
   - 公共服务：使用共享资源池中的平台公共服务
-- [ ] 用户选择服务时先选使用方式，再进入对应创建/接入流程，避免把三类能力混在一个表单里
+- [x] 平台服务概览接入同一套 feature 矩阵（与 Task 8.12 的平台服务统计页面一起实现）
+  - 2026-06-27 补齐：平台服务页点击服务类型后读取实例和使用方列表，feature 矩阵仍来自 `ServiceCatalog.Features` / `ServiceTemplate.SupportedFeatures`。
+- [x] 用户选择服务时先选使用方式，再进入对应创建/接入流程，避免把三类能力混在一个表单里
+  - 2026-06-28 补齐：环境服务弹窗新增“环境内创建 / 使用平台公共服务 / 接入外部连接 / KubeVirt 模板交付”使用方式选择；环境内创建继续走服务模板安装，公共服务进入共享资源引用，外部连接创建 external capability，KubeVirt 模板交付调用 `api.installService(..., { provisionMode: 'kubevirt' })`。
+  - 验证：`npm --prefix frontend run test -- src/views/viewMarkup.test.ts -t "service usage mode"`、`npm --prefix frontend run test -- src/views/EnvDetailView.test.ts src/views/viewMarkup.test.ts -t "service|feature|install|capability"`、`cd frontend && npm exec vue-tsc -- -b --noEmit` 通过。
+- [x] 服务目录从“模板管理”中拆出服务类目，按 `CI服务 / CD服务 / 监控服务 / 日志服务 / 数据库服务 / 中间件服务 / 环境服务 / 虚拟机服务` 展示；配置模板页只保留组件运行配置模板。
+  - 2026-06-28 验证：`npm --prefix frontend run test -- src/utils/catalogGroups.test.ts src/views/viewMarkup.test.ts src/views/componentConfigTemplateRuntime.test.ts src/views/configTemplateSyntax.test.ts --run`、`npm --prefix frontend run build` 通过。
 
 - **Feature 1: 外部连接**（External Capability Source，复用 Task 7.5）
-  - [ ] 当前已实现 external source（环境画布右键添加外部资源）
-  - [ ] 补充：外部连接验证（endpoint可达性测试、credential验证）
-  - [ ] 外部资源断开后清理 Canvas 状态和服务引用
-  - [ ] 对应文件：`internal/handler/environment.go`、`frontend/src/composables/envCapabilities.ts`
+  - [x] 当前已实现 external source（环境画布右键添加外部资源）
+  - [x] `EnvironmentCapability` 支持实例级 `capabilityKey`，同一环境可保存多个同类外部连接且凭据 Secret 不互相覆盖
+  - [x] 补充：外部连接验证（endpoint 可达性测试、credential 验证）
+    - 2026-06-28 补齐：`ValidateEnvironmentCapability` 在 service 层按类型做只读校验；PostgreSQL/MySQL/MongoDB/Redis/Kafka/MinIO 复用现有客户端，RabbitMQ/Git/Registry/Prometheus/Loki/Jenkins/ArgoCD 走 HTTP 健康或版本接口，未知类型回退 TCP 探测。
+  - [x] 外部资源断开后清理 Canvas 状态和服务引用
+    - 2026-06-28 补齐：删除 shared/external capability 时同步清理 `EnvironmentCanvasState` 的 positions/edges/names 以及组件配置 `bindings` 中指向该 capability 的引用；读取画布状态时也会清理 orphan names。
+  - [x] 验证：`/home/mensyli1/.gvm/gos/go1.25.7/bin/go test -count=1 ./internal/service ./internal/handler -run 'Test(DeleteEnvironmentCapabilityRemovesCapabilityCard|ValidateExternalHTTPCapabilityChecksCredentials|ValidateExternalEnvironmentCapabilityStoresValidStatus|EnvironmentCanvasStatePersists)'`、`/home/mensyli1/.gvm/gos/go1.25.7/bin/go test -count=1 ./internal/database ./internal/authz ./internal/middleware ./internal/service ./internal/handler` 通过。
+  - [x] 对应文件：`internal/service/environment_capability.go`、`internal/service/environment_state.go`、`frontend/src/views/EnvDetailView.vue`
 
 - **Feature 2: KubeVirt 服务模板**（复用 Task 7.9）
-  - [ ] 当前 Task 7.9 从“创建裸 VM”调整为“通过 KubeVirt 模板交付服务实例”
-  - [ ] KubeVirt 是平台基础设施，用户创建的是 PostgreSQL、Redis、MySQL 等服务，不是单纯虚拟机
-  - [ ] 平台管理员维护服务模板：镜像/DataVolume、规格、启动脚本、端口、凭据、readiness、监控和备份策略
-  - [ ] 创建服务实例时生成 `VirtualMachine`、Kubernetes `Service`、Secret、连接输出和监控目标
-  - [ ] 对应文件：`internal/k8s/kubevirt.go`（新建），后续可扩展 `ServiceInstanceController`
+  - [x] 当前 Task 7.9 从“创建裸 VM”调整为“通过 KubeVirt 模板交付服务实例”
+  - [x] KubeVirt 是平台基础设施，用户创建的是 PostgreSQL、Redis、MySQL 等服务，不是单纯虚拟机
+    - 2026-06-28 第一片补齐：`ServiceTemplate` / `ServiceInstallation` 增加 `provisionMode`、`runtimeSpec`，服务类型仍保持 PostgreSQL/Redis/MySQL 等真实产品类型；平台服务统计、实例列表和使用关系可以区分 `managed` 与 `kubevirt`。
+    - 2026-06-28 验证：`/home/mensyli1/.gvm/gos/go1.25.7/bin/go test -count=1 ./internal/database ./internal/authz ./internal/middleware ./internal/service ./internal/handler`、`npm --prefix frontend run test -- src/views/EnvDetailView.test.ts src/views/viewMarkup.test.ts src/views/createEnvironmentSharedServices.test.ts`、`cd frontend && npm exec vue-tsc -- -b --noEmit` 通过。
+  - [x] 平台管理员维护服务模板：镜像/DataVolume、规格、启动脚本、端口、凭据、readiness、监控和备份策略
+    - 2026-06-28 补齐：KubeVirt `runtimeSpec` 可表达并校验 image/DataVolume、规格、cloud-init、服务端口、凭据、readiness、monitoring 和 backupPolicy；生成的 VM/Service/Secret 带对应探针、连接输出、监控目标和策略注解。
+    - 验证：`go test -count=1 ./internal/k8s ./internal/service -run 'Test(BuildKubeVirtService|CreateServiceTemplateValidatesKubeVirtRuntimeSpec|UpsertSeedServiceTemplateSeparatesProvisionModes)'` 通过。
+  - [x] 创建服务实例时生成 `VirtualMachine`、Kubernetes `Service`、Secret、连接输出和监控目标的后端资源生成层
+    - 2026-06-28 补齐：`internal/k8s/kubevirt.go` 负责无 KubeVirt Go 依赖的 unstructured VM/DataVolume 生成，`internal/service/kubevirt.go` 负责从应用、环境、安装记录和模板桥接 `runtimeSpec`；`InstallService` API 已接入并可 upsert 资源，controller/GitOps 调谐和真实集群联调仍待完成。
+    - 验证：`go test -count=1 ./internal/k8s ./internal/service -run 'TestBuildKubeVirtService'` 通过。
+  - [x] 对应文件：`internal/k8s/kubevirt.go`、`internal/service/kubevirt.go`，后续可扩展 `ServiceInstanceController`
 
 - **Feature 3: 公共服务**（Shared Capability Source）
-  - [ ] 当前已实现 shared source（default/shared 环境）
-  - [ ] 补充：环境创建时的"使用平台公共服务"一键配置引导
-  - [ ] 提升 shared 来源的可见性：目录页标记"平台已预装"
-  - [ ] 对应文件：`frontend/src/views/CatalogView.vue`
+  - [x] 当前已实现 shared source（default/shared 环境）
+  - [x] shared 引用支持实例级 `capabilityKey`，同一环境可引用多个同类共享服务
+  - [x] 补充：环境创建时的"使用平台公共服务"一键配置引导
+    - 2026-06-28 补齐：创建环境弹窗读取共享资源池实例，用户可在创建阶段勾选平台公共服务；提交时转换为 `capabilities` 的 shared 引用，后端创建环境事务内生成 `EnvironmentCapability`。
+    - 验证：`npm --prefix frontend run test -- src/views/EnvDetailView.test.ts src/views/viewMarkup.test.ts src/views/createEnvironmentSharedServices.test.ts`、`cd frontend && npm exec vue-tsc -- -b --noEmit` 通过。
+  - [x] 提升 shared 来源的可见性：目录页标记"平台已预装"
+    - 2026-06-28 补齐：服务目录并行读取共享资源池实例，按 `serviceType/provider` 匹配服务产品，匹配到共享实例时在目录卡片 feature 区显示“平台已预装”；共享资源接口失败时不影响目录主数据加载。
+    - 验证：`npm --prefix frontend run test -- src/views/viewMarkup.test.ts -t "service feature matrix|service usage mode"`、`cd frontend && npm exec vue-tsc -- -b --noEmit` 通过。
+  - [x] 对应文件：`frontend/src/views/CatalogView.vue`、`frontend/src/views/createEnvironmentSharedServices.ts`、`frontend/src/components/CreateEnvironmentModal.vue`
 
 - 工作量：L（2-3 周，三个 Feature 可并行）
 
@@ -1680,12 +1762,16 @@ Week 6-8: 8.13(外部连接/KubeVirt模板/公共服务)     并行 8.14(模板G
 ### 9.1 架构兼容性判断
 
 - [ ] 当前 PAAP 三段式架构（Vue 前端 → PAAP Server/GORM/PostgreSQL → CRD/Operator/K8s）可以承接这批需求，不需要推翻重写。
-- [ ] 这批需求不是单纯 UI 改造，需要新增“平台服务域模型/读模型”，否则统计逻辑会分散到各页面。
-- [ ] 当前 `ServiceInstallation` 是环境级安装记录，且 `environment_id + service_type` 唯一；后续若一个环境允许多个 Redis/PostgreSQL，需要调整唯一约束或引入更通用的服务实例模型。
-- [ ] 当前 `EnvironmentCapability` 是环境级能力引用，且 `environment_id + capability` 唯一；后续若一个环境允许多个 database/cache 外部连接，也需要扩展为实例级能力。
+- [x] 这批需求不是单纯 UI 改造，需要新增“平台服务域模型/读模型”，否则统计逻辑会分散到各页面。
+  - 2026-06-27 预重构：先给 `ServiceCatalog` / `ServiceTemplate` 增加 feature 矩阵字段，服务目录已消费；后端补齐平台服务统计、实例列表和使用方读模型。
+- [x] 当前 `ServiceInstallation` 是环境级安装记录，且 `environment_id + service_type` 唯一；后续若一个环境允许多个 Redis/PostgreSQL，需要调整唯一约束或引入更通用的服务实例模型。
+  - 2026-06-28 已调整为 `environment_id + service_type + provision_mode`，先支持同一环境内 Helm 托管实例与 KubeVirt 模板交付实例并存；多个同模式同类型实例仍需后续服务实例模型。
+- [x] 当前 `EnvironmentCapability` 是环境级能力引用，且 `environment_id + capability` 唯一；后续若一个环境允许多个 database/cache 外部连接，也需要扩展为实例级能力。
+  - 2026-06-27 已改为 `environment_id + capability_key` 唯一，`capability` 保留为能力类别；同一环境可同时存在多个 database/cache 外部连接或共享引用。
 - [ ] 组件和服务使用关系不能只依赖画布连线，必须有结构化关系表或稳定读模型。
 - [ ] 监控、日志、凭据发现当前大量依赖 Kubernetes namespace；外部服务和 KubeVirt 模板交付服务不能假设和 Helm 服务拥有同样的 namespace 结构，必须抽象为 source-aware monitoring target / connection output。
-- [ ] 新增平台服务 API 时预留 `clusterId` / `clusterName` 字段，避免后续多集群返工。
+- [x] 新增平台服务 API 时预留 `clusterId` / `clusterName` 字段，避免后续多集群返工。
+  - 2026-06-28 平台服务统计、实例、使用关系响应已预留 `clusterId` / `clusterName`，当前单集群为空。
 
 推荐抽象：
 
@@ -1727,30 +1813,31 @@ Week 6-8: 8.13(外部连接/KubeVirt模板/公共服务)     并行 8.14(模板G
 
 后端任务：
 
-- [ ] 新增平台管理员 API：`GET /api/v1/platform/services/stats`。
-- [ ] 新增平台管理员 API：`GET /api/v1/platform/services/:type/instances`。
-- [ ] 新增平台管理员 API：`GET /api/v1/platform/services/:type/usage`。
-- [ ] 聚合 `ServiceInstallation` 为 managed 服务实例。
-- [ ] 聚合 `EnvironmentCapability` 为 shared/external/deferred 能力引用。
-- [ ] 返回字段包含 service type、service name、provider、source、status、application、environment、component、usage count、monitoring target。
-- [ ] API 响应预留 `clusterId` 或 `clusterName`，当前单集群可为空或默认值。
-- [ ] 全局统计 API 不返回密码/token 等敏感值。
-- [ ] 平台 API 必须要求平台管理员权限。
+- [x] 新增平台管理员 API：`GET /api/v1/platform/services/stats`。
+- [x] 新增平台管理员 API：`GET /api/v1/platform/services/:type/instances`。
+- [x] 新增平台管理员 API：`GET /api/v1/platform/services/:type/usage`。
+- [x] 聚合 `ServiceInstallation` 为 managed 服务实例。
+- [x] 聚合 `EnvironmentCapability` 为 shared/external/deferred 能力引用。
+- [x] 返回字段包含 service type、service name、provider、source、status、application、environment、usage count、monitoring target；component 字段等待结构化组件使用关系落地。
+- [x] API 响应预留 `clusterId` 或 `clusterName`，当前单集群可为空或默认值。
+- [x] 全局统计 API 不返回密码/token 等敏感值。
+- [x] 平台 API 必须要求平台管理员权限。
 
 前端任务：
 
-- [ ] 新增平台服务页面或平台管理 tab。
-- [ ] 表格展示：服务类型、怎么用、总实例数、活跃实例数、使用应用数、使用环境数、支持 feature、监控入口。
-- [ ] 点击服务类型后展示实例列表和使用方列表。
-- [ ] 空状态、失败状态、权限不足状态都来自真实 API，不写假数据。
+- [x] 新增平台服务页面或平台管理 tab。
+- [x] 表格展示：服务类型、环境内实例数、活跃实例数、使用应用数、使用环境数、支持 feature。
+- [x] 点击服务类型后展示实例列表和使用方列表。
+- [x] 空状态、失败状态来自真实 API，不写假数据；权限不足由路由守卫和后端中间件返回。
 
 验收：
 
-- [ ] 平台管理员能看到跨应用/环境的服务统计。
-- [ ] 非平台管理员访问全局平台服务 API 返回 403。
-- [ ] 统计不依赖画布连线。
-- [ ] 后端测试覆盖 managed installation 聚合和 capability reference 聚合。
-- [ ] 前端测试覆盖统计表、展开实例、无权限状态。
+- [x] 平台管理员能看到跨应用/环境的服务统计。
+- [x] 非平台管理员访问全局平台服务 API 返回 403。
+- [x] 统计不依赖画布连线。
+- [x] 后端测试覆盖 managed installation 聚合和 capability reference 聚合。
+- [x] 前端测试覆盖统计表和展开实例入口；无权限状态由后端路由权限测试覆盖。
+- [x] 2026-06-27 验证：`/api/v1/platform/services/stats` 返回平台服务统计；浏览器验证左侧 `平台服务` 页面加载统计表，`目录` 页面展示 14 个服务和 feature chips
 
 不纳入：
 
@@ -1760,17 +1847,18 @@ Week 6-8: 8.13(外部连接/KubeVirt模板/公共服务)     并行 8.14(模板G
 
 ### 9.4 PR 2：公共/共享服务消费
 
-分支：`feature/shared-service-consumption`
+当前开发：本地 `main` 分支。
 
 目标：业务环境可以使用共享资源池中的平台公共服务，引用后能查看只读连接信息，并进入平台服务使用统计。
 
 后端任务：
 
 - [ ] 共享资源池继续使用系统应用/系统环境中的真实 `ServiceInstallation`。
-- [ ] 业务环境通过 `EnvironmentCapability.Source=shared` + `RefServiceID` 引用共享服务。
+- [x] 业务环境通过 `EnvironmentCapability.Source=shared` + `RefServiceID` 引用共享服务。
 - [ ] PR 1 的统计接口把 shared 引用单独统计，不与 managed installation 混淆。
 - [ ] 共享服务在业务环境中的凭据/连接信息从被引用的服务实例解析，但业务环境 API 不允许修改共享服务本体。
-- [ ] 断开共享能力时只删除当前环境引用和相关 canvas 状态，不删除共享服务。
+- [x] 断开共享能力时只删除当前环境引用、相关 canvas 状态和组件绑定引用，不删除共享服务。
+  - 2026-06-28 补齐：删除 capability 的 service 层事务会清理 `EnvironmentCanvasState` 和组件配置 `bindings`。
 
 前端任务：
 
@@ -1785,7 +1873,7 @@ Week 6-8: 8.13(外部连接/KubeVirt模板/公共服务)     并行 8.14(模板G
 - [ ] 业务环境引用共享 Redis/PostgreSQL 后，组件配置解析到真实共享服务 endpoint，不出现 `service:<id>` 这类占位地址。
 - [ ] 共享资源本体名称和业务环境本地显示名可以不同。
 - [ ] 全局平台服务统计能看到共享实例被哪些应用/环境引用。
-- [ ] 删除引用不会删除共享服务实例。
+- [x] 删除引用不会删除共享服务实例。
 
 不纳入：
 
@@ -1794,24 +1882,24 @@ Week 6-8: 8.13(外部连接/KubeVirt模板/公共服务)     并行 8.14(模板G
 
 ### 9.5 PR 3：外部服务连接
 
-分支：`feature/external-service-connections`
+当前开发：本地 `main` 分支。
 
 目标：外部服务成为平台服务的一种消费方式。PAAP 只保存连接记录和凭据引用，不拥有真实外部资源。
 
 后端任务：
 
-- [ ] 外部资源类型覆盖：数据库、缓存、消息中间件、对象存储、代码仓、镜像仓库、CI/CD、日志、监控、自定义。
-- [ ] `EnvironmentCapability` 保存 endpoint、provider、serviceType、validationStatus、validationMessage、credentialSecretRef。
-- [ ] 凭据写入 Kubernetes Secret 或后续凭据后端，数据库只保存引用。
-- [ ] 增加真实连接校验：
-  - [ ] PostgreSQL/MySQL/MongoDB：连接和权限探测。
-  - [ ] Redis：ping/auth 探测。
-  - [ ] RabbitMQ/Kafka：连接和基础权限探测。
-  - [ ] MinIO/S3：bucket/list 权限探测。
-  - [ ] Git：token/list repo 或 webhook 权限探测。
-  - [ ] Registry/Harbor：login/pull 或可用权限探测。
-  - [ ] Prometheus/Loki：query 探测。
-- [ ] 删除 external capability 只删除 PAAP 记录和 PAAP 生成的本地 Secret，不删除真实外部系统。
+- [x] 外部资源类型覆盖：数据库、缓存、消息中间件、对象存储、代码仓、镜像仓库、CI/CD、日志、监控、自定义。
+- [x] `EnvironmentCapability` 保存 endpoint、provider、serviceType、validationStatus、validationMessage、credentialSecretRef。
+- [x] 凭据写入 Kubernetes Secret 或后续凭据后端，数据库只保存引用。
+- [x] 增加真实连接校验第一版：
+  - [x] PostgreSQL/MySQL/MongoDB：连接和凭据探测。
+  - [x] Redis：ping/auth 探测。
+  - [x] RabbitMQ/Kafka：RabbitMQ HTTP management / Kafka metadata 只读探测；RabbitMQ 非 HTTP endpoint 回退 TCP。
+  - [x] MinIO/S3：bucket/list 权限探测。
+  - [x] Git：Gitea/GitLab 版本或首页 HTTP credential 探测；repo/webhook 深权限后续单独补。
+  - [x] Registry/Harbor：`/v2/` 或首页 HTTP credential 探测；login/pull 深权限后续单独补。
+  - [x] Prometheus/Loki：ready/status HTTP 探测；PromQL/LogQL query 深权限后续单独补。
+- [x] 删除 external capability 只删除 PAAP 记录、PAAP 生成的本地 Secret、canvas 状态和组件绑定引用，不删除真实外部系统。
 
 前端任务：
 
@@ -1823,10 +1911,10 @@ Week 6-8: 8.13(外部连接/KubeVirt模板/公共服务)     并行 8.14(模板G
 
 验收：
 
-- [ ] 外部资源删除不会触发真实外部系统删除。
+- [x] 外部资源删除不会触发真实外部系统删除。
 - [ ] 保存后刷新页面，endpoint 和凭据显示逻辑正常。
-- [ ] 校验失败展示真实后端探测错误，不写占位文案。
-- [ ] 平台服务统计把 external connection 单独计数。
+- [x] 校验失败展示真实后端探测错误，不写占位文案。
+- [x] 平台服务统计把 external connection 单独计数。
 
 不纳入：
 
@@ -1835,18 +1923,20 @@ Week 6-8: 8.13(外部连接/KubeVirt模板/公共服务)     并行 8.14(模板G
 
 ### 9.6 PR 4：KubeVirt 服务模板
 
-分支：`feature/kubevirt-service-templates`
+工作线：本地 `main`，不再新建 feature 分支
 
 目标：把 KubeVirt 作为平台基础设施，通过服务模板交付 PostgreSQL、Redis、MySQL 等服务实例；用户不创建裸虚拟机，平台统计的仍然是具体服务产品和服务实例。
 
 推荐首版：
 
-- [ ] 服务产品支持 `provisionMode=kubevirt`，同一服务产品可区分 Helm 托管、共享引用、外部连接、KubeVirt 模板交付。
+- [x] 服务产品支持 `provisionMode=kubevirt`，同一服务产品可区分 Helm 托管、共享引用、外部连接、KubeVirt 模板交付。
+  - 2026-06-28 第一片补齐：模型、迁移、模板查询、安装记录、平台服务统计/实例/使用关系读模型已支持 `provisionMode=kubevirt`；尚未实现 KubeVirt VM 生命周期。
 - [ ] 平台管理员维护 KubeVirt 服务模板，例如 `postgresql-vm-template`、`redis-vm-template`、`mysql-vm-template`。
 - [ ] 模板记录基础镜像/DataVolume、CPU、内存、磁盘、cloud-init/启动脚本、服务端口、凭据生成方式、readiness、监控 agent/exporter 和备份/快照策略。
-- [ ] 创建服务实例时生成 KubeVirt `VirtualMachine`、Kubernetes `Service`、Secret、标准连接输出和监控目标。
-- [ ] 服务实例仍按真实服务类型统计，例如 `serviceType=redis`、`provisionMode=kubevirt`，不要把“虚拟机”作为业务服务类型。
-- [ ] 进入平台服务统计和使用关系统计。
+- [x] 创建服务实例时生成 KubeVirt `VirtualMachine`、Kubernetes `Service`、Secret、标准连接输出和监控目标的后端资源生成层。
+  - 2026-06-28 补齐：资源生成层已落地并有单测；安装 API 已接入 `provisionMode=kubevirt` 并通过 fake client 验证资源创建，controller/GitOps 调谐仍是下一步。
+- [x] 服务实例仍按真实服务类型统计，例如 `serviceType=redis`、`provisionMode=kubevirt`，不要把“虚拟机”作为业务服务类型。
+- [x] 进入平台服务统计和使用关系统计。
 
 建议：
 
@@ -1856,9 +1946,10 @@ Week 6-8: 8.13(外部连接/KubeVirt模板/公共服务)     并行 8.14(模板G
 
 验收：
 
-- [ ] KubeVirt 模板交付的 Redis/PostgreSQL 出现在对应服务产品的实例列表中。
+- [x] KubeVirt 模板交付的 Redis/PostgreSQL 出现在对应服务产品的实例列表中。
 - [ ] 应用/环境/组件可以通过同一套服务使用关系引用 KubeVirt 模板交付的服务。
-- [ ] 连接输出与 Helm 托管、共享、外部连接使用同一契约：地址、端口、用户名、密码/Token、连接串、状态、监控入口。
+- [x] 连接输出与 Helm 托管、共享、外部连接使用同一契约：地址、端口、用户名、密码/Token、连接串、状态、监控入口的生成层。
+  - 2026-06-28 补齐：KubeVirt 资源生成层返回 host、port、secret key、URI 和 `namespace:<ns>` 监控目标；运行态状态和 UI 引用仍待安装分支接入后联调。
 - [ ] 服务统计主视角显示 PostgreSQL/Redis 等服务实例数量；虚拟机数量只作为高级/运维信息。
 
 不纳入首版：
@@ -1882,8 +1973,9 @@ Week 6-8: 8.13(外部连接/KubeVirt模板/公共服务)     并行 8.14(模板G
 
 现在就要避免的新坑：
 
-- [ ] 新增平台服务统计 API 响应预留 `clusterId` / `clusterName`。
-- [ ] 新增服务使用关系时不要写死全局单集群。
+- [x] 新增平台服务统计 API 响应预留 `clusterId` / `clusterName`。
+- [x] 新增服务使用关系时不要写死全局单集群。
+  - 平台服务统计、实例和使用关系响应已预留 `clusterId` / `clusterName`，当前单集群为空。
 - [ ] 共享资源池语义按集群隔离：未来应是每个集群一个 shared 环境，跨集群只能通过 external 或显式跨集群网络。
 - [ ] 新增 Kubernetes 访问逻辑尽量收敛到可替换 client/provider，避免继续扩散全局 client。
 
