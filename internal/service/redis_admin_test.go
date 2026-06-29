@@ -32,3 +32,24 @@ func TestRedisStringListConvertsRESPArray(t *testing.T) {
 		t.Fatalf("unexpected string list %#v", got)
 	}
 }
+
+func TestRedisHitRate(t *testing.T) {
+	tests := []struct {
+		name   string
+		hits   string
+		misses string
+		want   string
+	}{
+		{name: "calculates percentage", hits: "9", misses: "1", want: "90.0%"},
+		{name: "empty stats", hits: "0", misses: "0", want: "-"},
+		{name: "missing stats", hits: "", misses: "1", want: "-"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := redisHitRate(tt.hits, tt.misses); got != tt.want {
+				t.Fatalf("redisHitRate() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

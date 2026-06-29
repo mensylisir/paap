@@ -5485,6 +5485,7 @@ func enrichRedisWorkspace(ctx context.Context, workspace service.ToolWorkspace, 
 		{Name: "keys", Type: "Keyspace", Status: "Ready", Description: fmt.Sprintf("%d keys in current database", summary.KeyCount)},
 		{Name: "redis-version", Type: "Info", Status: "Ready", Description: valueOrFallback(summary.Version, "-")},
 		{Name: "used-memory", Type: "Info", Status: "Ready", Description: valueOrFallback(summary.UsedMemory, "-")},
+		{Name: "hit-rate", Type: "Info", Status: "Ready", Description: valueOrFallback(summary.HitRate, "-")},
 		{Name: "connected-clients", Type: "Info", Status: "Ready", Description: valueOrFallback(summary.Connected, "-")},
 	}
 	return workspace

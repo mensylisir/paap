@@ -19,6 +19,7 @@ type RedisSummary struct {
 	Version    string
 	UsedMemory string
 	Connected  string
+	HitRate    string
 }
 
 type RedisKeyValue struct {
@@ -53,6 +54,7 @@ func InspectRedis(ctx context.Context, info k8s.RedisConnectionInfo) (RedisSumma
 		Version:    infoMap["redis_version"],
 		UsedMemory: infoMap["used_memory_human"],
 		Connected:  infoMap["connected_clients"],
+		HitRate:    redisHitRate(infoMap["keyspace_hits"], infoMap["keyspace_misses"]),
 	}, nil
 }
 
@@ -291,6 +293,19 @@ func redisValueString(value interface{}) string {
 		return strings.Join(parts, ", ")
 	}
 	return fmt.Sprint(value)
+}
+
+func redisHitRate(hitsText, missesText string) string {
+	hits, hitErr := strconv.ParseFloat(strings.TrimSpace(hitsText), 64)
+	misses, missErr := strconv.ParseFloat(strings.TrimSpace(missesText), 64)
+	if hitErr != nil || missErr != nil {
+		return "-"
+	}
+	total := hits + misses
+	if total <= 0 {
+		return "-"
+	}
+	return fmt.Sprintf("%.1f%%", hits/total*100)
 }
 
 func parseRedisInfo(info string) map[string]string {

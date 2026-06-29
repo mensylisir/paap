@@ -1484,12 +1484,13 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 ### Task 8.4: Redis 工作区数据精简（S）
 > 领导觉得 Redis 界面信息过载。
 
-- [ ] 审计 RedisWorkspace 当前展示内容，识别低价值数据（过多 key 列表、内部统计指标）
-- [ ] 精简为：连接状态、key 搜索/CRUD、基本信息（内存使用、命中率）
-- [ ] 隐藏/折叠细节数据：cluster nodes 列表、慢查询日志、config 参数
-- [ ] 与 Mongo/DB workspace 保持一致的简化风格
-- [ ] 对应文件：`frontend/src/components/workspaces/RedisWorkspace.vue`
-- [ ] 工作量：S（半天）
+- [x] 审计 RedisWorkspace 当前展示内容，识别低价值数据（过多 key 列表、内部统计指标）
+- [x] 精简为：连接状态、key 搜索/CRUD、基本信息（内存使用、命中率）
+- [x] 隐藏/折叠细节数据：cluster nodes 列表、慢查询日志、config 参数
+- [x] 与 Mongo/DB workspace 保持一致的简化风格
+- [x] 对应文件：`frontend/src/components/workspaces/RedisWorkspace.vue`
+- 工作量：S（半天）
+  - 2026-06-29 补齐：`RedisWorkspace` 移除左侧常驻 Key Browser 和默认全部资源页，主视图改为状态摘要、Key 搜索/CRUD、基本信息；高级资源信息折叠展示。`InspectRedis` 基于 Redis `INFO` 的 `keyspace_hits/keyspace_misses` 计算命中率，避免前端占位或伪造。
 
 ### Task 8.5: 服务使用统计（M）
 > 领导想要看到每个服务被安装了多少次、被多少个环境使用。
