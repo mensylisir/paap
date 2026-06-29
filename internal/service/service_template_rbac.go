@@ -18,11 +18,10 @@ func LoadServiceWorkloadRole(db *gorm.DB, serviceType string) paapv1.RoleSpec {
 }
 
 func ServiceWorkloadRoleFromTemplate(svcTmpl *model.ServiceTemplate) paapv1.RoleSpec {
-	if svcTmpl == nil || svcTmpl.WorkloadRolePolicy == "" {
-		return noWorkloadRole()
-	}
-	var rules []paapv1.PolicyRule
-	if err := json.Unmarshal([]byte(svcTmpl.WorkloadRolePolicy), &rules); err != nil {
+	rules, ok := serviceTemplateManifestRules(svcTmpl, func(manifest *model.PlatformManifest) string {
+		return manifest.ToWorkloadRoleJSON()
+	})
+	if !ok {
 		return noWorkloadRole()
 	}
 	return paapv1.RoleSpec{Rules: rules}
@@ -37,47 +36,49 @@ func LoadServiceEnvironmentRole(db *gorm.DB, serviceType string) *paapv1.RoleSpe
 }
 
 func ServiceEnvironmentRoleFromTemplate(svcTmpl *model.ServiceTemplate) *paapv1.RoleSpec {
-	if svcTmpl == nil || svcTmpl.EnvironmentRolePolicy == "" {
-		return nil
-	}
-	var rules []paapv1.PolicyRule
-	if err := json.Unmarshal([]byte(svcTmpl.EnvironmentRolePolicy), &rules); err != nil || len(rules) == 0 {
+	rules, ok := serviceTemplateManifestRules(svcTmpl, func(manifest *model.PlatformManifest) string {
+		return manifest.ToEnvironmentRoleJSON()
+	})
+	if !ok {
 		return nil
 	}
 	return &paapv1.RoleSpec{Rules: rules}
 }
 
 func ServiceToolNamespaceRoleFromTemplate(svcTmpl *model.ServiceTemplate) paapv1.RoleSpec {
-	if svcTmpl == nil {
-		return defaultSafeToolNamespaceRole()
-	}
-
-	if svcTmpl.PlatformManifestJSON != "" {
-		var manifest model.PlatformManifest
-		if err := json.Unmarshal([]byte(svcTmpl.PlatformManifestJSON), &manifest); err == nil {
-			var rules []paapv1.PolicyRule
-			if err := json.Unmarshal([]byte(manifest.ToToolNamespaceRoleJSON()), &rules); err == nil && len(rules) > 0 {
-				return paapv1.RoleSpec{Rules: rules}
-			}
-		}
+	rules, ok := serviceTemplateManifestRules(svcTmpl, func(manifest *model.PlatformManifest) string {
+		return manifest.ToToolNamespaceRoleJSON()
+	})
+	if ok {
+		return paapv1.RoleSpec{Rules: rules}
 	}
 
 	return defaultSafeToolNamespaceRole()
 }
 
 func ServiceClusterRoleFromTemplate(svcTmpl *model.ServiceTemplate) *paapv1.RoleSpec {
-	if svcTmpl == nil || svcTmpl.PlatformManifestJSON == "" {
-		return nil
-	}
-	var manifest model.PlatformManifest
-	if err := json.Unmarshal([]byte(svcTmpl.PlatformManifestJSON), &manifest); err != nil {
-		return nil
-	}
-	var rules []paapv1.PolicyRule
-	if err := json.Unmarshal([]byte(manifest.ToClusterRoleJSON()), &rules); err != nil || len(rules) == 0 {
+	rules, ok := serviceTemplateManifestRules(svcTmpl, func(manifest *model.PlatformManifest) string {
+		return manifest.ToClusterRoleJSON()
+	})
+	if !ok {
 		return nil
 	}
 	return &paapv1.RoleSpec{Rules: rules}
+}
+
+func serviceTemplateManifestRules(svcTmpl *model.ServiceTemplate, roleJSON func(*model.PlatformManifest) string) ([]paapv1.PolicyRule, bool) {
+	if svcTmpl == nil || svcTmpl.PlatformManifestJSON == "" {
+		return nil, false
+	}
+	var manifest model.PlatformManifest
+	if err := json.Unmarshal([]byte(svcTmpl.PlatformManifestJSON), &manifest); err != nil {
+		return nil, false
+	}
+	var rules []paapv1.PolicyRule
+	if err := json.Unmarshal([]byte(roleJSON(&manifest)), &rules); err != nil || len(rules) == 0 {
+		return nil, false
+	}
+	return rules, true
 }
 
 func defaultSafeToolNamespaceRole() paapv1.RoleSpec {

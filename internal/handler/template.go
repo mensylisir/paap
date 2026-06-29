@@ -321,8 +321,6 @@ func SeedServiceTemplates() {
 
 		// Parse manifest from platform-manifest.yaml
 		tmpl.PlatformManifestJSON = builtInManifestJSON(archive.ServiceType)
-		tmpl.WorkloadRolePolicy = builtInWorkloadRolePolicy(archive.ServiceType)
-		tmpl.EnvironmentRolePolicy = builtInEnvironmentRolePolicy(archive.ServiceType)
 
 		if err := service.UpsertSeedServiceTemplate(database.DB, tmpl); err != nil {
 			log.Printf("[SeedServiceTemplates] failed to upsert %s: %v", tmpl.Type, err)
@@ -364,24 +362,6 @@ func builtInManifestJSON(templateType string) string {
 		return ""
 	}
 	return string(data)
-}
-
-func builtInWorkloadRolePolicy(templateType string) string {
-	manifest, err := readBuiltInManifest(templateType)
-	if err != nil {
-		log.Printf("[builtInWorkloadRolePolicy] failed to read %s manifest: %v", templateType, err)
-		return "[]"
-	}
-	return manifest.ToWorkloadRoleJSON()
-}
-
-func builtInEnvironmentRolePolicy(templateType string) string {
-	manifest, err := readBuiltInManifest(templateType)
-	if err != nil {
-		log.Printf("[builtInEnvironmentRolePolicy] failed to read %s manifest: %v", templateType, err)
-		return "[]"
-	}
-	return manifest.ToEnvironmentRoleJSON()
 }
 
 func readBuiltInManifest(templateType string) (*model.PlatformManifest, error) {
@@ -801,17 +781,13 @@ func SyncBuiltinTemplatesNow(ctx context.Context, forceUpload bool) (BuiltInTemp
 		chartVersion, appVersion, _ := extractChartYamlMeta(localPath)
 
 		manifestJSON, _ := json.Marshal(manifest)
-		workloadRoleJSON := manifest.ToWorkloadRoleJSON()
-		environmentRoleJSON := manifest.ToEnvironmentRoleJSON()
 
 		builtinS3Key := fmt.Sprintf("charts/%s.tar.gz", archive.ChartName)
 		updates := map[string]interface{}{
-			"platform_manifest_json":  string(manifestJSON),
-			"workload_role_policy":    workloadRoleJSON,
-			"environment_role_policy": environmentRoleJSON,
-			"install_order":           builtInInstallOrder(archive.ServiceType),
-			"chart_version":           chartVersion,
-			"app_version":             appVersion,
+			"platform_manifest_json": string(manifestJSON),
+			"install_order":          builtInInstallOrder(archive.ServiceType),
+			"chart_version":          chartVersion,
+			"app_version":            appVersion,
 		}
 		if tmpl, ok := builtInServiceTemplateByType(archive.ServiceType); ok {
 			updates["name"] = tmpl.Name
@@ -840,8 +816,6 @@ func SyncBuiltinTemplatesNow(ctx context.Context, forceUpload bool) (BuiltInTemp
 			fallbackTemplate.ChartVersion = chartVersion
 			fallbackTemplate.AppVersion = appVersion
 			fallbackTemplate.PlatformManifestJSON = string(manifestJSON)
-			fallbackTemplate.WorkloadRolePolicy = workloadRoleJSON
-			fallbackTemplate.EnvironmentRolePolicy = environmentRoleJSON
 		}
 		refreshedTemplate, changed, err := service.SyncBuiltinServiceTemplateRecord(database.DB, archive.ServiceType, builtinS3Key, updates, fallbackTemplate, canCreate)
 		if err != nil {
@@ -1160,22 +1134,20 @@ func UploadTemplate(c *gin.Context) {
 	}
 
 	tmpl := model.ServiceTemplate{
-		Type:                  typ,
-		Name:                  name,
-		Category:              category,
-		Description:           description,
-		Icon:                  "puzzle",
-		Installer:             "helm",
-		ChartVersion:          chartVersion,
-		AppVersion:            appVersion,
-		WorkloadRolePolicy:    manifest.ToWorkloadRoleJSON(),
-		EnvironmentRolePolicy: manifest.ToEnvironmentRoleJSON(),
-		IsCustom:              true,
-		PlatformManifestJSON:  string(manifestJSON),
-		S3Bucket:              s3BucketName,
-		S3Key:                 s3Key,
-		PresetValues:          presetValues,
-		Enabled:               true,
+		Type:                 typ,
+		Name:                 name,
+		Category:             category,
+		Description:          description,
+		Icon:                 "puzzle",
+		Installer:            "helm",
+		ChartVersion:         chartVersion,
+		AppVersion:           appVersion,
+		IsCustom:             true,
+		PlatformManifestJSON: string(manifestJSON),
+		S3Bucket:             s3BucketName,
+		S3Key:                s3Key,
+		PresetValues:         presetValues,
+		Enabled:              true,
 	}
 
 	tmpl, err = service.CreateUploadedServiceTemplate(database.DB, tmpl)

@@ -49,6 +49,9 @@ func autoMigrate() error {
 	if err := migrateEnvironmentCapabilities(); err != nil {
 		return err
 	}
+	if err := migrateServiceTemplateManifestRBAC(); err != nil {
+		return err
+	}
 	return DB.AutoMigrate(
 		&model.User{},
 		&model.Permission{},
@@ -69,6 +72,14 @@ func autoMigrate() error {
 		&model.ComponentConfigTemplate{},
 		&model.ServiceInstance{},
 	)
+}
+
+func migrateServiceTemplateManifestRBAC() error {
+	return DB.Exec(`
+ALTER TABLE IF EXISTS service_templates
+	DROP COLUMN IF EXISTS workload_role_policy,
+	DROP COLUMN IF EXISTS environment_role_policy
+`).Error
 }
 
 func migrateServiceInstallationProvisionMode() error {

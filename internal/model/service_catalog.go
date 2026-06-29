@@ -52,16 +52,6 @@ type ServiceTemplate struct {
 	// Raw YAML template for kubectl apply mode
 	RawYamlTemplate string `gorm:"type:text" json:"rawYamlTemplate"`
 
-	// Per-tool workload namespace RBAC rules (JSON array of PolicyRule).
-	// Defines the permissions projected into environment workload namespaces.
-	// Example: [{"apiGroups":[""],"resources":["pods","services"],"verbs":["get","list","watch"]}]
-	WorkloadRolePolicy string `gorm:"type:text" json:"workloadRolePolicy"`
-
-	// Per-tool environment namespace RBAC rules (JSON array of PolicyRule).
-	// Defines the permissions projected into non-self namespaces in the same environment,
-	// including middleware and other tool namespaces.
-	EnvironmentRolePolicy string `gorm:"type:text" json:"environmentRolePolicy"`
-
 	// Custom template (BYO) fields
 	// IsCustom indicates this is a user-uploaded template (not a built-in one).
 	IsCustom bool `gorm:"default:false" json:"isCustom"`

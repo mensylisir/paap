@@ -311,7 +311,10 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 ### Task 6.4: 模板体系收口
 - [ ] 将内置模板完全统一到 `Helm Chart + platform-manifest.yaml + preset-values.yaml` 路径
 - [ ] 废弃或移除旧的 `installer/rawYaml/chartRepo/chartName` 创建入口
-- [ ] 将 `WorkloadRolePolicy`、`EnvironmentRolePolicy` 等旧权限字段收敛到 `platform-manifest.yaml`
+- [x] 将 `WorkloadRolePolicy`、`EnvironmentRolePolicy` 等旧权限字段收敛到 `platform-manifest.yaml`
+  - 2026-06-29 补齐：`ServiceTemplate` 模型删除 `WorkloadRolePolicy` / `EnvironmentRolePolicy`，内置模板同步和用户上传模板不再写入重复权限字段；服务模板 RBAC 统一从 `PlatformManifestJSON` 派生 workload/environment/tool/cluster roles；启动迁移直接 drop `service_templates.workload_role_policy` 和 `environment_role_policy` 旧列。
+  - 验证：`source "$HOME/.gvm/scripts/gvm" && go test -count=1 ./internal/database ./internal/model ./internal/service ./internal/handler` 通过；代码搜索确认旧字段只剩迁移删除逻辑和防回归测试。
+  - 运行态验证：`paap-server:v0.1.542-manifest-rbac` 构建、加载并滚动到 `kind-rbac-manager-test`，Deployment `1/1 ready`；浏览器登录 `http://172.20.0.2:30091/catalog` 后服务目录正常加载；PostgreSQL `information_schema.columns` 只返回 `platform_manifest_json`，旧 `workload_role_policy` / `environment_role_policy` 列已被迁移删除。
 - [ ] 补齐内置模板同步、上传到 MinIO、数据库种子数据的一致性校验
 - [ ] 逐个验证内置模板安装、卸载、RBAC 隔离、工作台操作和运行态数据
 
@@ -1193,7 +1196,8 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 
 ### Task 7.16: 模板体系收口
 - [ ] 废弃旧 `installer/rawYaml/chartRepo/chartName` 创建入口
-- [ ] 将 `WorkloadRolePolicy` / `EnvironmentRolePolicy` 等旧权限字段收敛到 `platform-manifest.yaml`
+- [x] 将 `WorkloadRolePolicy` / `EnvironmentRolePolicy` 等旧权限字段收敛到 `platform-manifest.yaml`
+  - 2026-06-29 补齐：服务模板权限源统一为 `PlatformManifestJSON`，旧字段已从模型、seed、上传和 RBAC 读取路径移除；保留启动迁移删除历史数据库列。
 - [ ] 具体文件：`internal/handler/template.go`、`internal/model/service_catalog.go`
 - [ ] 工作量：1-2 周
 
