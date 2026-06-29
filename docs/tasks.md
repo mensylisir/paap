@@ -321,17 +321,18 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
   - 2026-06-28 补齐：`DeployComponent` 在执行源码构建/GitOps 动作前从 service 层校验环境内 Gitea、Jenkins、registry/Harbor、ArgoCD 安装记录必须为 running 且有命名空间；源码待构建时额外只读校验 kpack CRD 与 `kpack-controller` ready；image 交付只要求 GitOps 依赖，不误要求 Jenkins/kpack/registry
   - 2026-06-28 验证：`/home/mensyli1/.gvm/gos/go1.25.7/bin/go test -count=1 ./internal/service -run 'TestValidateComponent(SourceBuildPreflight|ImageDeploymentPreflight)|TestRunComponent(SourceBuildFlowRequiresGitAndCI|ImageDeliveryFlowRequiresGitAndCD|ImageDeliveryFlowPublishesGitOpsAndConfiguresArgoCD)|TestBuildComponentKpackSpec|TestPreferredSourceRegistryServiceType|TestPrepareComponentSourceBuildVersion'` 通过；`/home/mensyli1/.gvm/gos/go1.25.7/bin/go test -count=1 ./internal/service` 通过
 - [ ] 将 registry/Harbor 的 DNS、TLS、节点运行时信任配置做成可验证状态，而不是只展示说明
-- [ ] 完整验证 source 模式：源码仓 → Gitea mirror → Jenkins/kpack → registry/Harbor → GitOps 清单 → ArgoCD → 集群
+- [x] 完整验证 source 模式：源码仓 → Gitea mirror → Jenkins/kpack → registry/Harbor → GitOps 清单 → ArgoCD → 集群
   - 2026-06-29 修复并验证：源码交付失败后重新点击“部署”会把组件置为 `planned` 并重新触发 Jenkins/kpack，不再被旧的 `BuildFailed` kpack Image 直接短路；UI/CDP 对 PiggyMetrics `gateway` 提交源码交付，`PUT /api/v1/components/32` 和 `POST /api/v1/components/32/deploy` 均返回 200，组件状态进入 `pipelineStatus=running`，kpack `Image gateway` 重新创建 build pod，Jenkinsfile 使用内部 registry `10.96.190.247:5000/piggymetrics-dev/gateway` 推送，组件声明镜像保持外部运行地址 `registry.piggymetrics-dev.paap.local/piggymetrics-dev/gateway:6bb2cf9`。
-  - 当前剩余：kind 运行态仍在 Paketo/BellSoft JDK 下载阶段，最终能否完成取决于从 GitHub 拉取 `bellsoft-jdk21.0.11+11-linux-amd64.tar.gz`；该项尚未证明完整到 ArgoCD/集群。
+  - 2026-06-29 浏览器验证：在 `http://172.20.0.2:30091` 的 PiggyMetrics 开发环境右侧栏对 `gateway` 选择源码交付并点击“部署”，页面返回 `gateway 部署已提交`；只读回读 `piggymetrics-dev-jenkins` 中 `gateway-build-2` 为 True、构建 Pod `Succeeded`，kpack `Image gateway` 指向内部 registry digest `10.96.190.247:5000/piggymetrics-dev/gateway@sha256:89b227...`；业务 Deployment 使用外部运行镜像 `registry.piggymetrics-dev.paap.local/piggymetrics-dev/gateway:6bb2cf9` 且 `1/1` ready；浏览器打开 `http://172.20.0.2:32575/` 成功加载 PiggyMetrics 页面。
 - [x] 完整验证 image 模式：镜像输入 → GitOps 清单 → ArgoCD → 集群
   - 2026-06-29 修复并验证：镜像交付保存/部署时按所选 `registryTarget` 重新生成运行镜像地址，UI 和 Gitea 部署 YAML 不再泄漏环境内 ClusterIP；CDP 在 PiggyMetrics `auth-service` 页面选择本环境 `dev-registry` 后点击部署，`PUT /api/v1/components/28` 和 `POST /api/v1/components/28/deploy` 均返回 200，DB 中 `image/registryImage=registry.piggymetrics-dev.paap.local/piggymetrics-dev/auth-service:6bb2cf9`，Gitea `components/auth-service/deployment.yaml` 同步为该镜像，集群 Deployment 也回读到同一镜像。测试环境未配置该域名 DNS，Pod 最终 Ready 不能作为本地 kind 的成功判据。
+  - 2026-06-29 浏览器验证：在 PiggyMetrics 开发环境右侧栏对 `notification-service` 选择镜像交付并点击“部署”，页面显示 `notification-service 部署已提交`；部署页反选本环境 `dev-registry`，完整镜像为 `registry.piggymetrics-dev.paap.local/piggymetrics-dev/notification-service:6bb2cf9`，集群回读 `notification-service` Pod `1/1 Running`。
 - [ ] 将链路中的 warning/pending 状态映射到前端可操作的修复入口
 - [x] 代码层交付流程已拆为动作函数、步骤函数和流程函数：source 构建只准备 Gitea mirror/Jenkinsfile/README/Jenkins/kpack，不写 GitOps 清单；image 交付和已构建 source 交付由 PAAP 写部署清单、配置 ArgoCD 并持久化组件 GitOps 元数据
   - 2026-06-28 验证：`/home/mensyli1/.gvm/gos/go1.25.7/bin/go test -count=1 ./internal/service -run 'Test(CreateComponent|UpdateComponent|DeployComponent|RunComponent|BuildComponentJenkinsfile|ApplyComponentDeployVersion|PrepareComponentSourceBuildVersion|PreferredSourceRegistryServiceType)'` 通过
   - 2026-06-28 验证：`/home/mensyli1/.gvm/gos/go1.25.7/bin/go test -count=1 ./internal/database ./internal/authz ./internal/middleware ./internal/service ./internal/handler` 通过
   - 2026-06-28 浏览器验证：`paap-server:v0.1.578-source-draft-entry` 部署到 `kind-rbac-manager-test` 后，使用浏览器登录 `http://172.20.0.2:30091`，在 PiggyMetrics 开发环境通过页面会话创建 source 草稿（`deliveryMode=source`、`version=""`、`image=""`、`status=draft`）和 image 草稿（`deliveryMode=image`、明确 tag），均返回 201；随后删除均返回 200，组件数恢复为 7。
-  - 当前状态：image 交付链路已通过浏览器操作和 Gitea/集群回读验证；source 交付链路已通过浏览器操作验证到 Jenkins/kpack 重新构建中，完整成功仍等待外部依赖下载条件。
+  - 当前状态：image 交付链路已通过浏览器操作和集群回读验证；source 交付链路已通过浏览器操作、Jenkins/kpack 构建完成、GitOps 部署和 gateway NodePort 页面验证。
 
 ### Task 6.6: 平台配置与管理员功能
 - [ ] 增加平台配置模块，并按角色控制普通用户是否可见
