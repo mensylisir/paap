@@ -80,9 +80,9 @@
                 role="link"
                 tabindex="0"
                 :aria-label="`查看 ${item.name} 服务详情`"
-                @click="navigateToDetail(item.type)"
-                @keydown.enter.prevent="navigateToDetail(item.type)"
-                @keydown.space.prevent="navigateToDetail(item.type)"
+                @click="navigateToDetail(item)"
+                @keydown.enter.prevent="navigateToDetail(item)"
+                @keydown.space.prevent="navigateToDetail(item)"
               >
             <div class="catalog-card-header">
               <span class="catalog-card-icon">{{ group.icon }}</span>
@@ -145,6 +145,7 @@ import { compareCatalogVersions, stripCatalogVersionPrefix } from '../utils/cata
 
 interface CatalogItem {
   type: string
+  detailType?: string
   name: string
   description: string
   catalogSource?: string
@@ -221,6 +222,32 @@ const catalogFeatureItems = (raw: unknown): CatalogFeature[] => {
   return fallback
 }
 
+const featureEnabled = (features: CatalogFeature[], key: string) =>
+  features.some(feature => feature.key === key && feature.enabled)
+
+const kubeVirtCatalogItemFor = (item: CatalogItem): CatalogItem | null => {
+  if (!featureEnabled(item.features, 'kubevirt') && item.kubevirtInstances <= 0) return null
+  return {
+    ...item,
+    type: `kubevirt-${item.type}`,
+    detailType: item.type,
+    name: `${item.name} KubeVirt`,
+    description: item.description
+      ? `${item.description}，支持通过 KubeVirt 模板交付。`
+      : `通过 KubeVirt 模板交付 ${item.name} 服务实例。`,
+    catalogSource: 'kubevirt-template',
+    features: item.features.filter(feature => feature.key === 'kubevirt'),
+    preinstalled: false,
+    managedInstances: 0,
+    publicInstances: 0,
+    sharedReferences: 0,
+    externalConnections: 0,
+    deferredReferences: 0,
+    runningInstances: item.kubevirtInstances,
+    environmentCount: item.kubevirtInstances > 0 ? item.environmentCount : 0,
+  }
+}
+
 const catalogGroups = computed<CatalogGroup[]>(() => {
   const groups = new Map<string, CatalogGroup>()
   const items = new Map<string, CatalogItem>()
@@ -267,10 +294,7 @@ const catalogGroups = computed<CatalogGroup[]>(() => {
     }
   }
 
-  for (const item of items.values()) {
-    item.versions.sort(compareCatalogVersions)
-    const t = source.find((x: any) => x.type === item.type)
-    const groupMeta = catalogGroupForTemplate(t || item)
+  const addItemToGroup = (item: CatalogItem, groupMeta: CatalogGroupMeta) => {
     const cat = groupMeta.category
 
     if (!groups.has(cat)) {
@@ -279,11 +303,21 @@ const catalogGroups = computed<CatalogGroup[]>(() => {
     groups.get(cat)!.items.push(item)
   }
 
+  for (const item of items.values()) {
+    item.versions.sort(compareCatalogVersions)
+    const t = source.find((x: any) => x.type === item.type)
+    addItemToGroup(item, catalogGroupForTemplate(t || item))
+    const kubeVirtItem = kubeVirtCatalogItemFor(item)
+    if (kubeVirtItem) {
+      addItemToGroup(kubeVirtItem, catalogGroupForTemplate({ category: 'kubevirt', type: kubeVirtItem.type }))
+    }
+  }
+
   return Array.from(groups.values()).sort(compareCatalogGroupMeta)
 })
 
-const navigateToDetail = (type: string) => {
-  router.push(`/catalog/${encodeURIComponent(type)}`)
+const navigateToDetail = (item: CatalogItem) => {
+  router.push(`/catalog/${encodeURIComponent(item.detailType || item.type)}`)
 }
 
 // Auto-select first tab when data loads, or if current tab becomes invalid

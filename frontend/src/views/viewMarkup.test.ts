@@ -640,6 +640,9 @@ describe('Vue view markup', () => {
 
     expect(catalogView.default).toContain('catalogGroupForTemplate')
     expect(catalogView.default).toContain('compareCatalogGroupMeta')
+    expect(catalogView.default).toContain('kubeVirtCatalogItemFor')
+    expect(catalogView.default).toContain("catalogGroupForTemplate({ category: 'kubevirt'")
+    expect(catalogView.default).toContain('detailType || item.type')
     expect(catalogView.default).not.toContain("label = '中间件 / 数据库'")
     expect(catalogGroups.default).toContain("label: 'CI服务'")
     expect(catalogGroups.default).toContain("label: 'CD服务'")

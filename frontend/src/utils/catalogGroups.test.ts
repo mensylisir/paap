@@ -47,6 +47,7 @@ describe('catalog group helpers', () => {
     expect(matchesQuery({ category: 'infra', type: 'rabbitmq', name: 'RabbitMQ' }, '中间件服务')).toBe(true)
     expect(matchesQuery({ category: 'infra', type: 'postgresql', name: 'PostgreSQL' }, '数据库服务')).toBe(true)
     expect(matchesQuery({ category: 'environment', type: 'environment:dev', name: '开发环境' }, '环境服务')).toBe(true)
+    expect(matchesQuery({ category: 'infra', type: 'postgresql', name: 'PostgreSQL', features: [{ key: 'kubevirt', enabled: true }] }, '虚拟机服务')).toBe(true)
     expect(matchesQuery({ category: 'infra', type: 'redis', name: 'Redis' }, '数据库')).toBe(false)
   })
 })

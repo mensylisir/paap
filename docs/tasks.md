@@ -1483,6 +1483,7 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 - [ ] 对应文件：`frontend/src/views/CatalogView.vue`、`frontend/src/utils/catalogGroups.ts`、`internal/handler/`
 - [ ] 工作量：M（3-4 天）
 - [x] 2026-06-28 验证：浏览器 CDP 登录后访问 `/catalog`，页面显示“服务目录”以及 CI/CD/监控/日志/数据库/中间件服务分类；`npm --prefix frontend run test -- src/utils/catalogGroups.test.ts src/views/viewMarkup.test.ts --run` 通过
+- [x] 2026-06-29 补齐并验证：服务目录对带 `kubevirt` feature 的真实服务产品生成展示层派生卡片，`serviceType` 仍保持 PostgreSQL/Redis/MySQL/MongoDB 等真实类型；浏览器打开 `http://172.20.0.2:30091/catalog`，确认出现 `VM 虚拟机服务 4`，VM tab 显示 MongoDB/MySQL/PostgreSQL/Redis KubeVirt 卡片，点击 `PostgreSQL KubeVirt` 后进入 `/catalog/postgresql` 详情并显示 `KubeVirt 模板交付`。
 
 ### Task 8.4: Redis 工作区数据精简（S）
 > 领导觉得 Redis 界面信息过载。
@@ -1536,6 +1537,7 @@ CDP 验证已覆盖 11 个运行中服务的全部 CRUD 操作。
 - [ ] 对应文件：`frontend/src/utils/catalogGroups.ts`、`internal/model/template.go`、`internal/database/seed.go`
 - [ ] 工作量：M（2 天）
 - [x] 2026-06-28 验证：`frontend/src/utils/catalogGroups.test.ts` 覆盖 Jenkins/ArgoCD/Monitor/Loki/PostgreSQL/MySQL/MongoDB/Redis/RabbitMQ/环境服务/KubeVirt 分类映射
+- [x] 2026-06-29 验证：`npm --prefix frontend run test -- src/views/viewMarkup.test.ts src/utils/catalogGroups.test.ts --run`、`cd frontend && npm exec vue-tsc -- -b --noEmit`、`npm --prefix frontend run build` 通过；浏览器验证 `虚拟机服务` tab 和 KubeVirt 派生卡片可见，派生卡片跳回原服务详情。
 
 ### Task 8.7: 网络服务（L）
 > 新增"网络服务"能力，包含：防火墙规则、网络暴露（Ingress/Gateway）、WAF、MetalLB（LoadBalancer IP）。

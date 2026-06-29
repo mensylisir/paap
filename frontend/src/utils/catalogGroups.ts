@@ -1,6 +1,7 @@
 export interface CatalogTemplateLike {
   category?: unknown
   description?: unknown
+  features?: unknown
   name?: unknown
   type?: unknown
 }
@@ -77,11 +78,22 @@ export const compareCatalogGroupMeta = (left: CatalogGroupMeta, right: CatalogGr
 
 const searchableText = (value: unknown) => String(value || '').toLowerCase()
 
+const templateHasFeature = (template: CatalogTemplateLike, featureKey: string) => {
+  const raw = template.features
+  if (Array.isArray(raw)) {
+    return raw.some((item: any) => String(item?.key || item || '').toLowerCase() === featureKey)
+  }
+  return searchableText(raw).includes(featureKey)
+}
+
 export const catalogTemplateMatchesQuery = (template: CatalogTemplateLike, query: string) => {
   const q = searchableText(query).trim()
   if (!q) return true
 
   const group = catalogGroupForTemplate(template)
+  const derivedGroups = templateHasFeature(template, 'kubevirt')
+    ? [catalogGroupMeta.virtualMachine.label, catalogGroupMeta.virtualMachine.category]
+    : []
   return [
     template.name,
     template.type,
@@ -89,5 +101,6 @@ export const catalogTemplateMatchesQuery = (template: CatalogTemplateLike, query
     template.category,
     group.label,
     group.category,
+    ...derivedGroups,
   ].some(value => searchableText(value).includes(q))
 }
