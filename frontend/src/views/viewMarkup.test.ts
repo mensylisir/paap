@@ -37,9 +37,14 @@ describe('Vue view markup', () => {
     const routerSource = await import('../router/index.ts?raw')
 
     expect(routerSource.default).toContain('router.beforeEach')
+    expect(routerSource.default).toContain("import { isUnauthorizedError } from '../api/client'")
     expect(routerSource.default).toContain("localStorage.getItem('paap_token')")
     expect(routerSource.default).toContain("to.path !== '/login'")
     expect(routerSource.default).toContain("return '/login'")
+    expect(routerSource.default).toContain("if (!token || to.path === '/login') return")
+    expect(routerSource.default).toContain('isUnauthorizedError(err)')
+    expect(routerSource.default).toContain("localStorage.removeItem('paap_token')")
+    expect(routerSource.default).toContain("localStorage.removeItem('paap_user')")
   })
 
   it('does not contain nested style tags inside a style block', () => {

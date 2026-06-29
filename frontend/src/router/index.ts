@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { isUnauthorizedError } from '../api/client'
 import { permissions } from '../permissions'
 import { usePermissionStore, type PermissionScope } from '../stores/permission'
 
@@ -158,12 +159,21 @@ function routePermissionScope(to: any): PermissionScope {
 router.beforeEach(async (to) => {
   const token = typeof localStorage === 'undefined' ? '' : localStorage.getItem('paap_token')
   if (to.path !== '/login' && !token) return '/login'
-  if (to.path === '/login' && token) return '/apps?auto=true'
   if (!token || to.path === '/login') return
 
   const permissionStore = usePermissionStore()
   const scope = routePermissionScope(to)
-  await permissionStore.fetchPermissions(scope)
+  try {
+    await permissionStore.fetchPermissions(scope)
+  } catch (err) {
+    if (isUnauthorizedError(err)) {
+      localStorage.removeItem('paap_token')
+      localStorage.removeItem('paap_user')
+      permissionStore.reset()
+      return '/login'
+    }
+    throw err
+  }
 
   const required = to.matched
     .map((record) => record.meta.permission)

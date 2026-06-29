@@ -3,6 +3,22 @@ const inflightGetRequests = new Map<string, Promise<any>>()
 const completedGetRequests = new Map<string, { expiresAt: number; value: any }>()
 const GET_CACHE_TTL_MS = 1500
 
+export class ApiError extends Error {
+  status: number
+  body: any
+
+  constructor(status: number, message: string, body?: any) {
+    super(message)
+    this.name = 'ApiError'
+    this.status = status
+    this.body = body
+  }
+}
+
+export function isUnauthorizedError(error: unknown) {
+  return error instanceof ApiError && error.status === 401
+}
+
 function headersToRecord(headers?: HeadersInit): Record<string, string> {
   if (!headers) return {}
   if (headers instanceof Headers) {
@@ -48,7 +64,7 @@ async function request(path: string, options: RequestInit = {}) {
   }).then(async (res) => {
     if (!res.ok) {
       const err = await res.json().catch(() => ({ error: res.statusText }))
-      throw new Error(err.error || res.statusText)
+      throw new ApiError(res.status, err.error || res.statusText, err)
     }
     return res.json()
   })

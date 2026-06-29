@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { api } from './client'
+import { ApiError, api } from './client'
 
 describe('api client', () => {
   beforeEach(() => {
@@ -269,6 +269,20 @@ describe('api client', () => {
         Authorization: 'Bearer signed.jwt.token',
       }),
     }))
+  })
+
+  it('throws API errors with the HTTP status for auth recovery', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: false,
+      status: 401,
+      json: async () => ({ error: 'invalid or missing token' }),
+    } as Response)
+
+    await expect(api.currentPermissions('system')).rejects.toMatchObject({
+      name: 'ApiError',
+      status: 401,
+      message: 'invalid or missing token',
+    } satisfies Partial<ApiError>)
   })
 
   it('does not reuse completed GET responses across auth token changes', async () => {
