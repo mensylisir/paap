@@ -6,10 +6,12 @@
         <h1 class="page-title">环境管理</h1>
         <p class="page-desc">管理应用的所有运行环境</p>
       </div>
-      <button v-if="!isSystemApp" class="rail-btn rail-btn--primary" @click="openModal">
-        <svg width="16" height="16" viewBox="0 0 32 32" fill="currentColor"><path d="M17 15V7h-2v8H7v2h8v8h2v-8h8v-2z"/></svg>
+      <cv-button v-if="!isSystemApp" kind="primary" @click="openModal">
+        <template #icon>
+          <svg width="16" height="16" viewBox="0 0 32 32" fill="currentColor"><path d="M17 15V7h-2v8H7v2h8v8h2v-8h8v-2z"/></svg>
+        </template>
         创建环境
-      </button>
+      </cv-button>
     </header>
 
     <!-- KPI -->
@@ -54,7 +56,7 @@
         </svg>
         <h3 class="rail-empty-title">暂无环境</h3>
         <p class="rail-empty-desc">创建第一个环境来部署服务。</p>
-        <button v-if="!isSystemApp" class="rail-btn rail-btn--primary" style="margin-top:8px" @click="openModal">创建第一个环境</button>
+        <cv-button v-if="!isSystemApp" kind="primary" style="margin-top:8px" @click="openModal">创建第一个环境</cv-button>
       </div>
 
       <div v-else class="env-grid">
@@ -78,15 +80,16 @@
                 <span class="rail-status-dot" :class="`rail-status-dot--${environmentStatusDotClass(environmentCardStatus(env))}`" />
                 {{ environmentStatusLabel(environmentCardStatus(env)) }}
               </span>
-              <button
+              <cv-button
                 v-if="!env.isSystem"
-                type="button"
-                class="rail-btn rail-btn--danger rail-btn--sm env-delete-btn"
+                kind="danger"
+                size="sm"
+                class="env-delete-btn"
                 :disabled="deletingEnvId === Number(env.id)"
                 @click.stop="openDeleteEnvironmentDialog(env)"
               >
                 {{ deletingEnvId === Number(env.id) ? '删除中...' : '删除环境' }}
-              </button>
+              </cv-button>
             </div>
           </div>
           <div class="env-meta">
@@ -115,31 +118,21 @@
       @submit="submitEnv"
     />
 
-    <Teleport to="body">
-      <div v-if="pendingDeleteEnv" class="modal-overlay" role="dialog" aria-modal="true" @click.self="closeDeleteEnvironmentDialog">
-        <div class="modal-container">
-          <div class="modal-header">
-            <div>
-              <p class="modal-label">删除环境</p>
-              <p class="modal-heading">确认删除 {{ pendingDeleteEnv.name || pendingDeleteEnv.id }}</p>
-            </div>
-            <button class="modal-close" type="button" aria-label="关闭" :disabled="deletingEnvId !== null" @click="closeDeleteEnvironmentDialog">
-              <svg width="20" height="20" viewBox="0 0 32 32" fill="currentColor"><path d="M24 9.4L22.6 8 16 14.6 9.4 8 8 9.4l6.6 6.6L8 22.6 9.4 24l6.6-6.6 6.6 6.6 1.4-1.4-6.6-6.6L24 9.4z"/></svg>
-            </button>
-          </div>
-          <div class="modal-body">
-            <p class="confirm-text">这会删除环境记录和关联资源，请确认后继续。</p>
-            <div v-if="deleteError" class="form-error" role="alert">{{ deleteError }}</div>
-          </div>
-          <div class="modal-footer">
-            <button type="button" class="rail-btn rail-btn--ghost" :disabled="deletingEnvId !== null" @click="closeDeleteEnvironmentDialog">取消</button>
-            <button type="button" class="rail-btn rail-btn--danger" :disabled="deletingEnvId !== null" @click="performDeleteEnvironment">
-              {{ deletingEnvId !== null ? '删除中...' : '确认删除' }}
-            </button>
-          </div>
-        </div>
-      </div>
-    </Teleport>
+    <cv-modal
+      :visible="!!pendingDeleteEnv"
+      title="确认删除"
+      kind="danger"
+      close-aria-label="关闭"
+      primary-button-label="确认删除"
+      secondary-button-label="取消"
+      :primary-button-disabled="deletingEnvId !== null"
+      @primary-click="performDeleteEnvironment"
+      @secondary-click="closeDeleteEnvironmentDialog"
+      @modal-hidden="closeDeleteEnvironmentDialog"
+    >
+      <p class="confirm-text">这会删除环境记录和关联资源，请确认后继续。</p>
+      <div v-if="deleteError" class="form-error" role="alert">{{ deleteError }}</div>
+    </cv-modal>
   </div>
 </template>
 
@@ -400,15 +393,6 @@ const performDeleteEnvironment = async () => {
 </style>
 
 <style>
-.modal-container { background: var(--paap-panel); width: min(520px, 100%); max-height: 90vh; overflow-y: auto; border: 1px solid var(--paap-border); border-radius: var(--paap-radius); box-shadow: var(--paap-shadow-lg); }
-.modal-header { display: flex; justify-content: space-between; align-items: flex-start; padding: var(--paap-space-5) var(--paap-space-6); border-bottom: 1px solid var(--paap-border); }
-.modal-label { font-size: var(--paap-fs-label); color: var(--paap-muted); margin-bottom: var(--paap-space-2); text-transform: uppercase; letter-spacing: 0.32px; font-weight: 600; }
-.modal-heading { font-size: 20px; font-weight: 400; color: var(--paap-text); margin: 0; line-height: 1.4; }
-.modal-close { background: var(--paap-panel); border: 1px solid var(--paap-border); color: var(--paap-muted); cursor: pointer; padding: 4px; display: flex; align-items: center; justify-content: center; border-radius: var(--paap-radius-sm); transition: background 110ms, color 110ms, border-color 110ms; width: 28px; height: 28px; }
-.modal-close:hover { background: var(--paap-panel-subtle); color: var(--paap-text); }
-.modal-body { padding: var(--paap-space-6); }
-.modal-footer { display: flex; justify-content: flex-end; gap: var(--paap-space-2); padding: var(--paap-space-4) var(--paap-space-6); border-top: 1px solid var(--paap-border); }
-
 .confirm-text { color: var(--paap-text); font-size: var(--paap-fs-body); line-height: 1.6; margin: 0; }
 .confirm-text + .form-error { margin-top: 16px; }
 .form-error {
