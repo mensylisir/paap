@@ -53,17 +53,10 @@ defineProps<{
 /* ===== Workspace Shared Design System ===== */
 
 /* Panels */
-.tab-panel { min-height: 80px; }
-.empty-line {
-  padding: var(--paap-space-10) var(--paap-space-6);
-  text-align: center;
-  color: var(--paap-muted);
-  font-size: var(--paap-fs-compact);
-  background: var(--paap-panel-subtle);
-  border: 1px solid var(--paap-border);
-  border-radius: var(--paap-radius);
+.tab-panel {
+  min-height: 80px;
+  animation: fade-in 0.25s ease both;
 }
-
 /* Tables — clean & modern */
 .table-wrap {
   background: var(--paap-panel);
@@ -144,11 +137,12 @@ defineProps<{
   border: 1px solid var(--paap-border);
   border-radius: var(--paap-radius);
   padding: var(--paap-space-4);
-  transition: border-color 0.15s, box-shadow 0.15s;
+  transition: border-color 0.15s, box-shadow 0.15s, transform 0.12s;
 }
 .card:hover {
   border-color: var(--paap-border-strong);
   box-shadow: var(--paap-shadow-sm);
+  transform: translateY(-1px);
 }
 .card-title { font-weight: 600; font-size: var(--paap-fs-body); color: var(--paap-text); margin-bottom: 2px; }
 .card-sub { font-size: var(--paap-fs-label); color: var(--paap-muted); margin-bottom: var(--paap-space-2); }

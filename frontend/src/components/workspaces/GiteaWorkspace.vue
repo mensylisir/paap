@@ -44,7 +44,7 @@
                 </div>
               </div>
             </div>
-            <div v-else class="empty-line">暂无仓库数据，先创建代码仓。</div>
+            <div v-else class="empty-state empty-state--compact"><p class="empty-state__title">暂无仓库数据</p><p class="empty-state__desc">先创建代码仓。</p></div>
           </div>
 
           <aside class="repo-guide-panel">
@@ -277,7 +277,7 @@ git push -u origin main</code></pre>
             </tbody>
           </table>
         </div>
-        <div v-else class="empty-line">暂无资源数据</div>
+        <div v-else class="empty-state empty-state--compact"><p class="empty-state__title">暂无资源数据</p></div>
       </div>
     </template>
   </ToolWorkspaceFrame>

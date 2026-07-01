@@ -33,7 +33,7 @@
             <span class="badge" :class="b.status === 'Ready' ? 'green' : 'gray'">{{ b.status }}</span>
           </div>
         </div>
-        <div v-else class="empty-line">暂无 Bucket 数据</div>
+        <div v-else class="empty-state empty-state--compact"><p class="empty-state__title">暂无 Bucket 数据</p></div>
       </div>
 
       <div v-if="activeTab === 'objects'" class="tab-panel">
@@ -50,7 +50,7 @@
             </tbody>
           </table>
         </div>
-        <div v-else class="empty-line">暂无对象数据</div>
+        <div v-else class="empty-state empty-state--compact"><p class="empty-state__title">暂无对象数据</p></div>
       </div>
 
       <div v-if="activeTab === 'resources'" class="tab-panel">
@@ -67,7 +67,7 @@
             </tbody>
           </table>
         </div>
-        <div v-else class="empty-line">暂无资源数据</div>
+        <div v-else class="empty-state empty-state--compact"><p class="empty-state__title">暂无资源数据</p></div>
       </div>
 
       <aside class="object-detail" v-if="selectedResource">

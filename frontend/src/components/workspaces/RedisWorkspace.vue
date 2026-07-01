@@ -74,7 +74,7 @@
                 </tbody>
               </table>
             </div>
-            <div v-else class="empty-line">暂无 Key 数据，使用“查看 Key”按模式搜索。</div>
+            <div v-else class="empty-state empty-state--compact"><p class="empty-state__title">暂无 Key 数据</p><p class="empty-state__desc">使用“查看 Key”按模式搜索。</p></div>
           </div>
 
           <aside v-if="selectedResource" class="redis-detail">
@@ -142,7 +142,7 @@
               <span class="mono">{{ item.description }}</span>
             </button>
           </div>
-          <div v-else class="empty-line">暂无基本信息，使用“实例信息”刷新 Redis 状态。</div>
+          <div v-else class="empty-state empty-state--compact"><p class="empty-state__title">暂无基本信息</p><p class="empty-state__desc">使用“实例信息”刷新 Redis 状态。</p></div>
         </div>
 
         <details v-if="advancedResources.length" class="redis-advanced">

@@ -33,7 +33,7 @@
             </tbody>
           </table>
         </div>
-        <div v-else class="empty-line">暂无队列数据</div>
+        <div v-else class="empty-state empty-state--compact"><p class="empty-state__title">暂无队列数据</p></div>
       </div>
 
       <div v-if="activeTab === 'exchanges'" class="tab-panel">
@@ -49,7 +49,7 @@
             </tbody>
           </table>
         </div>
-        <div v-else class="empty-line">暂无交换机数据</div>
+        <div v-else class="empty-state empty-state--compact"><p class="empty-state__title">暂无交换机数据</p></div>
       </div>
 
       <div v-if="activeTab === 'bindings'" class="tab-panel">
@@ -66,7 +66,7 @@
             </tbody>
           </table>
         </div>
-        <div v-else class="empty-line">暂无绑定数据</div>
+        <div v-else class="empty-state empty-state--compact"><p class="empty-state__title">暂无绑定数据</p></div>
       </div>
 
       <div v-if="activeTab === 'vhosts'" class="tab-panel">
@@ -82,7 +82,7 @@
             </tbody>
           </table>
         </div>
-        <div v-else class="empty-line">暂无 VHost 数据</div>
+        <div v-else class="empty-state empty-state--compact"><p class="empty-state__title">暂无 VHost 数据</p></div>
       </div>
 
       <div v-if="activeTab === 'messages'" class="tab-panel">
@@ -99,7 +99,7 @@
             </tbody>
           </table>
         </div>
-        <div v-else class="empty-line">暂无消息数据</div>
+        <div v-else class="empty-state empty-state--compact"><p class="empty-state__title">暂无消息数据</p></div>
       </div>
 
       <div v-if="activeTab === 'resources'" class="tab-panel">
@@ -116,7 +116,7 @@
             </tbody>
           </table>
         </div>
-        <div v-else class="empty-line">暂无资源数据</div>
+        <div v-else class="empty-state empty-state--compact"><p class="empty-state__title">暂无资源数据</p></div>
       </div>
 
       <aside class="object-detail" v-if="selectedResource">

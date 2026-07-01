@@ -32,7 +32,7 @@
             <div class="card-sub">{{ db.description }}</div>
           </div>
         </div>
-        <div v-else class="empty-line">暂无数据库数据</div>
+        <div v-else class="empty-state empty-state--compact"><p class="empty-state__title">暂无数据库数据</p></div>
       </div>
 
       <div v-if="activeTab === 'collections'" class="tab-panel">
@@ -48,7 +48,7 @@
             </tbody>
           </table>
         </div>
-        <div v-else class="empty-line">暂无集合数据</div>
+        <div v-else class="empty-state empty-state--compact"><p class="empty-state__title">暂无集合数据</p></div>
       </div>
 
       <div v-if="activeTab === 'docs'" class="tab-panel">
@@ -57,7 +57,7 @@
             <pre class="doc-pre">{{ doc }}</pre>
           </div>
         </div>
-        <div v-else class="empty-line">暂无文档预览</div>
+        <div v-else class="empty-state empty-state--compact"><p class="empty-state__title">暂无文档预览</p></div>
       </div>
 
       <div v-if="activeTab === 'resources'" class="tab-panel">
@@ -74,7 +74,7 @@
             </tbody>
           </table>
         </div>
-        <div v-else class="empty-line">暂无资源数据</div>
+        <div v-else class="empty-state empty-state--compact"><p class="empty-state__title">暂无资源数据</p></div>
       </div>
 
       <aside class="object-detail" v-if="selectedResource">

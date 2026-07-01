@@ -34,7 +34,7 @@
               <iframe class="grafana-frame" :src="frame.url" :title="frame.name" loading="lazy" @load="compactGrafanaEmbed" />
             </div>
           </div>
-          <div v-else class="empty-line">暂无 Grafana Dashboard，点击上方“导入默认大盘”后刷新。</div>
+          <div v-else class="empty-state empty-state--compact"><p class="empty-state__title">暂无 Grafana Dashboard</p><p class="empty-state__desc">点击上方“导入默认大盘”后刷新。</p></div>
         </section>
       </div>
 
@@ -51,7 +51,7 @@
             </tbody>
           </table>
         </div>
-        <div v-else class="empty-line">暂无目标数据</div>
+        <div v-else class="empty-state empty-state--compact"><p class="empty-state__title">暂无目标数据</p></div>
       </div>
 
       <div v-if="activeTab === 'alerts'" class="tab-panel">
@@ -67,7 +67,7 @@
             </tbody>
           </table>
         </div>
-        <div v-else class="empty-line">暂无告警数据</div>
+        <div v-else class="empty-state empty-state--compact"><p class="empty-state__title">暂无告警数据</p></div>
       </div>
 
       <div v-if="activeTab === 'rules'" class="tab-panel">
@@ -83,7 +83,7 @@
             </tbody>
           </table>
         </div>
-        <div v-else class="empty-line">暂无规则数据</div>
+        <div v-else class="empty-state empty-state--compact"><p class="empty-state__title">暂无规则数据</p></div>
       </div>
 
       <div v-if="activeTab === 'resources'" class="tab-panel">
@@ -100,7 +100,7 @@
             </tbody>
           </table>
         </div>
-        <div v-else class="empty-line">暂无资源数据</div>
+        <div v-else class="empty-state empty-state--compact"><p class="empty-state__title">暂无资源数据</p></div>
       </div>
     </template>
   </ToolWorkspaceFrame>

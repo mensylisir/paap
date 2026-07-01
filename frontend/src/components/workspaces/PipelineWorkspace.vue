@@ -128,10 +128,10 @@
                 <a v-if="selectedJobView.externalUrl" :href="selectedJobView.externalUrl" target="_blank" class="link external">打开 Jenkins</a>
               </div>
             </div>
-            <div v-else class="empty-line">选择流水线查看构建详情</div>
+            <div v-else class="empty-state empty-state--compact"><p class="empty-state__title">选择流水线查看构建详情</p></div>
           </aside>
         </div>
-        <div v-else class="empty-line">暂无流水线数据</div>
+        <div v-else class="empty-state empty-state--compact"><p class="empty-state__title">暂无流水线数据</p></div>
       </div>
 
       <div v-if="activeTab === 'resources'" class="tab-panel">
@@ -153,7 +153,7 @@
             </tbody>
           </table>
         </div>
-        <div v-else class="empty-line">暂无资源数据</div>
+        <div v-else class="empty-state empty-state--compact"><p class="empty-state__title">暂无资源数据</p></div>
       </div>
     </template>
   </ToolWorkspaceFrame>

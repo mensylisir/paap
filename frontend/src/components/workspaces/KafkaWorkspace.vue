@@ -33,7 +33,7 @@
             <span class="badge" :class="t.status === 'Ready' ? 'green' : 'gray'">{{ t.status }}</span>
           </div>
         </div>
-        <div v-else class="empty-line">暂无 Topic 数据</div>
+        <div v-else class="empty-state empty-state--compact"><p class="empty-state__title">暂无 Topic 数据</p></div>
       </div>
 
       <div v-if="activeTab === 'messages'" class="tab-panel">
@@ -55,7 +55,7 @@
             <pre class="message-body">{{ message.annotations?.value || message.description }}</pre>
           </div>
         </div>
-        <div v-else class="empty-line">暂无消息数据</div>
+        <div v-else class="empty-state empty-state--compact"><p class="empty-state__title">暂无消息数据</p></div>
       </div>
 
       <div v-if="activeTab === 'resources'" class="tab-panel">
@@ -72,7 +72,7 @@
             </tbody>
           </table>
         </div>
-        <div v-else class="empty-line">暂无资源数据</div>
+        <div v-else class="empty-state empty-state--compact"><p class="empty-state__title">暂无资源数据</p></div>
       </div>
 
       <aside class="object-detail" v-if="selectedResource">

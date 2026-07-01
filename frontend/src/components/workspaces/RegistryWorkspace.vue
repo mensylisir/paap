@@ -102,7 +102,7 @@
             </div>
           </div>
         </div>
-        <div v-else class="empty-line">暂无镜像仓库数据</div>
+        <div v-else class="empty-state empty-state--compact"><p class="empty-state__title">暂无镜像仓库数据</p></div>
       </div>
 
       <div v-if="activeTab === 'resources'" class="tab-panel">
@@ -124,7 +124,7 @@
             </tbody>
           </table>
         </div>
-        <div v-else class="empty-line">暂无资源数据</div>
+        <div v-else class="empty-state empty-state--compact"><p class="empty-state__title">暂无资源数据</p></div>
       </div>
     </template>
   </ToolWorkspaceFrame>
