@@ -17,24 +17,18 @@
         <h2 class="form-title">欢迎回来</h2>
         <p class="form-subtitle">登录以管理你的应用和环境</p>
         <form @submit.prevent="handleLogin" class="login-form">
-          <div class="form-group">
-            <label class="form-label">用户名</label>
-            <input v-model.trim="username" type="text" class="form-input" placeholder="请输入用户名" required />
-          </div>
-          <div class="form-group">
-            <label class="form-label">密码</label>
-            <input v-model.trim="password" type="password" class="form-input" placeholder="请输入密码" required />
-          </div>
+          <cv-text-input v-model="username" label="用户名" placeholder="请输入用户名" :disabled="loading" />
+          <cv-text-input v-model="password" label="密码" type="password" placeholder="请输入密码" :disabled="loading" />
           <p v-if="errorMessage" class="login-error" role="alert">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
             <span>{{ errorMessage }}</span>
           </p>
-          <button type="submit" class="rail-btn rail-btn--primary login-btn" :disabled="loading">
+          <cv-button kind="primary" type="submit" :disabled="loading">
             {{ loading ? '登录中...' : '登录' }}
-          </button>
-          <button type="button" class="rail-btn rail-btn--secondary login-btn" :disabled="loading" @click="loginWithKeycloak">
+          </cv-button>
+          <cv-button kind="secondary" :disabled="loading" @click="loginWithKeycloak">
             Keycloak 登录
-          </button>
+          </cv-button>
         </form>
       </div>
     </div>
@@ -220,40 +214,6 @@ onMounted(() => {
   gap: var(--paap-space-5);
 }
 
-.form-group {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.form-label {
-  font-size: var(--paap-fs-label);
-  font-weight: 500;
-  color: var(--paap-muted);
-}
-
-.form-input {
-  width: 100%;
-  padding: 10px 13px;
-  font-size: var(--paap-fs-body);
-  border: 1px solid var(--paap-border);
-  border-radius: var(--paap-radius-sm);
-  background: var(--paap-panel-subtle);
-  color: var(--paap-text);
-  outline: none;
-  font-family: inherit;
-  transition: border-color 0.15s, box-shadow 0.15s;
-}
-
-.form-input:focus {
-  border-color: var(--paap-accent);
-  box-shadow: var(--paap-accent-ring);
-}
-
-.form-input::placeholder {
-  color: var(--paap-muted);
-}
-
 .login-error {
   display: flex;
   align-items: center;
@@ -266,12 +226,6 @@ onMounted(() => {
   font-size: var(--paap-fs-compact);
   border-radius: var(--paap-radius-sm);
   line-height: 1.4;
-}
-
-.login-btn {
-  margin-top: var(--paap-space-2);
-  height: 40px;
-  font-size: var(--paap-fs-body);
 }
 
 @media (max-width: 672px) {
