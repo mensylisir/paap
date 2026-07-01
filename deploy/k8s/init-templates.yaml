@@ -77,12 +77,17 @@ data:
     echo ""
     echo "Uploading environment service templates to MinIO..."
     echo "================================"
-    find /service-templates -type f -name '*.yaml' | sort > /tmp/service-template-list
-    if [ ! -s /tmp/service-template-list ]; then
+    if [ ! -f /service-templates/.service-template-list ]; then
+      : > /service-templates/.service-template-list
+    fi
+    if [ ! -s /service-templates/.service-template-list ]; then
       echo "No environment service templates found in /service-templates/"
     fi
-    while IFS= read -r template; do
-      relative_path=${template#/service-templates/}
+    while IFS= read -r relative_path; do
+      if [ -z "$relative_path" ]; then
+        continue
+      fi
+      template="/service-templates/$relative_path"
       echo "Uploading $relative_path..."
 
       mc cp "$template" "paap-minio/paap-charts/service-templates/$relative_path"
@@ -93,7 +98,7 @@ data:
       else
         echo "✗ Failed to upload service template $relative_path"
       fi
-    done < /tmp/service-template-list
+    done < /service-templates/.service-template-list
 
     platform_addon_count=0
     echo ""
@@ -191,7 +196,8 @@ spec:
             cp /platform-addons/*.tar.gz /staged-platform-addons/ || true
             ls -la /templates
             ls -la /staged-config-templates
-            find /staged-service-templates -maxdepth 3 -type f -print | sort
+            find /staged-service-templates -type f -name '*.yaml' | sed 's#^/staged-service-templates/##' | sort > /staged-service-templates/.service-template-list
+            cat /staged-service-templates/.service-template-list
             ls -la /staged-platform-addons
         volumeMounts:
         - name: templates
