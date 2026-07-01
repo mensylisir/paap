@@ -148,6 +148,7 @@ onMounted(() => {
   color: #ffffff;
   position: relative;
   overflow: hidden;
+  animation: fade-in 0.4s 0.1s ease-out both;
 }
 
 .brand-bg-pattern {
@@ -197,6 +198,7 @@ onMounted(() => {
   flex-direction: column;
   justify-content: center;
   padding: var(--paap-space-12);
+  animation: fade-in 0.4s 0.15s ease-out both;
 }
 
 .form-title {
