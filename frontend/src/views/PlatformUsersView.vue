@@ -10,37 +10,10 @@
     <div v-if="pageError" class="page-error" role="alert">{{ pageError }}</div>
 
     <!-- Tabs -->
-    <div class="tabs-bar" role="tablist">
-      <button
-        type="button"
-        class="tab-btn"
-        :class="{ active: activeTab === 'users' }"
-        role="tab"
-        :aria-selected="activeTab === 'users'"
-        @click="setActiveTab('users')"
-      >
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M16 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"/>
-          <circle cx="9.5" cy="7" r="4"/>
-          <path d="M22 21v-2a4 4 0 0 0-3-3.9"/>
-          <path d="M16 3.1a4 4 0 0 1 0 7.8"/>
-        </svg>
-        <span>用户管理</span>
-      </button>
-      <button
-        type="button"
-        class="tab-btn"
-        :class="{ active: activeTab === 'roles' }"
-        role="tab"
-        :aria-selected="activeTab === 'roles'"
-        @click="setActiveTab('roles')"
-      >
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-        </svg>
-        <span>角色管理</span>
-      </button>
-    </div>
+    <cv-tabs @tab-selected="(index: number) => setActiveTab(index === 0 ? 'users' : 'roles')">
+      <cv-tab label="用户管理" :selected="activeTab === 'users'" />
+      <cv-tab label="角色管理" :selected="activeTab === 'roles'" />
+    </cv-tabs>
 
     <!-- ========== USERS TAB ========== -->
     <div v-show="activeTab === 'users'" class="tab-content" role="tabpanel">
@@ -109,11 +82,13 @@
           <option value="app">应用</option>
           <option value="env">环境</option>
         </select>
-        <button type="button" class="rail-btn rail-btn--ghost rail-btn--sm" :disabled="rolesLoading" @click="loadRoles">
+        <cv-button kind="ghost" size="sm" :disabled="rolesLoading" @click="loadRoles">
           {{ rolesLoading ? '加载中...' : '刷新' }}
-        </button>
+        </cv-button>
         <div class="toolbar-spacer"></div>
-        <router-link class="rail-btn rail-btn--primary rail-btn--sm" to="/roles/new">新建角色</router-link>
+        <router-link to="/roles/new" custom v-slot="{ navigate }">
+          <cv-button kind="primary" size="sm" @click="navigate">新建角色</cv-button>
+        </router-link>
       </div>
 
       <section class="roles-panel slide-up">
@@ -146,18 +121,20 @@
                 </td>
                 <td><span class="perm-badge">{{ role.permissionIds.length }}</span></td>
                 <td class="cell-actions">
-                  <router-link class="rail-btn rail-btn--ghost rail-btn--sm" :to="`/roles/${role.id}`">
-                    {{ role.editable && !role.builtin ? '编辑' : '查看' }}
+                  <router-link :to="`/roles/${role.id}`" custom v-slot="{ navigate }">
+                    <cv-button kind="ghost" size="sm" @click="navigate">
+                      {{ role.editable && !role.builtin ? '编辑' : '查看' }}
+                    </cv-button>
                   </router-link>
-                  <button
+                  <cv-button
                     v-if="!role.builtin && role.editable"
-                    type="button"
-                    class="rail-btn rail-btn--danger rail-btn--sm"
+                    kind="danger"
+                    size="sm"
                     :disabled="deletingRoleId === role.id"
                     @click="promptDeleteRole(role)"
                   >
                     {{ deletingRoleId === role.id ? '删除中...' : '删除' }}
-                  </button>
+                  </cv-button>
                 </td>
               </tr>
             </tbody>
@@ -166,18 +143,20 @@
       </section>
 
       <!-- Delete confirmation modal -->
-      <div v-if="pendingDeleteRole" class="modal-backdrop" role="presentation" @click.self="pendingDeleteRole = null">
-        <div class="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-role-title">
-          <h2 id="delete-role-title">删除角色</h2>
-          <p>{{ pendingDeleteRole.name }} 删除后无法继续分配给用户。</p>
-          <div class="confirm-actions">
-            <button type="button" class="rail-btn rail-btn--ghost" :disabled="deletingRoleId !== null" @click="pendingDeleteRole = null">取消</button>
-            <button type="button" class="rail-btn rail-btn--danger" :disabled="deletingRoleId !== null" @click="confirmDeleteRole">
-              {{ deletingRoleId !== null ? '删除中...' : '删除' }}
-            </button>
-          </div>
-        </div>
-      </div>
+      <cv-modal
+        kind="danger"
+        :visible="pendingDeleteRole !== null"
+        @modal-hidden="pendingDeleteRole = null"
+        @primary-click="confirmDeleteRole"
+        :primary-button-disabled="deletingRoleId !== null"
+        primary-button-label="删除"
+        secondary-button-label="取消"
+        title="删除角色"
+      >
+        <template #content>
+          <p>{{ pendingDeleteRole?.name }} 删除后无法继续分配给用户。</p>
+        </template>
+      </cv-modal>
     </div>
   </div>
 </template>
@@ -430,42 +409,6 @@ onMounted(async () => {
   padding: 10px 12px;
   font-size: var(--paap-fs-compact);
   margin-bottom: 16px;
-}
-
-/* ── Tabs ── */
-.tabs-bar {
-  display: flex;
-  gap: 0;
-  margin-bottom: 20px;
-  border-bottom: 1px solid var(--paap-border);
-}
-
-.tab-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 10px 18px;
-  font-size: var(--paap-fs-body);
-  font-weight: 500;
-  color: var(--paap-muted);
-  background: transparent;
-  border: none;
-  border-bottom: 2px solid transparent;
-  margin-bottom: -1px;
-  cursor: pointer;
-  transition: color 0.15s, border-color 0.15s, background 0.15s;
-  white-space: nowrap;
-}
-
-.tab-btn:hover {
-  color: var(--paap-text);
-  background: var(--paap-hover, rgba(0,0,0,0.04));
-}
-
-.tab-btn.active {
-  color: var(--paap-text);
-  border-bottom-color: var(--paap-accent);
-  font-weight: 600;
 }
 
 .tab-content {
@@ -762,61 +705,12 @@ onMounted(async () => {
   gap: 8px;
 }
 
-/* ── Delete Modal ── */
-.modal-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: var(--paap-z-dropdown, 9000);
-  display: grid;
-  place-items: center;
-  padding: 24px;
-  background: var(--paap-overlay, rgba(0,0,0,0.3));
-}
-
-.confirm-dialog {
-  width: min(420px, 100%);
-  border: 1px solid var(--paap-border);
-  border-radius: var(--paap-radius, 8px);
-  background: var(--paap-panel);
-  box-shadow: var(--paap-shadow-lg);
-  padding: 20px;
-}
-
-.confirm-dialog h2 {
-  color: var(--paap-text);
-  font-size: 18px;
-  font-weight: 600;
-  margin-bottom: 8px;
-}
-
-.confirm-dialog p {
-  color: var(--paap-muted);
-  font-size: var(--paap-fs-body);
-  margin-bottom: 18px;
-}
-
-.confirm-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-}
-
 /* ── Responsive ── */
 @media (max-width: 720px) {
   .page-header,
   .roles-toolbar {
     flex-direction: column;
     align-items: stretch;
-  }
-
-  .tabs-bar {
-    overflow-x: auto;
-    gap: 0;
-  }
-
-  .tab-btn {
-    flex: 1;
-    justify-content: center;
   }
 
   .users-card,
