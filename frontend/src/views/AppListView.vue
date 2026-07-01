@@ -10,13 +10,15 @@
           <h1 class="page-title">应用列表</h1>
           <p class="page-subtitle">选择应用后进入应用菜单，再管理概览和环境</p>
         </div>
-        <button v-has-perm="'app.create'" class="rail-btn rail-btn--primary" @click="openCreateAppModal">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <line x1="12" y1="5" x2="12" y2="19"/>
-            <line x1="5" y1="12" x2="19" y2="12"/>
-          </svg>
+        <cv-button v-has-perm="'app.create'" kind="primary" @click="openCreateAppModal">
+          <template #icon>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="12" y1="5" x2="12" y2="19"/>
+              <line x1="5" y1="12" x2="19" y2="12"/>
+            </svg>
+          </template>
           创建应用
-        </button>
+        </cv-button>
       </header>
 
       <section v-if="listedApps.length" class="app-list slide-up">
@@ -45,15 +47,16 @@
             <span class="app-stat"><strong>{{ appResourceSummary(app).toolCount }}</strong><em>工具</em></span>
             <span class="app-stat"><strong>{{ appResourceSummary(app).middlewareCount }}</strong><em>中间件</em></span>
             <span class="app-stat"><strong>{{ appComponentCount(app) }}</strong><em>组件</em></span>
-            <button
+            <cv-button
               v-if="!app.isSystem"
-              type="button"
-              class="rail-btn rail-btn--danger rail-btn--sm app-delete-btn"
+              kind="danger"
+              size="sm"
+              class="app-delete-btn"
               :disabled="deletingAppId === Number(app.id)"
               @click.stop="openDeleteApplicationDialog(app)"
             >
               {{ deletingAppId === Number(app.id) ? '删除中...' : '删除应用' }}
-            </button>
+            </cv-button>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <polyline points="9 18 15 12 9 6"/>
             </svg>
@@ -71,7 +74,7 @@
         </div>
         <div class="empty-state-text">应用加载失败</div>
         <p class="empty-state-desc">{{ loadError }}</p>
-        <button class="rail-btn rail-btn--primary" @click="loadApps">重新加载</button>
+        <cv-button kind="primary" @click="loadApps">重新加载</cv-button>
       </section>
 
       <section v-else-if="!listedApps.length" class="empty-state slide-up">
@@ -84,73 +87,43 @@
         </div>
         <div class="empty-state-text">还没有应用</div>
         <p class="empty-state-desc">创建应用后可以继续创建第一个环境，并直接进入环境工作台。</p>
-        <button v-has-perm="'app.create'" class="rail-btn rail-btn--primary" @click="openCreateAppModal">创建第一个应用</button>
+        <cv-button v-has-perm="'app.create'" kind="primary" @click="openCreateAppModal">创建第一个应用</cv-button>
       </section>
     </template>
 
-    <Teleport to="body">
-      <div v-if="showCreateAppModal" class="modal-overlay" role="dialog" aria-modal="true" @click.self="closeCreateAppModal">
-        <div class="modal-container">
-          <div class="modal-header">
-            <div>
-              <p class="modal-label">创建应用</p>
-              <p class="modal-heading">新建应用</p>
-            </div>
-            <button class="modal-close" type="button" aria-label="关闭" @click="closeCreateAppModal">
-              <svg width="20" height="20" viewBox="0 0 32 32" fill="currentColor"><path d="M24 9.4L22.6 8 16 14.6 9.4 8 8 9.4l6.6 6.6L8 22.6 9.4 24l6.6-6.6 6.6 6.6 1.4-1.4-6.6-6.6L24 9.4z"/></svg>
-            </button>
-          </div>
-          <div class="modal-body">
-            <div class="form-item">
-              <label class="form-label">应用名称 <span class="required">*</span></label>
-              <input v-model.trim="appForm.name" class="rail-input" placeholder="例如：订单服务" @keyup.enter="submitApp" />
-            </div>
-            <div class="form-item">
-              <label class="form-label">应用标识</label>
-              <input v-model.trim="appForm.identifier" class="rail-input" placeholder="留空由后台生成" />
-              <div class="form-helper">当前预览：{{ identifierPreview }}</div>
-            </div>
-            <div class="form-item">
-              <label class="form-label">应用描述</label>
-              <textarea v-model.trim="appForm.description" class="rail-textarea" rows="3" placeholder="简要描述应用用途"></textarea>
-            </div>
-            <div v-if="formError" class="form-error" role="alert">{{ formError }}</div>
-          </div>
-          <div class="modal-footer">
-            <button type="button" class="rail-btn rail-btn--ghost" :disabled="submitting" @click="closeCreateAppModal">取消</button>
-            <button type="button" class="rail-btn rail-btn--primary" :disabled="!appForm.name || submitting" @click="submitApp">
-              {{ submitting ? '创建中...' : '创建应用' }}
-            </button>
-          </div>
-        </div>
-      </div>
-    </Teleport>
+    <cv-modal
+      :visible="showCreateAppModal"
+      title="新建应用"
+      close-aria-label="关闭"
+      :primary-button-disabled="!appForm.name || submitting"
+      primary-button-label="创建应用"
+      secondary-button-label="取消"
+      @primary-click="submitApp"
+      @secondary-click="closeCreateAppModal"
+      @modal-hidden="closeCreateAppModal"
+    >
+      <cv-text-input v-model="appForm.name" label="应用名称" placeholder="例如：订单服务" @keyup.enter="submitApp" />
+      <cv-text-input v-model="appForm.identifier" label="应用标识" placeholder="留空由后台生成" />
+      <p class="form-helper">当前预览：{{ identifierPreview }}</p>
+      <cv-text-area v-model="appForm.description" label="应用描述" placeholder="简要描述应用用途" :rows="3" />
+      <div v-if="formError" class="form-error" role="alert">{{ formError }}</div>
+    </cv-modal>
 
-    <Teleport to="body">
-      <div v-if="pendingDeleteApp" class="modal-overlay" role="dialog" aria-modal="true" @click.self="closeDeleteApplicationDialog">
-        <div class="modal-container">
-          <div class="modal-header">
-            <div>
-              <p class="modal-label">删除应用</p>
-              <p class="modal-heading">确认删除 {{ pendingDeleteApp.name || pendingDeleteApp.id }}</p>
-            </div>
-            <button class="modal-close" type="button" aria-label="关闭" :disabled="deletingAppId !== null" @click="closeDeleteApplicationDialog">
-              <svg width="20" height="20" viewBox="0 0 32 32" fill="currentColor"><path d="M24 9.4L22.6 8 16 14.6 9.4 8 8 9.4l6.6 6.6L8 22.6 9.4 24l6.6-6.6 6.6 6.6 1.4-1.4-6.6-6.6L24 9.4z"/></svg>
-            </button>
-          </div>
-          <div class="modal-body">
-            <p class="confirm-text">这会删除应用下的环境记录和关联资源，请确认后继续。</p>
-            <div v-if="deleteError" class="form-error" role="alert">{{ deleteError }}</div>
-          </div>
-          <div class="modal-footer">
-            <button type="button" class="rail-btn rail-btn--ghost" :disabled="deletingAppId !== null" @click="closeDeleteApplicationDialog">取消</button>
-            <button type="button" class="rail-btn rail-btn--danger" :disabled="deletingAppId !== null" @click="performDeleteApplication">
-              {{ deletingAppId !== null ? '删除中...' : '确认删除' }}
-            </button>
-          </div>
-        </div>
-      </div>
-    </Teleport>
+    <cv-modal
+      :visible="!!pendingDeleteApp"
+      title="确认删除"
+      kind="danger"
+      close-aria-label="关闭"
+      primary-button-label="确认删除"
+      secondary-button-label="取消"
+      :primary-button-disabled="deletingAppId !== null"
+      @primary-click="performDeleteApplication"
+      @secondary-click="closeDeleteApplicationDialog"
+      @modal-hidden="closeDeleteApplicationDialog"
+    >
+      <p class="confirm-text">这会删除应用下的环境记录和关联资源，请确认后继续。</p>
+      <div v-if="deleteError" class="form-error" role="alert">{{ deleteError }}</div>
+    </cv-modal>
   </div>
 </template>
 
@@ -322,27 +295,13 @@ onMounted(loadApps)
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 .modal-container {   background: var(--paap-panel); width: min(520px, 100%); max-height: 90vh; overflow-y: auto; border-radius: var(--paap-radius); border: 1px solid var(--paap-border); box-shadow: var(--paap-shadow-lg); }
-.modal-header { display: flex; justify-content: space-between; align-items: flex-start; padding: var(--paap-space-5) var(--paap-space-6); border-bottom: 1px solid var(--paap-border); }
-.modal-label { font-size: var(--paap-fs-small); color: var(--paap-muted); text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600; margin-bottom: 4px; }
-.modal-heading { color: var(--paap-text); font-size: 18px; font-weight: 600; }
-.modal-close { border: 1px solid var(--paap-border); background: var(--paap-panel); color: var(--paap-muted); border-radius: var(--paap-radius-sm); width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
-.modal-close:hover { background: var(--paap-panel-subtle); color: var(--paap-text); }
-.modal-body { padding: var(--paap-space-6); }
-.modal-footer { display: flex; justify-content: flex-end; gap: var(--paap-space-2); padding: var(--paap-space-4) var(--paap-space-6); border-top: 1px solid var(--paap-border); }
-.form-item { display: grid; gap: 6px; margin-bottom: var(--paap-space-5); }
-.form-item:last-child { margin-bottom: 0; }
-.form-label { font-size: var(--paap-fs-label); color: var(--paap-muted); font-weight: 500; }
-.required { color: var(--paap-danger); }
 .form-helper { font-size: var(--paap-fs-label); color: var(--paap-muted); }
 .confirm-text { color: var(--paap-text); font-size: var(--paap-fs-body); line-height: 1.6; margin: 0; }
 .confirm-text + .form-error { margin-top: var(--paap-space-4); }
-.rail-textarea { width: 100%; padding: 9px 12px; resize: vertical; border: 1px solid var(--paap-border); border-radius: var(--paap-radius-sm); background: var(--paap-panel); color: var(--paap-text); outline: none; font-family: inherit; font-size: var(--paap-fs-body); line-height: 1.5; }
-.rail-textarea:focus { border-color: var(--paap-accent); box-shadow: var(--paap-focus-ring); }
 .form-error { border: 1px solid var(--paap-danger); background: var(--paap-danger-soft); color: var(--paap-danger); border-radius: var(--paap-radius); padding: 10px 12px; font-size: var(--paap-fs-compact); line-height: 1.4; }
 @media (max-width: 672px) {
   .rail-page { padding: var(--paap-space-6) var(--paap-space-4) var(--paap-space-10); }
   .page-header, .app-card { flex-direction: column; align-items: flex-start; }
   .app-card-meta { width: 100%; justify-content: space-between; }
-  .modal-footer { flex-direction: column; }
 }
 </style>
