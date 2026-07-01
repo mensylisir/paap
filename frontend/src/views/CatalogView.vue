@@ -46,9 +46,11 @@
         placeholder="搜索名称、类型、分组或描述..."
         @keydown.esc="clearCatalogSearch"
       />
-      <button v-if="filterQuery" class="catalog-search-clear" @click="clearCatalogSearch" title="清除搜索">
-        <svg width="12" height="12" viewBox="0 0 32 32" fill="currentColor"><path d="M24 9.4L22.6 8 16 14.6 9.4 8 8 9.4l6.6 6.6L8 22.6 9.4 24l6.6-6.6 6.6 6.6 1.4-1.4-6.6-6.6L24 9.4z"/></svg>
-      </button>
+      <cv-button v-if="filterQuery" kind="ghost" size="sm" @click="clearCatalogSearch" :tooltip="'清除搜索'">
+        <template #icon>
+          <svg width="12" height="12" viewBox="0 0 32 32" fill="currentColor"><path d="M24 9.4L22.6 8 16 14.6 9.4 8 8 9.4l6.6 6.6L8 22.6 9.4 24l6.6-6.6 6.6 6.6 1.4-1.4-6.6-6.6L24 9.4z"/></svg>
+        </template>
+      </cv-button>
     </div>
 
     <!-- Tab bar -->
@@ -129,7 +131,7 @@
     <div v-if="!loading && hasCatalogItems && filterQuery.trim() && catalogGroups.length === 0" class="catalog-empty-search">
       <strong>没有匹配的服务或中间件</strong>
       <span>当前目录中没有包含“{{ filterQuery.trim() }}”的名称、类型、分组或描述。</span>
-      <button type="button" class="catalog-empty-clear" @click="clearCatalogSearch">清除搜索</button>
+      <cv-button kind="secondary" size="sm" @click="clearCatalogSearch">清除搜索</cv-button>
     </div>
 
     <p v-if="!loading && !hasCatalogItems && !pageError" class="no-data">没有找到服务数据</p>
@@ -540,21 +542,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', catalogSearchShort
 .catalog-search-input::placeholder {
   color: var(--paap-muted);
 }
-.catalog-search-clear {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: none;
-  border: none;
-  cursor: pointer;
-  color: var(--paap-muted);
-  padding: 0.25rem;
-  border-radius: var(--paap-radius-sm);
-  flex-shrink: 0;
-}
-.catalog-search-clear:hover {
-  color: var(--paap-text);
-}
+
 
 /* ===== Tab bar ===== */
 .catalog-tabs {
@@ -790,22 +778,6 @@ onBeforeUnmount(() => document.removeEventListener('keydown', catalogSearchShort
   font-size: 0.9375rem;
   font-weight: 600;
 }
-.catalog-empty-clear {
-  justify-self: start;
-  min-height: 32px;
-  padding: 0 12px;
-  border: 1px solid var(--paap-border-strong);
-  border-radius: var(--paap-radius);
-  background: var(--paap-panel);
-  color: var(--paap-text);
-  font: inherit;
-  font-size: 0.875rem;
-  cursor: pointer;
-}
-.catalog-empty-clear:hover {
-  background: var(--paap-accent-fill);
-}
-
 @media (max-width: 672px) {
   .rail-page {
     padding: var(--paap-space-6) var(--paap-space-4) var(--paap-space-10);
