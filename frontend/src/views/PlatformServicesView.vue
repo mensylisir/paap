@@ -5,9 +5,9 @@
         <h1 class="page-title">平台服务</h1>
         <p class="page-subtitle">跨应用查看服务实例、共享引用和外部连接</p>
       </div>
-      <button class="rail-btn rail-btn--secondary" :disabled="loading" @click="loadStats">
+      <cv-button kind="secondary" :disabled="loading" @click="loadStats">
         {{ loading ? '刷新中...' : '刷新' }}
-      </button>
+      </cv-button>
     </header>
 
     <div v-if="error" class="form-error" role="alert">{{ error }}</div>
@@ -79,7 +79,7 @@
             <h2>{{ selectedService.name || selectedService.type }}</h2>
             <p>{{ selectedService.type }} · {{ selectedService.category || '未分类' }}</p>
           </div>
-          <button class="rail-btn rail-btn--ghost" type="button" @click="selectedType = ''">关闭</button>
+          <cv-button kind="ghost" type="button" @click="selectedType = ''">关闭</cv-button>
         </header>
 
         <div class="detail-summary-grid">
