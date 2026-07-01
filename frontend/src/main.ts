@@ -7,7 +7,10 @@ import { usePermissionStore } from './stores/permission'
 import './styles/carbon-theme.css'
 import './style.scss'
 
+import carbonPlugin from './plugins/carbon-vue'
+
 const app = createApp(App)
+app.use(carbonPlugin)
 const pinia = createPinia()
 
 app.use(pinia)
