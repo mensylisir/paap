@@ -6,10 +6,12 @@
         <h1 class="page-title">应用概览</h1>
         <p class="page-desc">管理应用的运行环境和部署状态</p>
       </div>
-      <button v-if="!isSystemApp" class="rail-btn rail-btn--primary" @click="openCreateEnvironmentModal">
-        <svg width="16" height="16" viewBox="0 0 32 32" fill="currentColor"><path d="M17 15V7h-2v8H7v2h8v8h2v-8h8v-2z"/></svg>
+      <cv-button v-if="!isSystemApp" kind="primary" @click="openCreateEnvironmentModal">
+        <template #icon>
+          <svg width="16" height="16" viewBox="0 0 32 32" fill="currentColor"><path d="M17 15V7h-2v8H7v2h8v8h2v-8h8v-2z"/></svg>
+        </template>
         创建环境
-      </button>
+      </cv-button>
     </header>
 
     <!-- KPI -->
@@ -40,9 +42,9 @@
           <rect x="18" y="18" width="8" height="3" rx="1" fill="var(--paap-border)"/>
         </svg>
         <p class="rail-empty-desc" style="max-width:360px">暂无环境。创建第一个环境来开始部署服务。</p>
-        <button v-if="!isSystemApp" class="rail-btn rail-btn--primary" style="margin-top:12px" @click="openCreateEnvironmentModal">
+        <cv-button v-if="!isSystemApp" kind="primary" style="margin-top:12px" @click="openCreateEnvironmentModal">
           创建第一个环境
-        </button>
+        </cv-button>
       </div>
 
       <div v-else class="env-grid">
@@ -57,15 +59,15 @@
                 <span class="rail-status-dot" :class="`rail-status-dot--${environmentStatusDotClass(effectiveEnvironmentStatus(env))}`" />
                 {{ environmentStatusLabel(effectiveEnvironmentStatus(env)) }}
               </span>
-              <button
+              <cv-button
                 v-if="!env.isSystem"
-                type="button"
-                class="rail-btn rail-btn--danger rail-btn--sm env-delete-btn"
+                kind="danger"
+                size="sm"
                 :disabled="deletingEnvId === Number(env.id)"
                 @click.stop="openDeleteEnvironmentDialog(env)"
               >
                 {{ deletingEnvId === Number(env.id) ? '删除中...' : '删除环境' }}
-              </button>
+              </cv-button>
             </div>
           </div>
           <div class="env-meta">
@@ -113,31 +115,26 @@
       @submit="submitEnvironment"
     />
 
-    <Teleport to="body">
-      <div v-if="pendingDeleteEnv" class="modal-overlay" role="dialog" aria-modal="true" @click.self="closeDeleteEnvironmentDialog">
-        <div class="modal-container">
-          <div class="modal-header">
-            <div>
-              <p class="modal-label">删除环境</p>
-              <p class="modal-heading">确认删除 {{ pendingDeleteEnv.name || pendingDeleteEnv.id }}</p>
-            </div>
-            <button class="modal-close" type="button" aria-label="关闭" :disabled="deletingEnvId !== null" @click="closeDeleteEnvironmentDialog">
-              <svg width="20" height="20" viewBox="0 0 32 32" fill="currentColor"><path d="M24 9.4L22.6 8 16 14.6 9.4 8 8 9.4l6.6 6.6L8 22.6 9.4 24l6.6-6.6 6.6 6.6 1.4-1.4-6.6-6.6L24 9.4z"/></svg>
-            </button>
-          </div>
-          <div class="modal-body">
-            <p class="confirm-text">这会删除环境记录和关联资源，请确认后继续。</p>
-            <div v-if="deleteError" class="form-error" role="alert">{{ deleteError }}</div>
-          </div>
-          <div class="modal-footer">
-            <button type="button" class="rail-btn rail-btn--ghost" :disabled="deletingEnvId !== null" @click="closeDeleteEnvironmentDialog">取消</button>
-            <button type="button" class="rail-btn rail-btn--danger" :disabled="deletingEnvId !== null" @click="performDeleteEnvironment">
-              {{ deletingEnvId !== null ? '删除中...' : '确认删除' }}
-            </button>
-          </div>
-        </div>
-      </div>
-    </Teleport>
+    <cv-modal
+      v-if="pendingDeleteEnv"
+      kind="danger"
+      :visible="!!pendingDeleteEnv"
+      @modal-hidden="closeDeleteEnvironmentDialog"
+      :close-aria-label="'关闭'"
+    >
+      <template #title>删除环境</template>
+      <template #content>
+        <p>确认删除 {{ pendingDeleteEnv.name || pendingDeleteEnv.id }}</p>
+        <p style="margin-top:8px;color:var(--paap-muted);font-size:var(--paap-fs-body)">这会删除环境记录和关联资源，请确认后继续。</p>
+        <div v-if="deleteError" class="form-error" role="alert" style="margin-top:8px">{{ deleteError }}</div>
+      </template>
+      <template #footer>
+        <cv-button kind="ghost" :disabled="deletingEnvId !== null" @click="closeDeleteEnvironmentDialog">取消</cv-button>
+        <cv-button kind="danger" :disabled="deletingEnvId !== null" @click="performDeleteEnvironment">
+          {{ deletingEnvId !== null ? '删除中...' : '确认删除' }}
+        </cv-button>
+      </template>
+    </cv-modal>
   </div>
 </template>
 
@@ -321,102 +318,13 @@ const performDeleteEnvironment = async () => {
   padding: var(--paap-space-5) var(--paap-space-5) var(--paap-space-10);
   max-width: none;
 }
-.modal-container {
-  width: min(520px, 100%);
-  max-height: 90vh;
-  overflow-y: auto;
-  background: var(--paap-panel);
-  border: 1px solid var(--paap-border);
-  border-radius: var(--paap-radius);
-  box-shadow: var(--paap-shadow-lg);
-}
-.modal-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--paap-space-4);
-  padding: var(--paap-space-5) var(--paap-space-6);
-  border-bottom: 1px solid var(--paap-border);
-}
-.modal-label {
-  margin: 0 0 4px;
-  color: var(--paap-muted);
-  font-size: var(--paap-fs-small);
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-.modal-heading {
-  margin: 0;
-  color: var(--paap-text);
-  font-size: 18px;
-  font-weight: 600;
-}
-.modal-close {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border: 1px solid var(--paap-border);
-  border-radius: var(--paap-radius-sm);
-  background: transparent;
-  color: var(--paap-muted);
-  cursor: pointer;
-}
-.modal-body { padding: var(--paap-space-6); }
-.modal-footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--paap-space-2);
-  padding: var(--paap-space-4) var(--paap-space-6);
-  border-top: 1px solid var(--paap-border);
-}
-.form-item {
-  display: grid;
-  gap: 6px;
-  margin-bottom: var(--paap-space-5);
-}
-.form-item:last-child { margin-bottom: 0; }
-.form-label {
-  color: var(--paap-muted);
-  font-size: var(--paap-fs-label);
-  font-weight: 500;
-}
-.required,
-.form-error { color: var(--paap-danger); }
-.form-helper {
-  color: var(--paap-muted);
-  font-size: var(--paap-fs-label);
-}
 .form-error {
+  color: var(--paap-danger);
   padding: 10px 12px;
   border: 1px solid var(--paap-danger);
   border-radius: var(--paap-radius-sm);
   background: var(--paap-danger-soft);
   font-size: var(--paap-fs-compact);
-}
-.radio-group {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--paap-space-2);
-}
-.radio-item {
-  display: flex;
-  align-items: center;
-  gap: var(--paap-space-2);
-  min-height: 38px;
-  padding: 8px 10px;
-  border: 1px solid var(--paap-border);
-  border-radius: var(--paap-radius-sm);
-  background: var(--paap-panel);
-  color: var(--paap-muted);
-  cursor: pointer;
-}
-.radio-item.active {
-  border-color: var(--paap-accent);
-  background: var(--paap-accent-soft);
-  color: var(--paap-text);
 }
 
 .page-header {
