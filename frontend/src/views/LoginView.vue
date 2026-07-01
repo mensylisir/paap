@@ -1,6 +1,6 @@
 <template>
   <div class="login-page">
-    <div class="login-card">
+    <div class="login-card slide-up">
       <div class="brand-panel">
         <div class="brand-bg-pattern" />
         <div class="brand-icon">

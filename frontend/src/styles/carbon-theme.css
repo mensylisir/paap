@@ -1044,3 +1044,10 @@ textarea:focus-visible {
   transform: scale(0.97);
   transition: transform 0.08s ease;
 }
+
+.modal-overlay {
+  animation: fade-in 0.15s ease-out;
+}
+.modal-overlay .modal-container {
+  animation: scale-in 0.2s ease-out;
+}
