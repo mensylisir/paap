@@ -7060,7 +7060,7 @@ func TestToolHTTPBaseURLUsesInstalledReleaseServiceNames(t *testing.T) {
 		{serviceType: "log", namespace: "test-staging-log", want: "http://test-staging-log-loki.test-staging-log.svc.cluster.local:3100"},
 		{serviceType: "log", namespace: "test-staging-loki", want: "http://test-staging-loki.test-staging-loki.svc.cluster.local:3100"},
 		{serviceType: "ci", namespace: "test-staging-ci", want: "http://test-staging-ci.test-staging-ci.svc.cluster.local:8080"},
-		{serviceType: "registry", namespace: "test-staging-registry", want: "https://test-staging-registry.test-staging-registry.svc.cluster.local:5000"},
+		{serviceType: "registry", namespace: "test-staging-registry", want: "http://test-staging-registry.test-staging-registry.svc.cluster.local:5000"},
 	}
 	for _, tc := range cases {
 		got := toolHTTPBaseURL(model.ServiceInstallation{ServiceType: tc.serviceType, Namespace: tc.namespace})

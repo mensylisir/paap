@@ -893,7 +893,7 @@ func TestReconcileDoesNotProjectWriteWorkloadRBACIntoToolNamespaces(t *testing.T
 	}
 }
 
-func TestApplyRuntimeRegistryValuesInjectsRegistryTLSHost(t *testing.T) {
+func TestApplyRuntimeRegistryValuesLeavesRegistryUnchanged(t *testing.T) {
 	t.Setenv("PAAP_REGISTRY_HOST_TEMPLATE", "registry.{app}-{env}.corp.example.com:5443")
 	values := map[string]interface{}{}
 	svc := &paapv1.ServiceInstance{
@@ -909,13 +909,10 @@ func TestApplyRuntimeRegistryValuesInjectsRegistryTLSHost(t *testing.T) {
 
 	applyRuntimeRegistryValues(svc, values)
 
-	tlsValues, ok := values["tls"].(map[string]interface{})
-	if !ok || tlsValues["commonName"] != "registry.shop-dev.corp.example.com" {
-		t.Fatalf("expected registry tls commonName, got %#v", values)
-	}
-	ingressValues, ok := values["ingress"].(map[string]interface{})
-	if !ok || ingressValues["host"] != "registry.shop-dev.corp.example.com" {
-		t.Fatalf("expected registry ingress host, got %#v", values)
+	// HTTP-only mode: chart defaults (tls.enabled: false, port 5000) are correct.
+	// No runtime overrides should be injected.
+	if len(values) != 0 {
+		t.Fatalf("expected no values injected for registry, got %#v", values)
 	}
 }
 

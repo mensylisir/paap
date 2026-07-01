@@ -6041,7 +6041,7 @@ func toolHTTPBaseURL(inst model.ServiceInstallation) string {
 	case "ci":
 		return fmt.Sprintf("http://%s.%s.svc.cluster.local:8080", inst.Namespace, inst.Namespace)
 	case "registry":
-		return fmt.Sprintf("https://%s.%s.svc.cluster.local:5000", inst.Namespace, inst.Namespace)
+		return fmt.Sprintf("http://%s.%s.svc.cluster.local:5000", inst.Namespace, inst.Namespace)
 	case "harbor":
 		return fmt.Sprintf("http://harbor-portal.%s.svc.cluster.local", inst.Namespace)
 	case "minio":

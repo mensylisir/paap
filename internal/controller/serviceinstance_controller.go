@@ -956,8 +956,8 @@ func applyRuntimeRegistryValues(svc *paapv1.ServiceInstance, values map[string]i
 	tlsHost := registryTLSHost(host)
 	switch serviceType {
 	case "registry":
-		setHelmNestedValue(values, "tls.commonName", tlsHost)
-		setHelmNestedValue(values, "ingress.host", tlsHost)
+		// HTTP-only mode — chart defaults (tls.enabled: false, port 5000) are correct.
+		// No runtime overrides needed.
 	case "harbor":
 		setHelmNestedValue(values, "externalURL", "https://"+host)
 		setHelmNestedValue(values, "expose.ingress.hosts.core", tlsHost)

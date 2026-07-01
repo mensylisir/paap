@@ -2,7 +2,6 @@ package k8s
 
 import (
 	"context"
-	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -20,25 +19,17 @@ type RegistryClient struct {
 }
 
 func NewRegistryClient(namespace string) *RegistryClient {
-	fallback := fmt.Sprintf("https://%s.%s.svc.cluster.local:5000", namespace, namespace)
+	fallback := fmt.Sprintf("http://%s.%s.svc.cluster.local:5000", namespace, namespace)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	baseURL := discoverService(ctx, namespace, "registry", fallback)
-	baseURL = "https://" + strings.TrimPrefix(strings.TrimPrefix(baseURL, "https://"), "http://")
 	return &RegistryClient{
 		BaseURL: baseURL,
 		HTTPClient: &http.Client{
 			Timeout:   10 * time.Second,
-			Transport: registryHTTPTransport(baseURL),
+			Transport: http.DefaultTransport,
 		},
 	}
-}
-
-func registryHTTPTransport(baseURL string) http.RoundTripper {
-	if strings.HasPrefix(baseURL, "https://") && strings.Contains(baseURL, ".svc.cluster.local") {
-		return &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}} //nolint:gosec
-	}
-	return http.DefaultTransport
 }
 
 func (r *RegistryClient) HealthCheck(ctx context.Context) error {
