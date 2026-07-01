@@ -18,34 +18,44 @@
       <p class="loading-text">加载中...</p>
     </div>
 
-    <div v-else-if="environments.length === 0" class="empty-card">
-      <h3 class="empty-title">暂无环境</h3>
-      <p class="empty-desc">创建环境并安装 deploy 工具后可查看部署状态。</p>
-      <button class="rail-btn rail-btn--primary" @click="goEnvs">创建环境</button>
+    <div v-else-if="environments.length === 0" class="empty-state slide-up">
+      <div class="empty-state__icon">
+        <svg width="20" height="20" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="8" width="24" height="16" rx="2"/><line x1="4" y1="14" x2="28" y2="14"/><rect x="8" y="18" width="6" height="3" rx="1"/><rect x="18" y="18" width="8" height="3" rx="1"/></svg>
+      </div>
+      <p class="empty-state__title">暂无环境</p>
+      <p class="empty-state__desc">创建环境并安装 deploy 工具后可查看部署状态。</p>
+      <div class="empty-state__action">
+        <button class="rail-btn rail-btn--primary" @click="goEnvs">创建环境</button>
+      </div>
     </div>
 
-    <div v-else-if="!deployEnvs.length" class="empty-card">
-      <h3 class="empty-title">未安装部署工具</h3>
-      <p class="empty-desc">在环境中安装 ArgoCD 后可查看部署状态。</p>
-      <button class="rail-btn rail-btn--primary" @click="goEnvs">安装 deploy</button>
+    <div v-else-if="!deployEnvs.length" class="empty-state slide-up">
+      <div class="empty-state__icon">
+        <svg width="20" height="20" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="16" cy="16" r="10"/><line x1="16" y1="12" x2="16" y2="18"/><line x1="16" y1="20" x2="16.01" y2="20"/></svg>
+      </div>
+      <p class="empty-state__title">未安装部署工具</p>
+      <p class="empty-state__desc">在环境中安装 ArgoCD 后可查看部署状态。</p>
+      <div class="empty-state__action">
+        <button class="rail-btn rail-btn--primary" @click="goEnvs">安装 deploy</button>
+      </div>
     </div>
 
     <template v-else>
-      <div class="env-tabs">
+      <div class="env-tabs slide-up">
         <button v-for="e in deployEnvs" :key="e.env.id" class="env-tab" :class="{ active: activeEnvId === e.env.id }" @click="activeEnvId = e.env.id">
           {{ e.env.name }}
           <span v-if="e.unsyncedCount > 0" class="tab-badge red">{{ e.unsyncedCount }}</span>
         </button>
       </div>
 
-      <div v-if="activeEnv" class="workspace-content">
-        <div class="summary-bar" v-if="apps.length">
+      <div v-if="activeEnv" class="workspace-content slide-up">
+        <div class="summary-bar slide-up" v-if="apps.length">
           <div class="sum-item"><div class="sum-num">{{ apps.length }}</div><div class="sum-label">应用</div></div>
           <div class="sum-item"><div class="sum-num green">{{ syncedCount }}</div><div class="sum-label">已同步</div></div>
           <div class="sum-item"><div class="sum-num red">{{ unhealthyCount }}</div><div class="sum-label">异常</div></div>
         </div>
 
-        <div v-if="apps.length" class="section">
+        <div v-if="apps.length" class="section slide-up">
           <div class="section-head">
             <h4 class="section-title"><span class="icon">🚀</span> ArgoCD Applications</h4>
             <span class="count">{{ apps.length }}</span>
@@ -81,7 +91,7 @@
             </div>
           </div>
         </div>
-        <div v-else class="ok-box">该环境暂无 ArgoCD Application</div>
+        <div v-else class="empty-state empty-state--compact"><p class="empty-state__title">该环境暂无 ArgoCD Application</p></div>
       </div>
     </template>
   </div>
@@ -222,7 +232,6 @@ const goEnvs = () => router.push(`/apps/${appId}/environments`)
 .badge.red { background: var(--paap-danger-bg); color: var(--paap-danger-text); }
 .badge.gray { background: var(--paap-panel-subtle); color: var(--paap-muted); }
 
-.ok-box { padding: 14px 16px; background: var(--paap-panel); color: var(--paap-muted); font-size: var(--paap-fs-compact); border-radius: var(--paap-radius); border: 1px solid var(--paap-border); }
 
 .app-list { display: flex; flex-direction: column; gap: 12px; }
 .app-card { background: var(--paap-panel); border: 1px solid var(--paap-border); border-radius: var(--paap-radius); padding: 16px; }

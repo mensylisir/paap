@@ -116,7 +116,7 @@
         <router-link class="rail-btn rail-btn--primary rail-btn--sm" to="/roles/new">新建角色</router-link>
       </div>
 
-      <section class="roles-panel">
+      <section class="roles-panel slide-up">
         <div v-if="rolesLoading" class="loading-text">加载中...</div>
         <div v-else-if="filteredRoles.length === 0" class="loading-text">暂无角色</div>
         <div v-else class="table-wrap">

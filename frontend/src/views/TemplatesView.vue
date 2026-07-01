@@ -29,7 +29,7 @@
     </nav>
 
     <!-- KPI -->
-    <div class="kpi-section">
+    <div class="kpi-section slide-up">
       <div class="kpi-card">
         <div class="kpi-number">{{ configTemplates.length }}</div>
         <div class="kpi-label">配置模板</div>
@@ -37,7 +37,7 @@
     </div>
 
     <!-- Template list -->
-    <section class="section-card">
+    <section class="section-card slide-up">
       <div class="section-header">
         <div>
           <h2 class="rail-section-title">{{ activeTemplateTitle }}</h2>

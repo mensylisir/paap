@@ -12,7 +12,7 @@
 
     <div v-if="pageError" class="page-error" role="alert">{{ pageError }}</div>
 
-    <section class="pool-summary">
+    <section class="pool-summary slide-up">
       <div class="summary-item">
         <span>系统应用</span>
         <strong>{{ poolAppName }}</strong>
@@ -31,7 +31,7 @@
       </div>
     </section>
 
-    <section class="resource-section">
+    <section class="resource-section slide-up">
       <div class="section-heading">
         <h2>公共资源</h2>
         <button type="button" class="rail-btn rail-btn--ghost rail-btn--sm" :disabled="loading" @click="loadPage">

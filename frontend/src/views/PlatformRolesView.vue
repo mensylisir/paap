@@ -23,7 +23,7 @@
       </button>
     </div>
 
-    <section class="roles-panel">
+    <section class="roles-panel slide-up">
       <div v-if="loading" class="loading-text">加载中...</div>
       <div v-else-if="filteredRoles.length === 0" class="loading-text">暂无角色</div>
       <table v-else class="roles-table">

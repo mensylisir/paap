@@ -18,21 +18,31 @@
       <p class="loading-text">加载中...</p>
     </div>
 
-    <div v-else-if="environments.length === 0" class="empty-card">
-      <h3 class="empty-title">暂无环境</h3>
-      <p class="empty-desc">创建环境并安装监控工具后可在这里查看监控数据。</p>
-      <button class="rail-btn rail-btn--primary" @click="goEnvs">创建环境</button>
+    <div v-else-if="environments.length === 0" class="empty-state slide-up">
+      <div class="empty-state__icon">
+        <svg width="20" height="20" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="8" width="24" height="16" rx="2"/><line x1="4" y1="14" x2="28" y2="14"/><rect x="8" y="18" width="6" height="3" rx="1"/><rect x="18" y="18" width="8" height="3" rx="1"/></svg>
+      </div>
+      <p class="empty-state__title">暂无环境</p>
+      <p class="empty-state__desc">创建环境并安装监控工具后可在这里查看监控数据。</p>
+      <div class="empty-state__action">
+        <button class="rail-btn rail-btn--primary" @click="goEnvs">创建环境</button>
+      </div>
     </div>
 
-    <div v-else-if="!monitorEnvs.length" class="empty-card">
-      <h3 class="empty-title">未安装监控工具</h3>
-      <p class="empty-desc">在环境中安装 Grafana + Prometheus 后可查看监控数据。</p>
-      <button class="rail-btn rail-btn--primary" @click="goEnvs">安装监控</button>
+    <div v-else-if="!monitorEnvs.length" class="empty-state slide-up">
+      <div class="empty-state__icon">
+        <svg width="20" height="20" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="16" cy="16" r="10"/><line x1="16" y1="12" x2="16" y2="18"/><line x1="16" y1="20" x2="16.01" y2="20"/></svg>
+      </div>
+      <p class="empty-state__title">未安装监控工具</p>
+      <p class="empty-state__desc">在环境中安装 Grafana + Prometheus 后可查看监控数据。</p>
+      <div class="empty-state__action">
+        <button class="rail-btn rail-btn--primary" @click="goEnvs">安装监控</button>
+      </div>
     </div>
 
     <template v-else>
       <!-- Env tabs -->
-      <div class="env-tabs">
+      <div class="env-tabs slide-up">
         <button
           v-for="e in monitorEnvs"
           :key="e.env.id"
@@ -45,12 +55,12 @@
         </button>
       </div>
 
-      <div v-if="activeEnv" class="workspace-content">
-        <div v-if="activeEnv.grafanaUrl" class="access-bar">
+      <div v-if="activeEnv" class="workspace-content slide-up">
+        <div v-if="activeEnv.grafanaUrl" class="access-bar slide-up">
           <a :href="activeEnv.grafanaUrl" target="_blank" rel="noreferrer" class="link external">打开 Grafana ↗</a>
         </div>
         <!-- Dashboards -->
-        <div v-if="dashboards.length" class="section">
+        <div v-if="dashboards.length" class="section slide-up">
           <div class="section-head">
             <h4 class="section-title"><span class="icon">📊</span> Grafana 大盘</h4>
             <span class="count">{{ dashboards.length }}</span>
@@ -65,7 +75,7 @@
         </div>
 
         <!-- Alerts -->
-        <div v-if="alerts.length" class="section">
+        <div v-if="alerts.length" class="section slide-up">
           <div class="section-head">
             <h4 class="section-title"><span class="icon">🔔</span> 告警</h4>
             <span class="count" :class="alerts.length > 0 ? 'red' : ''">{{ alerts.length }}</span>
@@ -85,11 +95,11 @@
         </div>
         <div v-else class="section">
           <div class="section-head"><h4 class="section-title"><span class="icon">🔔</span> 告警</h4></div>
-          <div class="ok-box">当前无活跃告警</div>
+          <div class="empty-state--compact">当前无活跃告警</div>
         </div>
 
         <!-- Targets -->
-        <div v-if="targets.length" class="section">
+        <div v-if="targets.length" class="section slide-up">
           <div class="section-head">
             <h4 class="section-title"><span class="icon">🎯</span> Prometheus 目标</h4>
             <span class="count">{{ targets.length }}</span>
@@ -109,7 +119,7 @@
         </div>
 
         <!-- Rules -->
-        <div v-if="rules.length" class="section">
+        <div v-if="rules.length" class="section slide-up">
           <div class="section-head">
             <h4 class="section-title"><span class="icon">📐</span> 规则</h4>
             <span class="count">{{ rules.length }}</span>
@@ -241,7 +251,6 @@ const goEnvs = () => router.push(`/apps/${appId}/environments`)
 .dash-name { font-weight: 600; font-size: var(--paap-fs-body); color: var(--paap-text); margin-bottom: 4px; }
 .dash-meta { font-size: var(--paap-fs-label); color: var(--paap-muted); margin-bottom: 8px; }
 
-.ok-box { padding: 14px 16px; background: var(--paap-success-bg); color: var(--paap-success-text); font-size: var(--paap-fs-compact); border-radius: var(--paap-radius); }
 
 .table-wrap { overflow: hidden; }
 .data-table { width: 100%; border-collapse: collapse; font-size: var(--paap-fs-compact); }

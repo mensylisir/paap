@@ -7,7 +7,7 @@
       </div>
     </header>
 
-    <section class="section-card member-section">
+    <section class="section-card member-section slide-up">
       <div class="section-header">
         <div>
           <h2 class="rail-section-title">应用成员</h2>

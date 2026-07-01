@@ -70,7 +70,7 @@
       <!-- Tab panels -->
       <div class="catalog-results">
         <template v-for="group in catalogGroups" :key="group.category">
-          <section v-show="activeTab === group.category" class="catalog-section">
+          <section v-show="activeTab === group.category" class="catalog-section slide-up">
             <div v-if="group.items.length === 0" class="no-data">暂无数据</div>
             <div v-else class="catalog-grid">
               <article

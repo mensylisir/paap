@@ -2013,20 +2013,22 @@
                       </template>
                       <template v-else>
                         <input v-model.trim="envItem.name" class="bx--text-input" list="component-config-key-suggestions" placeholder="NAME" />
-                        <select v-model="envItem.source" class="bx--select-input" @change="normalizeConfigEnvSource(envItem)">
-                          <option value="value">直接填写</option>
-                          <option value="configMap">应用配置</option>
-                          <option value="secret">敏感项</option>
-                        </select>
-                        <input v-if="envItem.source === 'value'" v-model="envItem.value" class="bx--text-input" placeholder="value" />
-                        <template v-else-if="envItem.source === 'configMap'">
-                          <span class="config-env-managed-secret">平台管理</span>
-                          <input v-model.trim="envItem.refKey" class="bx--text-input" :placeholder="envItem.name || '配置项'" />
-                        </template>
-                        <template v-else>
-                          <span class="config-env-managed-secret">平台管理</span>
-                          <input v-model.trim="envItem.refKey" class="bx--text-input" :placeholder="envItem.name || '敏感项'" />
-                        </template>
+                        <div class="config-env-value-cell">
+                          <input v-if="envItem.source === 'value'" v-model="envItem.value" class="bx--text-input" placeholder="value" />
+                          <template v-else-if="envItem.source === 'configMap'">
+                            <span class="config-env-managed-secret">应用配置</span>
+                            <input v-model.trim="envItem.refKey" class="bx--text-input" :placeholder="envItem.name || '配置项'" />
+                          </template>
+                          <template v-else>
+                            <span class="config-env-managed-secret">敏感项</span>
+                            <input v-model.trim="envItem.refKey" class="bx--text-input" :placeholder="envItem.name || '敏感项'" />
+                          </template>
+                        </div>
+                        <div class="config-env-actions">
+                          <button v-if="envItem.source !== 'configMap'" type="button" class="text-btn" @click="setConfigEnvSource(envItem, 'configMap')">引用配置</button>
+                          <button v-if="envItem.source !== 'secret'" type="button" class="text-btn" @click="setConfigEnvSource(envItem, 'secret')">引用敏感项</button>
+                          <button v-if="envItem.source !== 'value'" type="button" class="text-btn" @click="setConfigEnvSource(envItem, 'value')">直接值</button>
+                        </div>
                       </template>
                       <button type="button" class="text-btn danger" @click="removeConfigEnv(idx)">删除</button>
                     </div>
@@ -7243,6 +7245,10 @@ const addConfigEnv = () => {
 const removeConfigEnv = (idx:number) => {
   configForm.value.env.splice(idx, 1)
 }
+const setConfigEnvSource = (envItem:ComponentConfigEnvRow, source:ComponentConfigEnvRow['source']) => {
+  envItem.source = source
+  normalizeConfigEnvSource(envItem)
+}
 const normalizeConfigEnvSource = (envItem:ComponentConfigEnvRow) => {
   if (envItem.source === 'secret') {
     envItem.value = ''
@@ -12145,7 +12151,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 }
 .config-env-row {
   display: grid;
-  grid-template-columns: minmax(160px, 1.2fr) 100px minmax(140px, 1fr) minmax(120px, 0.8fr) auto;
+  grid-template-columns: minmax(160px, 1fr) minmax(180px, 1.3fr) minmax(150px, auto) auto;
   gap: var(--paap-space-2);
   align-items: center;
 }
@@ -12156,6 +12162,26 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 }
 .config-env-row .danger {
   color: var(--paap-danger);
+}
+.config-env-value-cell {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--paap-space-2);
+  align-items: center;
+  min-width: 0;
+}
+.config-env-value-cell > .bx--text-input:only-child {
+  grid-column: 1 / -1;
+}
+.config-env-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--paap-space-2);
+  min-width: 0;
+}
+.config-env-actions .text-btn {
+  white-space: nowrap;
 }
 .config-env-row--managed {
   grid-template-columns: minmax(160px, 1fr) auto minmax(220px, 1.4fr) auto;

@@ -18,29 +18,39 @@
       <p class="loading-text">加载中...</p>
     </div>
 
-    <div v-else-if="environments.length === 0" class="empty-card">
-      <h3 class="empty-title">暂无环境</h3>
-      <p class="empty-desc">创建环境并安装 CI 工具后可查看流水线。</p>
-      <button class="rail-btn rail-btn--primary" @click="goEnvs">创建环境</button>
+    <div v-else-if="environments.length === 0" class="empty-state slide-up">
+      <div class="empty-state__icon">
+        <svg width="20" height="20" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="8" width="24" height="16" rx="2"/><line x1="4" y1="14" x2="28" y2="14"/><rect x="8" y="18" width="6" height="3" rx="1"/><rect x="18" y="18" width="8" height="3" rx="1"/></svg>
+      </div>
+      <p class="empty-state__title">暂无环境</p>
+      <p class="empty-state__desc">创建环境并安装 CI 工具后可查看流水线。</p>
+      <div class="empty-state__action">
+        <button class="rail-btn rail-btn--primary" @click="goEnvs">创建环境</button>
+      </div>
     </div>
 
-    <div v-else-if="!ciEnvs.length" class="empty-card">
-      <h3 class="empty-title">未安装 CI 工具</h3>
-      <p class="empty-desc">在环境中安装 Jenkins 后可查看流水线状态。</p>
-      <button class="rail-btn rail-btn--primary" @click="goEnvs">安装 CI</button>
+    <div v-else-if="!ciEnvs.length" class="empty-state slide-up">
+      <div class="empty-state__icon">
+        <svg width="20" height="20" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="16" cy="16" r="10"/><line x1="16" y1="12" x2="16" y2="18"/><line x1="16" y1="20" x2="16.01" y2="20"/></svg>
+      </div>
+      <p class="empty-state__title">未安装 CI 工具</p>
+      <p class="empty-state__desc">在环境中安装 Jenkins 后可查看流水线状态。</p>
+      <div class="empty-state__action">
+        <button class="rail-btn rail-btn--primary" @click="goEnvs">安装 CI</button>
+      </div>
     </div>
 
     <template v-else>
-      <div class="env-tabs">
+      <div class="env-tabs slide-up">
         <button v-for="e in ciEnvs" :key="e.env.id" class="env-tab" :class="{ active: activeEnvId === e.env.id }" @click="activeEnvId = e.env.id">
           {{ e.env.name }}
           <span v-if="e.jobCount > 0" class="tab-badge">{{ e.jobCount }}</span>
         </button>
       </div>
 
-      <div v-if="activeEnv" class="workspace-content">
+      <div v-if="activeEnv" class="workspace-content slide-up">
         <div v-if="triggerError" class="error-box" role="alert">{{ triggerError }}</div>
-        <div v-if="jobs.length" class="section">
+        <div v-if="jobs.length" class="section slide-up">
           <div class="section-head">
             <h4 class="section-title"><span class="icon">🔧</span> 流水线</h4>
             <span class="count">{{ jobs.length }}</span>
@@ -63,7 +73,7 @@
             </table>
           </div>
         </div>
-        <div v-else class="ok-box">该环境暂无 Jenkins Job</div>
+        <div v-else class="empty-state empty-state--compact"><p class="empty-state__title">该环境暂无 Jenkins Job</p></div>
       </div>
     </template>
   </div>
@@ -187,7 +197,7 @@ const goEnvs = () => router.push(`/apps/${appId}/environments`)
 .badge.blue { background: var(--paap-info-bg); color: var(--paap-info-text); }
 .badge.gray { background: var(--paap-panel-subtle); color: var(--paap-muted); }
 
-.ok-box { padding: 14px 16px; background: var(--paap-panel); color: var(--paap-muted); font-size: var(--paap-fs-compact); border-radius: var(--paap-radius); border: 1px solid var(--paap-border); }
+
 .error-box { border: 1px solid var(--paap-danger-border); background: var(--paap-danger-bg); color: var(--paap-danger-text-strong); border-radius: var(--paap-radius-sm); padding: 10px 12px; font-size: var(--paap-fs-compact); line-height: 1.4; margin-bottom: 14px; }
 
 .act-btn { height: 28px; padding: 0 10px; border-radius: var(--paap-radius-sm); border: 1px solid var(--paap-border-02); background: var(--paap-panel); font-size: var(--paap-fs-label); font-weight: 600; cursor: pointer; }

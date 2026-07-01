@@ -18,7 +18,7 @@
     </section>
 
     <div v-else-if="stats.length" class="platform-services-layout">
-      <section class="platform-services-table-shell">
+      <section class="platform-services-table-shell slide-up">
         <table class="platform-services-table">
           <thead>
             <tr>
@@ -73,7 +73,7 @@
         </table>
       </section>
 
-      <aside v-if="selectedService" class="platform-service-detail" aria-label="服务详情右侧栏">
+      <aside v-if="selectedService" class="platform-service-detail slide-up" aria-label="服务详情右侧栏">
         <header class="detail-header">
           <div>
             <h2>{{ selectedService.name || selectedService.type }}</h2>
@@ -211,9 +211,16 @@
       </aside>
     </div>
 
-    <section v-if="!loading && !stats.length" class="empty-panel">
-      <h2>暂无平台服务数据</h2>
-      <p>服务安装、共享引用或外部连接创建后会出现在这里。</p>
+    <section v-if="!loading && !stats.length" class="empty-state slide-up">
+      <div class="empty-state-icon">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
+          <line x1="8" y1="21" x2="16" y2="21"/>
+          <line x1="12" y1="17" x2="12" y2="21"/>
+        </svg>
+      </div>
+      <div class="empty-state-text">暂无平台服务数据</div>
+      <p class="empty-state-desc">服务安装、共享引用或外部连接创建后会出现在这里。</p>
     </section>
   </div>
 </template>
@@ -472,6 +479,12 @@ onMounted(() => {
   font-size: var(--paap-fs-label);
 }
 
+.platform-services-table tbody tr {
+  transition: background-color 0.12s;
+}
+.platform-services-table tbody tr:not(.selected):hover {
+  background: var(--paap-accent-fill);
+}
 .platform-services-table tr.selected td {
   background: var(--paap-accent-soft);
 }
@@ -521,6 +534,14 @@ onMounted(() => {
   position: sticky;
   top: 16px;
 }
+.detail-loading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  color: var(--paap-muted);
+  animation: fade-in 0.2s ease-out;
+}
 
 .detail-header {
   display: flex;
@@ -544,13 +565,7 @@ onMounted(() => {
   font-size: var(--paap-fs-compact);
 }
 
-.detail-loading {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 16px;
-  color: var(--paap-muted);
-}
+
 
 .detail-summary-grid {
   display: grid;

@@ -11,7 +11,7 @@
     <div v-if="pageError" class="page-error" role="alert">{{ pageError }}</div>
 
     <form class="role-form" @submit.prevent="saveRole">
-      <section class="section-card">
+      <section class="section-card slide-up">
         <div class="section-card-header">
           <h2>基本信息</h2>
         </div>
@@ -48,7 +48,7 @@
         </div>
       </section>
 
-      <section class="section-card">
+      <section class="section-card slide-up">
         <div class="section-card-header">
           <h2>权限点</h2>
           <span class="perm-count">{{ editor.permissionIds.length }} 已选</span>

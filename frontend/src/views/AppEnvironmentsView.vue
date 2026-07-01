@@ -13,7 +13,7 @@
     </header>
 
     <!-- KPI -->
-    <div class="kpi-section">
+    <div class="kpi-section slide-up">
       <div class="kpi-card">
         <div class="kpi-number">{{ environments.length }}</div>
         <div class="kpi-label">环境总数</div>
@@ -33,7 +33,7 @@
     </div>
 
     <!-- Environment list -->
-    <section class="section-card">
+    <section class="section-card slide-up">
       <div class="section-header">
         <div>
           <h2 class="rail-section-title">环境列表</h2>

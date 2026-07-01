@@ -61,7 +61,7 @@
         </button>
       </div>
 
-      <section v-if="activeTab === 'overview'" class="content-grid two-col">
+      <section v-if="activeTab === 'overview'" class="content-grid two-col slide-up">
         <article class="section-panel markdown-panel">
           <div class="section-heading">
             <h2>{{ detail?.docs.overview.title || '服务介绍' }}</h2>
@@ -92,7 +92,7 @@
         </aside>
       </section>
 
-      <section v-else-if="activeTab === 'install'" class="content-grid two-col">
+      <section v-else-if="activeTab === 'install'" class="content-grid two-col slide-up">
         <article class="section-panel markdown-panel">
           <div class="section-heading">
             <h2>{{ detail?.docs.install.title || '安装方式' }}</h2>
@@ -107,7 +107,7 @@
         </article>
       </section>
 
-      <section v-else-if="activeTab === 'resources'" class="content-grid">
+      <section v-else-if="activeTab === 'resources'" class="content-grid slide-up">
         <article class="section-panel">
           <div class="section-heading split">
             <h2>环境与资源统计</h2>
@@ -184,7 +184,7 @@
         </article>
       </section>
 
-      <section v-else-if="activeTab === 'monitor'" class="content-grid">
+      <section v-else-if="activeTab === 'monitor'" class="content-grid slide-up">
         <article class="section-panel">
           <div class="section-heading split">
             <h2>{{ observability?.dashboardTitle || '服务监控' }}</h2>

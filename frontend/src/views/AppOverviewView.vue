@@ -13,7 +13,7 @@
     </header>
 
     <!-- KPI -->
-    <section class="kpi-section">
+    <section class="kpi-section slide-up">
       <div v-for="kpi in kpis" :key="kpi.label" class="kpi-card">
         <div class="kpi-number">{{ kpi.value }}</div>
         <div class="kpi-label-row">
@@ -24,7 +24,7 @@
     </section>
 
     <!-- 环境状态 -->
-    <section class="section-card">
+    <section class="section-card slide-up">
       <div class="section-header">
         <div>
           <h2 class="rail-section-title">环境</h2>
@@ -80,7 +80,7 @@
     </section>
 
     <!-- 最近事件 -->
-    <section class="section-card">
+    <section class="section-card slide-up">
       <div class="section-header">
         <div>
           <h2 class="rail-section-title">最近事件</h2>

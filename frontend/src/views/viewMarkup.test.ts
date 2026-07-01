@@ -2048,4 +2048,15 @@ describe('Vue view markup', () => {
     expect(envDetail.default).not.toContain("runtimeMetricChartFor('cpu')")
     expect(envDetail.default).not.toContain("runtimeMetricChartFor('memory')")
   })
+
+  it('keeps direct component environment variables as the default input without a source dropdown', async () => {
+    const envDetail = await import('./EnvDetailView.vue?raw')
+
+    expect(envDetail.default).not.toContain('<option value="value">直接填写</option>')
+    expect(envDetail.default).toContain("setConfigEnvSource(envItem, 'configMap')")
+    expect(envDetail.default).toContain("setConfigEnvSource(envItem, 'secret')")
+    expect(envDetail.default).toContain("setConfigEnvSource(envItem, 'value')")
+    expect(envDetail.default).toContain('引用配置')
+    expect(envDetail.default).toContain('引用敏感项')
+  })
 })

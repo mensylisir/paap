@@ -10,7 +10,7 @@
 
     <div v-if="pageError" class="page-error" role="alert">{{ pageError }}</div>
 
-    <div class="kpi-section">
+    <div class="kpi-section slide-up">
       <div class="kpi-card">
         <div class="kpi-number">{{ registries.length }}</div>
         <div class="kpi-label">仓库实例</div>
@@ -25,7 +25,7 @@
       </div>
     </div>
 
-    <section class="section-card">
+    <section class="section-card slide-up">
       <div class="section-header">
         <div>
           <h2 class="rail-section-title">实例列表</h2>

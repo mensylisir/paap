@@ -19,11 +19,12 @@
         </button>
       </header>
 
-      <section v-if="listedApps.length" class="app-list">
+      <section v-if="listedApps.length" class="app-list slide-up">
         <div
-          v-for="app in listedApps"
+          v-for="(app, i) in listedApps"
           :key="app.id"
           class="app-card"
+          :style="{ animationDelay: `${40 + i * 30}ms` }"
           role="button"
           tabindex="0"
           @click="goToAppHome(app)"
@@ -60,22 +61,29 @@
         </div>
       </section>
       <div v-if="deleteError" class="form-error app-list-error" role="alert">{{ deleteError }}</div>
-      <section v-if="!listedApps.length && loadError" class="empty-panel">
-        <h2>应用加载失败</h2>
-        <p>{{ loadError }}</p>
+      <section v-if="!listedApps.length && loadError" class="empty-state slide-up">
+        <div class="empty-state-icon empty-state-icon--error">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"/>
+            <line x1="12" y1="8" x2="12" y2="12"/>
+            <line x1="12" y1="16" x2="12.01" y2="16"/>
+          </svg>
+        </div>
+        <div class="empty-state-text">应用加载失败</div>
+        <p class="empty-state-desc">{{ loadError }}</p>
         <button class="rail-btn rail-btn--primary" @click="loadApps">重新加载</button>
       </section>
 
-      <section v-else-if="!listedApps.length" class="empty-panel">
-        <div class="empty-icon">
-          <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+      <section v-else-if="!listedApps.length" class="empty-state slide-up">
+        <div class="empty-state-icon">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
             <path d="M12 2L2 7l10 5 10-5-10-5z"/>
             <path d="M2 17l10 5 10-5"/>
             <path d="M2 12l10 5 10-5"/>
           </svg>
         </div>
-        <h2>还没有应用</h2>
-        <p>创建应用后会继续创建第一个环境，并直接进入环境工作台。</p>
+        <div class="empty-state-text">还没有应用</div>
+        <p class="empty-state-desc">创建应用后可以继续创建第一个环境，并直接进入环境工作台。</p>
         <button v-has-perm="'app.create'" class="rail-btn rail-btn--primary" @click="openCreateAppModal">创建第一个应用</button>
       </section>
     </template>
@@ -292,12 +300,7 @@ onMounted(loadApps)
 .page-title { font-size: 24px; font-weight: 600; color: var(--paap-text); line-height: 1.2; }
 .page-subtitle { font-size: var(--paap-fs-body); color: var(--paap-muted); margin-top: var(--paap-space-1); }
 .app-list { display: grid; gap: var(--paap-space-3); }
-.app-card {
-  display: flex; align-items: center; justify-content: space-between; gap: var(--paap-space-6);
-  width: 100%; text-align: left; background: var(--paap-panel); color: inherit;
-  border: 1px solid var(--paap-border); border-radius: var(--paap-radius);
-  padding: var(--paap-space-5) var(--paap-space-6); cursor: pointer; transition: all 0.15s;
-}
+
 .app-card:hover { border-color: var(--paap-border-strong); box-shadow: var(--paap-shadow-lg); }
 .app-card-main { flex: 1; min-width: 0; }
 .app-card-header { display: flex; align-items: center; gap: var(--paap-space-3); margin-bottom: var(--paap-space-1); flex-wrap: wrap; }
@@ -310,13 +313,14 @@ onMounted(loadApps)
 .app-stat { display: grid; gap: 2px; text-align: right; }
 .app-stat strong { color: var(--paap-text); font-size: 15px; line-height: 1.2; }
 .app-stat em { color: var(--paap-muted); font-style: normal; font-size: var(--paap-fs-small); }
-.empty-panel {
-  min-height: calc(100vh - 260px); display: flex; flex-direction: column; align-items: center; justify-content: center;
-  text-align: center; gap: var(--paap-space-4); color: var(--paap-muted);
+.app-card {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--paap-space-6);
+  width: 100%; text-align: left; background: var(--paap-panel); color: inherit;
+  border: 1px solid var(--paap-border); border-radius: var(--paap-radius);
+  padding: var(--paap-space-5) var(--paap-space-6); cursor: pointer;
+  animation: slide-up 0.35s ease-out both;
+  transition: border-color 0.15s, box-shadow 0.15s;
 }
-.empty-panel h2 { color: var(--paap-text); font-size: 24px; font-weight: 600; }
-.empty-panel p { max-width: 460px; line-height: 1.6; }
-.empty-icon { width: 76px; height: 76px; display: flex; align-items: center; justify-content: center; border: 1px solid var(--paap-border); border-radius: var(--paap-radius); background: var(--paap-panel); color: var(--paap-muted); }
 .modal-container {   background: var(--paap-panel); width: min(520px, 100%); max-height: 90vh; overflow-y: auto; border-radius: var(--paap-radius); border: 1px solid var(--paap-border); box-shadow: var(--paap-shadow-lg); }
 .modal-header { display: flex; justify-content: space-between; align-items: flex-start; padding: var(--paap-space-5) var(--paap-space-6); border-bottom: 1px solid var(--paap-border); }
 .modal-label { font-size: var(--paap-fs-small); color: var(--paap-muted); text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600; margin-bottom: 4px; }
