@@ -1,0 +1,24 @@
+name: cdi
+displayName: CDI
+category: virtualization
+namespace: cdi
+version: v1.61.0
+installMode: manifest
+s3Key: platform-addons/cdi.tar.gz
+dependsOn:
+  - kubevirt
+capabilities:
+  - kubevirt-datavolume-import
+checks:
+  crds:
+    - datavolumes.cdi.kubevirt.io
+  deployments:
+    - namespace: cdi
+      name: cdi-operator
+    - namespace: cdi
+      name: cdi-apiserver
+    - namespace: cdi
+      name: cdi-uploadproxy
+    - namespace: cdi
+      name: cdi-deployment
+description: Containerized Data Importer for KubeVirt DataVolume and image import flows.

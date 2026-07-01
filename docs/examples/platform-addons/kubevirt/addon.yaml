@@ -1,0 +1,24 @@
+name: kubevirt
+displayName: KubeVirt
+category: virtualization
+namespace: kubevirt
+version: v1.4.0
+installMode: manifest
+s3Key: platform-addons/kubevirt.tar.gz
+capabilities:
+  - virtual-machine-services
+checks:
+  crds:
+    - virtualmachines.kubevirt.io
+    - virtualmachineinstances.kubevirt.io
+  deployments:
+    - namespace: kubevirt
+      name: virt-operator
+    - namespace: kubevirt
+      name: virt-api
+    - namespace: kubevirt
+      name: virt-controller
+  daemonSets:
+    - namespace: kubevirt
+      name: virt-handler
+description: Virtual machine runtime used by PAAP KubeVirt service templates.

@@ -44,6 +44,9 @@ func runComponentDeliveryFlow(ctx context.Context, db *gorm.DB, k8sClient client
 	if comp.DeliveryMode == "source" {
 		return RunComponentSourceDeliveryFlow(ctx, k8sClient, app, env, comp, identifier, namespace, targets)
 	}
+	if comp.ManagedBy == "operator" {
+		return ComponentGitOpsResult{}, nil
+	}
 	return RunComponentImageDeliveryFlow(ctx, k8sClient, app, env, comp, identifier, namespace, targets)
 }
 

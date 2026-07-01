@@ -5,6 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 KIND_CLUSTER="${KIND_CLUSTER:-kind}"
 SERVER_IMAGE="${SERVER_IMAGE:-paap-server:v0.1.537}"
+ASSETS_IMAGE="${ASSETS_IMAGE:-paap-assets:v0.1.537}"
 OPERATOR_IMAGE="${OPERATOR_IMAGE:-paap-operator:v0.1.54}"
 CONTAINER_CLI="${CONTAINER_CLI:-docker}"
 
@@ -58,11 +59,20 @@ cd "$PROJECT_DIR"
 ./scripts/package-built-in-templates.sh
 "$CONTAINER_CLI" build --build-arg FRONTEND_CACHE_BUST="$(date +%s)" -t "$SERVER_IMAGE" -f Dockerfile.server .
 "$CONTAINER_CLI" run --rm --entrypoint sh "$SERVER_IMAGE" -c 'test -x /paap-server && ls -l /paap-server'
+"$CONTAINER_CLI" build -t "$ASSETS_IMAGE" -f Dockerfile.assets .
+"$CONTAINER_CLI" run --rm "$ASSETS_IMAGE" >/dev/null
 "$CONTAINER_CLI" build -t "$OPERATOR_IMAGE" -f Dockerfile.operator .
 
 # 2. 在创建任何 Pod 之前，把所有镜像导入 kind。kind 集群不能访问外网时，这一步必须先完成。
 echo "2. Preloading images into kind cluster '$KIND_CLUSTER'..."
-"$PROJECT_DIR/scripts/preload-kind-images.sh"
+KIND_IMAGE_LIST="$(mktemp)"
+sed \
+  -e "s#^paap-server:.*#$SERVER_IMAGE#" \
+  -e "s#^paap-assets:.*#$ASSETS_IMAGE#" \
+  -e "s#^paap-operator:.*#$OPERATOR_IMAGE#" \
+  "$SCRIPT_DIR/kind-images.txt" > "$KIND_IMAGE_LIST"
+IMAGE_LIST="$KIND_IMAGE_LIST" "$PROJECT_DIR/scripts/preload-kind-images.sh"
+rm -f "$KIND_IMAGE_LIST"
 
 # 3. 创建 namespace
 echo "3. Creating namespaces..."
@@ -104,9 +114,9 @@ kubectl apply -f "$SCRIPT_DIR/keycloak.yaml"
 # 等待 MinIO 就绪
 inspect_namespace paap-system
 
-# 8. 初始化模板（data/charts/*.tar.gz 已进入 paap-server 镜像 /charts，再上传到 MinIO）
+# 8. 初始化模板（assets 镜像携带内置包，init job 上传到 MinIO）
 echo "8. Initializing templates..."
-sed "s#image: paap-server:.*#image: $SERVER_IMAGE#g" "$SCRIPT_DIR/init-templates.yaml" | kubectl apply -f -
+sed "s#image: paap-assets:.*#image: $ASSETS_IMAGE#g" "$SCRIPT_DIR/init-templates.yaml" | kubectl apply -f -
 echo "   Template initialization log:"
 kubectl get job,pod -n paap-system -l job-name=init-templates -o wide || true
 kubectl logs -n paap-system job/init-templates --tail=20 || true

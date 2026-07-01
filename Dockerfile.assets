@@ -1,0 +1,12 @@
+FROM alpine:3.22
+WORKDIR /
+RUN apk add --no-cache ca-certificates
+COPY --chown=65532:65532 --chmod=0755 data/charts/ /charts/
+COPY --chown=65532:65532 --chmod=0755 data/config-templates/ /config-templates/
+COPY --chown=65532:65532 --chmod=0755 data/service-templates/ /service-templates/
+COPY --chown=65532:65532 --chmod=0755 data/platform-addons/ /platform-addons/
+RUN chmod 0755 /charts /config-templates /service-templates /platform-addons \
+    && find /charts /config-templates /platform-addons -type f -name '*.tar.gz' -exec chmod 0644 {} + \
+    && find /service-templates -type f -name '*.yaml' -exec chmod 0644 {} +
+USER 65532:65532
+CMD ["sh", "-c", "find /charts /config-templates /service-templates /platform-addons -maxdepth 3 -type f | sort"]

@@ -4,6 +4,9 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
+SERVER_IMAGE="${SERVER_IMAGE:-paap-server:v0.1.537}"
+ASSETS_IMAGE="${ASSETS_IMAGE:-paap-assets:v0.1.537}"
+OPERATOR_IMAGE="${OPERATOR_IMAGE:-paap-operator:v0.1.54}"
 KUBECONFIG="${KUBECONFIG:-}"
 IMAGES_TAR="/tmp/paap-images-$(date +%s).tar"
 SSH_USER="root"
@@ -38,13 +41,20 @@ fi
 
 KUBECTL="kubectl --kubeconfig $KUBECONFIG"
 
+apply_manifest_with_image() {
+  local manifest="$1"
+  local image_name="$2"
+  local image_ref="$3"
+  sed "s#image: $image_name:.*#image: $image_ref#g" "$manifest" | $KUBECTL apply -f - 2>&1
+}
+
 echo "=== PAAP Deploy to Remote Air-Gapped Cluster ==="
 echo "Kubeconfig: $KUBECONFIG"
 echo ""
 
 # ── Step 1: Get all node IPs ──
 echo "1. Discovering cluster nodes..."
-NODE_IPS=$($KUBECTL get nodes -o jsonpath='{range .items[*]}{.status.addresses[?(@.type=="InternalIP")].address}{"\n"}{end}')
+NODE_IPS=$($KUBECTL get nodes --field-selector spec.unschedulable!=true -o jsonpath='{range .items[*]}{.status.addresses[?(@.type=="InternalIP")].address}{"\n"}{end}')
 if [ -z "$NODE_IPS" ]; then
   echo "ERROR: No nodes found in cluster"
   exit 1
@@ -62,8 +72,9 @@ IMAGES=(
   "busybox:1.36"
   "minio/mc:RELEASE.2024-05-09T17-04-24Z"
   "quay.io/keycloak/keycloak:25.0.0"
-  "paap-server:v0.1.537"
-  "paap-operator:v0.1.54"
+  "$SERVER_IMAGE"
+  "$ASSETS_IMAGE"
+  "$OPERATOR_IMAGE"
 )
 echo "2. Exporting ${#IMAGES[@]} PAAP system images to oci-archive..."
 IMG_DIR="/tmp/paap-image-tars"
@@ -76,7 +87,7 @@ for IMG in "${IMAGES[@]}"; do
   SAFE_NAME=$(echo "$IMG" | tr '/:.' '---')
   ARCHIVE="$IMG_DIR/${SAFE_NAME}.tar"
   echo "   -> $IMG"
-  skopeo copy "docker-daemon:${IMG}" "oci-archive:${ARCHIVE}:latest" 2>&1 | tail -1
+  skopeo copy "docker-daemon:${IMG}" "oci-archive:${ARCHIVE}:${IMG}" 2>&1 | tail -1
   # Record mapping: safename -> original image reference
   echo "${SAFE_NAME}.tar:${IMG}" >> "$MAPPING_FILE"
 done
@@ -136,11 +147,11 @@ $KUBECTL wait --for=condition=ready pod -l app=minio -n paap-system --timeout=12
 
 echo ""
 echo "11. Initializing templates..."
-$KUBECTL apply -f "$SCRIPT_DIR/init-templates.yaml" 2>&1
+apply_manifest_with_image "$SCRIPT_DIR/init-templates.yaml" "paap-assets" "$ASSETS_IMAGE"
 
 echo ""
 echo "12. Deploying Operator..."
-$KUBECTL apply -f "$SCRIPT_DIR/paap-operator.yaml" 2>&1
+apply_manifest_with_image "$SCRIPT_DIR/paap-operator.yaml" "paap-operator" "$OPERATOR_IMAGE"
 
 echo ""
 echo "13. Seeding shared resource pool..."
@@ -148,7 +159,7 @@ $KUBECTL apply -f "$SCRIPT_DIR/shared-resource-pool.yaml" 2>&1
 
 echo ""
 echo "14. Deploying Server..."
-$KUBECTL apply -f "$SCRIPT_DIR/paap-server.yaml" 2>&1
+apply_manifest_with_image "$SCRIPT_DIR/paap-server.yaml" "paap-server" "$SERVER_IMAGE"
 
 echo ""
 echo "15. Configuring auth endpoints..."

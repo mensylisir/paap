@@ -41,6 +41,7 @@ type Component struct {
 	JenkinsJob          string `gorm:"size:200" json:"jenkinsJob,omitempty"`
 	RegistryImage       string `gorm:"size:300" json:"registryImage,omitempty"`
 	PipelineStatus      string `gorm:"size:30" json:"pipelineStatus,omitempty"`
+	ManagedBy           string `gorm:"size:20" json:"managedBy,omitempty"`
 	Config              string `gorm:"type:text" json:"config,omitempty"`
 }
 

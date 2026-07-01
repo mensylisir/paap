@@ -15,7 +15,7 @@ echo "=== PAAP kind image preload ==="
 echo "Cluster: $KIND_CLUSTER"
 echo "Image list: $IMAGE_LIST"
 echo "Template package source for image discovery: data/charts/*.tar.gz"
-echo "Runtime chart source: data/charts/*.tar.gz copied into /charts and uploaded to MinIO."
+echo "Runtime asset source: paap-assets image carries built-in packages and init job uploads them to MinIO."
 "$PROJECT_DIR/scripts/check-disk-space.sh" before-kind-image-preload
 
 extract_images_from_rendered_yaml() {

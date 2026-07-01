@@ -470,7 +470,7 @@ func TestValidateComponentSourceBuildPreflightRequiresDeliveryDependencies(t *te
 func TestValidateComponentImageDeploymentPreflightRequiresRegistryAndGitOpsDependencies(t *testing.T) {
 	err := validateComponentImageDeploymentPreflight(t.Context(), componentDeploymentContext{}, componentDeliveryTargetsFromServices([]model.ServiceInstallation{
 		{ServiceType: "git", Status: "running", Namespace: "shop-dev-git"},
-	}))
+	}), "argocd")
 	if err == nil {
 		t.Fatalf("expected image delivery preflight to fail when registry and ArgoCD are missing")
 	}
@@ -501,14 +501,15 @@ func TestValidateComponentImageDeploymentPreflightRejectsExternalImage(t *testin
 	}
 	targets := componentDeliveryTargetsFromServices(services)
 
-	err := validateComponentImageDeploymentPreflight(t.Context(), deployment, targets)
+	err := validateComponentImageDeploymentPreflight(t.Context(), deployment, targets, "argocd")
 	if err == nil || !strings.Contains(err.Error(), "current environment registry") {
 		t.Fatalf("expected external image to be rejected, got %v", err)
 	}
 
 	deployment.Component.Image = "registry.shop-dev.paap.local/shop-dev/gateway:v1"
-	if err := validateComponentImageDeploymentPreflight(t.Context(), deployment, targets); err != nil {
-		t.Fatalf("environment registry image should pass preflight: %v", err)
+	err = validateComponentImageDeploymentPreflight(t.Context(), deployment, targets, "argocd")
+	if err == nil || !strings.Contains(err.Error(), "registry health check failed") {
+		t.Fatalf("expected registry health check to be performed and fail in test environment, got %v", err)
 	}
 }
 

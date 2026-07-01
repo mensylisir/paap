@@ -1,0 +1,21 @@
+name: keda
+displayName: KEDA
+category: autoscaling
+namespace: keda
+version: v2.17.0
+installMode: manifest
+s3Key: platform-addons/keda.tar.gz
+dependsOn:
+  - metrics-server
+capabilities:
+  - event-driven-autoscaling
+checks:
+  crds:
+    - scaledobjects.keda.sh
+    - triggerauthentications.keda.sh
+  deployments:
+    - namespace: keda
+      name: keda-operator
+    - namespace: keda
+      name: keda-operator-metrics-apiserver
+description: Event-driven autoscaling for queues, Kafka lag, Prometheus queries, and external triggers.

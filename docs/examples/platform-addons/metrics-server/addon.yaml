@@ -1,0 +1,15 @@
+name: metrics-server
+displayName: metrics-server
+category: autoscaling
+namespace: kube-system
+version: v0.7.2
+installMode: manifest
+s3Key: platform-addons/metrics-server.tar.gz
+capabilities:
+  - hpa
+  - resource-metrics
+checks:
+  deployments:
+    - namespace: kube-system
+      name: metrics-server
+description: Kubernetes metrics API dependency for HPA and resource usage views.

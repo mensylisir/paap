@@ -1,0 +1,23 @@
+name: kpack
+displayName: kpack
+category: build
+namespace: kpack
+version: v0.17.0
+installMode: manifest
+s3Key: platform-addons/kpack.tar.gz
+capabilities:
+  - source-delivery
+  - buildpacks
+checks:
+  crds:
+    - images.kpack.io
+    - builds.kpack.io
+    - builders.kpack.io
+    - clusterstores.kpack.io
+    - clusterstacks.kpack.io
+    - clusterlifecycles.kpack.io
+    - sourceresolvers.kpack.io
+  deployments:
+    - namespace: kpack
+      name: kpack-controller
+description: Buildpacks-based source delivery runtime used by PAAP source components.

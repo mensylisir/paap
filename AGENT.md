@@ -168,30 +168,6 @@ When changing deployment image tags, keep `Makefile` and deployment manifests/sc
 
 For browser/UI verification, use visible Chrome via CDP when validating user-facing behavior. Do not rely only on headless smoke tests for UI changes that affect canvas, drawers, menus, forms, or runtime data.
 
-## Branch And PR Policy
-
-Feature and bugfix work must be done on a branch and merged through a PR. Allowed branch names include:
-
-```text
-feature/<kebab-case-name>
-bugfix/<kebab-case-name>
-hotfix/<kebab-case-name>
-release/<kebab-case-name>
-support/<kebab-case-name>
-1.x
-2.0
-3.1.0
-```
-
-For the current leadership scope, use one feature branch per functional PR. Do not bundle unrelated UI cleanup, deployment tag changes, and architecture changes into the same PR.
-
-Before creating or switching branches:
-
-- run `git status --short --branch`
-- identify existing uncommitted user changes
-- do not discard or overwrite changes you did not make
-- do not stage generated `.playwright-mcp`, `.omo`, `runtime`, or unrelated issue files unless explicitly requested
-
 ## Documentation Split
 
 - `AGENT.md`: durable project facts, architecture, constraints, operating rules.

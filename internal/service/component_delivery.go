@@ -39,6 +39,7 @@ type CreateComponentInput struct {
 	Memory         string
 	DeliveryMode   string
 	DraftOnly      bool
+	ManagedBy      string
 	SourceRepoURL  string
 	SourceBranch   string
 	BuildContext   string
@@ -56,6 +57,7 @@ type UpdateComponentInput struct {
 	CPU            string
 	Memory         string
 	DeliveryMode   string
+	ManagedBy      string
 	SourceRepoURL  string
 	SourceBranch   string
 	BuildContext   string
@@ -119,6 +121,12 @@ func CreateComponent(db *gorm.DB, envID uint, input CreateComponentInput) (model
 	}
 	if comp.Replicas == 0 {
 		comp.Replicas = 1
+	}
+	managedBy := strings.ToLower(strings.TrimSpace(input.ManagedBy))
+	if managedBy == "operator" {
+		comp.ManagedBy = "operator"
+	} else {
+		comp.ManagedBy = "argocd"
 	}
 	if comp.DeliveryMode == "source" {
 		comp.SourceRepoURL = strings.TrimSpace(input.SourceRepoURL)
@@ -202,6 +210,10 @@ func UpdateComponent(db *gorm.DB, componentID uint, input UpdateComponentInput) 
 			return model.Component{}, ComponentValidationError{Message: "deliveryMode must be image or source"}
 		}
 	}
+	if strings.TrimSpace(input.ManagedBy) != "" {
+		comp.ManagedBy = componentManagedBy(input.ManagedBy)
+	}
+
 	if strings.TrimSpace(input.Image) != "" {
 		if strings.HasSuffix(strings.ToLower(strings.TrimSpace(input.Image)), ":latest") {
 			return model.Component{}, ComponentValidationError{Message: "component image tag must be explicit; latest is not allowed"}
@@ -289,6 +301,16 @@ func DeployComponent(ctx context.Context, db *gorm.DB, k8sClient client.Client, 
 	}
 	if err := saveComponentDeploymentDraft(db, deployment.Component); err != nil {
 		return model.Component{}, err
+	}
+
+	if componentManagedBy(deployment.Component.ManagedBy) == "operator" && deployment.Component.DeliveryMode != "source" {
+		// Operator mode: skip GitOps delivery flow, let the Component controller
+		// directly manage Deployment + Service.
+		if err := upsertComponentRuntimeCR(ctx, deployment); err != nil {
+			return model.Component{}, errors.Join(ErrComponentCRUpsertFailed, err)
+		}
+		deployment.Component.Status = "syncing"
+		return deployment.Component, db.Save(&deployment.Component).Error
 	}
 
 	result, err := runComponentDeliveryFlow(ctx, db, k8sClient, deployment.App, deployment.Env, deployment.Component, deployment.Identifier, deployment.PrimaryNamespace)
@@ -473,7 +495,7 @@ func validateComponentDeliveryPreflight(ctx context.Context, db *gorm.DB, k8sCli
 	if deployment.Component.DeliveryMode == "source" {
 		return validateComponentBuiltSourceDeploymentPreflight(targets)
 	}
-	return validateComponentImageDeploymentPreflight(ctx, deployment, targets)
+	return validateComponentImageDeploymentPreflight(ctx, deployment, targets, componentManagedBy(deployment.Component.ManagedBy))
 }
 
 func loadComponentDeliveryServiceInstallations(db *gorm.DB, envID uint) ([]model.ServiceInstallation, error) {
@@ -594,17 +616,44 @@ func validateComponentBuiltSourceDeploymentPreflight(targets []componentDelivery
 	return nil
 }
 
-func validateComponentImageDeploymentPreflight(ctx context.Context, deployment componentDeploymentContext, targets []componentDeliveryTarget) error {
-	missing := missingComponentDeliveryDependencies(targets, []componentDeliveryDependency{
+func validateComponentImageDeploymentPreflight(ctx context.Context, deployment componentDeploymentContext, targets []componentDeliveryTarget, managedBy string) error {
+	deps := []componentDeliveryDependency{
 		{label: "Git service (Gitea)", serviceTypes: []string{"git"}},
 		{label: "image registry service (registry/Harbor)", serviceTypes: []string{"harbor", "registry"}},
-		{label: "CD service (ArgoCD)", serviceTypes: []string{"deploy"}},
-	})
+	}
+	if managedBy != "operator" {
+		deps = append(deps, componentDeliveryDependency{label: "CD service (ArgoCD)", serviceTypes: []string{"deploy"}})
+	}
+	missing := missingComponentDeliveryDependencies(targets, deps)
 	if len(missing) > 0 {
 		return ComponentValidationError{Message: "image delivery prerequisites are not ready: " + strings.Join(missing, "; ")}
 	}
 	if !componentImageUsesEnvironmentRegistry(ctx, deployment, targets) {
 		return ComponentValidationError{Message: "image delivery requires an image from the current environment registry"}
+	}
+	if err := verifyRegistryHealth(ctx, targets); err != nil {
+		return ComponentValidationError{Message: "registry health check failed: " + err.Error()}
+	}
+	return nil
+}
+
+func verifyRegistryHealth(ctx context.Context, targets []componentDeliveryTarget) error {
+	var errs []string
+	for _, target := range targets {
+		if !componentDeliveryTargetMatches(target, "registry", []string{"harbor", "registry"}) {
+			continue
+		}
+		if target.Service == nil {
+			continue
+		}
+		client := k8s.NewRegistryClient(target.Service.Namespace)
+		if err := client.HealthCheck(ctx); err != nil {
+			errs = append(errs, fmt.Sprintf("%s (%s): %v", target.Service.ReleaseName, target.Service.Namespace, err))
+			continue
+		}
+	}
+	if len(errs) > 0 {
+		return fmt.Errorf("%s", strings.Join(errs, "; "))
 	}
 	return nil
 }
@@ -639,6 +688,8 @@ func environmentRegistryPullHosts(ctx context.Context, app model.Application, en
 	if target.Service != nil && strings.EqualFold(strings.TrimSpace(target.ServiceType), "registry") {
 		if network, err := k8s.DiscoverRegistryServiceNetwork(ctx, target.Service.Namespace, target.Service.ReleaseName); err == nil && network != nil && strings.TrimSpace(network.ClusterIP) != "" {
 			hosts = append(hosts, strings.TrimSpace(network.ClusterIP)+":5000")
+		} else if err != nil {
+			log.Printf("WARN: DiscoverRegistryServiceNetwork failed for %s/%s: %v", target.Service.Namespace, target.Service.ReleaseName, err)
 		}
 	}
 	return hosts
@@ -853,6 +904,7 @@ func upsertComponentRuntimeCR(ctx context.Context, deployment componentDeploymen
 		return ComponentValidationError{Message: "component config invalid: " + err.Error()}
 	}
 	comp := deployment.Component
+	managedBy := componentManagedBy(comp.ManagedBy)
 	return k8s.UpsertComponentCR(
 		ctx,
 		deployment.App.Identifier,
@@ -864,7 +916,7 @@ func upsertComponentRuntimeCR(ctx context.Context, deployment componentDeploymen
 		comp.Version,
 		int32(comp.Replicas),
 		deployment.PrimaryNamespace,
-		"argocd",
+		managedBy,
 		deployment.Config,
 		envVars,
 	)
@@ -875,6 +927,13 @@ func componentDeliveryMode(mode string) string {
 		return "source"
 	}
 	return "image"
+}
+
+func componentManagedBy(managedBy string) string {
+	if strings.ToLower(strings.TrimSpace(managedBy)) == "operator" {
+		return "operator"
+	}
+	return "argocd"
 }
 
 func validateComponentDeliveryInput(input CreateComponentInput) error {
@@ -1084,11 +1143,17 @@ func detectComponentImageContainerPort(ctx context.Context, db *gorm.DB, envID u
 	}
 	var registries []model.ServiceInstallation
 	if err := db.Where("environment_id = ? AND service_type IN ?", envID, []string{"registry", "harbor"}).Find(&registries).Error; err != nil {
+		log.Printf("WARN: failed to query registries for container port detection (env %d): %v", envID, err)
 		return 0
 	}
 	for _, inst := range registries {
 		ports, err := k8s.NewRegistryClient(inst.Namespace).ExposedPorts(ctx, repository, reference)
-		if err != nil || len(ports) == 0 {
+		if err != nil {
+			log.Printf("WARN: failed to query registry %s/%s for image %s exposed ports: %v", inst.Namespace, inst.ReleaseName, image, err)
+			continue
+		}
+		if len(ports) == 0 {
+			log.Printf("WARN: registry %s/%s returned no ports for image %s", inst.Namespace, inst.ReleaseName, image)
 			continue
 		}
 		return ports[0]

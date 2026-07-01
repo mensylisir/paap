@@ -105,6 +105,7 @@ type CreateComponentRequest struct {
 	Memory         string                 `json:"memory"`
 	DeliveryMode   string                 `json:"deliveryMode"`
 	DraftOnly      bool                   `json:"draftOnly"`
+	ManagedBy      string                 `json:"managedBy"`
 	SourceRepoURL  string                 `json:"sourceRepoUrl"`
 	SourceBranch   string                 `json:"sourceBranch"`
 	BuildContext   string                 `json:"buildContext"`
@@ -122,6 +123,7 @@ type UpdateComponentRequest struct {
 	CPU            string                 `json:"cpu"`
 	Memory         string                 `json:"memory"`
 	DeliveryMode   string                 `json:"deliveryMode"`
+	ManagedBy      string                 `json:"managedBy"`
 	SourceRepoURL  string                 `json:"sourceRepoUrl"`
 	SourceBranch   string                 `json:"sourceBranch"`
 	BuildContext   string                 `json:"buildContext"`
@@ -1341,6 +1343,7 @@ func CreateComponent(c *gin.Context) {
 		Memory:         req.Memory,
 		DeliveryMode:   req.DeliveryMode,
 		DraftOnly:      req.DraftOnly,
+		ManagedBy:      req.ManagedBy,
 		SourceRepoURL:  req.SourceRepoURL,
 		SourceBranch:   req.SourceBranch,
 		BuildContext:   req.BuildContext,
@@ -1372,6 +1375,7 @@ func UpdateComponent(c *gin.Context) {
 		CPU:            req.CPU,
 		Memory:         req.Memory,
 		DeliveryMode:   req.DeliveryMode,
+		ManagedBy:      req.ManagedBy,
 		SourceRepoURL:  req.SourceRepoURL,
 		SourceBranch:   req.SourceBranch,
 		BuildContext:   req.BuildContext,

@@ -9,14 +9,14 @@ PAAP 的内置模板有源码态和运行态两层：
   - 开发、评审、修改模板时改这里。
 - 发布态：`data/charts/<name>.tar.gz`
   - 由 `scripts/package-built-in-templates.sh` 从源码态打包生成。
-  - `Dockerfile.server` 会把 `data/charts/` 复制到 server 镜像的 `/charts/`。
+  - `Dockerfile.assets` 会把 `data/charts/`、`data/config-templates/`、`data/service-templates/`、`data/platform-addons/` 复制到 assets 镜像。
 - 运行态：MinIO
-  - `deploy/k8s/init-templates.yaml` 从 `paap-server` 镜像的 `/charts/*.tar.gz` 拷贝模板包。
-  - init job 使用 `minio/mc` 上传到 `paap-charts/charts/*.tar.gz`。
+  - `deploy/k8s/init-templates.yaml` 从 `paap-assets` 镜像拷贝内置包。
+  - init job 使用 `minio/mc` 上传到 `paap-charts/charts/*.tar.gz`、`paap-charts/config-templates/builtin/*.tar.gz`、`paap-charts/service-templates/**.yaml` 和 `paap-charts/platform-addons/*.tar.gz`。
   - `ServiceTemplate` 记录 `S3Bucket=paap-charts` 和 `S3Key=charts/<name>.tar.gz`。
   - 安装工具时后端从 MinIO 下载 chart 包，再用 Helm 安装。
 
-因此，`docs/examples` 不是运行时读取路径；运行时以 `data/charts -> /charts -> MinIO -> Helm install` 为准。
+因此，`docs/examples` 不是运行时读取路径；运行时以 `docs/examples -> data/* -> paap-assets -> MinIO -> 安装器` 为准。
 
 ## Kind 集群离线镜像策略
 

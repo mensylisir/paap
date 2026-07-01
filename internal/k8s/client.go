@@ -22,6 +22,10 @@ func NewClient() *Client {
 }
 
 func run(timeout time.Duration, name string, args ...string) ([]byte, error) {
+	return runWithRetry(timeout, 0, name, args...)
+}
+
+func runWithRetry(timeout time.Duration, attempt int, name string, args ...string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, name, args...)
@@ -37,9 +41,34 @@ func run(timeout time.Duration, name string, args ...string) ([]byte, error) {
 
 	out, err := cmd.CombinedOutput()
 	if err != nil {
+		if attempt < 3 && isTransientExecError(err) {
+			backoff := time.Duration(1<<uint(attempt)) * time.Second
+			log.Printf("WARN: %s transient failure (attempt %d/3): %v, retrying in %v", name, attempt+1, err, backoff)
+			time.Sleep(backoff)
+			return runWithRetry(timeout, attempt+1, name, args...)
+		}
 		return out, fmt.Errorf("%s %s failed: %w, output: %s", name, strings.Join(args, " "), err, string(out))
 	}
 	return out, nil
+}
+
+func isTransientExecError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	if strings.Contains(msg, "connection refused") ||
+		strings.Contains(msg, "connection reset") ||
+		strings.Contains(msg, "temporary failure") ||
+		strings.Contains(msg, "timeout") ||
+		strings.Contains(msg, "i/o timeout") ||
+		strings.Contains(msg, "no route to host") ||
+		strings.Contains(msg, "dial tcp") ||
+		strings.Contains(msg, "reset by peer") ||
+		strings.Contains(msg, "broken pipe") {
+		return true
+	}
+	return false
 }
 
 // --- Namespace ---

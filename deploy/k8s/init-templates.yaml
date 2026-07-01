@@ -73,10 +73,57 @@ data:
       fi
     done
 
+    service_template_count=0
+    echo ""
+    echo "Uploading environment service templates to MinIO..."
+    echo "================================"
+    find /service-templates -type f -name '*.yaml' | sort > /tmp/service-template-list
+    if [ ! -s /tmp/service-template-list ]; then
+      echo "No environment service templates found in /service-templates/"
+    fi
+    while IFS= read -r template; do
+      relative_path=${template#/service-templates/}
+      echo "Uploading $relative_path..."
+
+      mc cp "$template" "paap-minio/paap-charts/service-templates/$relative_path"
+
+      if [ $? -eq 0 ]; then
+        echo "✓ Uploaded service template $relative_path"
+        service_template_count=$((service_template_count + 1))
+      else
+        echo "✗ Failed to upload service template $relative_path"
+      fi
+    done < /tmp/service-template-list
+
+    platform_addon_count=0
+    echo ""
+    echo "Uploading platform addons to MinIO..."
+    echo "================================"
+    for addon in /platform-addons/*.tar.gz; do
+      if [ ! -f "$addon" ]; then
+        echo "No platform addons found in /platform-addons/"
+        break
+      fi
+
+      addon_name=$(basename "$addon")
+      echo "Uploading $addon_name..."
+
+      mc cp "$addon" "paap-minio/paap-charts/platform-addons/$addon_name"
+
+      if [ $? -eq 0 ]; then
+        echo "✓ Uploaded platform addon $addon_name"
+        platform_addon_count=$((platform_addon_count + 1))
+      else
+        echo "✗ Failed to upload platform addon $addon_name"
+      fi
+    done
+
     echo ""
     echo "================================"
     echo "Uploaded $template_count service templates"
     echo "Uploaded $config_template_count component config templates"
+    echo "Uploaded $service_template_count environment service templates"
+    echo "Uploaded $platform_addon_count platform addons"
     echo ""
 
     # 列出所有模板
@@ -84,6 +131,10 @@ data:
     mc ls paap-minio/paap-charts/charts/
     echo "Component config templates in MinIO:"
     mc ls paap-minio/paap-charts/config-templates/builtin/ || true
+    echo "Environment service templates in MinIO:"
+    mc ls --recursive paap-minio/paap-charts/service-templates/ || true
+    echo "Platform addons in MinIO:"
+    mc ls paap-minio/paap-charts/platform-addons/ || true
 
     echo ""
     echo "✓ Template initialization complete!"
@@ -122,7 +173,7 @@ spec:
             done
             echo "MinIO service is up!"
       - name: stage-templates
-        image: paap-server:v0.1.537
+        image: paap-assets:v0.1.537
         imagePullPolicy: IfNotPresent
         securityContext:
           runAsUser: 0
@@ -130,17 +181,27 @@ spec:
           - sh
           - -c
           - |
-            echo "Staging built-in templates from /charts and /config-templates..."
+            echo "Staging built-in assets from /charts, /config-templates, /service-templates and /platform-addons..."
             cp /charts/*.tar.gz /templates/
             mkdir -p /staged-config-templates
             cp /config-templates/*.tar.gz /staged-config-templates/ || true
+            mkdir -p /staged-service-templates
+            cp -R /service-templates/. /staged-service-templates/ || true
+            mkdir -p /staged-platform-addons
+            cp /platform-addons/*.tar.gz /staged-platform-addons/ || true
             ls -la /templates
             ls -la /staged-config-templates
+            find /staged-service-templates -maxdepth 3 -type f -print | sort
+            ls -la /staged-platform-addons
         volumeMounts:
         - name: templates
           mountPath: /templates
         - name: config-templates
           mountPath: /staged-config-templates
+        - name: service-templates
+          mountPath: /staged-service-templates
+        - name: platform-addons
+          mountPath: /staged-platform-addons
       containers:
       - name: upload-templates
         image: minio/mc:RELEASE.2024-05-09T17-04-24Z
@@ -152,6 +213,10 @@ spec:
           mountPath: /templates
         - name: config-templates
           mountPath: /config-templates
+        - name: service-templates
+          mountPath: /service-templates
+        - name: platform-addons
+          mountPath: /platform-addons
         resources:
           requests:
             memory: "128Mi"
@@ -167,4 +232,8 @@ spec:
       - name: templates
         emptyDir: {}
       - name: config-templates
+        emptyDir: {}
+      - name: service-templates
+        emptyDir: {}
+      - name: platform-addons
         emptyDir: {}
