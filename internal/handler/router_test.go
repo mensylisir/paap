@@ -107,3 +107,31 @@ func TestAPIRoutesRequireAuthExceptLogin(t *testing.T) {
 		t.Fatalf("authenticated applications status = %d, want %d; body=%s", withAuthRec.Code, http.StatusOK, withAuthRec.Body.String())
 	}
 }
+
+func TestPlatformAddonRoutesAreRegisteredBehindAuth(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	SetupRouter(router)
+
+	routes := []struct {
+		method string
+		path   string
+	}{
+		{http.MethodGet, "/api/v1/platform-addons"},
+		{http.MethodGet, "/api/v1/platform-addons/keda"},
+		{http.MethodPost, "/api/v1/platform-addons/keda/enable"},
+		{http.MethodPost, "/api/v1/platform-addons/keda/disable"},
+		{http.MethodPost, "/api/v1/platform-addons/keda/check"},
+		{http.MethodPost, "/api/v1/platform-addons/upload"},
+		{http.MethodPost, "/api/v1/platform-addons/sync"},
+	}
+
+	for _, route := range routes {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(route.method, route.path, nil)
+		router.ServeHTTP(rec, req)
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("%s %s status = %d, want %d; body=%s", route.method, route.path, rec.Code, http.StatusUnauthorized, rec.Body.String())
+		}
+	}
+}

@@ -144,6 +144,13 @@ func SetupRouter(r *gin.Engine) {
 		protected.GET("/platform/services/stats", middleware.RequireSystemPermission(permission.SystemSharedPoolManage), ListPlatformServiceStats)
 		protected.GET("/platform/services/:type/instances", middleware.RequireSystemPermission(permission.SystemSharedPoolManage), ListPlatformServiceInstances)
 		protected.GET("/platform/services/:type/usage", middleware.RequireSystemPermission(permission.SystemSharedPoolManage), ListPlatformServiceUsage)
+		protected.GET("/platform-addons", middleware.RequireSystemPermission(permission.SystemSharedPoolManage), ListPlatformAddons)
+		protected.GET("/platform-addons/:name", middleware.RequireSystemPermission(permission.SystemSharedPoolManage), GetPlatformAddon)
+		protected.POST("/platform-addons/sync", middleware.RequireSystemPermission(permission.SystemSharedPoolManage), SyncPlatformAddons)
+		protected.POST("/platform-addons/upload", middleware.RequireSystemPermission(permission.SystemSharedPoolManage), UploadPlatformAddon)
+		protected.POST("/platform-addons/:name/enable", middleware.RequireSystemPermission(permission.SystemSharedPoolManage), EnablePlatformAddon)
+		protected.POST("/platform-addons/:name/disable", middleware.RequireSystemPermission(permission.SystemSharedPoolManage), DisablePlatformAddon)
+		protected.POST("/platform-addons/:name/check", middleware.RequireSystemPermission(permission.SystemSharedPoolManage), CheckPlatformAddon)
 
 		// Platform admin routes
 		admin := protected.Group("/admin")

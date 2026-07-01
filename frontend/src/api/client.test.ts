@@ -236,6 +236,34 @@ describe('api client', () => {
     expect(fetchMock).toHaveBeenCalledWith('/api/v1/platform/services/stats', expect.objectContaining({ method: 'GET' }))
   })
 
+  it('calls platform addon management endpoints', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => ({ data: [] }),
+    } as Response)
+    const form = new FormData()
+    form.set('file', new Blob(['addon'], { type: 'application/gzip' }), 'keda.tar.gz')
+
+    await api.platformAddons()
+    await api.enablePlatformAddon('keda')
+    await api.disablePlatformAddon('keda')
+    await api.checkPlatformAddon('keda')
+    await api.syncPlatformAddons()
+    await api.uploadPlatformAddon(form)
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/v1/platform-addons', expect.objectContaining({ method: 'GET' }))
+    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/v1/platform-addons/keda/enable', expect.objectContaining({ method: 'POST' }))
+    expect(fetchMock).toHaveBeenNthCalledWith(3, '/api/v1/platform-addons/keda/disable', expect.objectContaining({ method: 'POST' }))
+    expect(fetchMock).toHaveBeenNthCalledWith(4, '/api/v1/platform-addons/keda/check', expect.objectContaining({ method: 'POST' }))
+    expect(fetchMock).toHaveBeenNthCalledWith(5, '/api/v1/platform-addons/sync', expect.objectContaining({ method: 'POST' }))
+    expect(fetchMock).toHaveBeenNthCalledWith(6, '/api/v1/platform-addons/upload', expect.objectContaining({
+      method: 'POST',
+      body: form,
+    }))
+    const uploadOptions = fetchMock.mock.calls[5][1] as RequestInit
+    expect((uploadOptions.headers as Record<string, string>)['Content-Type']).toBeUndefined()
+  })
+
   it('calls environment template management endpoints', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
       ok: true,

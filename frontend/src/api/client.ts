@@ -189,4 +189,11 @@ export const api = {
   platformServiceStats: () => request('/platform/services/stats'),
   platformServiceInstances: (type: string) => request(`/platform/services/${encodeURIComponent(type)}/instances`),
   platformServiceUsage: (type: string) => request(`/platform/services/${encodeURIComponent(type)}/usage`),
+  platformAddons: () => request('/platform-addons'),
+  getPlatformAddon: (name: string) => request(`/platform-addons/${encodeURIComponent(name)}`),
+  enablePlatformAddon: (name: string) => request(`/platform-addons/${encodeURIComponent(name)}/enable`, { method: 'POST' }),
+  disablePlatformAddon: (name: string) => request(`/platform-addons/${encodeURIComponent(name)}/disable`, { method: 'POST' }),
+  checkPlatformAddon: (name: string) => request(`/platform-addons/${encodeURIComponent(name)}/check`, { method: 'POST' }),
+  syncPlatformAddons: () => request('/platform-addons/sync', { method: 'POST' }),
+  uploadPlatformAddon: (data: FormData) => request('/platform-addons/upload', { method: 'POST', body: data }),
 }

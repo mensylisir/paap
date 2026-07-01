@@ -48,6 +48,12 @@ const routes = [
         meta: { permission: permissions.systemSharedPoolManage },
       },
       {
+        path: 'platform/addons',
+        name: 'PlatformAddons',
+        component: () => import('../views/PlatformAddonsView.vue'),
+        meta: { permission: permissions.systemSharedPoolManage },
+      },
+      {
         path: 'users',
         name: 'Users',
         component: () => import('../views/PlatformUsersView.vue'),
