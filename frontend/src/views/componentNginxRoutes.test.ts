@@ -3,6 +3,7 @@ import {
   mergeComponentBinding,
   nginxRouteRowsFromComponentConfig,
   nginxRouteRowsToTemplateListRows,
+  nginxTemplateListRowsWithGeneratedDirectives,
   nginxTemplateListRowsToRouteRows,
 } from './componentNginxRoutes'
 
@@ -117,5 +118,32 @@ describe('componentNginxRoutes', () => {
     ])
 
     expect(recovered).toEqual([{ path: '/api', targetKey: 'component:38', targetUrl: 'http://backend-1' }])
+  })
+
+  it('generates hidden nginx directives from a selected backend service reference', () => {
+    const field = {
+      key: 'LOCATION_LIST',
+      type: 'list',
+      itemFields: [
+        { key: 'MATCH', label: '匹配规则', type: 'text' },
+        { key: 'PROXY_PASS', label: '目标后端', type: 'serviceRef', target: 'backend' },
+        { key: 'DIRECTIVES', label: '额外指令', type: 'textarea', hidden: true },
+      ],
+    }
+
+    const rows = nginxTemplateListRowsWithGeneratedDirectives([{
+      MATCH: '/api',
+      PROXY_PASS: 'component:38',
+      DIRECTIVES: 'proxy_pass http://backend:8080;',
+    }], field, [
+      { key: 'component:38', name: 'backend-1', serviceName: 'backend-1' },
+    ])
+
+    expect(rows).toEqual([expect.objectContaining({
+      MATCH: '/api',
+      PROXY_PASS: 'http://backend-1',
+    })])
+    expect(rows[0].DIRECTIVES).toContain('proxy_pass http://backend-1;')
+    expect(rows[0].DIRECTIVES).not.toContain('backend:8080')
   })
 })

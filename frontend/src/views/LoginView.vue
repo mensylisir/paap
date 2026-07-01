@@ -17,18 +17,58 @@
         <h2 class="form-title">欢迎回来</h2>
         <p class="form-subtitle">登录以管理你的应用和环境</p>
         <form @submit.prevent="handleLogin" class="login-form">
-          <cv-text-input v-model="username" label="用户名" placeholder="请输入用户名" :disabled="loading" />
-          <cv-text-input v-model="password" label="密码" type="password" placeholder="请输入密码" :disabled="loading" />
+          <div class="field">
+            <label class="field-label" for="login-username">用户名</label>
+            <input
+              id="login-username"
+              v-model="username"
+              class="field-input"
+              type="text"
+              placeholder="请输入用户名"
+              :disabled="loading"
+              autocomplete="username"
+            />
+          </div>
+          <div class="field">
+            <label class="field-label" for="login-password">密码</label>
+            <div class="password-wrap">
+              <input
+                id="login-password"
+                v-model="password"
+                class="field-input"
+                :type="pwVisible ? 'text' : 'password'"
+                placeholder="请输入密码"
+                :disabled="loading"
+                autocomplete="current-password"
+              />
+              <button
+                type="button"
+                class="pw-toggle"
+                :title="pwVisible ? '隐藏密码' : '显示密码'"
+                @click="pwVisible = !pwVisible"
+                :disabled="loading"
+              >
+                <svg v-if="!pwVisible" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                  <circle cx="12" cy="12" r="3"/>
+                </svg>
+                <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/>
+                  <line x1="1" y1="1" x2="23" y2="23"/>
+                </svg>
+              </button>
+            </div>
+          </div>
           <p v-if="errorMessage" class="login-error" role="alert">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
             <span>{{ errorMessage }}</span>
           </p>
-          <cv-button kind="primary" type="submit" :disabled="loading">
+          <button class="login-btn" type="submit" :disabled="loading">
             {{ loading ? '登录中...' : '登录' }}
-          </cv-button>
-          <cv-button kind="secondary" :disabled="loading" @click="loginWithKeycloak">
+          </button>
+          <button class="login-btn login-btn--ghost" type="button" :disabled="loading" @click="loginWithKeycloak">
             Keycloak 登录
-          </cv-button>
+          </button>
         </form>
       </div>
     </div>
@@ -46,6 +86,7 @@ const username = ref('')
 const password = ref('')
 const loading = ref(false)
 const errorMessage = ref('')
+const pwVisible = ref(false)
 
 const storeAuthenticatedUser = (user: any) => {
   localStorage.setItem('paap_user', JSON.stringify({
@@ -130,7 +171,7 @@ onMounted(() => {
   to   { opacity: 1; transform: translateY(0); }
 }
 
-/* ── Brand panel: warm gradient ── */
+/* ── Brand panel ── */
 .brand-panel {
   flex: 1;
   display: flex;
@@ -214,6 +255,84 @@ onMounted(() => {
   gap: var(--paap-space-5);
 }
 
+/* ── Field ── */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.field-label {
+  font-size: var(--paap-fs-label);
+  font-weight: 500;
+  color: var(--paap-text-soft);
+}
+
+.field-input {
+  width: 100%;
+  height: 40px;
+  padding: 0 12px;
+  font-size: var(--paap-fs-body);
+  font-family: inherit;
+  color: var(--paap-text);
+  background: var(--paap-panel);
+  border: 1px solid var(--paap-border);
+  border-radius: var(--paap-radius-sm);
+  outline: none;
+  transition: border-color var(--paap-transition-fast), box-shadow var(--paap-transition-fast);
+}
+
+.field-input:focus {
+  border-color: var(--paap-accent);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+}
+
+.field-input::placeholder {
+  color: var(--paap-muted-2);
+}
+
+.field-input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ── Password visibility toggle ── */
+.password-wrap {
+  position: relative;
+}
+
+.password-wrap .field-input {
+  padding-right: 40px;
+}
+
+.pw-toggle {
+  position: absolute;
+  right: 2px;
+  top: 2px;
+  bottom: 2px;
+  width: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--paap-muted);
+  cursor: pointer;
+  border-radius: 4px;
+  transition: color var(--paap-transition-fast), background var(--paap-transition-fast);
+}
+
+.pw-toggle:hover {
+  color: var(--paap-text);
+  background: var(--paap-panel-subtle);
+}
+
+.pw-toggle:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ── Error ── */
 .login-error {
   display: flex;
   align-items: center;
@@ -228,6 +347,55 @@ onMounted(() => {
   line-height: 1.4;
 }
 
+/* ── Login buttons ── */
+.login-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 40px;
+  padding: 0 20px;
+  font-family: inherit;
+  font-size: var(--paap-fs-body);
+  font-weight: 500;
+  border: 1px solid transparent;
+  border-radius: var(--paap-radius-sm);
+  cursor: pointer;
+  transition: all var(--paap-transition-fast);
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.login-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.login-btn:focus-visible {
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+}
+
+.login-btn {
+  background: var(--paap-accent);
+  color: #ffffff;
+}
+
+.login-btn:hover:not(:disabled) {
+  background: var(--paap-accent-hover);
+}
+
+.login-btn--ghost {
+  background: var(--paap-panel);
+  color: var(--paap-accent);
+  border-color: var(--paap-accent);
+}
+
+.login-btn--ghost:hover:not(:disabled) {
+  background: var(--paap-accent-soft);
+  color: var(--paap-accent-hover);
+  border-color: var(--paap-accent-hover);
+}
+
+/* ── Responsive ── */
 @media (max-width: 672px) {
   .login-card { flex-direction: column; min-height: auto; width: 100%; }
   .brand-panel { padding: var(--paap-space-8); align-items: center; text-align: center; }

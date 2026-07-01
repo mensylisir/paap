@@ -9,11 +9,26 @@
 
     <div v-if="pageError" class="page-error" role="alert">{{ pageError }}</div>
 
-    <!-- Tabs -->
-    <cv-tabs @tab-selected="(index: number) => setActiveTab(index === 0 ? 'users' : 'roles')">
-      <cv-tab label="用户管理" :selected="activeTab === 'users'" />
-      <cv-tab label="角色管理" :selected="activeTab === 'roles'" />
-    </cv-tabs>
+    <div class="user-role-tabs" role="tablist" aria-label="用户角色视图">
+      <button
+        type="button"
+        role="tab"
+        :aria-selected="activeTab === 'users'"
+        :class="{ active: activeTab === 'users' }"
+        @click="setActiveTab('users')"
+      >
+        用户管理
+      </button>
+      <button
+        type="button"
+        role="tab"
+        :aria-selected="activeTab === 'roles'"
+        :class="{ active: activeTab === 'roles' }"
+        @click="setActiveTab('roles')"
+      >
+        角色管理
+      </button>
+    </div>
 
     <!-- ========== USERS TAB ========== -->
     <div v-show="activeTab === 'users'" class="tab-content" role="tabpanel">
@@ -146,16 +161,17 @@
       <cv-modal
         kind="danger"
         :visible="pendingDeleteRole !== null"
-        @modal-hidden="pendingDeleteRole = null"
         @primary-click="confirmDeleteRole"
+        @secondary-click="pendingDeleteRole = null"
+        @modal-hidden="pendingDeleteRole = null"
         :primary-button-disabled="deletingRoleId !== null"
-        primary-button-label="删除"
-        secondary-button-label="取消"
-        title="删除角色"
       >
+        <template #title>删除角色</template>
         <template #content>
           <p>{{ pendingDeleteRole?.name }} 删除后无法继续分配给用户。</p>
         </template>
+        <template #secondary-button>取消</template>
+        <template #primary-button>{{ deletingRoleId !== null ? '删除中...' : '删除' }}</template>
       </cv-modal>
     </div>
   </div>
@@ -413,6 +429,43 @@ onMounted(async () => {
 
 .tab-content {
   min-height: 200px;
+}
+
+.user-role-tabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0 0 16px;
+  padding: 4px;
+  border: 1px solid var(--paap-border);
+  border-radius: var(--paap-radius-sm);
+  background: var(--paap-panel-subtle);
+}
+
+.user-role-tabs button {
+  min-width: 96px;
+  min-height: 32px;
+  padding: 0 14px;
+  border: 1px solid transparent;
+  border-radius: var(--paap-radius-xs);
+  background: transparent;
+  color: var(--paap-muted);
+  font: inherit;
+  font-size: var(--paap-fs-compact);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.user-role-tabs button:hover {
+  color: var(--paap-text);
+  background: var(--paap-panel);
+}
+
+.user-role-tabs button.active {
+  border-color: var(--paap-border);
+  background: var(--paap-panel);
+  color: var(--paap-accent);
+  box-shadow: var(--paap-shadow-sm);
 }
 
 /* ── Users Card ── */

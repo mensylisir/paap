@@ -14,8 +14,10 @@ import {
   componentTemplateFieldType,
   componentTemplateInitialFieldValue,
   componentTemplateExistingFieldValue,
+  componentTemplateFieldHidden,
   componentTemplateListItemFields,
   componentTemplateListRows,
+  componentTemplateVisibleListItemFields,
   componentTemplateRenderTargetValue,
   componentTemplateRequiredFieldsComplete,
   componentTemplateServicePasswordFieldKeys,
@@ -147,6 +149,27 @@ describe('component config template runtime helpers', () => {
     expect(defaultComponentTemplateListRow(field)).toEqual({
       path: '/api',
       proxyPass: '',
+    })
+  })
+
+  it('keeps hidden list item fields available for rendering but out of the editable UI', () => {
+    const field = {
+      key: 'locations',
+      type: 'list',
+      itemFields: [
+        { key: 'path', label: '路径', default: '/api' },
+        { key: 'target', label: '目标后端', type: 'serviceRef', target: 'backend' },
+        { key: 'directives', label: '额外指令', type: 'textarea', hidden: true, default: 'proxy_pass http://backend;' },
+      ],
+    }
+
+    expect(componentTemplateFieldHidden(field.itemFields[2])).toBe(true)
+    expect(componentTemplateListItemFields(field).map(componentTemplateFieldKey)).toEqual(['path', 'target', 'directives'])
+    expect(componentTemplateVisibleListItemFields(field).map(componentTemplateFieldKey)).toEqual(['path', 'target'])
+    expect(defaultComponentTemplateListRow(field)).toEqual({
+      path: '/api',
+      target: '',
+      directives: 'proxy_pass http://backend;',
     })
   })
 

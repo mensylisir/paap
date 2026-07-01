@@ -2567,6 +2567,7 @@ import {
   nginxRouteRowsToTemplateListRows,
   nginxRouteRowsFromComponentConfig,
   nginxTemplateListFieldSupportsRoutes,
+  nginxTemplateListRowsWithGeneratedDirectives,
   nginxTemplateListRowsToRouteRows,
   type NginxRouteRow,
 } from './componentNginxRoutes'
@@ -8051,6 +8052,13 @@ const buildComponentTemplateFieldRenderValues = async () => {
         }
         return nextRow
       }))
+      if (nginxTemplateListFieldSupportsRoutes(field)) {
+        fieldValues[listKey] = nginxTemplateListRowsWithGeneratedDirectives(
+          fieldValues[listKey],
+          field,
+          componentDrawerBackendTargets.value,
+        )
+      }
       continue
     }
     if (componentTemplateFieldType(field) !== 'serviceref') continue
@@ -9796,14 +9804,27 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 .flow-name { color: var(--paap-text); font-size: var(--paap-fs-compact); font-weight: 600; }
 .flow-desc { margin-top: 2px; color: var(--paap-muted); font-size: var(--paap-fs-label); line-height: 1.4; }
 .flow-link, .text-btn {
-  border: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: var(--paap-radius-sm);
   background: transparent;
   color: var(--paap-accent);
   font-size: var(--paap-fs-label);
   font-weight: 600;
+  line-height: 1;
   cursor: pointer;
+  text-decoration: none;
+  transition: background-color var(--paap-transition-fast), border-color var(--paap-transition-fast), color var(--paap-transition-fast);
 }
-.flow-link:hover, .text-btn:hover { text-decoration: underline; }
+.flow-link:hover, .text-btn:hover {
+  background: var(--paap-accent-soft);
+  color: var(--paap-accent-hover);
+  text-decoration: none;
+}
 .quick-list, .compact-list { display: flex; flex-direction: column; }
 .quick-row, .compact-row {
   display: flex;
@@ -10023,6 +10044,10 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   background: var(--paap-danger-dark);
 }
 .text-btn.danger { color: var(--paap-danger); }
+.text-btn.danger:hover {
+  background: var(--paap-danger-soft);
+  color: var(--paap-danger-dark);
+}
 .workspace-message {
   border: 1px solid var(--paap-success-border);
   background: var(--paap-success-soft);
@@ -10162,10 +10187,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   gap: var(--paap-space-2);
   flex-wrap: wrap;
 }
-.application-set-deploy-btn {
-  height: 32px;
-  border-radius: 0;
-}
+.application-set-deploy-btn { height: 32px; }
 .application-set-deploy-btn--blocked {
   border-color: var(--paap-border);
   background: var(--paap-panel);
@@ -12975,8 +12997,8 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 .modal-header { display: flex; justify-content: space-between; align-items: flex-start; padding: var(--paap-space-5) var(--paap-space-6); border-bottom: 1px solid var(--paap-border); }
 .modal-label { font-size: var(--paap-fs-small); color: var(--paap-muted); letter-spacing: 0.04em; margin-bottom: 4px; text-transform: uppercase; font-weight: 600; }
 .modal-heading { font-size: 18px; font-weight: 600; color: var(--paap-text); line-height: 1.3; margin: 0; }
-.modal-close { background: none; border: 1px solid var(--paap-border); color: var(--paap-muted); cursor: pointer; padding: 4px; line-height: 1; transition: background 110ms, color 110ms, border-color 110ms; margin-top: -4px; border-radius: var(--paap-radius-sm); width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; }
-.modal-close:hover { background: var(--paap-panel-subtle); color: var(--paap-text); }
+.modal-close { background: transparent; border: 1px solid transparent; color: var(--paap-muted); cursor: pointer; padding: 0; line-height: 1; transition: background-color var(--paap-transition-fast), color var(--paap-transition-fast), border-color var(--paap-transition-fast); margin-top: -4px; border-radius: var(--paap-radius-sm); width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; }
+.modal-close:hover { border-color: var(--paap-border); background: var(--paap-panel-subtle); color: var(--paap-text); }
 .modal-content { padding: var(--paap-space-6); }
 .capability-action-field { margin: 0; }
 .capability-action-textarea { min-height: 140px; resize: vertical; }
@@ -12985,7 +13007,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   border: 1px solid var(--paap-danger);
   background: var(--paap-panel);
   color: var(--paap-danger);
-  border-radius: 0;
+  border-radius: var(--paap-radius-sm);
   padding: 10px 12px;
   font-size: var(--paap-fs-compact);
   line-height: 1.4;
@@ -13003,7 +13025,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 .bx--label { display: block; font-size: var(--paap-fs-label); color: var(--paap-muted); margin-bottom: 6px; font-weight: 500; }
 .bx--text-input {
   width: 100%; padding: 9px 12px; font-size: var(--paap-fs-body);
-  border: 1px solid var(--paap-border-strong); border-radius: 0;
+  border: 1px solid var(--paap-border-strong); border-radius: var(--paap-radius-sm);
   background: var(--paap-panel); color: var(--paap-text); outline: none;
   font-family: inherit; transition: border-color 110ms, box-shadow 110ms;
 }
@@ -13026,7 +13048,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   min-height: 38px;
   padding: 8px 10px;
   border: 1px solid var(--paap-border);
-  border-radius: 0;
+  border-radius: var(--paap-radius-sm);
   color: var(--paap-muted);
   font-size: var(--paap-fs-compact);
   font-weight: 500;
@@ -13044,7 +13066,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 .bx--select { position: relative; }
 .bx--select-input {
   width: 100%; padding: 9px 36px 9px 12px; font-size: var(--paap-fs-body);
-  border: 1px solid var(--paap-border-strong); border-radius: 0;
+  border: 1px solid var(--paap-border-strong); border-radius: var(--paap-radius-sm);
   background: var(--paap-panel); color: var(--paap-text); outline: none;
   appearance: none; cursor: pointer; font-family: inherit;
   transition: border-color 110ms, box-shadow 110ms;

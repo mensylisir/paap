@@ -119,6 +119,9 @@
       v-if="pendingDeleteEnv"
       kind="danger"
       :visible="!!pendingDeleteEnv"
+      :primary-button-disabled="deletingEnvId !== null"
+      @primary-click="performDeleteEnvironment"
+      @secondary-click="closeDeleteEnvironmentDialog"
       @modal-hidden="closeDeleteEnvironmentDialog"
       :close-aria-label="'关闭'"
     >
@@ -128,12 +131,8 @@
         <p style="margin-top:8px;color:var(--paap-muted);font-size:var(--paap-fs-body)">这会删除环境记录和关联资源，请确认后继续。</p>
         <div v-if="deleteError" class="form-error" role="alert" style="margin-top:8px">{{ deleteError }}</div>
       </template>
-      <template #footer>
-        <cv-button kind="ghost" :disabled="deletingEnvId !== null" @click="closeDeleteEnvironmentDialog">取消</cv-button>
-        <cv-button kind="danger" :disabled="deletingEnvId !== null" @click="performDeleteEnvironment">
-          {{ deletingEnvId !== null ? '删除中...' : '确认删除' }}
-        </cv-button>
-      </template>
+      <template #secondary-button>取消</template>
+      <template #primary-button>{{ deletingEnvId !== null ? '删除中...' : '确认删除' }}</template>
     </cv-modal>
   </div>
 </template>

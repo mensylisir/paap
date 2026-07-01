@@ -281,17 +281,18 @@
     <cv-modal
       kind="danger"
       :visible="pendingConfigTemplateDelete !== null"
-      @modal-hidden="pendingConfigTemplateDelete = null"
       @primary-click="confirmDeleteConfigTemplate"
-      primary-button-label="删除"
-      secondary-button-label="取消"
-      title="删除配置模板"
+      @secondary-click="pendingConfigTemplateDelete = null"
+      @modal-hidden="pendingConfigTemplateDelete = null"
     >
+      <template #title>删除配置模板</template>
       <template #content>
         <p><strong>{{ pendingConfigTemplateDelete?.name }}</strong></p>
         <p>删除后，这个自定义配置模板将不再出现在组件右侧栏中。已应用到组件的运行配置不会被自动回滚。</p>
         <div v-if="pageError" class="form-error" role="alert">{{ pageError }}</div>
       </template>
+      <template #secondary-button>取消</template>
+      <template #primary-button>删除</template>
     </cv-modal>
   </div>
 </template>
@@ -1258,15 +1259,26 @@ function configTemplateDisplayText(value: string) {
   letter-spacing: 0.2px;
 }
 .text-btn {
-  border: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: var(--paap-radius-sm);
   background: transparent;
   color: var(--paap-accent);
-  cursor: pointer;
-  padding: 0;
   font-size: var(--paap-fs-label);
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  text-decoration: none;
+  transition: background-color var(--paap-transition-fast), border-color var(--paap-transition-fast), color var(--paap-transition-fast);
 }
 .text-btn:hover {
-  text-decoration: underline;
+  background: var(--paap-accent-soft);
+  color: var(--paap-accent-hover);
+  text-decoration: none;
 }
 .modal-overlay {
   position: fixed;
@@ -1283,7 +1295,7 @@ function configTemplateDisplayText(value: string) {
   max-height: 90vh;
   overflow-y: auto;
   border: 1px solid var(--paap-border);
-  border-radius: 0;
+  border-radius: var(--paap-radius);
   background: var(--paap-panel);
   box-shadow: var(--paap-shadow-lg);
 }
@@ -1319,12 +1331,19 @@ function configTemplateDisplayText(value: string) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
-  border: 0;
+  width: 36px;
+  height: 36px;
+  border: 1px solid transparent;
+  border-radius: var(--paap-radius-sm);
   background: transparent;
-  color: var(--paap-text);
+  color: var(--paap-muted);
   cursor: pointer;
+  transition: background-color var(--paap-transition-fast), border-color var(--paap-transition-fast), color var(--paap-transition-fast);
+}
+.modal-close:hover {
+  border-color: var(--paap-border);
+  background: var(--paap-panel-subtle);
+  color: var(--paap-text);
 }
 .modal-body {
   display: grid;
@@ -1342,14 +1361,14 @@ function configTemplateDisplayText(value: string) {
 .rail-select,
 .rail-textarea {
   width: 100%;
-  border: 1px solid transparent;
-  border-bottom-color: var(--paap-border-strong);
-  border-radius: 0;
-  background: var(--paap-panel-subtle);
+  border: 1px solid var(--paap-border);
+  border-radius: var(--paap-radius-sm);
+  background: var(--paap-panel);
   color: var(--paap-text);
   font-family: inherit;
   font-size: var(--paap-fs-body);
   outline: none;
+  transition: border-color var(--paap-transition-fast), box-shadow var(--paap-transition-fast);
 }
 .rail-input,
 .rail-select {
@@ -1357,8 +1376,8 @@ function configTemplateDisplayText(value: string) {
   padding: 0 12px;
 }
 .rail-input {
-  background: var(--paap-panel-subtle);
-  border-radius: 0;
+  background: var(--paap-panel);
+  border-radius: var(--paap-radius-sm);
 }
 .rail-textarea {
   min-height: 96px;
@@ -1369,11 +1388,11 @@ function configTemplateDisplayText(value: string) {
 .rail-select:focus,
 .rail-textarea:focus {
   border-color: var(--paap-accent);
-  box-shadow: inset 0 0 0 1px var(--paap-accent);
+  box-shadow: var(--paap-focus-ring);
 }
 .rail-input:focus {
   border-color: var(--paap-accent);
-  box-shadow: inset 0 0 0 1px var(--paap-accent);
+  box-shadow: var(--paap-focus-ring);
 }
 .form-item {
   display: grid;

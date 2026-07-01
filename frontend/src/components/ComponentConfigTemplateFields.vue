@@ -20,7 +20,7 @@
           :key="`${componentTemplateFieldKey(field)}-${rowIndex}`"
           class="component-template-list-row"
         >
-          <template v-for="itemField in componentTemplateListItemFields(field)" :key="componentTemplateFieldKey(itemField)">
+          <template v-for="itemField in componentTemplateVisibleListItemFields(field)" :key="componentTemplateFieldKey(itemField)">
             <template v-if="fieldUsesTargetSelect(itemField)">
               <select
                 :value="row[componentTemplateFieldKey(itemField)]"
@@ -146,6 +146,7 @@ import {
   componentTemplateFieldType,
   componentTemplateListItemFields,
   componentTemplateListRows as runtimeTemplateListRows,
+  componentTemplateVisibleListItemFields,
   defaultComponentTemplateListRow,
 } from '../views/componentConfigTemplateRuntime'
 

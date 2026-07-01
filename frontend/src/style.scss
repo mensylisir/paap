@@ -24,17 +24,17 @@ html {
 
 /* ===== PAAP Design System — Carbon-aligned enterprise shell ===== */
 :root {
-  /* Surfaces — Railway-inspired warm light palette */
-  --paap-bg: #f7f6f2;                /* warm off-white canvas (Railway: #FAFAF9) */
-  --paap-bg-soft: #eeede8;           /* warm layer for secondary surfaces */
+  /* Surfaces — clean Carbon neutral palette */
+  --paap-bg: #f4f4f4;                /* page canvas */
+  --paap-bg-soft: #f8f8f8;           /* secondary surfaces */
   --paap-panel: #ffffff;              /* card / drawer surfaces stay pure white */
-  --paap-panel-subtle: #e8e7e2;      /* hover / active / subtle depth */
+  --paap-panel-subtle: #f4f4f4;      /* hover / active / subtle depth */
   --paap-card-bg: #ffffff;           /* topology nodes, component cards */
   --paap-selection-bg: #eef2ff;      /* indigo-50 selected/highlight row */
 
-  /* Borders — softer, warmer */
-  --paap-border: #e2e0db;            /* subtle warm gray */
-  --paap-border-strong: #c4c2bc;     /* stronger border (still soft) */
+  /* Borders */
+  --paap-border: #e0e0e0;            /* subtle neutral gray */
+  --paap-border-strong: #c6c6c6;     /* stronger border */
 
   /* Text */
   --paap-text: var(--cds-text-primary, #161616);
@@ -43,8 +43,8 @@ html {
   --paap-muted: var(--cds-text-secondary, #525252);
   --paap-muted-2: var(--cds-text-placeholder, #8d8d8d);
 
-  /* Accent — warmer blue with violet secondary */
-  --paap-accent: #2563eb;             /* blue-600, warmer than Carbon #0f62fe */
+  /* Accent */
+  --paap-accent: #2563eb;             /* blue-600 */
   --paap-accent-soft: #eef2ff;        /* indigo-50 */
   --paap-accent-hover: #1d4ed8;       /* blue-700 */
   --paap-accent-secondary: #7c3aed;   /* violet-600 for decorative accents */
@@ -58,16 +58,16 @@ html {
   --paap-danger: var(--cds-support-error, #da1e28);
   --paap-danger-soft: var(--cds-red-10, #fff1f1);
 
-  /* Legacy palette — Railway-inspired warm migration */
+  /* Legacy palette — neutralized for older view styles */
   --paap-text-01: #11181c;       /* primary text */
-  --paap-text-02: #5c6368;       /* secondary / muted text (warmer) */
-  --paap-text-03: #94999e;       /* table header / placeholder (warmer) */
-  --paap-border-01: #e4e2dd;     /* subtle border (warm, matches --paap-border) */
-  --paap-border-02: #d4d2cc;     /* strong border / button border (warm) */
-  --paap-border-03: #cac8c2;     /* separator border (warm) */
-  --paap-bg-01: #efeee9;         /* soft bg, badge bg, table row stripe */
-  --paap-bg-02: #e8e7e2;         /* hover bg */
-  --paap-bg-03: #f0efe9;         /* table header bg */
+  --paap-text-02: #525252;       /* secondary / muted text */
+  --paap-text-03: #8d8d8d;       /* table header / placeholder */
+  --paap-border-01: #e0e0e0;     /* subtle border */
+  --paap-border-02: #c6c6c6;     /* strong border / button border */
+  --paap-border-03: #a8a8a8;     /* separator border */
+  --paap-bg-01: #f4f4f4;         /* soft bg, badge bg, table row stripe */
+  --paap-bg-02: #e8e8e8;         /* hover bg */
+  --paap-bg-03: #f4f4f4;         /* table header bg */
   --paap-accent-01: #2563eb;     /* link/accent blue (matches --paap-accent) */
   --paap-accent-glow: rgba(37, 99, 235, 0.25);    /* accent glow / focus ring */
   --paap-accent-ring: rgba(37, 99, 235, 0.12);    /* accent focus ring shadow */
@@ -94,7 +94,7 @@ html {
   --paap-info-accent: #2563eb;      /* blue accent for info badges */
   --paap-info-border: #bfdbfe;      /* blue border for info states */
   --paap-info-light: #93c5fd;       /* light blue for delivery arrow */
-  --paap-border-04: #c5c3bd;        /* slate/muted separator (warm) */
+  --paap-border-04: #c6c6c6;        /* slate/muted separator */
   --paap-service-git: #b88686;      /* service icon: git (softer) */
   --paap-service-ci: #b8849e;       /* service icon: ci (softer) */
   --paap-service-registry: #c8a46c; /* service icon: registry / harbor / rabbitmq (softer) */
@@ -102,9 +102,9 @@ html {
   --paap-service-monitor: #72ae8c;  /* service icon: monitor / mongodb (softer) */
   --paap-service-log: #9488bc;      /* service icon: log / kafka (softer) */
   --paap-service-mysql: #72aea2;    /* service icon: mysql (softer) */
-  --paap-bg-04: #efeee9;           /* subtle border-bottom / row bg */
-  --paap-gray-20: #d8d6d1;         /* neutral warm gray */
-  --paap-text-04: #c0beb8;         /* placeholder / subtle text (warm) */
+  --paap-bg-04: #f4f4f4;           /* subtle border-bottom / row bg */
+  --paap-gray-20: #e0e0e0;         /* neutral gray */
+  --paap-text-04: #a8a8a8;         /* placeholder / subtle text */
   --paap-danger-dark: #ba1b23;     /* dark red for destructive buttons */
   --paap-emerald: #059669;         /* emerald-600 for tag dots */
   --paap-emerald-dark: #047857;    /* emerald-700 for success text variant */
@@ -125,7 +125,7 @@ html {
   --paap-space-12: 48px;
   --paap-space-16: 64px;
 
-  /* Radius — Railway-inspired (4px/6px/8px base) */
+  /* Radius */
   --paap-radius: 8px;       /* cards, dialogs, drawers */
   --paap-radius-sm: 6px;    /* buttons, inputs, selects */
   --paap-radius-xs: 4px;    /* tags, badges, small elements */
@@ -214,6 +214,346 @@ a:hover {
   color: var(--paap-accent-hover);
 }
 
+/* ===== PAAP Controls ===== */
+.bx--body--with-modal-open {
+  overflow: hidden;
+}
+
+.cv-button,
+.bx--btn {
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 16px;
+  border: 1px solid transparent;
+  border-radius: var(--paap-radius-sm);
+  font-family: inherit;
+  font-size: var(--paap-fs-body);
+  font-weight: 500;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: none;
+  text-decoration: none;
+  transition: background-color var(--paap-transition-fast), border-color var(--paap-transition-fast), color var(--paap-transition-fast), box-shadow var(--paap-transition-fast), transform var(--paap-transition-fast);
+}
+
+.cv-button:focus-visible,
+.bx--btn:focus-visible,
+.text-btn:focus-visible,
+.flow-link:focus-visible {
+  outline: none;
+  box-shadow: var(--paap-focus-ring);
+}
+
+.cv-button:active:not(:disabled),
+.bx--btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.cv-button:disabled,
+.bx--btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.cv-button.bx--btn--sm,
+.bx--btn--sm {
+  min-height: 32px;
+  padding: 0 12px;
+  font-size: var(--paap-fs-compact);
+}
+
+.cv-button.bx--btn--primary,
+.bx--btn--primary {
+  background: var(--paap-accent);
+  border-color: var(--paap-accent);
+  color: #ffffff;
+}
+
+.cv-button.bx--btn--primary:hover:not(:disabled),
+.bx--btn--primary:hover:not(:disabled) {
+  background: var(--paap-accent-hover);
+  border-color: var(--paap-accent-hover);
+}
+
+.cv-button.bx--btn--secondary,
+.bx--btn--secondary {
+  background: var(--paap-panel);
+  border-color: var(--paap-accent);
+  color: var(--paap-accent);
+}
+
+.cv-button.bx--btn--secondary:hover:not(:disabled),
+.bx--btn--secondary:hover:not(:disabled) {
+  background: var(--paap-accent-soft);
+  border-color: var(--paap-accent-hover);
+  color: var(--paap-accent-hover);
+}
+
+.cv-button.bx--btn--ghost,
+.bx--btn--ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--paap-muted);
+}
+
+.cv-button.bx--btn--ghost:hover:not(:disabled),
+.bx--btn--ghost:hover:not(:disabled) {
+  background: var(--paap-panel-subtle);
+  color: var(--paap-text);
+}
+
+.cv-button.bx--btn--danger,
+.bx--btn--danger {
+  background: var(--paap-danger);
+  border-color: var(--paap-danger);
+  color: #ffffff;
+}
+
+.cv-button.bx--btn--danger--primary,
+.bx--btn--danger--primary {
+  background: var(--paap-danger);
+  border-color: var(--paap-danger);
+  color: #ffffff;
+}
+
+.cv-button.bx--btn--danger:hover:not(:disabled),
+.cv-button.bx--btn--danger--primary:hover:not(:disabled),
+.bx--btn--danger:hover:not(:disabled),
+.bx--btn--danger--primary:hover:not(:disabled) {
+  background: var(--paap-danger-dark);
+  border-color: var(--paap-danger-dark);
+}
+
+.cv-button.bx--btn--danger--ghost,
+.bx--btn--danger--ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--paap-danger);
+}
+
+.cv-button.bx--btn--danger--ghost:hover:not(:disabled),
+.bx--btn--danger--ghost:hover:not(:disabled) {
+  background: var(--paap-danger-soft);
+  color: var(--paap-danger-dark);
+}
+
+.bx--modal {
+  position: fixed;
+  inset: 0;
+  z-index: var(--paap-z-modal);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: var(--paap-space-6);
+  background: rgba(0, 0, 0, 0.42);
+}
+
+.bx--modal.is-visible {
+  display: flex;
+}
+
+.bx--modal-container {
+  width: min(640px, calc(100vw - 48px));
+  max-height: min(90vh, 760px);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  background: var(--paap-panel);
+  border: 1px solid var(--paap-border);
+  border-radius: var(--paap-radius);
+  box-shadow: var(--paap-shadow-lg);
+  outline: none;
+}
+
+.bx--modal-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--paap-space-4);
+  padding: var(--paap-space-5) var(--paap-space-6) var(--paap-space-3);
+}
+
+.bx--modal-header__label,
+.bx--modal-header__heading {
+  grid-column: 1;
+  margin: 0;
+}
+
+.bx--modal-header__label {
+  color: var(--paap-muted);
+  font-size: var(--paap-fs-label);
+}
+
+.bx--modal-header__heading {
+  color: var(--paap-text);
+  font-size: var(--paap-fs-heading-xl);
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.bx--modal-close {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  width: 40px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: transparent;
+  color: var(--paap-muted);
+  cursor: pointer;
+}
+
+.bx--modal-close:hover {
+  background: var(--paap-panel-subtle);
+  color: var(--paap-text);
+}
+
+.bx--modal-content {
+  min-height: 0;
+  overflow: auto;
+  padding: var(--paap-space-3) var(--paap-space-6) var(--paap-space-6);
+}
+
+.bx--modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--paap-space-3);
+  padding: var(--paap-space-4) var(--paap-space-6);
+  border-top: 1px solid var(--paap-border);
+}
+
+.bx--modal-footer .bx--btn {
+  width: auto;
+  min-width: 104px;
+  max-width: none;
+  border-radius: var(--paap-radius-sm);
+}
+
+.bx--modal--danger .bx--modal-container {
+  border-top: 3px solid var(--paap-danger);
+}
+
+.cv-tabs {
+  margin-bottom: var(--paap-space-5);
+}
+
+.cv-tabs .bx--tabs--scrollable {
+  width: 100%;
+  border-bottom: 1px solid var(--paap-border);
+  background: transparent;
+}
+
+.cv-tabs .bx--tabs--scrollable__nav {
+  display: flex;
+  gap: 0;
+  min-height: 40px;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+  overflow-x: auto;
+}
+
+.cv-tabs .bx--tabs--scrollable__nav-item {
+  min-width: auto;
+  height: 40px;
+  margin: 0;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+}
+
+.cv-tabs .bx--tabs--scrollable__nav-link {
+  height: 40px;
+  min-width: 96px;
+  padding: 0 var(--paap-space-4);
+  border: 0;
+  background: transparent;
+  color: var(--paap-muted);
+  font-family: inherit;
+  font-size: var(--paap-fs-body);
+  font-weight: 500;
+  line-height: 40px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.cv-tabs .bx--tabs--scrollable__nav-item:hover:not(.bx--tabs__nav-item--disabled) {
+  background: var(--paap-panel-subtle);
+}
+
+.cv-tabs .bx--tabs--scrollable__nav-item:hover:not(.bx--tabs__nav-item--disabled) .bx--tabs--scrollable__nav-link {
+  color: var(--paap-text);
+}
+
+.cv-tabs .bx--tabs__nav-item--selected,
+.cv-tabs .bx--tabs--scrollable__nav-item--selected {
+  border-bottom-color: var(--paap-accent);
+}
+
+.cv-tabs .bx--tabs__nav-item--selected .bx--tabs--scrollable__nav-link,
+.cv-tabs .bx--tabs--scrollable__nav-item--selected .bx--tabs--scrollable__nav-link {
+  color: var(--paap-text);
+  font-weight: 600;
+}
+
+.cv-tabs .bx--tabs--scrollable__nav-link:focus,
+.cv-tabs .bx--tabs--scrollable__nav-link:active {
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--paap-accent);
+}
+
+.cv-tabs__panels {
+  min-width: 0;
+}
+
+.text-btn,
+.flow-link {
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: var(--paap-radius-sm);
+  background: transparent;
+  color: var(--paap-accent);
+  font-family: inherit;
+  font-size: var(--paap-fs-label);
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  text-decoration: none;
+  transition: background-color var(--paap-transition-fast), border-color var(--paap-transition-fast), color var(--paap-transition-fast);
+}
+
+.text-btn:hover:not(:disabled),
+.flow-link:hover:not(:disabled) {
+  background: var(--paap-accent-soft);
+  color: var(--paap-accent-hover);
+  text-decoration: none;
+}
+
+.text-btn.danger,
+.flow-link.danger {
+  color: var(--paap-danger);
+}
+
+.text-btn.danger:hover:not(:disabled),
+.flow-link.danger:hover:not(:disabled) {
+  background: var(--paap-danger-soft);
+  color: var(--paap-danger-dark);
+}
+
+.text-btn:disabled,
+.flow-link:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 /* ===== Scrollbar ===== */
 ::-webkit-scrollbar {
   width: 6px;
@@ -298,7 +638,7 @@ a:hover {
   color: var(--paap-accent);
 }
 
-/* ===== Card (Railway-inspired: clean white on warm bg, subtle depth) ===== */
+/* ===== Card ===== */
 .rail-card {
   background: var(--paap-panel);
   border: 1px solid var(--paap-border);
@@ -311,7 +651,7 @@ a:hover {
   box-shadow: var(--paap-shadow-md);
 }
 
-/* ===== Buttons (Railway-inspired: clean, refined, consistent) ===== */
+/* ===== Buttons ===== */
 .rail-btn {
   display: inline-flex;
   align-items: center;
@@ -506,7 +846,7 @@ a:hover {
   line-height: 1.5;
 }
 
-/* ===== Form Inputs (Railway-inspired: clean, refined, consistent) ===== */
+/* ===== Form Inputs ===== */
 .rail-input {
   width: 100%;
   padding: 9px 12px;
@@ -648,20 +988,23 @@ a:hover {
   line-height: 1.3;
 }
 .modal-close {
-  background: none;
-  border: none;
-  color: var(--cds-text-secondary, #525252);
-  cursor: pointer;
-  padding: var(--paap-space-1);
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: var(--paap-radius-xs);
-  transition: background 110ms, color 110ms;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--paap-radius-sm);
+  background: transparent;
+  color: var(--paap-muted);
+  cursor: pointer;
+  transition: background-color var(--paap-transition-fast), border-color var(--paap-transition-fast), color var(--paap-transition-fast);
 }
 .modal-close:hover {
-  background: var(--cds-background-hover, rgba(141, 141, 141, 0.12));
-  color: var(--cds-text-primary, #161616);
+  border-color: var(--paap-border);
+  background: var(--paap-panel-subtle);
+  color: var(--paap-text);
 }
 .modal-body {
   padding: var(--paap-space-6);
@@ -1029,7 +1372,7 @@ a:hover {
 /* ===== Animations ===== */
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* ===== Empty states (Railway-inspired: clean, centered, warm) ===== */
+/* ===== Empty states ===== */
 .empty-card {
   background: var(--paap-panel);
   border: 1px solid var(--paap-border);

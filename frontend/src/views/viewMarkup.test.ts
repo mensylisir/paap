@@ -111,20 +111,21 @@ describe('Vue view markup', () => {
     expect(createEnvironmentModal.default).not.toContain('ipPool: form.ipPool')
   })
 
-  it('adds additional namespace inputs to both create environment dialogs', async () => {
+  it('keeps additional namespaces internal instead of showing them in create environment dialogs', async () => {
     const appOverview = await import('./AppOverviewView.vue?raw')
     const appEnvironments = await import('./AppEnvironmentsView.vue?raw')
     const createEnvironmentModal = await import('../components/CreateEnvironmentModal.vue?raw')
+    const sharedServices = await import('./createEnvironmentSharedServices.ts?raw')
 
     for (const source of [appOverview.default, appEnvironments.default]) {
       expect(source).toContain('additionalNamespacesInput')
       expect(source).toContain('parseAdditionalNamespacesInput')
       expect(source).toContain('additionalNamespaces: parseAdditionalNamespacesInput')
     }
-    expect(createEnvironmentModal.default).toContain('附加命名空间')
-    expect(createEnvironmentModal.default).toContain('additionalNamespacesInput')
-    expect(createEnvironmentModal.default).toContain('database:database')
-    expect(createEnvironmentModal.default).toContain('cache:cache')
+    expect(sharedServices.default).toContain("additionalNamespacesInput: ''")
+    expect(createEnvironmentModal.default).not.toContain('附加命名空间')
+    expect(createEnvironmentModal.default).not.toContain('database:database')
+    expect(createEnvironmentModal.default).not.toContain('cache:cache')
   })
 
   it('adds application member management controls to a dedicated app menu page', async () => {
@@ -214,7 +215,9 @@ describe('Vue view markup', () => {
     expect(router.default).toContain("redirect: '/users?tab=roles'")
     expect(router.default).toContain("path: 'roles/new'")
     expect(router.default).toContain("path: 'roles/:roleId'")
-    expect(usersView.default).toContain('setActiveTab(\'roles\')')
+    expect(usersView.default).toContain('class="user-role-tabs"')
+    expect(usersView.default).toContain("@click=\"setActiveTab('users')\"")
+    expect(usersView.default).toContain("@click=\"setActiveTab('roles')\"")
     expect(usersView.default).toContain("query: tab === 'roles' ? { tab: 'roles' } : {}")
     expect(usersView.default).toContain('to="/roles/new"')
     expect(usersView.default).toContain(':to="`/roles/${role.id}`"')
@@ -355,7 +358,7 @@ describe('Vue view markup', () => {
     expect(templatesView.default).toContain('configTemplatePreviewValidationItems')
   })
 
-  it('uses Railway-like app and environment context switching with modal creation', async () => {
+  it('uses app and environment context switching with modal creation', async () => {
     const appList = await import('./AppListView.vue?raw')
     const environmentsView = await import('./AppEnvironmentsView.vue?raw')
     const appLayout = await import('../layouts/AppLayout.vue?raw')
@@ -364,6 +367,12 @@ describe('Vue view markup', () => {
     expect(appList.default).toContain('submitApp')
     expect(appList.default).toContain('goToDefaultWorkspace')
     expect(appList.default).toContain('创建应用')
+    expect(appList.default).toContain('<template #title>新建应用</template>')
+    expect(appList.default).toContain('<template #content>')
+    expect(appList.default).toContain('<template #secondary-button>取消</template>')
+    expect(appList.default).toContain('<template #primary-button>{{ submitting ? \'创建中...\' : \'创建应用\' }}</template>')
+    expect(appList.default).not.toContain('title="新建应用"')
+    expect(appList.default).not.toContain('primary-button-label="创建应用"')
     expect(appList.default).not.toContain("router.push('/apps/create')")
     expect(appList.default).not.toContain('environments?create=true')
     expect(appList.default).toContain('overview?createEnvironment=true')
@@ -484,7 +493,7 @@ describe('Vue view markup', () => {
     expect(createEnvironmentModal.default).toContain('创建空环境')
     expect(createEnvironmentModal.default).toContain('创建基础环境')
     expect(createEnvironmentModal.default).toContain('从环境服务创建')
-    expect(createEnvironmentModal.default).toContain('附加命名空间')
+    expect(createEnvironmentModal.default).not.toContain('附加命名空间')
     expect(createEnvironmentModal.default).toContain('网络地址池')
     expect(createEnvironmentModal.default).not.toContain('能力来源')
   })
@@ -1420,6 +1429,47 @@ describe('Vue view markup', () => {
     expect(styles).not.toContain('.rail-btn--primary {\n  background: var(--paap-text);')
   })
 
+  it('keeps Carbon component styles loaded for migrated controls', () => {
+    const styles = readFileSync(new URL('../style.scss', import.meta.url), 'utf8')
+
+    for (const component of ['button', 'modal', 'text-input', 'select', 'form', 'tabs']) {
+      expect(styles).toContain(`@use '@carbon/styles/scss/components/${component}';`)
+    }
+  })
+
+  it('styles Carbon Vue dialogs with PAAP modal styling', () => {
+    const styles = readFileSync(new URL('../style.scss', import.meta.url), 'utf8')
+
+    expect(cssRule(styles, '.bx--modal')).toContain('position: fixed')
+    expect(cssRule(styles, '.bx--modal')).toContain('display: none')
+    expect(cssRule(styles, '.bx--modal.is-visible')).toContain('display: flex')
+    expect(cssRule(styles, '.bx--modal-container')).toContain('grid-template-rows')
+    expect(cssRule(styles, '.bx--modal-container')).toContain('var(--paap-radius)')
+  })
+
+  it('styles Carbon Vue buttons with PAAP button colors', () => {
+    const styles = readFileSync(new URL('../style.scss', import.meta.url), 'utf8')
+
+    expect(cssRule(styles, '.bx--btn')).toContain('inline-flex')
+    expect(cssRule(styles, '.bx--btn--primary')).toContain('background: var(--paap-accent)')
+    expect(cssRule(styles, '.bx--btn--danger')).toContain('background: var(--paap-danger)')
+    expect(cssRule(styles, '.bx--btn--danger--ghost:hover:not(:disabled)')).toContain('var(--paap-danger-soft)')
+    expect(styles).not.toContain('background: rgb(239, 239, 239)')
+  })
+
+  it('styles Carbon Vue tabs and text actions with PAAP controls', () => {
+    const styles = readFileSync(new URL('../style.scss', import.meta.url), 'utf8')
+
+    expect(cssRule(styles, '.cv-tabs .bx--tabs--scrollable')).toContain('var(--paap-border)')
+    expect(cssRule(styles, '.cv-tabs .bx--tabs--scrollable__nav-link')).toContain('var(--paap-muted)')
+    expect(styles).toContain('.cv-tabs .bx--tabs__nav-item--selected')
+    expect(styles).toContain('border-bottom-color: var(--paap-accent)')
+    expect(styles).toContain('.text-btn,\n.flow-link')
+    expect(styles).toContain('border-radius: var(--paap-radius-sm)')
+    expect(styles).toContain('.text-btn:hover:not(:disabled),\n.flow-link:hover:not(:disabled)')
+    expect(styles).toContain('background: var(--paap-accent-soft)')
+  })
+
   it('uses Carbon brand color for shell logo and application switcher icons', async () => {
     const appLayout = await import('../layouts/AppLayout.vue?raw')
     const mainLayout = await import('../layouts/MainLayout.vue?raw')
@@ -1950,7 +2000,7 @@ describe('Vue view markup', () => {
     expect(envDetail.default).not.toContain('@click="showComponentModal=false"')
   })
 
-  it('keeps right drawers and config template previews aligned with Carbon styling', async () => {
+  it('keeps right drawers and config template previews aligned with PAAP styling', async () => {
     const envDetail = await import('./EnvDetailView.vue?raw')
     const templatesView = await import('./TemplatesView.vue?raw')
     const templateFields = await import('../components/ComponentConfigTemplateFields.vue?raw')
@@ -1985,12 +2035,13 @@ describe('Vue view markup', () => {
     expect(templateFields.default).not.toContain('border-radius: 8px')
     expect(templateFields.default).not.toContain('border-radius: 999px')
 
-    expect(cssRule(templatesView.default, '.modal-container')).toContain('border-radius: 0')
+    expect(cssRule(templatesView.default, '.modal-container')).toContain('border-radius: var(--paap-radius)')
     expect(cssRule(templatesView.default, '.modal-container')).toContain('var(--paap-shadow-lg)')
     expect(cssRule(templatesView.default, '.template-preview-tabs')).toContain('var(--paap-panel)')
     expect(cssRule(templatesView.default, '.template-preview-tabs button.active')).toContain('var(--paap-accent)')
-    expect(cssRule(templatesView.default, '.rail-input')).toContain('var(--paap-panel-subtle)')
-    expect(cssRule(templatesView.default, '.rail-input:focus')).toContain('inset 0 0 0 1px')
+    expect(cssRule(templatesView.default, '.rail-input')).toContain('var(--paap-panel)')
+    expect(cssRule(templatesView.default, '.rail-input')).toContain('border-radius: var(--paap-radius-sm)')
+    expect(cssRule(templatesView.default, '.rail-input:focus')).toContain('var(--paap-focus-ring)')
     expect(cssRule(templatesView.default, '.preview-block')).toContain('border-radius: 0')
     expect(cssRule(templatesView.default, '.preview-block-title')).toContain('var(--paap-panel)')
     expect(cssRule(templatesView.default, '.preview-block pre')).toContain('var(--paap-panel-subtle)')

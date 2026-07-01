@@ -120,18 +120,20 @@
 
     <cv-modal
       :visible="!!pendingDeleteEnv"
-      title="确认删除"
       kind="danger"
-      close-aria-label="关闭"
-      primary-button-label="确认删除"
-      secondary-button-label="取消"
+      :close-aria-label="'关闭'"
       :primary-button-disabled="deletingEnvId !== null"
       @primary-click="performDeleteEnvironment"
       @secondary-click="closeDeleteEnvironmentDialog"
       @modal-hidden="closeDeleteEnvironmentDialog"
     >
-      <p class="confirm-text">这会删除环境记录和关联资源，请确认后继续。</p>
-      <div v-if="deleteError" class="form-error" role="alert">{{ deleteError }}</div>
+      <template #title>确认删除</template>
+      <template #content>
+        <p class="confirm-text">这会删除环境记录和关联资源，请确认后继续。</p>
+        <div v-if="deleteError" class="form-error" role="alert">{{ deleteError }}</div>
+      </template>
+      <template #secondary-button>取消</template>
+      <template #primary-button>{{ deletingEnvId !== null ? '删除中...' : '确认删除' }}</template>
     </cv-modal>
   </div>
 </template>

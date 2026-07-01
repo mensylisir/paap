@@ -1,6 +1,15 @@
 docs/
+node_modules/
 frontend/node_modules/
 frontend/dist/
 bin/
+server
+.cache/
+.omo/
+.playwright-mcp/
+tmp/
+.tmp-*
+login-*.md
+login-*.png
 .git/
 *.md

@@ -134,6 +134,9 @@ export const componentTemplateFieldType = (field: ComponentTemplateField | any) 
 
 export const componentTemplateFieldRequired = (field: ComponentTemplateField | any) => Boolean(field?.required)
 
+export const componentTemplateFieldHidden = (field: ComponentTemplateField | any) =>
+  Boolean(field?.hidden || field?.uiHidden || field?.['ui:hidden'] || field?.['x-hidden'])
+
 export const componentTemplateFieldTargetTokens = (field: ComponentTemplateField | any) => String(field?.target || '')
   .toLowerCase()
   .split('|')
@@ -258,6 +261,9 @@ export const componentTemplateFieldInputType = (field: ComponentTemplateField | 
 export const componentTemplateListItemFields = (field: ComponentTemplateField | any) => Array.isArray(field?.itemFields)
   ? field.itemFields.filter((item:any) => componentTemplateFieldKey(item))
   : []
+
+export const componentTemplateVisibleListItemFields = (field: ComponentTemplateField | any) =>
+  componentTemplateListItemFields(field).filter((item:any) => !componentTemplateFieldHidden(item))
 
 export const componentTemplateListRows = (
   field: ComponentTemplateField | any,

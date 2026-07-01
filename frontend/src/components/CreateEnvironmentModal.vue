@@ -1,6 +1,9 @@
 <template>
   <cv-modal
     :visible="visible"
+    :primary-button-disabled="!form.name || creating"
+    @primary-click="emit('submit')"
+    @secondary-click="emit('close')"
     @modal-hidden="emit('close')"
     :close-aria-label="'关闭'"
   >
@@ -58,18 +61,6 @@
           </select>
         </div>
         <div class="form-item">
-          <label class="form-label" :for="`${dialogIdPrefix}-additional-namespaces`">附加命名空间</label>
-          <textarea
-            :id="`${dialogIdPrefix}-additional-namespaces`"
-            :value="form.additionalNamespacesInput"
-            class="rail-textarea"
-            rows="3"
-            placeholder="database:database&#10;cache:cache"
-            @input="updateField('additionalNamespacesInput', ($event.target as HTMLTextAreaElement).value.trim())"
-          ></textarea>
-          <div class="form-helper">每行一个后缀，可写成 suffix:purpose；默认保留 app 工作负载空间。</div>
-        </div>
-        <div class="form-item">
           <div class="form-label-row">
             <label class="form-label">平台公共服务</label>
             <span v-if="sharedResourcesLoading" class="form-helper-inline">读取中...</span>
@@ -111,12 +102,8 @@
         <div v-if="error" class="form-error" role="alert">{{ error }}</div>
       </div>
     </template>
-    <template #footer>
-      <cv-button kind="ghost" :disabled="creating" @click="emit('close')">取消</cv-button>
-      <cv-button kind="primary" :disabled="!form.name || creating" @click="emit('submit')">
-        {{ creating ? '创建中...' : '创建' }}
-      </cv-button>
-    </template>
+    <template #secondary-button>取消</template>
+    <template #primary-button>{{ creating ? '创建中...' : '创建' }}</template>
   </cv-modal>
 </template>
 

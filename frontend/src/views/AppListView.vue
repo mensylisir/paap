@@ -93,36 +93,68 @@
 
     <cv-modal
       :visible="showCreateAppModal"
-      title="新建应用"
-      close-aria-label="关闭"
+      :close-aria-label="'关闭'"
       :primary-button-disabled="!appForm.name || submitting"
-      primary-button-label="创建应用"
-      secondary-button-label="取消"
       @primary-click="submitApp"
       @secondary-click="closeCreateAppModal"
       @modal-hidden="closeCreateAppModal"
     >
-      <cv-text-input v-model="appForm.name" label="应用名称" placeholder="例如：订单服务" @keyup.enter="submitApp" />
-      <cv-text-input v-model="appForm.identifier" label="应用标识" placeholder="留空由后台生成" />
-      <p class="form-helper">当前预览：{{ identifierPreview }}</p>
-      <cv-text-area v-model="appForm.description" label="应用描述" placeholder="简要描述应用用途" :rows="3" />
-      <div v-if="formError" class="form-error" role="alert">{{ formError }}</div>
+      <template #title>新建应用</template>
+      <template #content>
+        <div class="modal-content-body">
+          <div class="form-item">
+            <label class="form-label" for="create-app-name">应用名称 <span class="required">*</span></label>
+            <input
+              id="create-app-name"
+              v-model.trim="appForm.name"
+              class="rail-input"
+              placeholder="例如：订单服务"
+              @keyup.enter="submitApp"
+            />
+          </div>
+          <div class="form-item">
+            <label class="form-label" for="create-app-identifier">应用标识</label>
+            <input
+              id="create-app-identifier"
+              v-model.trim="appForm.identifier"
+              class="rail-input"
+              placeholder="留空由后台生成"
+            />
+            <p class="form-helper">当前预览：{{ identifierPreview }}</p>
+          </div>
+          <div class="form-item">
+            <label class="form-label" for="create-app-description">应用描述</label>
+            <textarea
+              id="create-app-description"
+              v-model.trim="appForm.description"
+              class="rail-textarea"
+              rows="3"
+              placeholder="简要描述应用用途"
+            />
+          </div>
+          <div v-if="formError" class="form-error" role="alert">{{ formError }}</div>
+        </div>
+      </template>
+      <template #secondary-button>取消</template>
+      <template #primary-button>{{ submitting ? '创建中...' : '创建应用' }}</template>
     </cv-modal>
 
     <cv-modal
       :visible="!!pendingDeleteApp"
-      title="确认删除"
       kind="danger"
-      close-aria-label="关闭"
-      primary-button-label="确认删除"
-      secondary-button-label="取消"
+      :close-aria-label="'关闭'"
       :primary-button-disabled="deletingAppId !== null"
       @primary-click="performDeleteApplication"
       @secondary-click="closeDeleteApplicationDialog"
       @modal-hidden="closeDeleteApplicationDialog"
     >
-      <p class="confirm-text">这会删除应用下的环境记录和关联资源，请确认后继续。</p>
-      <div v-if="deleteError" class="form-error" role="alert">{{ deleteError }}</div>
+      <template #title>确认删除</template>
+      <template #content>
+        <p class="confirm-text">这会删除应用下的环境记录和关联资源，请确认后继续。</p>
+        <div v-if="deleteError" class="form-error" role="alert">{{ deleteError }}</div>
+      </template>
+      <template #secondary-button>取消</template>
+      <template #primary-button>{{ deletingAppId !== null ? '删除中...' : '确认删除' }}</template>
     </cv-modal>
   </div>
 </template>

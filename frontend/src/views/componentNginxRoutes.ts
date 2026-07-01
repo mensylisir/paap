@@ -139,13 +139,16 @@ export const nginxTemplateListFieldSupportsRoutes = (field:TemplateListField) =>
 export const nginxRouteRowsToTemplateListRows = (
   routes:NginxRouteRow[],
   field:TemplateListField,
+  options: { proxyValue?: 'targetKey' | 'targetUrl' } = {},
 ) => {
   const keys = templateRouteFieldKeys(field)
   if (!keys) return []
   return (routes || []).map((route) => ({
     [keys.pathKey]: normalizeLocationPath(route.path),
     ...(keys.proxyKey
-      ? { [keys.proxyKey]: stringValue(route.targetKey) || normalizeProxyUrl(route.targetUrl) }
+      ? { [keys.proxyKey]: options.proxyValue === 'targetUrl'
+        ? normalizeProxyUrl(route.targetUrl)
+        : stringValue(route.targetKey) || normalizeProxyUrl(route.targetUrl) }
       : {}),
     ...(keys.directivesKey
       ? { [keys.directivesKey]: [
@@ -158,6 +161,20 @@ export const nginxRouteRowsToTemplateListRows = (
       ].join('\n') }
       : {}),
   })).filter((row) => row[keys.pathKey] || row[keys.proxyKey])
+}
+
+export const nginxTemplateListRowsWithGeneratedDirectives = (
+  rows:Array<Record<string, any>>,
+  field:TemplateListField,
+  backendTargets:BackendTarget[],
+) => {
+  const routes = nginxTemplateListRowsToRouteRows(rows, field, backendTargets)
+  if (!routes.length) return rows || []
+  const generatedRows = nginxRouteRowsToTemplateListRows(routes, field, { proxyValue: 'targetUrl' })
+  return (rows || []).map((row, idx) => ({
+    ...row,
+    ...(generatedRows[idx] || {}),
+  }))
 }
 
 export const nginxTemplateListRowsToRouteRows = (
