@@ -19,38 +19,6 @@ inspect_namespace() {
   kubectl get events -n "$namespace" --sort-by=.lastTimestamp | tail -20 || true
 }
 
-apply_crds_from_manifest() {
-  manifest="$1"
-  tmp_file="$(mktemp)"
-  awk '
-    BEGIN { doc = ""; is_crd = 0 }
-    /^---[[:space:]]*$/ {
-      if (doc != "" && is_crd) {
-        printf "%s---\n", doc
-      }
-      doc = ""
-      is_crd = 0
-      next
-    }
-    {
-      doc = doc $0 "\n"
-      if ($0 ~ /^kind:[[:space:]]*CustomResourceDefinition[[:space:]]*$/) {
-        is_crd = 1
-      }
-    }
-    END {
-      if (doc != "" && is_crd) {
-        printf "%s", doc
-      }
-    }
-  ' "$manifest" > "$tmp_file"
-
-  if [ -s "$tmp_file" ]; then
-    kubectl apply -f "$tmp_file"
-  fi
-  rm -f "$tmp_file"
-}
-
 "$PROJECT_DIR/scripts/check-disk-space.sh" before-paap-kind-deploy
 
 # 1. 构建内置模板包和 PAAP 本地镜像
@@ -78,44 +46,27 @@ rm -f "$KIND_IMAGE_LIST"
 echo "3. Creating namespaces..."
 kubectl apply -f "$SCRIPT_DIR/namespace.yaml"
 
-# 4. 安装 kpack。source 组件默认走 Buildpacks/kpack，必须先有 CRD/controller/webhook。
-echo "4. Installing kpack v0.17.0..."
-apply_crds_from_manifest "$SCRIPT_DIR/kpack-v0.17.0.yaml"
-kubectl wait --for=condition=Established --timeout=120s \
-  crd/builds.kpack.io \
-  crd/builders.kpack.io \
-  crd/buildpacks.kpack.io \
-  crd/clusterbuilders.kpack.io \
-  crd/clusterbuildpacks.kpack.io \
-  crd/clusterlifecycles.kpack.io \
-  crd/clusterstacks.kpack.io \
-  crd/clusterstores.kpack.io \
-  crd/images.kpack.io \
-  crd/sourceresolvers.kpack.io
-kubectl apply -f "$SCRIPT_DIR/kpack-v0.17.0.yaml"
-inspect_namespace kpack
-
-# 5. 安装 PAAP CRD
-echo "5. Installing PAAP CRDs..."
+# 4. 安装 PAAP CRD
+echo "4. Installing PAAP CRDs..."
 kubectl apply -f "$PROJECT_DIR/config/crd/bases/"
 
-# 6. 部署 PostgreSQL
-echo "6. Deploying PostgreSQL..."
+# 5. 部署 PostgreSQL
+echo "5. Deploying PostgreSQL..."
 kubectl apply -f "$SCRIPT_DIR/postgres.yaml"
 
-# 7. 部署 MinIO
-echo "7. Deploying MinIO..."
+# 6. 部署 MinIO
+echo "6. Deploying MinIO..."
 kubectl apply -f "$SCRIPT_DIR/minio.yaml"
 
-# 7.5 部署 Keycloak（PAAP 身份认证组件）
-echo "7.5 Deploying Keycloak..."
+# 7. 部署 Keycloak（PAAP 身份认证组件）
+echo "7. Deploying Keycloak..."
 kubectl apply -f "$SCRIPT_DIR/keycloak.yaml"
 
 # 等待 MinIO 就绪
 inspect_namespace paap-system
 
-# 8. 初始化模板（assets 镜像携带内置包，init job 上传到 MinIO）
-echo "8. Initializing templates..."
+# 8. 初始化模板和平台插件包（assets 镜像携带内置包，init job 上传到 MinIO）
+echo "8. Initializing templates and platform addon packages..."
 sed "s#image: paap-assets:.*#image: $ASSETS_IMAGE#g" "$SCRIPT_DIR/init-templates.yaml" | kubectl apply -f -
 echo "   Template initialization log:"
 kubectl get job,pod -n paap-system -l job-name=init-templates -o wide || true
@@ -143,7 +94,6 @@ echo "12. Configuring auth endpoints..."
 # 13. 直接检查当前状态，不做被动等待
 echo "13. Inspecting current pod status..."
 inspect_namespace paap-system
-inspect_namespace kpack
 
 echo ""
 echo "=== PAAP Deployed Successfully ==="
@@ -159,9 +109,6 @@ kubectl get crd | grep paap.io
 echo ""
 echo "Pods in paap-system:"
 kubectl get pods -n paap-system
-echo ""
-echo "Pods in kpack:"
-kubectl get pods -n kpack
 echo ""
 echo "Templates in MinIO:"
 kubectl exec -n paap-system deployment/minio -- \

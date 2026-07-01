@@ -72,11 +72,11 @@
 ### 3.7 kpack 定位评估：默认安装还是可选 CI 组件？
 
 #### 背景
-- 当前：`deploy/k8s/deploy.sh` 步骤 4 **强制安装** kpack v0.17.0，注释写 "source 组件默认走 Buildpacks/kpack，必须先有 CRD/controller/webhook"
+- 已处理：`deploy/k8s/deploy.sh` 不再强制安装 kpack；kpack 插件包随 `paap-assets` 进入 `init-templates` Job，并上传到 MinIO，管理员在平台插件页面启用
 - `internal/k8s/kpack.go`：629 行深度集成 — SA 创建、Docker registry 配置、CA 注入、Builder/ClusterStore/ClusterStack 管理
 - 组件模型（`component.go`）已有 `SourceRepoURL` / `SourceMirrorRepoURL` / `SourceBranch` 字段
 - 前端 deploy tab 支持 image delivery / source delivery 两种模式切换
-- kpack 未注册为 ServiceCatalog 条目，是硬编码基础设施
+- kpack 是平台插件，不注册为环境级 ServiceCatalog 条目
 - 依赖大量重型 Paketo Buildpacks 镜像（Java ~1.5GB, NodeJS ~500MB, Go ~400MB, Python ~500MB）
 
 #### 评估
@@ -114,10 +114,10 @@ kpack 应该是**平台基础设施**而非环境级服务，但不在 deploy.sh
 
 **推荐路径（平台基础设施）：**
 
-1. **deploy.sh 移除 kpack 步骤**，改为输出版本要求提示。kpack 安装移至独立的 `install-kpack.sh` 脚本
+1. **已完成：deploy.sh 移除 kpack 步骤**。kpack 安装由平台插件包承载，管理员在平台插件页面启用
 2. **后端增加 kpack 探测**：当用户创建 source delivery 组件时，检查 `kpack.io/v1alpha2` CRD 是否存在。不存在则返回明确引导错误："source delivery 需要安装 kpack，请联系平台管理员在管理页面安装"
 3. **前端联动**：kpack 不可用时，component deploy tab 的 source delivery 模式灰显/显示提示，而非可选后报错
-4. **平台管理界面**（对应路线图需求 7）增加"平台组件"tab，kpack 作为第一个平台级组件列在其中（安装/卸载/状态），调用 `install-kpack.sh` 逻辑
+4. **已完成：平台管理界面增加平台插件页面**，kpack 与 metrics-server、KEDA、KubeVirt、CDI 一起作为平台级插件管理
 5. **版本兼容校验**：PAAP Server 启动时检测集群版本，推荐对应的 kpack 版本
 
 #### 工作量预估

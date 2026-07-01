@@ -117,56 +117,53 @@ echo ""
 rm -f "$IMAGES_TAR"
 
 # ── Step 4: Apply manifests ──
-echo "4. Applying kpack CRDs..."
-$KUBECTL apply -f "$SCRIPT_DIR/kpack-v0.17.0.yaml" 2>&1 | tail -5 || true
-
 echo ""
-echo "5. Applying PAAP CRDs..."
+echo "4. Applying PAAP CRDs..."
 $KUBECTL apply -f "$PROJECT_DIR/config/crd/bases/" 2>&1 | tail -5
 
 echo ""
-echo "6. Creating namespace..."
+echo "5. Creating namespace..."
 $KUBECTL apply -f "$SCRIPT_DIR/namespace.yaml" 2>&1
 
 echo ""
-echo "7. Deploying PostgreSQL..."
+echo "6. Deploying PostgreSQL..."
 $KUBECTL apply -f "$SCRIPT_DIR/postgres.yaml" 2>&1
 
 echo ""
-echo "8. Deploying MinIO..."
+echo "7. Deploying MinIO..."
 $KUBECTL apply -f "$SCRIPT_DIR/minio.yaml" 2>&1
 
 echo ""
-echo "9. Deploying Keycloak..."
+echo "8. Deploying Keycloak..."
 $KUBECTL apply -f "$SCRIPT_DIR/keycloak.yaml" 2>&1
 
 echo ""
-echo "10. Waiting for infra pods..."
+echo "9. Waiting for infra pods..."
 $KUBECTL wait --for=condition=ready pod -l app=paap-postgres -n paap-system --timeout=120s 2>&1 || true
 $KUBECTL wait --for=condition=ready pod -l app=minio -n paap-system --timeout=120s 2>&1 || true
 
 echo ""
-echo "11. Initializing templates..."
+echo "10. Initializing templates and platform addon packages..."
 apply_manifest_with_image "$SCRIPT_DIR/init-templates.yaml" "paap-assets" "$ASSETS_IMAGE"
 
 echo ""
-echo "12. Deploying Operator..."
+echo "11. Deploying Operator..."
 apply_manifest_with_image "$SCRIPT_DIR/paap-operator.yaml" "paap-operator" "$OPERATOR_IMAGE"
 
 echo ""
-echo "13. Seeding shared resource pool..."
+echo "12. Seeding shared resource pool..."
 $KUBECTL apply -f "$SCRIPT_DIR/shared-resource-pool.yaml" 2>&1
 
 echo ""
-echo "14. Deploying Server..."
+echo "13. Deploying Server..."
 apply_manifest_with_image "$SCRIPT_DIR/paap-server.yaml" "paap-server" "$SERVER_IMAGE"
 
 echo ""
-echo "15. Configuring auth endpoints..."
+echo "14. Configuring auth endpoints..."
 "$SCRIPT_DIR/configure-auth-endpoints.sh" --kubeconfig "$KUBECONFIG"
 
 echo ""
-echo "16. Waiting for all pods..."
+echo "15. Waiting for all pods..."
 $KUBECTL wait --for=condition=ready pod -l app=paap-operator -n paap-system --timeout=120s 2>&1 || true
 $KUBECTL wait --for=condition=ready pod -l app=paap-server -n paap-system --timeout=120s 2>&1 || true
 

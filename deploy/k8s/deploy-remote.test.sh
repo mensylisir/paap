@@ -33,6 +33,8 @@ assert_not_contains '"paap-operator:v0.1.54"'
 assert_contains '--field-selector spec.unschedulable!=true'
 assert_contains 'oci-archive:${ARCHIVE}:${IMG}'
 assert_not_contains 'oci-archive:${ARCHIVE}:latest'
+assert_not_contains 'Applying kpack CRDs'
+assert_not_contains 'kpack-v0.17.0.yaml'
 
 assert_contains 'apply_manifest_with_image "$SCRIPT_DIR/init-templates.yaml" "paap-assets" "$ASSETS_IMAGE"'
 assert_contains 'apply_manifest_with_image "$SCRIPT_DIR/paap-operator.yaml" "paap-operator" "$OPERATOR_IMAGE"'
