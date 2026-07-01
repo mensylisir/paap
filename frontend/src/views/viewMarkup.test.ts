@@ -2053,20 +2053,21 @@ describe('Vue view markup', () => {
     expect(envDetail.default).not.toContain("runtimeMetricChartFor('memory')")
   })
 
-  it('keeps direct component environment variables as the default input without a source dropdown', async () => {
+  it('requires choosing a component environment variable source before showing value inputs', async () => {
     const envDetail = await import('./EnvDetailView.vue?raw')
 
-    expect(envDetail.default).not.toContain('<option value="value">直接填写</option>')
-    expect(envDetail.default).not.toContain('>直接值</button>')
-    expect(envDetail.default).toContain('placeholder="VALUE"')
-    expect(envDetail.default).toContain('改为直接输入')
+    expect(envDetail.default).toContain('aria-label="环境变量来源"')
+    expect(envDetail.default).toContain('<option value="">选择来源</option>')
+    expect(envDetail.default).toContain('<option value="value">字面值</option>')
+    expect(envDetail.default).toContain('<option value="configMap">引用 ConfigMap</option>')
+    expect(envDetail.default).toContain('<option value="secret">引用 Secret</option>')
+    expect(envDetail.default).toContain('选择来源后填写取值')
+    expect(envDetail.default).toContain('placeholder="变量值"')
+    expect(envDetail.default).not.toContain('placeholder="VALUE"')
+    expect(envDetail.default).not.toContain('改为直接输入')
     expect(envDetail.default).toContain('placeholder="ConfigMap"')
     expect(envDetail.default).toContain('placeholder="Secret"')
-    expect(envDetail.default).toContain("setConfigEnvSource(envItem, 'configMap')")
-    expect(envDetail.default).toContain("setConfigEnvSource(envItem, 'secret')")
-    expect(envDetail.default).toContain("setConfigEnvSource(envItem, 'value')")
-    expect(envDetail.default).toContain('引用配置')
-    expect(envDetail.default).toContain('引用敏感项')
+    expect(envDetail.default).toContain('validateConfigEnvRows')
   })
 
   it('does not present an unsaved recommended component template as current config', async () => {

@@ -2017,23 +2017,25 @@
                       </template>
                       <template v-else>
                         <input v-model.trim="envItem.name" class="bx--text-input" list="component-config-key-suggestions" placeholder="NAME" />
+                        <select v-model="envItem.source" class="bx--select-input" aria-label="环境变量来源" @change="normalizeConfigEnvSource(envItem)">
+                          <option value="">选择来源</option>
+                          <option value="value">字面值</option>
+                          <option value="configMap">引用 ConfigMap</option>
+                          <option value="secret">引用 Secret</option>
+                        </select>
                         <div class="config-env-value-cell">
-                          <input v-if="envItem.source === 'value'" v-model="envItem.value" class="bx--text-input" placeholder="VALUE" aria-label="环境变量值" />
+                          <input v-if="envItem.source === 'value'" v-model="envItem.value" class="bx--text-input" placeholder="变量值" aria-label="环境变量值" />
                           <template v-else-if="envItem.source === 'configMap'">
                             <span class="config-env-managed-secret">引用 ConfigMap</span>
                             <input v-model.trim="envItem.refName" class="bx--text-input" placeholder="ConfigMap" aria-label="ConfigMap 名称" />
                             <input v-model.trim="envItem.refKey" class="bx--text-input" :placeholder="envItem.name || 'KEY'" aria-label="ConfigMap Key" />
                           </template>
-                          <template v-else>
+                          <template v-else-if="envItem.source === 'secret'">
                             <span class="config-env-managed-secret">引用 Secret</span>
                             <input v-model.trim="envItem.refName" class="bx--text-input" placeholder="Secret" aria-label="Secret 名称" />
                             <input v-model.trim="envItem.refKey" class="bx--text-input" :placeholder="envItem.name || 'KEY'" aria-label="Secret Key" />
                           </template>
-                        </div>
-                        <div class="config-env-actions">
-                          <button v-if="envItem.source !== 'configMap'" type="button" class="text-btn" @click="setConfigEnvSource(envItem, 'configMap')">引用配置</button>
-                          <button v-if="envItem.source !== 'secret'" type="button" class="text-btn" @click="setConfigEnvSource(envItem, 'secret')">引用敏感项</button>
-                          <button v-if="envItem.source !== 'value'" type="button" class="text-btn" @click="setConfigEnvSource(envItem, 'value')">改为直接输入</button>
+                          <span v-else class="config-env-source-placeholder">选择来源后填写取值</span>
                         </div>
                       </template>
                       <button type="button" class="text-btn danger" @click="removeConfigEnv(idx)">删除</button>
@@ -2858,7 +2860,7 @@ const contextSubmenu = ref<{ visible: boolean; x: number; y: number; mode: 'comp
 })
 type ComponentConfigEnvRow = {
   name: string
-  source: 'value' | 'configMap' | 'secret'
+  source: '' | 'value' | 'configMap' | 'secret'
   value: string
   refName: string
   refKey: string
@@ -7245,14 +7247,10 @@ const clearManagedConnectionEnvForTarget = (target:any) => {
 const linesFromArray = (items:any) => Array.isArray(items) ? items.map((item:any) => String(item).trim()).filter(Boolean).join('\n') : ''
 const arrayFromLines = (text:string) => String(text || '').split('\n').map(item => item.trim()).filter(Boolean)
 const addConfigEnv = () => {
-  configForm.value.env.push({ name: '', source: 'value', value: '', refName: '', refKey: '' })
+  configForm.value.env.push({ name: '', source: '', value: '', refName: '', refKey: '' })
 }
 const removeConfigEnv = (idx:number) => {
   configForm.value.env.splice(idx, 1)
-}
-const setConfigEnvSource = (envItem:ComponentConfigEnvRow, source:ComponentConfigEnvRow['source']) => {
-  envItem.source = source
-  normalizeConfigEnvSource(envItem)
 }
 const normalizeConfigEnvSource = (envItem:ComponentConfigEnvRow) => {
   if (envItem.source === 'secret') {
@@ -8464,6 +8462,15 @@ const configFormPayload = () => {
     autoscaling: autoscalingPayload(configForm.value.autoscaling),
   }
 }
+const validateConfigEnvRows = () => {
+  const missingSource = configForm.value.env.find((item:any) =>
+    String(item.name || '').trim()
+    && !String(item.source || '').trim()
+  )
+  if (!missingSource) return true
+  configDrawer.value.error = `请选择环境变量 ${String(missingSource.name || '').trim()} 的来源。`
+  return false
+}
 const autoscalingPayload = (form:any) => {
   if (!form?.enabled) return undefined
   const mode = form.mode === 'keda' ? 'keda' : 'hpa'
@@ -8529,6 +8536,7 @@ const saveConfigDrawer = async (options: { refresh?: boolean; includeDelivery?: 
       if (!nginxReady) return
     }
     if (!validateConfigFileMountPaths()) return
+    if (!validateConfigEnvRows()) return
     const deliveryPayload = includeDelivery
       ? {
           deliveryMode: configForm.value.deliveryMode,
@@ -12172,7 +12180,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 }
 .config-env-row {
   display: grid;
-  grid-template-columns: minmax(160px, 1fr) minmax(180px, 1.3fr) minmax(150px, auto) auto;
+  grid-template-columns: minmax(150px, 1fr) minmax(128px, 0.7fr) minmax(220px, 1.5fr) auto;
   gap: var(--paap-space-2);
   align-items: center;
 }
@@ -12193,6 +12201,11 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 }
 .config-env-value-cell > .bx--text-input:only-child {
   grid-column: 1 / -1;
+}
+.config-env-source-placeholder {
+  grid-column: 1 / -1;
+  color: var(--paap-muted);
+  font-size: var(--paap-fs-label);
 }
 .config-env-actions {
   display: flex;
