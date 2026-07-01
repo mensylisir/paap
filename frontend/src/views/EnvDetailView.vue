@@ -1889,6 +1889,10 @@
               <div class="config-section-title"><span>配置</span></div>
               <div class="component-config-flow component-config-flow--guided">
                 <div class="component-template-picker">
+                  <div class="component-config-source-line">
+                    <span>已保存来源</span>
+                    <strong>{{ componentSavedConfigTemplateLabel }}</strong>
+                  </div>
                   <label class="component-template-select">
                     <span>配置模板</span>
                     <select v-model="selectedComponentConfigTemplateId" class="bx--select-input">
@@ -1930,7 +1934,7 @@
                 <div v-if="componentCurrentConfigRows.length" class="component-current-config-panel">
                   <div class="component-current-config-head">
                     <span>当前配置</span>
-                    <small>{{ componentCurrentConfigRows.length }} 项</small>
+                    <small>{{ componentCurrentConfigRows.length }} 项 · {{ componentSavedConfigTemplateLabel }}</small>
                   </div>
                   <div class="component-current-config-list">
                     <div v-for="row in componentCurrentConfigRows" :key="row.key" class="component-current-config-row">
@@ -2014,20 +2018,22 @@
                       <template v-else>
                         <input v-model.trim="envItem.name" class="bx--text-input" list="component-config-key-suggestions" placeholder="NAME" />
                         <div class="config-env-value-cell">
-                          <input v-if="envItem.source === 'value'" v-model="envItem.value" class="bx--text-input" placeholder="value" />
+                          <input v-if="envItem.source === 'value'" v-model="envItem.value" class="bx--text-input" placeholder="VALUE" aria-label="环境变量值" />
                           <template v-else-if="envItem.source === 'configMap'">
-                            <span class="config-env-managed-secret">应用配置</span>
-                            <input v-model.trim="envItem.refKey" class="bx--text-input" :placeholder="envItem.name || '配置项'" />
+                            <span class="config-env-managed-secret">引用 ConfigMap</span>
+                            <input v-model.trim="envItem.refName" class="bx--text-input" placeholder="ConfigMap" aria-label="ConfigMap 名称" />
+                            <input v-model.trim="envItem.refKey" class="bx--text-input" :placeholder="envItem.name || 'KEY'" aria-label="ConfigMap Key" />
                           </template>
                           <template v-else>
-                            <span class="config-env-managed-secret">敏感项</span>
-                            <input v-model.trim="envItem.refKey" class="bx--text-input" :placeholder="envItem.name || '敏感项'" />
+                            <span class="config-env-managed-secret">引用 Secret</span>
+                            <input v-model.trim="envItem.refName" class="bx--text-input" placeholder="Secret" aria-label="Secret 名称" />
+                            <input v-model.trim="envItem.refKey" class="bx--text-input" :placeholder="envItem.name || 'KEY'" aria-label="Secret Key" />
                           </template>
                         </div>
                         <div class="config-env-actions">
                           <button v-if="envItem.source !== 'configMap'" type="button" class="text-btn" @click="setConfigEnvSource(envItem, 'configMap')">引用配置</button>
                           <button v-if="envItem.source !== 'secret'" type="button" class="text-btn" @click="setConfigEnvSource(envItem, 'secret')">引用敏感项</button>
-                          <button v-if="envItem.source !== 'value'" type="button" class="text-btn" @click="setConfigEnvSource(envItem, 'value')">直接值</button>
+                          <button v-if="envItem.source !== 'value'" type="button" class="text-btn" @click="setConfigEnvSource(envItem, 'value')">改为直接输入</button>
                         </div>
                       </template>
                       <button type="button" class="text-btn danger" @click="removeConfigEnv(idx)">删除</button>
@@ -2503,7 +2509,6 @@ import { validateWorkspaceActionParams, type ServiceWorkspace, type WorkspaceAct
 import { renderPaapTemplateValue, templatePlaceholderDefault } from './configTemplateRenderer'
 import {
   componentConfigTemplateMatchesComponent,
-  componentConfigTemplateRecommendationScore,
   componentConfigTemplateMatchesSelection,
   componentConfigTemplateSelectValue,
   componentTemplateFieldDefaultValue,
@@ -7144,7 +7149,7 @@ const loadComponentConfigForm = (comp:any) => {
   nginxRouteRows.value = nginxRoutesFromCurrentConfig()
   selectedComponentConfigTemplateId.value = componentConfigTemplateSelectionFromConfig(cfg)
   componentTemplateFieldValues.value = {}
-  selectRecommendedComponentConfigTemplate()
+  syncSelectedComponentConfigTemplate()
 }
 const autoscalingFormFromConfig = (raw:any, replicas:number) => {
   const defaults = defaultAutoscalingForm()
@@ -7352,6 +7357,13 @@ const selectedComponentConfigTemplate = computed(() =>
     return componentConfigTemplateMatchesSelection(template, selected)
   }) || null
 )
+const componentSavedConfigTemplateName = computed(() => {
+  const cfg = parseRuntimeConfig(configDrawer.value.component?.config)
+  return String(cfg.configTemplateName || cfg.configTemplate?.name || '').trim()
+})
+const componentSavedConfigTemplateLabel = computed(() =>
+  componentSavedConfigTemplateName.value ? `配置模板 ${componentSavedConfigTemplateName.value}` : '未保存配置模板'
+)
 const componentTemplateFields = computed(() =>
   Array.isArray(selectedComponentConfigTemplate.value?.fields)
     ? selectedComponentConfigTemplate.value.fields.filter((field:any) => componentTemplateFieldKey(field))
@@ -7481,7 +7493,7 @@ const initializeComponentTemplateFieldValues = (force = false) => {
   componentTemplateFieldValues.value = next
   syncNginxTemplateFieldValuesFromRouteRows()
 }
-const selectRecommendedComponentConfigTemplate = () => {
+const syncSelectedComponentConfigTemplate = () => {
   const current = componentSelectableConfigTemplates.value.find((template) => componentConfigTemplateMatchesSelection(template, selectedComponentConfigTemplateId.value))
   if (current) {
     selectedComponentConfigTemplateId.value = componentTemplateOptionValue(current)
@@ -7489,22 +7501,6 @@ const selectRecommendedComponentConfigTemplate = () => {
     return
   }
   if (selectedComponentConfigTemplateId.value && (componentConfigTemplatesLoading.value || componentSelectableConfigTemplates.value.length === 0)) return
-  const recommended = [...componentSelectableConfigTemplates.value]
-    .map((template) => ({
-      template,
-      score: componentConfigTemplateRecommendationScore(template, {
-        componentType: componentDrawerType.value,
-        framework: configForm.value.framework,
-        componentName: String(configDrawer.value.component?.name || ''),
-      }),
-    }))
-    .filter((item) => item.score >= 0)
-    .sort((a, b) => b.score - a.score || String(a.template.name || '').localeCompare(String(b.template.name || '')))[0]?.template
-  if (recommended && !selectedComponentConfigTemplateId.value) {
-    selectedComponentConfigTemplateId.value = componentTemplateOptionValue(recommended)
-    initializeComponentTemplateFieldValues(false)
-    return
-  }
   selectedComponentConfigTemplateId.value = ''
   componentTemplateFieldValues.value = {}
 }
@@ -7525,7 +7521,7 @@ const componentCurrentConfigRows = computed(() => {
     rows.push({
       key: `env:${name}:${idx}`,
       name,
-      source: configEnvSourceLabel(item),
+      source: componentConfigRowSourceLabel(configEnvSourceLabel(item)),
       value: configEnvDisplayValue(item),
     })
   })
@@ -7535,7 +7531,7 @@ const componentCurrentConfigRows = computed(() => {
     rows.push({
       key: `file:${name}:${idx}`,
       name,
-      source: '配置文件',
+      source: componentConfigRowSourceLabel('配置文件挂载'),
       value: `${item.configMapName || 'ConfigMap'} -> ${item.mountPath || '未设置挂载路径'}`,
     })
   })
@@ -7545,7 +7541,7 @@ const componentCurrentConfigRows = computed(() => {
     rows.push({
       key: `configmap:${item.name}:${idx}`,
       name: String(item.name),
-      source: '应用配置',
+      source: componentConfigRowSourceLabel('普通配置'),
       value: keys.join(', '),
     })
   })
@@ -7555,28 +7551,32 @@ const componentCurrentConfigRows = computed(() => {
     rows.push({
       key: `secret:${item.name}:${idx}`,
       name: String(item.name),
-      source: '敏感配置',
+      source: componentConfigRowSourceLabel('敏感配置'),
       value: keys.join(', '),
     })
   })
   return rows
 })
+const componentConfigRowSourceLabel = (kind:string) => {
+  const templateName = componentSavedConfigTemplateName.value
+  return templateName ? `模板 ${templateName} · ${kind}` : kind
+}
 const configEnvSourceLabel = (item:any) => {
-  if (item?.source === 'secret') return '敏感项'
-  if (item?.source === 'configMap') return '应用配置'
-  return '环境变量'
+  if (item?.source === 'secret') return '环境变量 · 引用敏感配置'
+  if (item?.source === 'configMap') return '环境变量 · 引用普通配置'
+  return '环境变量 · 直接值'
 }
 const configEnvDisplayValue = (item:any) => {
   const name = String(item?.name || '').trim()
   if (item?.source === 'secret') {
     const refName = String(item?.refName || componentGeneratedSecretName()).trim()
     const refKey = String(item?.refKey || name).trim()
-    return `${refName}/${refKey}`
+    return `Secret ${refName}/${refKey}`
   }
   if (item?.source === 'configMap') {
     const refName = String(item?.refName || componentGeneratedConfigMapName()).trim()
     const refKey = String(item?.refKey || name).trim()
-    return `${refName}/${refKey}`
+    return `ConfigMap ${refName}/${refKey}`
   }
   const value = String(item?.value || '').trim()
   return value || '空值'
@@ -7621,7 +7621,7 @@ watch(() => selectedComponentConfigTemplate.value ? componentTemplateOptionValue
 watch([componentSelectableConfigTemplates, () => configDrawer.value.visible, () => configDrawer.value.kind], () => {
   if (configDrawer.value.visible && configDrawer.value.kind === 'component') {
     selectedComponentConfigTemplateId.value = resolveComponentConfigTemplateSelection(componentSelectableConfigTemplates.value, selectedComponentConfigTemplateId.value)
-    selectRecommendedComponentConfigTemplate()
+    syncSelectedComponentConfigTemplate()
     void autofillComponentTemplateServicePasswords()
   }
 })
@@ -11765,6 +11765,27 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   border-radius: 0;
   background: var(--paap-panel);
 }
+.component-config-source-line {
+  display: grid;
+  grid-template-columns: minmax(112px, 0.28fr) minmax(0, 0.72fr);
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+.component-config-source-line span {
+  color: var(--paap-muted);
+  font-size: var(--paap-fs-label);
+  font-weight: 600;
+}
+.component-config-source-line strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--paap-text);
+  font-size: var(--paap-fs-label);
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .component-template-select {
   display: grid;
   grid-template-columns: minmax(112px, 0.28fr) minmax(0, 0.72fr);
@@ -12165,7 +12186,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 }
 .config-env-value-cell {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr);
   gap: var(--paap-space-2);
   align-items: center;
   min-width: 0;
@@ -13188,6 +13209,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   .form-row { grid-template-columns: 1fr; }
   .config-binding-form,
   .config-binding-row,
+  .component-config-source-line,
   .component-template-field,
   .component-template-select,
   .nginx-route-row,

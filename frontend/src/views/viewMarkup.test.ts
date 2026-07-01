@@ -2053,10 +2053,24 @@ describe('Vue view markup', () => {
     const envDetail = await import('./EnvDetailView.vue?raw')
 
     expect(envDetail.default).not.toContain('<option value="value">直接填写</option>')
+    expect(envDetail.default).not.toContain('>直接值</button>')
+    expect(envDetail.default).toContain('placeholder="VALUE"')
+    expect(envDetail.default).toContain('改为直接输入')
+    expect(envDetail.default).toContain('placeholder="ConfigMap"')
+    expect(envDetail.default).toContain('placeholder="Secret"')
     expect(envDetail.default).toContain("setConfigEnvSource(envItem, 'configMap')")
     expect(envDetail.default).toContain("setConfigEnvSource(envItem, 'secret')")
     expect(envDetail.default).toContain("setConfigEnvSource(envItem, 'value')")
     expect(envDetail.default).toContain('引用配置')
     expect(envDetail.default).toContain('引用敏感项')
+  })
+
+  it('does not present an unsaved recommended component template as current config', async () => {
+    const envDetail = await import('./EnvDetailView.vue?raw')
+
+    expect(envDetail.default).toContain('componentSavedConfigTemplateLabel')
+    expect(envDetail.default).toContain('未保存配置模板')
+    expect(envDetail.default).not.toContain('componentConfigTemplateRecommendationScore')
+    expect(envDetail.default).not.toContain('selectedComponentConfigTemplateId.value = componentTemplateOptionValue(recommended)')
   })
 })

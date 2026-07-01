@@ -516,10 +516,12 @@ function detectComponentCapabilities(input: {
 
 function configSourceSummary(config: any, runtime: any = {}): string {
   const parts: string[] = []
+  const templateName = String(config?.configTemplateName || config?.configTemplate?.name || '').trim()
   const envCount = (config.env || []).length + (runtime.env || []).length
   const configMapCount = (config.configMaps || []).length + (runtime.configMaps || []).length
   const secretCount = (config.secrets || []).length + (runtime.secrets || []).length
   const fileCount = (config.files || []).length + (runtime.files || []).length
+  if (templateName) parts.push(`配置模板 ${templateName}`)
   if (envCount) parts.push(`${envCount} 运行参数`)
   if (configMapCount) parts.push(`${configMapCount} 普通配置`)
   if (secretCount) parts.push(`${secretCount} 敏感配置`)

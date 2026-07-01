@@ -74,6 +74,23 @@ describe('componentProfile', () => {
     ]))
   })
 
+  it('includes the saved component config template in the config source summary', () => {
+    const profile = buildComponentProfile({
+      component: {
+        name: 'web',
+        type: 'frontend',
+        config: {
+          framework: 'nginx',
+          configTemplateName: 'Nginx 静态前端 + 代理路由',
+          configMaps: [{ name: 'web-config', data: { 'default.conf': 'proxy_pass http://api;' } }],
+          files: [{ name: 'nginx-conf', configMapName: 'web-config', key: 'default.conf', mountPath: '/etc/nginx/conf.d/default.conf' }],
+        },
+      },
+    })
+
+    expect(profile.configSourceSummary).toBe('配置模板 Nginx 静态前端 + 代理路由 / 1 普通配置 / 1 配置文件')
+  })
+
   it('keeps an opaque custom workload generic until runtime or user config provides evidence', () => {
     const profile = buildComponentProfile({
       component: {
