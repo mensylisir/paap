@@ -7,9 +7,9 @@
         <p class="page-desc">管理组件运行配置模板，服务产品与环境服务统一在服务目录查看。</p>
       </div>
       <div class="header-actions">
-        <button v-has-perm="'system.template.manage'" class="rail-btn rail-btn--primary" @click="openConfigTemplateImportModal">
+        <cv-button v-has-perm="'system.template.manage'" kind="primary" @click="openConfigTemplateImportModal">
           导入配置模板
-        </button>
+        </cv-button>
       </div>
     </header>
 
@@ -43,10 +43,12 @@
           <h2 class="rail-section-title">{{ activeTemplateTitle }}</h2>
           <p class="rail-section-desc">{{ activeTemplateDescription }}</p>
         </div>
-        <button class="rail-btn rail-btn--ghost" @click="refreshActiveTemplates">
-          <svg width="16" height="16" viewBox="0 0 32 32" fill="currentColor"><path d="M26 12H6V10h20v2zm0 4H6v2h20v-2zm0 6H6v2h20v-2z"/></svg>
+        <cv-button kind="ghost" @click="refreshActiveTemplates">
+          <template #icon>
+            <svg width="16" height="16" viewBox="0 0 32 32" fill="currentColor"><path d="M26 12H6V10h20v2zm0 4H6v2h20v-2zm0 6H6v2h20v-2z"/></svg>
+          </template>
           刷新
-        </button>
+        </cv-button>
       </div>
 
       <div v-if="loading" class="loading-mask">
@@ -74,12 +76,12 @@
               <span>{{ configTemplateEditableFieldCount(tmpl.fields) }}</span>
             </div>
             <div class="template-row-actions">
-              <button type="button" class="rail-btn rail-btn--ghost rail-btn--sm" @click="openConfigTemplateDetail(tmpl)">
+              <cv-button kind="ghost" size="sm" @click="openConfigTemplateDetail(tmpl)">
                 查看模板
-              </button>
-              <button type="button" class="rail-btn rail-btn--ghost rail-btn--sm danger" @click="deleteConfigTemplate(tmpl.id)">
+              </cv-button>
+              <cv-button kind="danger--ghost" size="sm" @click="deleteConfigTemplate(tmpl.id)">
                 删除
-              </button>
+              </cv-button>
             </div>
           </div>
         </div>
@@ -161,10 +163,10 @@
             <div v-if="configUploadError" class="form-error" role="alert">{{ configUploadError }}</div>
           </div>
           <div class="modal-footer">
-            <button class="rail-btn rail-btn--ghost" @click="showConfigTemplateImportModal = false">取消</button>
-            <button class="rail-btn rail-btn--primary" :disabled="configUploading" @click="submitConfigTemplateImport">
+            <cv-button kind="ghost" @click="showConfigTemplateImportModal = false">取消</cv-button>
+            <cv-button kind="primary" :disabled="configUploading" @click="submitConfigTemplateImport">
               {{ configUploading ? '导入中...' : '导入配置模板' }}
-            </button>
+            </cv-button>
           </div>
         </div>
       </div>
@@ -276,29 +278,21 @@
       </div>
     </Teleport>
 
-    <Teleport to="body">
-      <div v-if="pendingConfigTemplateDelete" class="modal-overlay" role="dialog" aria-modal="true" @click.self="pendingConfigTemplateDelete = null">
-        <div class="modal-container">
-          <div class="modal-header">
-            <div>
-              <p class="modal-label">删除配置模板</p>
-              <p class="modal-heading">{{ pendingConfigTemplateDelete.name }}</p>
-            </div>
-            <button class="modal-close" @click="pendingConfigTemplateDelete = null">
-              <svg width="20" height="20" viewBox="0 0 32 32" fill="currentColor"><path d="M24 9.4L22.6 8 16 14.6 9.4 8 8 9.4l6.6 6.6L8 22.6 9.4 24l6.6-6.6 6.6 6.6 1.4-1.4-6.6-6.6L24 9.4z"/></svg>
-            </button>
-          </div>
-          <div class="modal-body">
-            <p class="confirm-text">删除后，这个自定义配置模板将不再出现在组件右侧栏中。已应用到组件的运行配置不会被自动回滚。</p>
-            <div v-if="pageError" class="form-error" role="alert">{{ pageError }}</div>
-          </div>
-          <div class="modal-footer">
-            <button class="rail-btn rail-btn--ghost" @click="pendingConfigTemplateDelete = null">取消</button>
-            <button class="rail-btn rail-btn--primary danger" @click="confirmDeleteConfigTemplate">删除</button>
-          </div>
-        </div>
-      </div>
-    </Teleport>
+    <cv-modal
+      kind="danger"
+      :visible="pendingConfigTemplateDelete !== null"
+      @modal-hidden="pendingConfigTemplateDelete = null"
+      @primary-click="confirmDeleteConfigTemplate"
+      primary-button-label="删除"
+      secondary-button-label="取消"
+      title="删除配置模板"
+    >
+      <template #content>
+        <p><strong>{{ pendingConfigTemplateDelete?.name }}</strong></p>
+        <p>删除后，这个自定义配置模板将不再出现在组件右侧栏中。已应用到组件的运行配置不会被自动回滚。</p>
+        <div v-if="pageError" class="form-error" role="alert">{{ pageError }}</div>
+      </template>
+    </cv-modal>
   </div>
 </template>
 
@@ -1262,9 +1256,6 @@ function configTemplateDisplayText(value: string) {
   white-space: nowrap;
   font-size: var(--paap-fs-label);
   letter-spacing: 0.2px;
-}
-.rail-btn.danger {
-  color: var(--paap-danger);
 }
 .text-btn {
   border: 0;
