@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
@@ -47,12 +48,62 @@ func ApplyPlatformAddonManifests(ctx context.Context, manifests []string) error 
 	if err != nil {
 		return err
 	}
+
+	// Separate CRDs from other objects. CRDs must be applied and reach Established
+	// status before creating any resources whose Kind depends on them, because
+	// apiserver registers new CRD types asynchronously.
+	var crds []*unstructured.Unstructured
+	var others []*unstructured.Unstructured
 	for _, obj := range objects {
+		if obj.GetKind() == "CustomResourceDefinition" {
+			crds = append(crds, obj)
+		} else {
+			others = append(others, obj)
+		}
+	}
+
+	for _, obj := range crds {
+		if err := upsertPlatformAddonObject(ctx, cl, obj); err != nil {
+			return fmt.Errorf("apply CRD %s: %w", obj.GetName(), err)
+		}
+	}
+
+	for _, obj := range crds {
+		name := obj.GetName()
+		if err := waitForCRDEstablished(ctx, cl, name, 60*time.Second); err != nil {
+			return fmt.Errorf("wait for CRD %s: %w", name, err)
+		}
+	}
+
+	for _, obj := range others {
 		if err := upsertPlatformAddonObject(ctx, cl, obj); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func waitForCRDEstablished(ctx context.Context, cl client.Client, name string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for {
+		var crd apiextensionsv1.CustomResourceDefinition
+		if err := cl.Get(ctx, types.NamespacedName{Name: name}, &crd); err != nil {
+			return err
+		}
+		for _, c := range crd.Status.Conditions {
+			if c.Type == apiextensionsv1.Established && c.Status == apiextensionsv1.ConditionTrue {
+				return nil
+			}
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("timeout after %v waiting for CRD %q to become Established", timeout, name)
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(time.Second):
+		}
+	}
 }
 
 func DeletePlatformAddonManifests(ctx context.Context, manifests []string) error {
@@ -64,13 +115,66 @@ func DeletePlatformAddonManifests(ctx context.Context, manifests []string) error
 	if err != nil {
 		return err
 	}
+	// Collect namespace names before deletion so we can clean up later.
+	managedNamespaces := make(map[string]bool)
+	for _, obj := range objects {
+		if obj.GetKind() == "Namespace" && obj.GetName() != "" {
+			managedNamespaces[obj.GetName()] = true
+		}
+	}
 	for i := len(objects) - 1; i >= 0; i-- {
 		obj := objects[i]
 		if err := cl.Delete(ctx, obj); err != nil && !apierrors.IsNotFound(err) {
 			return fmt.Errorf("delete %s %s/%s: %w", obj.GetKind(), obj.GetNamespace(), obj.GetName(), err)
 		}
 	}
+	if len(managedNamespaces) > 0 {
+		cleanupOrphanedAPIServices(ctx, cl, managedNamespaces)
+	}
 	return nil
+}
+
+var apiServiceGVR = schema.GroupVersionResource{
+	Group:    "apiregistration.k8s.io",
+	Version:  "v1",
+	Resource: "apiservices",
+}
+
+func cleanupOrphanedAPIServices(ctx context.Context, cl client.Client, namespaces map[string]bool) {
+	var list unstructured.UnstructuredList
+	list.SetGroupVersionKind(schema.GroupVersionKind{
+		Group:   "apiregistration.k8s.io",
+		Version: "v1",
+		Kind:    "APIService",
+	})
+	if err := cl.List(ctx, &list); err != nil {
+		return
+	}
+	for i := range list.Items {
+		item := list.Items[i]
+		svc, found, err := unstructured.NestedMap(item.Object, "spec", "service")
+		if err != nil || !found {
+			continue
+		}
+		ns, _ := svc["namespace"].(string)
+		if ns == "" || !namespaces[ns] {
+			continue
+		}
+		name, _ := svc["name"].(string)
+		if name == "" {
+			continue
+		}
+		var svcObj unstructured.Unstructured
+		svcObj.SetAPIVersion("v1")
+		svcObj.SetKind("Service")
+		if err := cl.Get(ctx, types.NamespacedName{Name: name, Namespace: ns}, &svcObj); err == nil {
+			continue
+		}
+		if !apierrors.IsNotFound(err) {
+			continue
+		}
+		_ = cl.Delete(ctx, &item)
+	}
 }
 
 func platformAddonManifestObjects(manifests []string) ([]*unstructured.Unstructured, error) {

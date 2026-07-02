@@ -100,6 +100,10 @@ func metadataFromServiceInstance(svc *paapv1.ServiceInstance) serviceMetadata {
 	return md
 }
 
+func (r *ServiceInstanceReconciler) isSharedServiceInstance(md serviceMetadata) bool {
+	return md.AppIdentifier == "default" && md.EnvIdentifier == "shared"
+}
+
 func expectedConcreteServiceInstanceName(svc *paapv1.ServiceInstance, md serviceMetadata) string {
 	toolIdentity := valueFromMaps("paap.io/tool", svc.Labels, svc.Annotations)
 	if toolIdentity == "" {
@@ -321,10 +325,14 @@ func (r *ServiceInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return ctrl.Result{RequeueAfter: 5 * time.Second}, err
 	}
 
-	// Step 4: 发现环境内 namespace。Helm values 使用全环境 namespace 集合供日志/监控采集；
+	// Step 4: 发现 namespace。Helm values 使用全环境 namespace 集合供日志/监控采集；
 	// workload RBAC 只投射到业务 namespace，environment RBAC 投射到同环境其它 namespace。
+	// 共享实例（isSharedServiceInstance）的 workload RBAC 投射到全集群所有 workload namespace。
 	environmentNSList := r.discoverEnvironmentNamespaces(ctx, appIdentifier, envIdentifier)
 	workloadNSList := r.discoverWorkloadNamespaces(ctx, appIdentifier, envIdentifier)
+	if r.isSharedServiceInstance(md) {
+		workloadNSList = r.discoverAllWorkloadNamespaces(ctx)
+	}
 	workloadRBACNamespaces := workloadRBACTargetNamespaces(serviceType, svc.Spec.WorkloadRole, environmentNSList, workloadNSList)
 	environmentRBACNamespaces := []string{}
 	if svc.Spec.EnvironmentRole != nil && len(svc.Spec.EnvironmentRole.Rules) > 0 {
@@ -1131,6 +1139,25 @@ func (r *ServiceInstanceReconciler) discoverWorkloadNamespaces(ctx context.Conte
 	return result
 }
 
+// discoverAllWorkloadNamespaces 发现全集群所有 workload namespace（不限 app/env）。
+// 供共享 ServiceInstance 使用，将 RBAC 投射到所有业务 namespace。
+func (r *ServiceInstanceReconciler) discoverAllWorkloadNamespaces(ctx context.Context) []string {
+	nsList := &corev1.NamespaceList{}
+	labels := client.MatchingLabels{"paap.io/role": "workload"}
+	if err := r.List(ctx, nsList, labels); err != nil {
+		return nil
+	}
+	result := make([]string, 0, len(nsList.Items))
+	for _, ns := range nsList.Items {
+		if isReservedKubernetesNamespace(ns.Name) {
+			continue
+		}
+		result = append(result, ns.Name)
+	}
+	sort.Strings(result)
+	return result
+}
+
 // discoverEnvironmentNamespaces returns every namespace that belongs to the
 // current application/environment, including tool namespaces.
 func (r *ServiceInstanceReconciler) discoverEnvironmentNamespaces(ctx context.Context, appIdentifier, envIdentifier string) []string {
@@ -1302,7 +1329,11 @@ func (r *ServiceInstanceReconciler) handleDeletion(ctx context.Context, svc *paa
 	}
 
 	// 清理环境 namespace 中投射的 workload/environment Role 和 RoleBinding。
+	// 共享实例删除时，清扫全集群所有 workload namespace 中的 Role/RoleBinding。
 	environmentNSList := r.discoverEnvironmentNamespaces(ctx, appIdentifier, envIdentifier)
+	if r.isSharedServiceInstance(md) {
+		environmentNSList = r.discoverAllWorkloadNamespaces(ctx)
+	}
 	roleNames := []string{
 		fmt.Sprintf("%s-%s-%s-workload-manager", appIdentifier, envIdentifier, md.Tool),
 		fmt.Sprintf("%s-%s-%s-environment-manager", appIdentifier, envIdentifier, md.Tool),

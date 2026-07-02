@@ -134,10 +134,34 @@ func EnablePlatformAddonFromArchive(ctx context.Context, db *gorm.DB, name strin
 	addon.ErrorMessage = ""
 	now := time.Now()
 	addon.InstalledAt = &now
-	if err := db.Save(&addon).Error; err != nil {
-		return model.ClusterAddon{}, err
-	}
-	return CheckAndSavePlatformAddon(ctx, db, addon.Name)
+	addon.LastCheckedAt = &now
+	_ = db.Save(&addon).Error
+
+	// Background poll for status: enable returns immediately with "installing",
+	// then goroutine polls until addon becomes available or times out.
+	go func() {
+		pollCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Minute)
+		defer cancel()
+		ticker := time.NewTicker(15 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-pollCtx.Done():
+				return
+			case <-ticker.C:
+				a, err := CheckAndSavePlatformAddon(pollCtx, db, name)
+				if err != nil {
+					continue
+				}
+				if a.Status == model.PlatformAddonStatusAvailable ||
+					a.Status == model.PlatformAddonStatusDegraded {
+					return
+				}
+			}
+		}
+	}()
+
+	return addon, nil
 }
 
 func CheckAndSavePlatformAddon(ctx context.Context, db *gorm.DB, name string) (model.ClusterAddon, error) {

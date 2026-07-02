@@ -411,6 +411,11 @@ func buildExternalCapability(ctx context.Context, env model.Environment, row mod
 		row.ValidationMessage = "external endpoint is not configured"
 	} else {
 		row.ValidationMessage = "external connection has not been validated"
+		if !externalCredentialPayload(req) {
+			u, p := extractCredentialsFromExternalEndpoint(row.ExternalEndpoint)
+			req.Username = firstNonEmpty(req.Username, u)
+			req.Password = firstNonEmpty(req.Password, p)
+		}
 	}
 	if externalCredentialPayload(req) {
 		secretRef, err := upsertExternalCapabilityCredentialSecret(ctx, env, row.CapabilityKey, row, req)
@@ -668,6 +673,17 @@ func parseExternalCapabilityEndpoint(row model.EnvironmentCapability) (externalC
 	endpoint := strings.TrimSpace(row.ExternalEndpoint)
 	if endpoint == "" {
 		return externalCapabilityEndpoint{}, fmt.Errorf("external endpoint is not configured")
+	}
+
+	// 剥离 userinfo（scheme://user:password@... 部分），因为凭据通过独立表单字段存储在 K8s Secret 中，
+	// 且密码中的特殊字符（如 @）会破坏 URL 解析，导致 host 提取错误。
+	// 只保留 scheme://host:port[/path] 或 host:port 用于解析。
+	if strings.Contains(endpoint, "@") {
+		if idx := strings.Index(endpoint, "://"); idx >= 0 {
+			if atIdx := strings.LastIndex(endpoint, "@"); atIdx >= 0 && atIdx > idx+3 {
+				endpoint = endpoint[:idx+3] + endpoint[atIdx+1:]
+			}
+		}
 	}
 
 	scheme := ""
@@ -1087,6 +1103,27 @@ func defaultPortForKey(value string) string {
 	default:
 		return ""
 	}
+}
+
+// extractCredentialsFromExternalEndpoint 从 URL 中提取用户名密码。
+// URL 格式: scheme://user:password@host:port/path
+// 使用最后一个 @ 作为 userinfo/host 分隔符（密码可能包含 @）。
+func extractCredentialsFromExternalEndpoint(endpoint string) (string, string) {
+	idx := strings.Index(endpoint, "://")
+	if idx < 0 {
+		return "", ""
+	}
+	rest := endpoint[idx+3:]
+	atIdx := strings.LastIndex(rest, "@")
+	if atIdx < 0 {
+		return "", ""
+	}
+	userinfo := rest[:atIdx]
+	colonIdx := strings.Index(userinfo, ":")
+	if colonIdx < 0 {
+		return userinfo, ""
+	}
+	return userinfo[:colonIdx], userinfo[colonIdx+1:]
 }
 
 func externalCredentialPayload(req EnvironmentCapabilityRequest) bool {
