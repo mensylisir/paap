@@ -9,6 +9,7 @@ import {
   componentTemplateFieldInputType,
   componentTemplateFieldKey,
   componentTemplateFieldLabel,
+  componentTemplateFieldLooksLikeBackendReference,
   componentTemplateFieldMatchesServiceRef,
   componentTemplateFieldTargetTokens,
   componentTemplateFieldType,
@@ -17,6 +18,7 @@ import {
   componentTemplateFieldHidden,
   componentTemplateListItemFields,
   componentTemplateListRows,
+  componentTemplateVisibleFields,
   componentTemplateVisibleListItemFields,
   componentTemplateRenderTargetValue,
   componentTemplateRequiredFieldsComplete,
@@ -171,6 +173,22 @@ describe('component config template runtime helpers', () => {
       target: '',
       directives: 'proxy_pass http://backend;',
     })
+  })
+
+  it('keeps hidden top-level fields available for rendering but out of the editable UI', () => {
+    const fields = [
+      { key: 'SERVER_NAME', label: '访问域名' },
+      { key: 'DIRECTIVES', label: '额外指令', type: 'textarea', hidden: true },
+      { key: 'PROXY_PASS', label: '目标后端', type: 'serviceRef', target: 'backend' },
+    ]
+
+    expect(componentTemplateVisibleFields(fields).map(componentTemplateFieldKey)).toEqual(['SERVER_NAME', 'PROXY_PASS'])
+  })
+
+  it('recognizes legacy nginx proxy fields as backend references even without serviceRef type', () => {
+    expect(componentTemplateFieldLooksLikeBackendReference({ key: 'PROXY_PASS', type: 'text' })).toBe(true)
+    expect(componentTemplateFieldLooksLikeBackendReference({ key: 'BACKEND_URL', type: 'text' })).toBe(true)
+    expect(componentTemplateFieldLooksLikeBackendReference({ key: 'MATCH', type: 'text' })).toBe(false)
   })
 
   it('initializes booleans, service refs, and lists from injected UI state', () => {

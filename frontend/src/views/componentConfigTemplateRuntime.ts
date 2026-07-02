@@ -143,6 +143,15 @@ export const componentTemplateFieldTargetTokens = (field: ComponentTemplateField
   .map((item) => item.trim())
   .filter(Boolean)
 
+export const componentTemplateFieldLooksLikeBackendReference = (field: ComponentTemplateField | any) => {
+  const normalized = normalizedTemplateKey(field)
+  const targets = componentTemplateFieldTargetTokens(field)
+  if (targets.includes('backend')) return true
+  if (normalized.includes('PROXY_PASS')) return true
+  if (normalized.includes('TARGET_URL')) return true
+  return normalized.includes('BACKEND') && /(URL|URI|HOST|ADDR|ADDRESS|SERVICE|TARGET)/.test(normalized)
+}
+
 const databaseTargetTokens = new Set(['postgresql', 'postgres', 'mysql', 'mariadb', 'mongodb', 'database'])
 
 const normalizedTemplateKey = (field: ComponentTemplateField | any) =>
@@ -261,6 +270,9 @@ export const componentTemplateFieldInputType = (field: ComponentTemplateField | 
 export const componentTemplateListItemFields = (field: ComponentTemplateField | any) => Array.isArray(field?.itemFields)
   ? field.itemFields.filter((item:any) => componentTemplateFieldKey(item))
   : []
+
+export const componentTemplateVisibleFields = (fields: Array<ComponentTemplateField | any>) =>
+  (fields || []).filter((field:any) => componentTemplateFieldKey(field) && !componentTemplateFieldHidden(field))
 
 export const componentTemplateVisibleListItemFields = (field: ComponentTemplateField | any) =>
   componentTemplateListItemFields(field).filter((item:any) => !componentTemplateFieldHidden(item))

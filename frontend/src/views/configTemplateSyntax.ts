@@ -74,7 +74,7 @@ export function parseNativeConfigTemplate(source: string, options: ParseOptions 
       const listField = listFields.get(listKey) || { key: listKey, label: labelFromKey(listKey), type: 'list', itemFields: [] }
       const itemFields = Array.isArray(listField.itemFields) ? listField.itemFields : []
       if (!itemFields.some((item:any) => item.key === itemKey)) {
-        itemFields.push(inferField({ key: itemKey, label: parsed.label, defaultValue: parsed.defaultValue, item: true }))
+        itemFields.push(inferField({ key: itemKey, label: parsed.label, defaultValue: parsed.defaultValue }))
       }
       listField.itemFields = itemFields
       listFields.set(listKey, listField)
@@ -131,7 +131,7 @@ function addUniqueField(fields: Map<string, TemplateField>, field: TemplateField
   fields.set(field.key, field)
 }
 
-function inferField({ key, label, defaultValue, item = false }: { key: string; label: string; defaultValue?: string; item?: boolean }): TemplateField {
+function inferField({ key, label, defaultValue }: { key: string; label: string; defaultValue?: string }): TemplateField {
   const upper = key.toUpperCase()
   const field: TemplateField = {
     key,
@@ -144,13 +144,11 @@ function inferField({ key, label, defaultValue, item = false }: { key: string; l
     field.output = 'secret'
     field.sensitive = true
   }
-  if (!item) {
-    const target = inferServiceTarget(upper)
-    if (target) {
-      field.type = 'serviceRef'
-      field.target = target
-      field.format = inferServiceFormat(upper)
-    }
+  const target = inferServiceTarget(upper)
+  if (target) {
+    field.type = 'serviceRef'
+    field.target = target
+    field.format = inferServiceFormat(upper)
   }
   return field
 }
@@ -164,6 +162,9 @@ function inferFieldType(key: string) {
 
 function inferServiceTarget(key: string) {
   if (/(USER|USERNAME|PASSWORD|SECRET|TOKEN|KEY)$/.test(key)) return ''
+  if (/PROXY_PASS/.test(key)) return 'backend'
+  if (/BACKEND/.test(key) && /(URL|URI|HOST|ADDR|ADDRESS|SERVICE|TARGET)/.test(key)) return 'backend'
+  if (/TARGET_URL/.test(key)) return 'backend'
   if (/(JDBC|DATABASE|DATASOURCE|POSTGRES|MYSQL)/.test(key) && /(URL|URI|HOST|ADDR|JDBC)/.test(key)) return 'postgresql|mysql'
   if (/REDIS/.test(key) && /(URL|URI|HOST|ADDR)/.test(key)) return 'redis'
   if (/(RABBIT|MQ)/.test(key) && /(URL|URI|HOST|ADDR)/.test(key)) return 'rabbitmq'

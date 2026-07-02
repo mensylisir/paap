@@ -58,7 +58,7 @@ describe('config template native syntax', () => {
         type: 'list',
         itemFields: expect.arrayContaining([
           expect.objectContaining({ key: 'API_PATH', label: '匹配路径' }),
-          expect.objectContaining({ key: 'PROXY_PASS', label: '路由转发' }),
+          expect.objectContaining({ key: 'PROXY_PASS', label: '路由转发', type: 'serviceRef', target: 'backend' }),
         ]),
       }),
     ]))

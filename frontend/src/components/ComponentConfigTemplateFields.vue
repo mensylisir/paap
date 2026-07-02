@@ -1,7 +1,7 @@
 <template>
   <div class="component-template-field-list">
     <label
-      v-for="field in fields"
+      v-for="field in visibleFields"
       :key="componentTemplateFieldKey(field)"
       class="component-template-field"
       :class="{ 'component-template-field--list': componentTemplateFieldType(field) === 'list' }"
@@ -137,7 +137,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import {
   componentTemplateFieldDefaultValue,
   componentTemplateFieldInputType,
@@ -146,6 +146,7 @@ import {
   componentTemplateFieldType,
   componentTemplateListItemFields,
   componentTemplateListRows as runtimeTemplateListRows,
+  componentTemplateVisibleFields as runtimeTemplateVisibleFields,
   componentTemplateVisibleListItemFields,
   defaultComponentTemplateListRow,
 } from '../views/componentConfigTemplateRuntime'
@@ -173,6 +174,7 @@ const emit = defineEmits<{
 
 const eventValue = (event: Event) => String((event.target as HTMLInputElement | HTMLSelectElement | null)?.value ?? '')
 const eventChecked = (event: Event) => Boolean((event.target as HTMLInputElement | null)?.checked)
+const visibleFields = computed(() => runtimeTemplateVisibleFields(props.fields))
 const componentTemplateListRows = (field: TemplateField) => runtimeTemplateListRows(field, props.fieldValues)
 const visiblePasswordKeys = ref<Set<string>>(new Set())
 

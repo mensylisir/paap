@@ -316,6 +316,8 @@ describe('Vue view markup', () => {
     expect(templatesView.default).toContain('configTemplatePreviewSummary')
     expect(templatesView.default).toContain('configTemplateSecretConfigCount')
     expect(templatesView.default).toContain('configTemplateGeneratedFileCount')
+    expect(templatesView.default).toContain('configTemplateFieldHidden')
+    expect(templatesView.default).toContain('configTemplateEditableFieldRows')
   })
 
   it('moves environment templates into the service catalog as environment services', async () => {
@@ -1365,7 +1367,8 @@ describe('Vue view markup', () => {
     expect(envDetail.default).toContain('configureContextNode')
     expect(envDetail.default).toContain(`@click.stop="openComponentConfigDrawer(comp, 'variables')"`)
     expect(envDetail.default).toContain(`if (comp?.id) openComponentConfigDrawer(comp, 'variables')`)
-    expect(envDetail.default).toContain(`openComponentConfigDrawer(node, 'variables')`)
+    expect(envDetail.default).toContain(`openComponentConfigDrawer(node)`)
+    expect(envDetail.default).not.toContain(`openComponentConfigDrawer(node, 'variables')`)
     expect(envDetail.default).toContain("componentContextMenu.kind === 'canvas'")
     expect(envDetail.default).toContain("componentContextMenu.kind === 'service'")
     expect(envDetail.default).toContain(`v-if="componentContextMenu.kind === 'canvas' && !isSystemSharedEnvironment" type="button" @mouseenter="openComponentSubmenu"`)

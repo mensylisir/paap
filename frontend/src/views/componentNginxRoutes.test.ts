@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import {
   mergeComponentBinding,
   nginxRouteRowsFromComponentConfig,
@@ -8,6 +10,33 @@ import {
 } from './componentNginxRoutes'
 
 describe('componentNginxRoutes', () => {
+  it('keeps built-in nginx directive blocks hidden behind structured route fields', () => {
+    const root = resolve(__dirname, '../../../docs/examples/buildin-config-in-templates')
+    const nginxDirs = readdirSync(root)
+      .filter((name) => name.startsWith('nginx-') && existsSync(resolve(root, name, 'schema.json')))
+
+    expect(nginxDirs.length).toBeGreaterThan(0)
+
+    for (const name of nginxDirs) {
+      const schema = JSON.parse(readFileSync(resolve(root, name, 'schema.json'), 'utf8'))
+      const fields = Array.isArray(schema.fields) ? schema.fields : []
+      const listFields = fields.filter((field:any) => field.type === 'list')
+      for (const field of listFields) {
+        const itemFields = Array.isArray(field.itemFields) ? field.itemFields : []
+        const directives = itemFields.find((item:any) => String(item.key || '').toUpperCase() === 'DIRECTIVES')
+        if (!directives) continue
+
+        expect(directives.hidden, `${name} must not expose DIRECTIVES in the UI`).toBe(true)
+        const defaultDirectives = String(directives.default || '')
+        if (defaultDirectives.includes('proxy_pass')) {
+          expect(itemFields, `${name} proxy templates must expose a structured backend selector`).toEqual(expect.arrayContaining([
+            expect.objectContaining({ key: 'PROXY_PASS', type: 'serviceRef', target: 'backend' }),
+          ]))
+        }
+      }
+    }
+  })
+
   it('recovers proxy route paths from generated nginx config when binding metadata was overwritten', () => {
     const rows = nginxRouteRowsFromComponentConfig({
       bindings: [{
