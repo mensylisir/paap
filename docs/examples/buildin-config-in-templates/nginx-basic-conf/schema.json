@@ -11,7 +11,7 @@
           "key": "DIRECTIVES",
           "label": "指令块",
           "type": "textarea",
-          "required": true,
+          "hidden": true,
           "default": "root /usr/share/nginx/html;\nindex index.html index.htm;\ntry_files $uri $uri/ /index.html;"
         }
       ]

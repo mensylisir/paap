@@ -11,10 +11,17 @@
       "itemFields": [
         { "key": "MATCH", "label": "匹配规则", "type": "text", "required": true, "default": "/" },
         {
+          "key": "PROXY_PASS",
+          "label": "目标后端",
+          "type": "serviceRef",
+          "target": "backend",
+          "required": true
+        },
+        {
           "key": "DIRECTIVES",
           "label": "指令块",
           "type": "textarea",
-          "required": true,
+          "hidden": true,
           "default": "proxy_pass http://backend:8080;\nproxy_set_header Host $host;\nproxy_set_header X-Real-IP $remote_addr;\nproxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\nproxy_set_header X-Forwarded-Proto $scheme;"
         }
       ]

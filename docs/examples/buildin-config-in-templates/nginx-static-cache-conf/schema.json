@@ -11,7 +11,7 @@
           "key": "DIRECTIVES",
           "label": "指令块",
           "type": "textarea",
-          "required": true,
+          "hidden": true,
           "default": "root /var/www/static;\nexpires 30d;\nadd_header Cache-Control \"public, no-transform\";\naccess_log off;"
         }
       ]
