@@ -672,7 +672,7 @@ function configTemplateNativeBlockCount(tmpl: any) {
 }
 
 function configTemplateEditableFieldCount(items: any[]) {
-  const count = Array.isArray(items) ? items.length : 0
+  const count = configTemplateEditableFieldRows(items).length
   return count ? `${count} 个可填写项` : '无需填写'
 }
 
@@ -730,12 +730,25 @@ function configTemplateGeneratedFileCount(tmpl: any) {
 }
 
 function configTemplatePreviewFields(tmpl: any) {
+  return configTemplateEditableFieldRows(tmpl?.fields)
+}
+
+function configTemplateFieldHidden(field: any) {
+  return Boolean(field?.hidden || field?.uiHidden || field?.['ui:hidden'] || field?.['x-hidden'])
+}
+
+function configTemplateEditableFieldRows(items: any[]) {
   const fields: Array<{ key: string; label: string; type: string; defaultValue: string; source: string }> = []
-  for (const field of tmpl?.fields || []) {
+  for (const field of items || []) {
+    if (configTemplateFieldHidden(field)) continue
     const key = String(field?.key || '').trim()
     if (!key) continue
-    fields.push(configTemplatePreviewFieldRow(field, key))
-    for (const child of field?.itemFields || []) {
+    const children = Array.isArray(field?.itemFields) ? field.itemFields.filter((child:any) => !configTemplateFieldHidden(child)) : []
+    if (!children.length) {
+      fields.push(configTemplatePreviewFieldRow(field, key))
+      continue
+    }
+    for (const child of children) {
       const childKey = String(child?.key || '').trim()
       if (!childKey) continue
       fields.push(configTemplatePreviewFieldRow(child, `${key}.${childKey}`))

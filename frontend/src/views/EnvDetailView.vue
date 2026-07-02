@@ -158,7 +158,7 @@
                     @pointerdown.stop
                     @click.stop
                   />
-                  <strong v-else>{{ node.name }}</strong>
+                  <strong v-else>{{ node.displayName || node.name }}</strong>
                   <small>{{ environmentTopologyNodeSubtitle(node) }}</small>
                   <span
                     v-if="topologySourceBadge(node)"
@@ -617,7 +617,7 @@
                     @pointerdown.stop
                     @click.stop
                   />
-                  <strong v-else>{{ node.name }}</strong>
+                  <strong v-else>{{ node.displayName || node.name }}</strong>
                   <small>{{ topologyNodeSubtitle(node) }}</small>
                   <span
                     v-if="topologySourceBadge(node)"
@@ -1091,7 +1091,7 @@
                     <span>外部地址</span>
                     <input v-model.trim="capabilityForm.externalEndpoint" class="bx--text-input" :placeholder="externalCapabilityPlaceholder(drawerCapability)" />
                   </label>
-                  <label>
+                  <label class="config-form-wide">
                     <span>认证方式</span>
                     <select v-model="capabilityForm.authType" class="bx--select-input">
                       <option value="none">不需要认证</option>
@@ -1100,39 +1100,41 @@
                       <option value="existingSecret">已有 Secret</option>
                     </select>
                   </label>
-                  <label v-if="capabilityForm.authType === 'basic'">
-                    <span>用户名</span>
-                    <input v-model.trim="capabilityForm.username" class="bx--text-input" autocomplete="username" />
-                  </label>
-                  <label v-if="capabilityForm.authType === 'basic'">
-                    <span>密码</span>
-                    <span class="password-field-wrap capability-secret-field">
-                      <input
-                        v-model="capabilityForm.password"
-                        class="bx--text-input password-field-input"
-                        :type="capabilitySecretVisible('password') ? 'text' : 'password'"
-                        autocomplete="new-password"
-                        placeholder="留空则沿用已保存 Secret"
-                      />
-                      <button
-                        type="button"
-                        class="password-visible-toggle"
-                        :aria-label="capabilitySecretVisible('password') ? '隐藏密码' : '显示密码'"
-                        :title="capabilitySecretVisible('password') ? '隐藏密码' : '显示密码'"
-                        :disabled="capabilityCredentialLoading"
-                        @click="toggleCapabilitySecret('password')"
-                      >
-                        <svg v-if="capabilitySecretVisible('password')" focusable="false" width="16" height="16" viewBox="0 0 32 32" fill="currentColor">
-                          <path d="M16 6C7 6 2 16 2 16s5 10 14 10 14-10 14-10S25 6 16 6zm0 18c-6.4 0-10.5-5.8-11.7-8C5.5 13.8 9.6 8 16 8s10.5 5.8 11.7 8c-1.2 2.2-5.3 8-11.7 8z"/>
-                          <path d="M16 10a6 6 0 1 0 0 12 6 6 0 0 0 0-12zm0 10a4 4 0 1 1 0-8 4 4 0 0 1 0 8z"/>
-                        </svg>
-                        <svg v-else focusable="false" width="16" height="16" viewBox="0 0 32 32" fill="currentColor">
-                          <path d="m3.3 2 26.7 26.7-1.4 1.4-5.1-5.1A15 15 0 0 1 16 26C7 26 2 16 2 16a25 25 0 0 1 6.2-7.5L1.9 3.4 3.3 2zm6.4 8A22.7 22.7 0 0 0 4.3 16C5.5 18.2 9.6 24 16 24c2.1 0 4-.6 5.7-1.5l-3-3A6 6 0 0 1 12.5 13l-2.8-3z"/>
-                          <path d="M16 6c9 0 14 10 14 10a24.9 24.9 0 0 1-4.6 6.1L24 20.7c1.7-1.6 3-3.5 3.7-4.7C26.5 13.8 22.4 8 16 8c-1.5 0-2.8.3-4.1.8L10.4 7.3A14 14 0 0 1 16 6z"/>
-                        </svg>
-                      </button>
-                    </span>
-                  </label>
+                  <template v-if="capabilityForm.authType === 'basic'">
+                    <label>
+                      <span>用户名</span>
+                      <input v-model.trim="capabilityForm.username" class="bx--text-input" autocomplete="username" />
+                    </label>
+                    <label>
+                      <span>密码</span>
+                      <span class="password-field-wrap capability-secret-field">
+                        <input
+                          v-model="capabilityForm.password"
+                          class="bx--text-input password-field-input"
+                          :type="capabilitySecretVisible('password') ? 'text' : 'password'"
+                          autocomplete="new-password"
+                          placeholder="留空则沿用已保存 Secret"
+                        />
+                        <button
+                          type="button"
+                          class="password-visible-toggle"
+                          :aria-label="capabilitySecretVisible('password') ? '隐藏密码' : '显示密码'"
+                          :title="capabilitySecretVisible('password') ? '隐藏密码' : '显示密码'"
+                          :disabled="capabilityCredentialLoading"
+                          @click="toggleCapabilitySecret('password')"
+                        >
+                          <svg v-if="capabilitySecretVisible('password')" focusable="false" width="16" height="16" viewBox="0 0 32 32" fill="currentColor">
+                            <path d="M16 6C7 6 2 16 2 16s5 10 14 10 14-10 14-10S25 6 16 6zm0 18c-6.4 0-10.5-5.8-11.7-8C5.5 13.8 9.6 8 16 8s10.5 5.8 11.7 8c-1.2 2.2-5.3 8-11.7 8z"/>
+                            <path d="M16 10a6 6 0 1 0 0 12 6 6 0 0 0 0-12zm0 10a4 4 0 1 1 0-8 4 4 0 0 1 0 8z"/>
+                          </svg>
+                          <svg v-else focusable="false" width="16" height="16" viewBox="0 0 32 32" fill="currentColor">
+                            <path d="m3.3 2 26.7 26.7-1.4 1.4-5.1-5.1A15 15 0 0 1 16 26C7 26 2 16 2 16a25 25 0 0 1 6.2-7.5L1.9 3.4 3.3 2zm6.4 8A22.7 22.7 0 0 0 4.3 16C5.5 18.2 9.6 24 16 24c2.1 0 4-.6 5.7-1.5l-3-3A6 6 0 0 1 12.5 13l-2.8-3z"/>
+                            <path d="M16 6c9 0 14 10 14 10a24.9 24.9 0 0 1-4.6 6.1L24 20.7c1.7-1.6 3-3.5 3.7-4.7C26.5 13.8 22.4 8 16 8c-1.5 0-2.8.3-4.1.8L10.4 7.3A14 14 0 0 1 16 6z"/>
+                          </svg>
+                        </button>
+                      </span>
+                    </label>
+                  </template>
                   <label v-if="capabilityForm.authType === 'token'" class="config-form-wide">
                     <span>Token</span>
                     <span class="password-field-wrap capability-secret-field">
@@ -1166,7 +1168,7 @@
                     <span>credentialSecretRef</span>
                     <input v-model.trim="capabilityForm.credentialSecretRef" class="bx--text-input" placeholder="namespace/name" />
                   </label>
-                  <label class="capability-checkbox-field">
+                  <label class="capability-checkbox-field config-form-wide">
                     <input v-model="capabilityForm.tlsInsecureSkipVerify" type="checkbox" />
                     <span>跳过 TLS 证书校验</span>
                   </label>
@@ -2190,10 +2192,11 @@
           <small>数据库、缓存、消息队列</small>
           <svg class="submenu-arrow" width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M6 4l4 4-4 4V4z"/></svg>
         </button>
-        <button v-if="componentContextMenu.kind === 'canvas' && !isSystemSharedEnvironment" type="button" @click="openKubeVirtServiceModal">
+        <button v-if="componentContextMenu.kind === 'canvas' && !isSystemSharedEnvironment" type="button" :class="{ disabled: !kubevirtAddonAvailable }" @mouseenter="kubevirtAddonAvailable && openKubeVirtSubmenu()" @click="kubevirtAddonAvailable && openKubeVirtSubmenu()">
           <MenuIconVirtualMachine class="menu-icon" />
           <span>虚拟机</span>
           <small>通过 KubeVirt 模板交付服务</small>
+          <svg class="submenu-arrow" width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M6 4l4 4-4 4V4z"/></svg>
         </button>
         <button v-if="componentContextMenu.kind === 'canvas' && !isSystemSharedEnvironment" type="button" @mouseenter="openSharedCapabilitySubmenu" @click="openSharedCapabilitySubmenu">
           <MenuIconShared class="menu-icon" />
@@ -2520,6 +2523,7 @@ import {
   componentTemplateExistingFieldValue,
   componentTemplateFieldKey,
   componentTemplateFieldLabel,
+  componentTemplateFieldLooksLikeBackendReference,
   componentTemplateFieldMatchesServiceRef,
   componentTemplateFieldRequired,
   componentTemplateFieldTargetTokens,
@@ -2588,6 +2592,7 @@ import {
   componentTopologyEdgePath,
   componentTopologyUnionBounds,
   componentTopologyZoneKey,
+  deriveBindingsFromEnv,
   expandComponentTopologyZoneBounds,
   findTopologyNodeAtPoint,
   hasComponentTopologyDragMoved,
@@ -2709,6 +2714,7 @@ const serviceForm = ref({ serviceType:'deploy' })
 type ServiceProvisionMode = 'managed' | 'shared' | 'external' | 'kubevirt'
 const serviceProvisionMode = ref<ServiceProvisionMode>('managed')
 const selectedSharedResourceId = ref('')
+const kubevirtAddonAvailable = ref(true)
 const externalCapabilityOptions = [
   { capability: 'git', label: '代码仓库', serviceType: 'git', provider: 'gitlab', externalPlaceholder: 'https://gitlab.example.com' },
   { capability: 'registry', label: '镜像仓库', serviceType: 'registry', provider: 'harbor', externalPlaceholder: 'https://harbor.example.com' },
@@ -2852,7 +2858,7 @@ const componentContextMenu = ref<{ visible: boolean; x: number; y: number; kind:
   capability: null,
   edge: null,
 })
-const contextSubmenu = ref<{ visible: boolean; x: number; y: number; mode: 'component' | 'tool' | 'infra' | 'shared-capability' | 'external-capability'; templates: any[] }>({
+const contextSubmenu = ref<{ visible: boolean; x: number; y: number; mode: 'component' | 'tool' | 'infra' | 'kubevirt' | 'shared-capability' | 'external-capability'; templates: any[] }>({
   visible: false,
   x: 0,
   y: 0,
@@ -3337,6 +3343,13 @@ onMounted(async () => {
   document.addEventListener('pointerdown', handleDocumentPointerDown)
   document.addEventListener('keydown', handleDocumentKeyDown)
   await Promise.all([loadUserComponentConfigTemplates(), loadEnvironmentDetail()])
+  // Check if KubeVirt platform addon is enabled
+  try {
+    const res = await api.getPlatformAddon('kubevirt')
+    kubevirtAddonAvailable.value = res?.data?.status === 'available'
+  } catch {
+    kubevirtAddonAvailable.value = false
+  }
 })
 
 watch(envRouteKey, () => {
@@ -3377,8 +3390,8 @@ const serviceIconPath = (type:string) => {
   }
   return p[type] || p.default
 }
-const serviceStatusText = (status?: string) => ({ running: '运行中', linked: '已关联', installing: '安装中', syncing: '同步中', deploying: '部署中', building: '构建中', failed: '安装失败', deleting: '删除中', pending: '未部署', error: '安装失败', draft: '未部署' }[String(status || '').toLowerCase()] || '未知')
-const statusTagClass = (status?: string) => ({ running: 'bx--tag--green', linked: 'bx--tag--green', installing: 'bx--tag--blue', syncing: 'bx--tag--blue', deploying: 'bx--tag--blue', building: 'bx--tag--blue', failed: 'bx--tag--red', error: 'bx--tag--red', deleting: 'bx--tag--gray', pending: 'bx--tag--gray', draft: 'bx--tag--gray' }[String(status || '').toLowerCase()] || 'bx--tag--gray')
+ const serviceStatusText = (status?: string) => ({ running: '运行中', linked: '已关联', valid: '已验证', installing: '安装中', syncing: '同步中', deploying: '部署中', building: '构建中', failed: '安装失败', deleting: '删除中', pending: '未部署', error: '安装失败', draft: '未部署' }[String(status || '').toLowerCase()] || '未知')
+const statusTagClass = (status?: string) => ({ running: 'bx--tag--green', linked: 'bx--tag--green', valid: 'bx--tag--green', installing: 'bx--tag--blue', syncing: 'bx--tag--blue', deploying: 'bx--tag--blue', building: 'bx--tag--blue', failed: 'bx--tag--red', error: 'bx--tag--red', deleting: 'bx--tag--gray', pending: 'bx--tag--gray', draft: 'bx--tag--gray' }[String(status || '').toLowerCase()] || 'bx--tag--gray')
 const serviceStatusValue = (svc:any) => String(svc?.status || '').toLowerCase()
 const serviceStatusIsDraft = (svc:any) => ['draft', 'pending', ''].includes(serviceStatusValue(svc))
 const serviceStatusHasRuntime = (svc:any) => ['running', 'installing'].includes(serviceStatusValue(svc))
@@ -3451,6 +3464,12 @@ const isApplicationTopologyService = (svc:any) => {
   const type = String(serviceProductKey(svc) || svc?.serviceType || svc?.type || '').toLowerCase()
   return ['postgresql', 'mysql', 'mongodb', 'redis', 'rabbitmq', 'kafka', 'minio'].includes(type)
 }
+// 应用主题拓扑只包含应用组件会连接的基础设施能力（数据库/缓存/消息队列/对象存储），
+// 不包含平台工具（代码仓库/镜像仓库/CI/CD/监控/日志）
+const isApplicationTopologyCapability = (cap:any) => {
+  const capType = String(cap?.capability || '').toLowerCase()
+  return ['database', 'cache', 'mq', 'objectStorage'].includes(capType)
+}
 const appCanvasServices = computed(() => services.value.filter(isApplicationTopologyService))
 const environmentCapabilityNodes = computed(() => environmentCapabilities.value.map((cap:any) => {
   const key = `capability:${cap.id || cap.capability}`
@@ -3458,7 +3477,8 @@ const environmentCapabilityNodes = computed(() => environmentCapabilities.value.
   return {
     ...cap,
     id: cap.id || cap.capability,
-    name: displayName,
+    name: cap.capability || cap.provider || '',
+    displayName,
     type: `capability-${cap.source || 'external'}`,
     status: capabilityNodeStatus(cap),
     topologyKind: 'capability',
@@ -3467,7 +3487,7 @@ const environmentCapabilityNodes = computed(() => environmentCapabilities.value.
 }))
 const componentTopologyAllNodes = computed(() => [
   ...buildComponentTopologyNodes(components.value, appCanvasServices.value, componentDisplayNames.value),
-  ...environmentCapabilityNodes.value,
+  ...environmentCapabilityNodes.value.filter(isApplicationTopologyCapability),
 ])
 const environmentTopologyAllNodes = computed(() => [
   ...buildComponentTopologyNodes(components.value, services.value, componentDisplayNames.value),
@@ -3500,7 +3520,7 @@ const filteredTopologyNodes = computed(() => {
   const visibleComponentIds = new Set(filteredComponents.value.map((comp:any) => `component:${comp.id}`))
   return componentTopologyAllNodes.value.filter((node:any) => {
     if (node.topologyKind === 'component') return visibleComponentIds.has(String(node.topologyId || ''))
-    const text = [node.name, node.type, node.status].filter(Boolean).join(' ').toLowerCase()
+    const text = [node.displayName || node.name, node.name, node.type, node.status].filter(Boolean).join(' ').toLowerCase()
     return !q || text.includes(q)
   })
 })
@@ -4037,7 +4057,7 @@ const selectTopologyNode = (node:any) => {
     return
   }
   selectComponent(node.id)
-  openComponentConfigDrawer(node, 'variables')
+  openComponentConfigDrawer(node)
 }
 const handleTopologyNodeClick = (event: MouseEvent, node:any) => {
   if (renamingNodeKey.value) return
@@ -4180,12 +4200,46 @@ const openInfraSubmenu = async () => {
     }
   }
   const infraTemplates = buildPickerTemplates(templates.value, services.value, 'infra')
+    .filter((t:any) => !isKubeVirtTemplate(t))
   contextSubmenu.value = {
     visible: true,
     x: componentContextMenu.value.x + 230,
     y: componentContextMenu.value.y + 80,
     mode: 'infra',
     templates: infraTemplates.map((t:any) => ({ ...t, label: t.serviceName || t.name || t.type })),
+  }
+}
+const openKubeVirtSubmenu = async () => {
+  if (templates.value.length === 0) {
+    contextSubmenu.value = {
+      visible: true,
+      x: componentContextMenu.value.x + 230,
+      y: componentContextMenu.value.y + 120,
+      mode: 'kubevirt',
+      templates: [{ type: 'loading', label: '服务加载中...', description: '正在读取服务目录', disabled: true }],
+    }
+    try {
+      await loadServiceTemplates()
+    } catch (e:any) {
+      contextSubmenu.value = {
+        visible: true,
+        x: componentContextMenu.value.x + 230,
+        y: componentContextMenu.value.y + 120,
+        mode: 'kubevirt',
+        templates: [{ type: 'error', label: '服务加载失败', description: e?.message || '请稍后重试', disabled: true }],
+      }
+      return
+    }
+  }
+  const kubeVirtTemplates = dedupeKubeVirtTemplates(templates.value)
+  contextSubmenu.value = {
+    visible: true,
+    x: componentContextMenu.value.x + 230,
+    y: componentContextMenu.value.y + 120,
+    mode: 'kubevirt',
+    templates: kubeVirtTemplates.length
+      ? kubeVirtTemplates.map((t:any) => ({ ...t, label: t.serviceName || t.name || t.type }))
+      : [{ type: 'none', label: '暂无 KubeVirt 模板', description: 'KubeVirt 可能未启用', disabled: true }],
   }
 }
 const sharedCapabilityTemplateLabel = (item:any) => [capabilityLabel(item.capability), item.serviceName || item.serviceType].filter(Boolean).join(' · ')
@@ -4216,7 +4270,7 @@ const openSharedCapabilitySubmenu = async () => {
   contextSubmenu.value = {
     visible: true,
     x: componentContextMenu.value.x + 230,
-    y: componentContextMenu.value.y + 120,
+    y: componentContextMenu.value.y + 160,
     mode: 'shared-capability',
     templates: templates.length ? templates : [{ type: 'none', label: '暂无共享资源', description: '平台管理员需要先在共享资源池创建资源', disabled: true }],
   }
@@ -4225,7 +4279,7 @@ const openExternalCapabilitySubmenu = () => {
   contextSubmenu.value = {
     visible: true,
     x: componentContextMenu.value.x + 230,
-    y: componentContextMenu.value.y + 160,
+    y: componentContextMenu.value.y + 200,
     mode: 'external-capability',
     templates: externalCapabilityOptions.map((item) => ({
       ...item,
@@ -4827,7 +4881,7 @@ const topologyNodeByKey = (key:string) => {
   const normalized = String(key || '').trim()
   if (!normalized) return null
   return [...environmentCanvasNodes.value, ...componentCanvasNodes.value]
-    .find((node:any) => String(node.topologyId || node.id || node.name || '') === normalized) || null
+    .find((node:any) => String(node.topologyId || node.id || node.name || node.displayName || '') === normalized) || null
 }
 const selectedCanvasNode = () => {
   const key = selectedTopologyKey.value || (selectedNodeKeys.value.length === 1 ? selectedNodeKeys.value[0] : '')
@@ -5174,6 +5228,16 @@ const validateComponentDeliveryForm = () => {
   }
   return true
 }
+const getServiceTargetEnvId = (serviceId: number): number => {
+  // For shared-capability services, the backing service lives in the default environment,
+  // not the current one. Read the refService's own environmentId from the capability.
+  for (const cap of registryCapabilityTargets.value) {
+    if (cap.source === 'shared' && cap.refService?.id && cap.refService.environmentId) {
+      if (Number(cap.refService.id) === serviceId) return Number(cap.refService.environmentId)
+    }
+  }
+  return envId.value
+}
 const ensureRegistryWorkspaces = async () => {
   const targets = registryWorkspaceServiceTargets.value.filter((svc:any) => svc?.id)
   if (!targets.length || registryWorkspaceLoading.value) return
@@ -5181,7 +5245,8 @@ const ensureRegistryWorkspaces = async () => {
   registryWorkspaceError.value = ''
   try {
     for (const svc of targets) {
-      const res = await api.getServiceWorkspace(envId.value, Number(svc.id))
+      const targetEnvId = getServiceTargetEnvId(Number(svc.id))
+      const res = await api.getServiceWorkspace(targetEnvId, Number(svc.id))
       capabilityWorkspaceCache.value = { ...capabilityWorkspaceCache.value, [svc.id]: res.data }
     }
   } catch (e:any) {
@@ -7385,9 +7450,10 @@ const componentTemplateFieldAutofillsFromService = (field:any) =>
 const componentTemplateFieldRequiredForUser = (field:any) =>
   componentTemplateFieldRequired(field) && !componentTemplateFieldAutofillsFromService(field)
 const componentTemplateFieldOptions = (field:any) => {
-  if (componentTemplateFieldType(field) !== 'serviceref') return []
+  const backendRef = componentTemplateFieldLooksLikeBackendReference(field)
+  if (componentTemplateFieldType(field) !== 'serviceref' && !backendRef) return []
   const targets = componentTemplateFieldTargetTokens(field)
-  const matchesBackend = targets.includes('backend')
+  const matchesBackend = backendRef || targets.includes('backend')
   const candidates = matchesBackend
     ? componentDrawerBackendTargets.value
     : componentConnectionTargets.value.filter((target:any) => {
@@ -7402,12 +7468,13 @@ const componentTemplateFieldOptions = (field:any) => {
   }))
 }
 const componentTemplateFieldUsesTargetSelect = (field:any) =>
-  componentTemplateFieldType(field) === 'serviceref' && componentTemplateFieldOptions(field).length > 0
+  (componentTemplateFieldType(field) === 'serviceref' || componentTemplateFieldLooksLikeBackendReference(field))
+  && componentTemplateFieldOptions(field).length > 0
 const componentTemplateFieldPlaceholder = (field:any) => {
   const type = componentTemplateFieldType(field)
-  if (type === 'serviceref') {
+  if (type === 'serviceref' || componentTemplateFieldLooksLikeBackendReference(field)) {
     const targets = componentTemplateFieldTargetTokens(field)
-    if (targets.includes('backend')) return componentTemplateFieldOptions(field).length ? '选择后端组件' : '暂无后端组件，可输入地址'
+    if (targets.includes('backend') || componentTemplateFieldLooksLikeBackendReference(field)) return componentTemplateFieldOptions(field).length ? '选择后端组件' : '暂无后端组件，可输入地址'
     if (targets.includes('redis')) return componentTemplateFieldOptions(field).length ? '选择 Redis' : '暂无 Redis，可输入地址'
     if (targets.some((item) => ['postgresql', 'mysql', 'mongodb'].includes(item))) return componentTemplateFieldOptions(field).length ? '选择数据库' : '暂无数据库，可输入地址'
     return componentTemplateFieldOptions(field).length ? '选择服务' : '暂无可选服务，可输入地址'
@@ -7418,7 +7485,7 @@ const componentTemplateFieldPlaceholder = (field:any) => {
 const componentTemplateFieldHint = (field:any) => {
   if (field?.description) return String(field.description)
   if (componentTemplateFieldAutofillsFromService(field)) return '留空时平台会读取所选服务的连接凭据。'
-  if (componentTemplateFieldType(field) === 'serviceref' && !componentTemplateFieldOptions(field).length) {
+  if ((componentTemplateFieldType(field) === 'serviceref' || componentTemplateFieldLooksLikeBackendReference(field)) && !componentTemplateFieldOptions(field).length) {
     return '画布上有匹配服务时会自动提供下拉选择。'
   }
   return ''
@@ -7429,7 +7496,7 @@ const componentTemplateExistingTargetKey = (field:any) => {
   const targets = componentTemplateFieldTargetTokens(field)
   const binding = configForm.value.bindings.find((item:any) => {
     const targetType = String(item.targetType || '').toLowerCase()
-    if (targets.includes('backend')) return item.role === 'backend' || targetType === 'backend'
+    if (targets.includes('backend') || componentTemplateFieldLooksLikeBackendReference(field)) return item.role === 'backend' || targetType === 'backend'
     return targets.includes(targetType)
   })
   return binding?.targetKey || ''
@@ -7439,7 +7506,7 @@ const componentTemplateDefaultListRow = (field:any) => {
   for (const itemField of componentTemplateListItemFields(field)) {
     const key = componentTemplateFieldKey(itemField)
     const options = componentTemplateFieldOptions(itemField)
-    row[key] = componentTemplateFieldType(itemField) === 'serviceref' && options.length > 0
+    row[key] = (componentTemplateFieldType(itemField) === 'serviceref' || componentTemplateFieldLooksLikeBackendReference(itemField)) && options.length > 0
       ? options[0].value
       : componentTemplateFieldDefaultValue(itemField)
   }
@@ -7451,8 +7518,12 @@ const componentTemplateInitialFieldValue = (field:any) => {
     secrets: configForm.value.secrets,
     configMaps: configForm.value.configMaps,
   })
-  if (existingValue && componentTemplateFieldType(field) !== 'serviceref') return existingValue
+  const backendRef = componentTemplateFieldLooksLikeBackendReference(field)
+  if (existingValue && componentTemplateFieldType(field) !== 'serviceref' && !backendRef) return existingValue
   if (componentTemplateFieldType(field) === 'list') return [componentTemplateDefaultListRow(field)]
+  if (backendRef) {
+    return componentTemplateExistingTargetKey(field) || componentTemplateFieldOptions(field)[0]?.value || existingValue || componentTemplateFieldDefaultValue(field)
+  }
   return templateInitialFieldValue(field, {
     existingTargetKey: componentTemplateExistingTargetKey(field),
     firstOptionValue: componentTemplateFieldOptions(field)[0]?.value || '',
@@ -7659,7 +7730,7 @@ const componentConnectionTargets = computed(() => {
   const capabilityTargets = environmentCapabilities.value
     .flatMap((cap:any) => {
       const refService = cap.refService || {}
-      const type = String(cap.serviceType || cap.provider || refService.serviceType || cap.capability || '').toLowerCase()
+      const type = String(cap.provider || cap.serviceType || refService.serviceType || cap.capability || '').toLowerCase()
       if (!type) return []
       return [{
         key: `capability:${cap.id}`,
@@ -8043,7 +8114,7 @@ const buildComponentTemplateFieldRenderValues = async () => {
       fieldValues[listKey] = await Promise.all(rows.map(async (row:any) => {
         const nextRow = { ...row }
         for (const itemField of componentTemplateListItemFields(field)) {
-          if (componentTemplateFieldType(itemField) !== 'serviceref') continue
+          if (componentTemplateFieldType(itemField) !== 'serviceref' && !componentTemplateFieldLooksLikeBackendReference(itemField)) continue
           const itemKey = componentTemplateFieldKey(itemField)
           const target = componentTemplateTargetForValue(nextRow[itemKey])
           if (!target) continue
@@ -8061,7 +8132,7 @@ const buildComponentTemplateFieldRenderValues = async () => {
       }
       continue
     }
-    if (componentTemplateFieldType(field) !== 'serviceref') continue
+    if (componentTemplateFieldType(field) !== 'serviceref' && !componentTemplateFieldLooksLikeBackendReference(field)) continue
     const key = componentTemplateFieldKey(field)
     const target = componentTemplateTargetForValue(fieldValues[key])
     if (!target) continue
@@ -8545,6 +8616,34 @@ const saveConfigDrawer = async (options: { refresh?: boolean; includeDelivery?: 
     }
     if (!validateConfigFileMountPaths()) return
     if (!validateConfigEnvRows()) return
+    // Auto-generate bindings from env vars for services on the canvas
+    const envVarEntries = configForm.value.env
+      .filter((e: any) => !e?.source || e.source === 'value')
+      .filter((e: any) => e?.name && e?.value)
+      .map((e: any) => ({ name: String(e.name).trim(), value: String(e.value).trim() }))
+    if (envVarEntries.length) {
+      const targetsForEnvMatch = componentConnectionTargets.value.map((t: any) => ({
+        id: t.key,
+        name: t.name,
+        type: t.type,
+        namespace: t.namespace,
+        topologyKind: t.kind,
+      }))
+      const autoBindings = deriveBindingsFromEnv(envVarEntries, targetsForEnvMatch)
+      for (const binding of autoBindings) {
+        upsertBinding({
+          targetKey: binding.targetKey,
+          targetKind: binding.targetKind,
+          targetName: binding.targetName,
+          targetType: binding.targetType,
+          role: 'service',
+          mode: 'env',
+          confidence: binding.confidence,
+          source: 'auto',
+          generated: {},
+        })
+      }
+    }
     const deliveryPayload = includeDelivery
       ? {
           deliveryMode: configForm.value.deliveryMode,
@@ -8676,11 +8775,54 @@ const validateCapabilityConfigDrawer = async () => {
   capabilityValidationLoading.value = true
   configDrawer.value.error = ''
   configDrawer.value.message = ''
+  // 先保存表单数据（externalEndpoint、用户名、密码等），否则验证时后端从 DB 读到的 ExternalEndpoint 为空
+  const authType = String(capabilityForm.value.authType || 'none')
+  const payload: any = {
+    source: 'external',
+    capabilityKey: capabilityRequestKey(cap),
+    provider: cap.provider || providerForCapability(cap.capability),
+    serviceType: cap.serviceType || serviceTypeForCapability(cap.capability),
+    externalEndpoint: capabilityForm.value.externalEndpoint,
+    authType,
+    tlsInsecureSkipVerify: Boolean(capabilityForm.value.tlsInsecureSkipVerify),
+  }
+  const credentialSecretRef = String(capabilityForm.value.credentialSecretRef || cap.credentialSecretRef || '').trim()
+  if (authType === 'basic') {
+    payload.username = capabilityForm.value.username
+    if (capabilityForm.value.password) payload.password = capabilityForm.value.password
+    if (!payload.password && credentialSecretRef) payload.credentialSecretRef = credentialSecretRef
+  } else if (authType === 'token') {
+    if (capabilityForm.value.token) payload.token = capabilityForm.value.token
+    if (!payload.token && credentialSecretRef) payload.credentialSecretRef = credentialSecretRef
+  } else if (authType === 'existingSecret') {
+    payload.credentialSecretRef = credentialSecretRef
+  } else {
+    payload.credentialSecretRef = ''
+  }
+  try {
+    await api.updateEnvironmentCapability(envId.value, capabilityRequestKey(cap), payload)
+    await loadEnvironmentCapabilities()
+  } catch (e:any) {
+    configDrawer.value.error = '验证前保存外部资源配置失败：' + (e?.message || '未知错误')
+    capabilityValidationLoading.value = false
+    return
+  }
+  // 再调验证
   try {
     const res = await api.validateEnvironmentCapability(envId.value, capabilityRequestKey(cap))
     await loadEnvironmentCapabilities()
     const updated = environmentCapabilities.value.find((item:any) => Number(item.id) === Number(res.data?.id || cap.id)) || res.data || cap
     configDrawer.value.capability = updated
+    const currentForm = capabilityForm.value
+    capabilityForm.value = {
+      externalEndpoint: updated.externalEndpoint || currentForm.externalEndpoint,
+      authType: updated.credentialSecretRef ? (authType === 'existingSecret' ? 'existingSecret' : authType) : 'none',
+      username: currentForm.username,
+      password: currentForm.password,
+      token: currentForm.token,
+      credentialSecretRef: updated.credentialSecretRef || '',
+      tlsInsecureSkipVerify: Boolean(updated.tlsInsecureSkipVerify),
+    }
     if (updated.validationStatus === 'valid') {
       configDrawer.value.message = updated.validationMessage || '外部资源连接验证通过。'
     } else {
@@ -9330,11 +9472,6 @@ const openServiceInstallModal = (mode: ServiceModalMode = 'tool') => {
 
 const openServiceModal = () => {
   openServiceInstallModal('tool')
-}
-
-const openKubeVirtServiceModal = () => {
-  closeComponentContextMenu()
-  openServiceInstallModal('kubevirt')
 }
 
 const envStatusText = (status: string | undefined) => {
@@ -10732,7 +10869,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   background: var(--paap-border-strong);
   box-shadow: 0 0 0 2px var(--paap-panel);
 }
-.node-status.running, .node-status.linked { background: var(--paap-success); }
+.node-status.running, .node-status.linked, .node-status.valid { background: var(--paap-success); }
 .node-status.error, .node-status.failed { background: var(--paap-danger); }
 .node-status.creating, .node-status.deploying, .node-status.building, .node-status.installing, .node-status.syncing { background: var(--paap-accent); }
 .node-status.draft, .node-status.pending { background: var(--paap-border-strong); }
@@ -12721,7 +12858,7 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
   width: 32px;
   height: 32px;
 }
-.capability-checkbox-field {
+.config-form-grid label.capability-checkbox-field {
   display: inline-flex;
   align-items: center;
   gap: var(--paap-space-2);
@@ -12896,7 +13033,8 @@ button.overview-stat:hover { border-color: var(--paap-border-strong); }
 }
 .status-dot { width: 6px; height: 6px; background: var(--paap-border-strong); border-radius: 50%; }
 .status-dot.running,
-.status-dot.linked { background: var(--paap-success); }
+.status-dot.linked,
+.status-dot.valid { background: var(--paap-success); }
 .status-dot.stopped { background: var(--paap-danger); }
 .status-dot.failed,
 .status-dot.error { background: var(--paap-danger); }
