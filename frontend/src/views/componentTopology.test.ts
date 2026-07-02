@@ -536,10 +536,10 @@ describe('componentTopology', () => {
       { 'component:1': '用户前端', 'service:10': '主缓存' }
     )
 
-    expect(nodes.map((n) => ({ topologyId: n.topologyId, name: n.name }))).toEqual([
-      { topologyId: 'component:1', name: '用户前端' },
-      { topologyId: 'component:2', name: 'api' },
-      { topologyId: 'service:10', name: '主缓存' },
+    expect(nodes.map((n) => ({ topologyId: n.topologyId, name: n.name, displayName: n.displayName }))).toEqual([
+      { topologyId: 'component:1', name: 'web', displayName: '用户前端' },
+      { topologyId: 'component:2', name: 'api', displayName: undefined },
+      { topologyId: 'service:10', name: 'redis-cache', displayName: '主缓存' },
     ])
   })
 

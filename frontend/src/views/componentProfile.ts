@@ -346,8 +346,8 @@ export function componentConfigPresets(profile: ComponentProfile): ComponentConf
 export function componentDrawerBlueprint(profile: ComponentProfile): ComponentDrawerBlueprint {
   const tabs: ComponentDrawerTab[] = [
     { key: 'deploy', label: '部署' },
-    { key: 'autoscaling', label: '伸缩' },
     { key: 'variables', label: '配置' },
+    { key: 'autoscaling', label: '伸缩' },
     { key: 'runtime', label: '指标' },
     { key: 'logs', label: '日志' },
     { key: 'console', label: '控制台' },

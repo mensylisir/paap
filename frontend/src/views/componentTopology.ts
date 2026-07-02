@@ -21,6 +21,7 @@ export type ComponentTopologyComponent = {
   runtimeServiceType?: string
   clusterIP?: string
   loadBalancerIP?: string
+  displayName?: string
 }
 
 export type ComponentTopologyEdge = {
@@ -184,7 +185,7 @@ export const buildComponentTopologyNodes = (
     const key = String(node.topologyId || '')
     const override = key ? String(displayNames[key] || '').trim() : ''
     if (!override) return node
-    return { ...node, name: override }
+    return { ...node, displayName: override }
   }
   const componentNodes = components.map((comp) => applyDisplayName({
     ...comp,
@@ -248,12 +249,11 @@ export const serviceNetworkSummary = (node: ComponentTopologyComponent) => {
 
 export const explicitComponentDependencies = (comp: ComponentTopologyComponent) => {
   const config = parseComponentConfig(comp?.config)
-  const bindingTargets = Array.isArray(config?.bindings)
-    ? config.bindings
-      .flatMap((item: any) => [item?.targetKey, item?.targetName])
-      .map((item: any) => String(item || '').trim())
-      .filter(Boolean)
-    : []
+  const bindings = Array.isArray(config?.bindings) ? config.bindings : []
+  // Prefer specific targetKey over generic targetName to avoid ambiguous bare-name lookups
+  const bindingTargets = bindings
+    .map((item: any) => String((item?.targetKey || item?.targetName || '')).trim())
+    .filter(Boolean)
   const raw = comp?.dependencies
     ?? comp?.dependsOn
     ?? comp?.dependencyNames
@@ -263,13 +263,34 @@ export const explicitComponentDependencies = (comp: ComponentTopologyComponent) 
     ?? config?.dependencyNames
     ?? config?.dependencyComponents
   if (Array.isArray(raw)) {
-    return [...bindingTargets, ...raw
+    const rawItems = raw
       .map((item) => String(typeof item === 'object' && item ? (item as any).name || (item as any).service || (item as any).component || (item as any).id : item))
       .map((item) => item.trim())
-      .filter(Boolean)]
+      .filter(Boolean)
+    // Deduplicate: if a targetKey (e.g. capability:17) is already emitted from bindings,
+    // skip the corresponding bare targetName (e.g. postgresql) from raw to avoid ambiguous resolution
+    const nameToKey = new Map<string, string>()
+    for (const b of bindings) {
+      const n = String(b?.targetName || '').trim().toLowerCase()
+      const k = String(b?.targetKey || '').trim()
+      if (n && k) nameToKey.set(n, k)
+    }
+    const combined = [...bindingTargets, ...rawItems]
+    const result: string[] = []
+    const seen = new Set<string>()
+    for (const item of combined) {
+      if (seen.has(item)) continue
+      if (!item.includes(':') && nameToKey.has(item.toLowerCase())) continue
+      seen.add(item)
+      result.push(item)
+    }
+    return result
   }
-  if (typeof raw === 'string') return [...bindingTargets, ...raw.split(',').map((item) => item.trim()).filter(Boolean)]
-  return bindingTargets
+  if (typeof raw === 'string') {
+    const rawItems = raw.split(',').map((item) => item.trim()).filter(Boolean)
+    return [...new Set([...bindingTargets, ...rawItems])]
+  }
+  return [...new Set(bindingTargets)]
 }
 
 const parseComponentConfig = (config: unknown): any => {
@@ -289,19 +310,18 @@ export const buildComponentDependencyEdges = (components: ComponentTopologyCompo
   const byName = new Map<string, ComponentTopologyComponent>()
   const byId = new Map<string, ComponentTopologyComponent>()
   const byTopologyId = new Map<string, ComponentTopologyComponent>()
-  const aliasTargets = new Map<string, ComponentTopologyComponent[]>()
+  const nameCount = new Map<string, number>()
   for (const comp of components) {
     const name = String(comp.name || '').trim()
     const id = String(comp.id || '').trim()
     const topologyId = String(comp.topologyId || '').trim()
-    if (name) byName.set(name.toLowerCase(), comp)
+    if (name) {
+      const key = name.toLowerCase()
+      byName.set(key, comp)
+      nameCount.set(key, (nameCount.get(key) || 0) + 1)
+    }
     if (id) byId.set(id, comp)
     if (topologyId) byTopologyId.set(topologyId.toLowerCase(), comp)
-    for (const alias of dependencyAliases(comp)) {
-      const list = aliasTargets.get(alias) || []
-      list.push(comp)
-      aliasTargets.set(alias, list)
-    }
   }
 
   const edges: ComponentTopologyEdge[] = []
@@ -328,93 +348,162 @@ export const buildComponentDependencyEdges = (components: ComponentTopologyCompo
     edges.push(edge)
   }
 
+  // Potential targets include all nodes (services, capabilities, and other components)
+  const allTargets = components
+
   for (const comp of components) {
     if (comp.topologyKind === 'service') continue
     for (const dependency of explicitComponentDependencies(comp)) {
-      const target = byTopologyId.get(dependency.toLowerCase()) || byName.get(dependency.toLowerCase()) || byId.get(dependency)
+      const depLower = dependency.toLowerCase()
+      // For bare names (no ':'), skip if 2+ nodes share the same name (ambiguous).
+      // The specific targetKey (e.g. "capability:17") will still resolve correctly
+      // via byTopologyId in the loop body below.
+      if (!depLower.includes(':') && (nameCount.get(depLower) || 0) > 1) continue
+      const target = byTopologyId.get(depLower) || byName.get(depLower) || byId.get(dependency)
       if (target) addEdge(comp, target)
     }
-    for (const target of inferredConfigDependencies(comp, aliasTargets)) {
-      addEdge(comp, target)
+    const config = parseComponentConfig(comp?.config)
+    const env = Array.isArray(config?.env) ? config.env : []
+    const envVars = env
+      .filter((e: any) => e?.value)
+      .map((e: any) => ({ name: String(e.name || '').trim(), value: String(e.value || '').trim() }))
+      .filter((e: { name: string; value: string }) => e.name || e.value)
+
+    // Also extract FQDN references from configMap data for heuristic matching
+    const configMapRefs: Array<{ name: string; value: string }> = []
+    if (Array.isArray(config?.configMaps)) {
+      for (const cm of config.configMaps) {
+        if (!cm?.data || typeof cm.data !== 'object') continue
+        for (const val of Object.values(cm.data) as string[]) {
+          if (typeof val !== 'string') continue
+          // Match <service>.<namespace>.svc.cluster.local patterns
+          const fqdnRe = /([a-z][a-z0-9-]*)\.([a-z][a-z0-9-]*)\.svc\.cluster\.local/gi
+          let m: RegExpExecArray | null
+          while ((m = fqdnRe.exec(val)) !== null) {
+            const svcName = m[1].toLowerCase()
+            configMapRefs.push({ name: svcName + '_SERVICE_HOST', value: m[0] })
+          }
+        }
+      }
+    }
+
+    const allVars = [...envVars, ...configMapRefs]
+    if (allVars.length) {
+      const derived = deriveBindingsFromEnv(allVars, allTargets)
+      for (const binding of derived) {
+        const target = byName.get(binding.targetName.toLowerCase()) || byId.get(binding.targetKey)
+        if (target) addEdge(comp, target)
+      }
     }
   }
 
   return edges
 }
 
-const dependencyAliases = (node: ComponentTopologyComponent): string[] => {
-  const values = new Set<string>()
-  const add = (value: unknown) => {
-    const text = String(value || '').trim().toLowerCase()
-    if (text.length >= 3) values.add(text)
-  }
-  add(node.topologyId)
-  add(node.name)
-  add(node.serviceName)
-  add(node.serviceType)
-  const serviceName = String(node.serviceName || node.name || node.serviceType || '').trim()
-  const namespace = String(node.namespace || '').trim()
-  if (serviceName && namespace) {
-    add(`${serviceName}.${namespace}`)
-    add(`${serviceName}.${namespace}.svc`)
-    add(`${serviceName}.${namespace}.svc.cluster.local`)
-  }
-  return Array.from(values)
+const escapeRegex = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+const connectionEnvPrefix = (serviceType: string): string => {
+  const normalized = String(serviceType || 'SERVICE').toUpperCase().replace(/[^A-Z0-9]+/g, '_')
+  return normalized === 'POSTGRESQL' ? 'POSTGRES' : normalized
 }
 
-const inferredConfigDependencies = (
-  comp: ComponentTopologyComponent,
-  aliasTargets: Map<string, ComponentTopologyComponent[]>
-): ComponentTopologyComponent[] => {
-  const haystack = componentConfigSearchText(comp)
-  if (!haystack) return []
-  const matched = new Map<string, ComponentTopologyComponent>()
-  for (const [alias, targets] of aliasTargets.entries()) {
-    if (!haystack.includes(alias)) continue
-    const uniqueTargets = targets.filter((target) => String(target.topologyId || target.id) !== String(comp.topologyId || comp.id))
-    if (uniqueTargets.length !== 1) continue
-    const target = uniqueTargets[0]
-    if (isPlatformToolServiceNode(target)) continue
-    matched.set(String(target.topologyId || target.id), target)
-  }
-  return Array.from(matched.values())
+export interface DerivedBinding {
+  targetKey: string
+  targetName: string
+  targetType: string
+  targetKind: string
+  confidence: string
 }
 
-const isPlatformToolServiceNode = (node: ComponentTopologyComponent): boolean => {
-  if (node?.topologyKind !== 'service') return false
-  const type = String(node?.type || node?.serviceType || '').trim().toLowerCase()
-  return toolServiceTypes.has(type)
-}
+/**
+ * Derive service bindings from environment variables using structured heuristics.
+ * Only returns a binding when exactly ONE target matches (avoids ambiguity).
+ */
+export const deriveBindingsFromEnv = (
+  env: Array<{ name: string; value: string }>,
+  targets: Array<{ id?: string | number; name?: string; type?: string; namespace?: string; topologyKind?: string }>
+): DerivedBinding[] => {
+  const results: DerivedBinding[] = []
+  const matchedKeys = new Set<string>()
 
-const componentConfigSearchText = (comp: ComponentTopologyComponent): string => {
-  const cfg = parseComponentConfig(comp?.config)
-  if (!cfg) return ''
-  const values: string[] = []
-  const add = (value: unknown) => {
-    if (value === undefined || value === null) return
-    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
-      values.push(String(value))
-      return
+  if (!Array.isArray(env) || !Array.isArray(targets)) return results
+
+  for (const envVar of env) {
+    const name = String(envVar.name || '').trim()
+    const value = String(envVar.value || '').trim()
+    if (!name && !value) continue
+    const nameLower = name.toLowerCase()
+    const valueLower = value.toLowerCase()
+
+    const matchingTargets: Array<{ target: typeof targets[0]; confidence: string }> = []
+
+    for (const target of targets) {
+      const targetName = String(target.name || '').trim().toLowerCase()
+      const targetType = String(target.type || '').trim().toLowerCase()
+      const namespace = String(target.namespace || '').trim().toLowerCase()
+      if (!targetName) continue
+
+      // Heuristic 1: FQDN in value — e.g. postgresql.default.svc.cluster.local
+      if (namespace) {
+        const fqdn = `${targetName}.${namespace}.svc.cluster.local`
+        const shortFqdn = `${targetName}.${namespace}`
+        if (valueLower.includes(fqdn) || valueLower.includes(shortFqdn)) {
+          matchingTargets.push({ target, confidence: 'high' })
+          continue
+        }
+      }
+
+      // Heuristic 2: env name matches {PREFIX}_HOST / _PORT / _URL convention
+      // e.g. POSTGRES_HOST, REDIS_PORT, MONGODB_URL
+      const prefix = connectionEnvPrefix(targetType).toLowerCase()
+      if (nameLower === `${prefix}_host` || nameLower === `${prefix}_port` || nameLower === `${prefix}_url`) {
+        matchingTargets.push({ target, confidence: 'medium' })
+        continue
+      }
+
+      // Heuristic 3: env name matches {service_name}_SERVICE_HOST (K8s convention)
+      // or {service_name}_HOST
+      if (nameLower === `${targetName}_service_host` || nameLower === `${targetName}_host`) {
+        matchingTargets.push({ target, confidence: 'medium' })
+        continue
+      }
+
+      // Heuristic 4: URL hostname in value — ://serviceName: or ://serviceName/ or ://serviceName.
+      // Catches jdbc:postgresql://postgresql:5432/db without matching jdbc:postgresql:// protocol scheme
+      const urlPattern = new RegExp(`://${escapeRegex(targetName)}(:|/|\\.|$)`)
+      if (urlPattern.test(valueLower)) {
+        matchingTargets.push({ target, confidence: 'medium' })
+        continue
+      }
+
+      // Heuristic 5: host:port pattern — serviceName:portnumber
+      // Avoids matching protocol schemes like jdbc:postgresql: (colon followed by /, not digit)
+      const hostPortPattern = new RegExp(`(^|[^a-z0-9.])${escapeRegex(targetName)}:(\\d+)($|[^a-z0-9/])`)
+      if (hostPortPattern.test(valueLower)) {
+        matchingTargets.push({ target, confidence: 'medium' })
+        continue
+      }
     }
-    if (Array.isArray(value)) {
-      value.forEach(add)
-      return
-    }
-    if (typeof value === 'object') {
-      Object.entries(value as Record<string, unknown>).forEach(([key, item]) => {
-        values.push(key)
-        add(item)
-      })
+
+    // Only create binding when exactly one target matches (avoids ambiguity)
+    if (matchingTargets.length === 1) {
+      const { target, confidence } = matchingTargets[0]
+      const targetName = String(target.name || '').trim()
+      const targetKey = String(target.id || targetName)
+      if (!matchedKeys.has(targetKey)) {
+        matchedKeys.add(targetKey)
+        results.push({
+          targetKey,
+          targetName,
+          targetType: String(target.type || '').trim(),
+          targetKind: target.topologyKind === 'capability' ? 'capability' : 'service',
+          confidence,
+        })
+      }
     }
   }
-  add(cfg.env)
-  add(cfg.command)
-  add(cfg.args)
-  add(cfg.configMaps)
-  add(cfg.secrets)
-  add(cfg.files)
-  add(cfg.bindings)
-  return values.join('\n').toLowerCase()
+
+  return results
 }
 
 export const parseComponentTopologyPositions = (raw: string | null | undefined): ComponentTopologyPositions => {
